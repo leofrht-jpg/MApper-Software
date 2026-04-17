@@ -1,0 +1,36 @@
+@import './tokens.css';
+@import './reset.css';
+@import 'tailwindcss';
+
+@layer base {
+  body {
+    background-color: var(--bg-root);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--text-base);
+    line-height: var(--leading-normal);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  ::selection {
+    background-color: var(--accent-muted);
+  }
+
+  /* Thin dark scrollbar */
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    background: var(--bg-hover);
+    border-radius: var(--radius-full);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--text-tertiary);
+    border-radius: var(--radius-full);
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-secondary);
+  }
+}

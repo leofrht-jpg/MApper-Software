@@ -1,0 +1,42 @@
+# Dependencies
+node_modules/
+mapper-frontend/node_modules/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Environment
+.env
+.env.local
+
+# Build outputs
+dist/
+.next/
+build/
+
+# Data (local user data)
+mapper-backend/data/
+
+# Export logs
+mapper-backend/export/logs/
+
+# Reference codebases (not part of MApper)
+_reference/
+
+# Claude Code local config
+.claude/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo

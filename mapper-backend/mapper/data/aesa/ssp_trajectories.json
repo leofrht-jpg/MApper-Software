@@ -1,0 +1,73 @@
+{
+  "_notice": "Global annual CO2 emissions (Gt CO2/yr) for SSP baseline scenarios, 2025-2100. Provisional order-of-magnitude values interpolated from published SSP anchor points (IIASA SSP database). Refine against IIASA extraction before publication.",
+  "scenarios": [
+    {
+      "id": "SSP1-2.6",
+      "name": "SSP1-2.6 (sustainability, 2°C)",
+      "source": "IIASA SSP database, anchor points interpolated",
+      "anchors_gt_co2": {
+        "2025": 37.0,
+        "2030": 32.0,
+        "2040": 22.0,
+        "2050": 14.0,
+        "2060": 6.0,
+        "2070": 0.0,
+        "2080": -3.0,
+        "2090": -5.0,
+        "2100": -6.0
+      },
+      "provisional": true
+    },
+    {
+      "id": "SSP2-4.5",
+      "name": "SSP2-4.5 (middle of the road)",
+      "source": "IIASA SSP database, anchor points interpolated",
+      "anchors_gt_co2": {
+        "2025": 37.5,
+        "2030": 38.0,
+        "2040": 35.0,
+        "2050": 28.0,
+        "2060": 22.0,
+        "2070": 16.0,
+        "2080": 12.0,
+        "2090": 10.0,
+        "2100": 9.0
+      },
+      "provisional": true
+    },
+    {
+      "id": "SSP3-7.0",
+      "name": "SSP3-7.0 (regional rivalry)",
+      "source": "IIASA SSP database, anchor points interpolated",
+      "anchors_gt_co2": {
+        "2025": 38.0,
+        "2030": 42.0,
+        "2040": 48.0,
+        "2050": 55.0,
+        "2060": 63.0,
+        "2070": 70.0,
+        "2080": 76.0,
+        "2090": 80.0,
+        "2100": 82.0
+      },
+      "provisional": true
+    },
+    {
+      "id": "SSP5-8.5",
+      "name": "SSP5-8.5 (fossil-fueled development)",
+      "source": "IIASA SSP database, anchor points interpolated",
+      "anchors_gt_co2": {
+        "2025": 39.0,
+        "2030": 44.0,
+        "2040": 53.0,
+        "2050": 62.0,
+        "2060": 75.0,
+        "2070": 85.0,
+        "2080": 95.0,
+        "2090": 100.0,
+        "2100": 100.0
+      },
+      "provisional": true
+    }
+  ]
+}

@@ -1,0 +1,35 @@
+{
+  "_notice": "Remaining carbon budgets from 2025, adjusted from IPCC AR6 WG1 Table SPM.2 (originally expressed from 2020) to account for 2020-2024 cumulative emissions (~200 Gt CO2). Values are provisional — refer to the latest IPCC synthesis for publication.",
+  "start_year_reference": 2020,
+  "consumed_2020_2024_gt": 200,
+  "options": [
+    {
+      "id": "IPCC_AR6_1p5C_50",
+      "name": "IPCC AR6 — 1.5°C, 50th percentile",
+      "remaining_gt_from_2025": 250,
+      "source": "IPCC AR6 WG1 Table SPM.2 (500 Gt from 2020, −200 Gt 2020-2024)",
+      "provisional": true
+    },
+    {
+      "id": "IPCC_AR6_1p5C_67",
+      "name": "IPCC AR6 — 1.5°C, 67th percentile",
+      "remaining_gt_from_2025": 150,
+      "source": "IPCC AR6 WG1 Table SPM.2 (400 Gt from 2020, −200 Gt 2020-2024)",
+      "provisional": true
+    },
+    {
+      "id": "IPCC_AR6_2C_50",
+      "name": "IPCC AR6 — 2.0°C, 50th percentile",
+      "remaining_gt_from_2025": 900,
+      "source": "IPCC AR6 WG1 Table SPM.2 (1150 Gt from 2020, −200 Gt 2020-2024, rounded)",
+      "provisional": true
+    },
+    {
+      "id": "IPCC_AR6_2C_67",
+      "name": "IPCC AR6 — 2.0°C, 67th percentile",
+      "remaining_gt_from_2025": 600,
+      "source": "IPCC AR6 WG1 Table SPM.2 (800 Gt from 2020, −200 Gt 2020-2024, rounded)",
+      "provisional": true
+    }
+  ]
+}

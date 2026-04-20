@@ -1,5 +1,4 @@
 import React from 'react'
-import { Settings } from 'lucide-react'
 import { ProjectSwitcher } from '../ProjectSwitcher'
 
 interface TopbarProps {
@@ -49,27 +48,9 @@ export function Topbar({ actions }: TopbarProps) {
         <ProjectSwitcher />
       </div>
 
-      {/* Right slot — custom actions + settings */}
+      {/* Right slot — custom actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flexShrink: 0 }}>
         {actions}
-        <button
-          aria-label="Settings"
-          style={{
-            background: 'none',
-            border: 'none',
-            cursor: 'pointer',
-            color: 'var(--text-secondary)',
-            display: 'flex',
-            alignItems: 'center',
-            padding: 'var(--space-1)',
-            borderRadius: 'var(--radius-sm)',
-            transition: `color var(--duration-fast) var(--ease-out)`,
-          }}
-          onMouseEnter={(e) => (e.currentTarget.style.color = 'var(--text-primary)')}
-          onMouseLeave={(e) => (e.currentTarget.style.color = 'var(--text-secondary)')}
-        >
-          <Settings size={18} strokeWidth={1.5} />
-        </button>
       </div>
     </header>
   )

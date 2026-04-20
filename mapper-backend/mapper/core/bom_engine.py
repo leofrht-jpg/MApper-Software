@@ -502,6 +502,8 @@ def summarize_archetype(arc: Archetype) -> dict:
         "folder": arc.folder,
         "material_count": material_count_total(arc.bom),
         "unlinked_count": unlinked_count_total(arc.bom),
+        "stages": [r.name for r in arc.bom],
+        "stage_annual": {r.name: r.is_annual for r in arc.bom},
         "created_at": arc.created_at or "",
         "updated_at": arc.updated_at or arc.created_at or "",
     }

@@ -17,7 +17,11 @@ from mapper.core.premise_engine import (
     AVAILABLE_IAMS,
     AVAILABLE_SSPS,
     AVAILABLE_YEARS,
+    PREMISE_KEY_FILE,
+    SSPS_BY_IAM,
+    PremiseKeyMissingError,
     ProspectiveDBGenerator,
+    premise_key_available,
     prospective_db_name,
 )
 
@@ -31,7 +35,9 @@ router = APIRouter(prefix="/plca", tags=["plca"])
 class PLCAScenarios(BaseModel):
     iams: list[str]
     ssps: list[str]
+    ssps_by_iam: dict[str, list[str]]
     years: list[int]
+    key_configured: bool
 
 
 class ProspectiveDB(BaseModel):
@@ -48,13 +54,22 @@ class GenerateRequest(BaseModel):
     iam: str
     ssp: str
     years: list[int]
-    source_version: str = "3.9"
+    source_version: str = "3.10"
     system_model: str = "cutoff"
 
 
 class GenerateResponse(BaseModel):
     task_id: str
     planned_names: list[str]
+
+
+class PremiseKeyRequest(BaseModel):
+    key: str
+
+
+class PremiseKeyStatus(BaseModel):
+    configured: bool
+    path: str
 
 
 # ── Task registry (in-memory, process-local) ──────────────────────────────────
@@ -87,7 +102,59 @@ def _notify_all(task: _TaskState, payload: dict[str, Any]) -> None:
 
 @router.get("/scenarios", response_model=PLCAScenarios)
 async def get_scenarios() -> PLCAScenarios:
-    return PLCAScenarios(iams=AVAILABLE_IAMS, ssps=AVAILABLE_SSPS, years=AVAILABLE_YEARS)
+    return PLCAScenarios(
+        iams=AVAILABLE_IAMS, ssps=AVAILABLE_SSPS,
+        ssps_by_iam=SSPS_BY_IAM, years=AVAILABLE_YEARS,
+        key_configured=premise_key_available(),
+    )
+
+
+def _home_relative_path(p) -> str:
+    try:
+        from pathlib import Path
+        return "~/" + str(p.relative_to(Path.home()))
+    except Exception:
+        return str(p)
+
+
+@router.get("/key/status", response_model=PremiseKeyStatus)
+async def get_key_status() -> PremiseKeyStatus:
+    return PremiseKeyStatus(
+        configured=premise_key_available(),
+        path=_home_relative_path(PREMISE_KEY_FILE),
+    )
+
+
+@router.post("/key")
+async def post_key(body: PremiseKeyRequest) -> dict:
+    key = body.key.strip()
+    if not key:
+        raise HTTPException(status_code=400, detail="Key is empty.")
+    try:
+        from cryptography.fernet import Fernet
+        Fernet(key.encode("utf-8"))
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid Fernet key: {exc}")
+    try:
+        PREMISE_KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        PREMISE_KEY_FILE.write_text(key + "\n", encoding="utf-8")
+        try:
+            PREMISE_KEY_FILE.chmod(0o600)
+        except OSError:
+            pass
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail=f"Could not write key file: {exc}")
+    return {"status": "ok", "message": "Premise key saved"}
+
+
+@router.delete("/key")
+async def delete_key() -> dict:
+    if PREMISE_KEY_FILE.is_file():
+        try:
+            PREMISE_KEY_FILE.unlink()
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail=f"Could not remove key file: {exc}")
+    return {"status": "ok", "message": "Premise key removed"}
 
 
 @router.get("/databases", response_model=list[ProspectiveDB])
@@ -111,6 +178,16 @@ async def post_generate(body: GenerateRequest) -> GenerateResponse:
     project = get_current_project()
     if body.base_db not in bw2data.databases:
         raise HTTPException(status_code=400, detail=f"Base database {body.base_db!r} not found in project")
+
+    if not premise_key_available():
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Premise key not configured. Get one from romain.sacchi@psi.ch, then "
+                "set the PREMISE_KEY environment variable or write the key to "
+                "~/.premise/premise_key."
+            ),
+        )
 
     try:
         generator = ProspectiveDBGenerator(

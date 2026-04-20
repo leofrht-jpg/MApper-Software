@@ -1,9 +1,17 @@
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse
 
 from mapper.api import mfa as _mfa
 from mapper.api.router import router
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)-5s %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
 
 app = FastAPI(title="MApper API")
 

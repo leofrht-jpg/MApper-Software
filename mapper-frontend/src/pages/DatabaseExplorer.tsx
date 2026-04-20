@@ -11,6 +11,7 @@ import {
   type ActivityExportDetail,
   type ActivitySortBy,
   type ActivitySummary,
+  type DatabaseResponse,
   exportActivitySelection,
   getActivityExportDetails,
 } from '../api/client'
@@ -582,6 +583,140 @@ function SelectionPanel({
   )
 }
 
+// ── Database dropdown ─────────────────────────────────────────────────────────
+
+function DatabaseDropdown({
+  databases, selected, onSelect,
+}: {
+  databases: DatabaseResponse[]
+  selected: string | null
+  onSelect: (name: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', onDoc)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('mousedown', onDoc)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+
+  const { main, biosphere } = useMemo(() => {
+    const main: DatabaseResponse[] = []
+    const biosphere: DatabaseResponse[] = []
+    for (const db of databases) {
+      if (db.name === 'biosphere3' || db.name.startsWith('biosphere')) biosphere.push(db)
+      else main.push(db)
+    }
+    return { main, biosphere }
+  }, [databases])
+
+  const selectedDb = databases.find((d) => d.name === selected) ?? null
+
+  const renderItem = (db: DatabaseResponse) => {
+    const isActive = db.name === selected
+    return (
+      <button
+        key={db.name}
+        onClick={() => { onSelect(db.name); setOpen(false) }}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 10,
+          width: '100%', padding: '8px 12px', border: 'none',
+          background: isActive ? 'var(--accent-muted)' : 'transparent',
+          color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
+          cursor: 'pointer', textAlign: 'left',
+        }}
+        onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'var(--bg-hover)' }}
+        onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
+      >
+        {db.is_prospective && (
+          <span
+            title={`Prospective — ${db.prospective_meta?.iam?.toUpperCase() ?? ''} ${db.prospective_meta?.ssp ?? ''} ${db.prospective_meta?.year ?? ''}`.trim()}
+            style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--mod-plca)', flexShrink: 0 }}
+          />
+        )}
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+          {db.name}
+        </span>
+        <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
+          {db.records.toLocaleString()} activities
+        </span>
+      </button>
+    )
+  }
+
+  return (
+    <div ref={ref} style={{ position: 'relative', alignSelf: 'flex-start', flexShrink: 0 }}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8,
+          height: 36, padding: '0 12px', minWidth: 260, maxWidth: 560,
+          background: '#161b22', border: '1px solid #30363d',
+          borderRadius: 'var(--radius-md)',
+          color: '#e6edf3', fontSize: 'var(--text-sm)',
+          cursor: 'pointer', textAlign: 'left',
+        }}
+      >
+        {selectedDb?.is_prospective && (
+          <span
+            style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--mod-plca)', flexShrink: 0 }}
+          />
+        )}
+        <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {selectedDb ? selectedDb.name : 'Select a database…'}
+        </span>
+        <ChevronDown size={14} style={{ flexShrink: 0, color: 'var(--text-secondary)' }} />
+      </button>
+      {open && (
+        <div
+          style={{
+            position: 'absolute', top: 40, left: 0, zIndex: 20,
+            minWidth: 360, maxWidth: 640, maxHeight: 420, overflow: 'auto',
+            backgroundColor: '#161b22', border: '1px solid #30363d',
+            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
+            display: 'flex', flexDirection: 'column',
+          }}
+        >
+          {main.length > 0 && (
+            <div style={{
+              padding: '6px 12px', fontSize: 'var(--text-xs)',
+              color: 'var(--text-tertiary)', textTransform: 'uppercase',
+              letterSpacing: 'var(--tracking-wide)',
+            }}>
+              Technosphere
+            </div>
+          )}
+          {main.map(renderItem)}
+          {biosphere.length > 0 && main.length > 0 && (
+            <div style={{ height: 1, background: '#30363d', margin: '4px 0' }} />
+          )}
+          {biosphere.length > 0 && (
+            <>
+              <div style={{
+                padding: '6px 12px', fontSize: 'var(--text-xs)',
+                color: 'var(--text-tertiary)', textTransform: 'uppercase',
+                letterSpacing: 'var(--tracking-wide)',
+              }}>
+                Biosphere
+              </div>
+              {biosphere.map(renderItem)}
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Main DatabaseExplorer ─────────────────────────────────────────────────────
 
 export function DatabaseExplorer() {
@@ -751,39 +886,13 @@ export function DatabaseExplorer() {
         </Button>
       </div>
 
-      {/* Database tabs */}
+      {/* Database selector */}
       {databases.length > 0 && (
-        <div style={{ display: 'flex', gap: 4, borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-          {databases.map((db) => (
-            <button
-              key={db.name}
-              onClick={() => setDatabase(db.name)}
-              style={{
-                padding: '0 var(--space-4)',
-                height: 36,
-                background: 'none',
-                border: 'none',
-                borderBottom: selectedDatabase === db.name ? '2px solid var(--accent)' : '2px solid transparent',
-                cursor: 'pointer',
-                fontSize: 'var(--text-sm)',
-                fontWeight: 500,
-                color: selectedDatabase === db.name ? 'var(--text-primary)' : 'var(--text-secondary)',
-                whiteSpace: 'nowrap',
-                transition: 'color var(--duration-fast) var(--ease-out)',
-              }}
-            >
-              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                {db.is_prospective && (
-                  <span
-                    title={`Prospective — ${db.prospective_meta?.iam?.toUpperCase() ?? ''} ${db.prospective_meta?.ssp ?? ''} ${db.prospective_meta?.year ?? ''}`.trim()}
-                    style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--mod-plca)' }}
-                  />
-                )}
-                {db.name}
-              </span>
-            </button>
-          ))}
-        </div>
+        <DatabaseDropdown
+          databases={databases}
+          selected={selectedDatabase}
+          onSelect={setDatabase}
+        />
       )}
 
       {/* Master-detail layout */}

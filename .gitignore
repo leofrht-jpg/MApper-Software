@@ -22,8 +22,10 @@ build/
 # Data (local user data)
 mapper-backend/data/
 
-# Export logs
-mapper-backend/export/logs/
+# Export output & runtime artifacts
+mapper-backend/export/
+mapper-backend/unlinked.log
+*.log
 
 # Reference codebases (not part of MApper)
 _reference/

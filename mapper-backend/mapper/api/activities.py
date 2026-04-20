@@ -11,6 +11,7 @@ from mapper.core.bw2_wrapper import (
     get_activity_detail,
     get_distinct_values,
     get_methods,
+    search_all_activities,
 )
 from mapper.models.schemas import (
     ActivityDetail,
@@ -24,6 +25,20 @@ from mapper.models.schemas import (
 )
 
 router = APIRouter()
+
+
+@router.get("/activities/search-all", response_model=list[ActivitySummary])
+async def search_all(
+    search: str = "",
+    limit: int = 50,
+    technosphere_only: bool = False,
+) -> list[ActivitySummary]:
+    """Search across all databases in the current project."""
+    try:
+        items = search_all_activities(search, limit=limit, technosphere_only=technosphere_only)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    return [ActivitySummary(**a) for a in items]
 
 
 # NOTE: /activities/{db}/distinct-values has 3 segments, so it doesn't collide

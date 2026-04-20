@@ -28,7 +28,6 @@ const SCOPE_OPTIONS: { value: Scope; label: string; tip: string }[] = [
   { value: 'inflows', label: 'Manufacturing', tip: 'Manufacturing stage materials x units produced each year.' },
   { value: 'stock', label: 'Operation', tip: 'Use Phase + Maintenance materials x in-service stock each year.' },
   { value: 'outflows', label: 'End of Life', tip: 'End of Life stage materials x units retired each year.' },
-  { value: 'all', label: 'Full lifecycle', tip: 'Sum of all three scope-paired passes.' },
 ]
 
 const GROUP_OPTIONS: { value: GroupBy; label: string }[] = [
@@ -181,11 +180,23 @@ export function MaterialFlowPanel() {
       .slice(0, 20)
   }, [materialFlows, detailYear])
 
+  // Unique key that changes whenever materialFlows is replaced, forcing Recharts to fully remount
+  const chartKey = useMemo(() => {
+    if (!materialFlows) return ''
+    return `${materialFlows.scope}-${materialFlows.group_by}-${materialFlows.elapsed_seconds}-${materialFlows.materials.length}`
+  }, [materialFlows])
+
   // Summary
   const summary = useMemo(() => {
     if (!materialFlows || materialFlows.materials.length === 0) return null
-    let grandTotal = 0
-    for (const m of materialFlows.materials) grandTotal += Object.values(m.values).reduce((a, b) => a + b, 0)
+    // Per-unit subtotals
+    const unitTotals: Record<string, number> = {}
+    for (const m of materialFlows.materials) {
+      const total = Object.values(m.values).reduce((a, b) => a + b, 0)
+      unitTotals[m.unit] = (unitTotals[m.unit] ?? 0) + total
+    }
+    const unitBreakdown = Object.entries(unitTotals).sort((a, b) => b[1] - a[1])
+    const mixedUnits = unitBreakdown.length > 1
     // Peak year
     const yearTotals: Record<number, number> = {}
     for (const m of materialFlows.materials) {
@@ -199,7 +210,7 @@ export function MaterialFlowPanel() {
     for (const [y, v] of Object.entries(yearTotals)) {
       if (v > peakVal) { peakYear = Number(y); peakVal = v }
     }
-    return { grandTotal, peakYear, peakVal, materialCount: materialFlows.materials.length }
+    return { unitBreakdown, mixedUnits, peakYear, peakVal, materialCount: materialFlows.materials.length }
   }, [materialFlows])
 
   if (!activeSystem) return null
@@ -225,18 +236,13 @@ export function MaterialFlowPanel() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {/* ── Controls ─── */}
       <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-3)' }}>
-          <BarChart3 size={16} color="var(--mod-mfa)" />
-          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Material Flows</h3>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 'var(--space-4)', alignItems: 'flex-end' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 'var(--space-5)', flexWrap: 'nowrap' }}>
           {/* Scope */}
           <div>
             <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 6 }}>
               Scope
             </label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4 }}>
               {SCOPE_OPTIONS.map((s) => (
                 <button
                   key={s.value}
@@ -244,7 +250,7 @@ export function MaterialFlowPanel() {
                   disabled={materialFlowLoading}
                   title={s.tip}
                   style={{
-                    padding: '6px 12px', borderRadius: 'var(--radius-md)',
+                    padding: '6px 10px', borderRadius: 'var(--radius-md)',
                     cursor: materialFlowLoading ? 'not-allowed' : 'pointer',
                     border: '1px solid ' + (scope === s.value ? 'var(--mod-mfa)' : 'var(--border-default)'),
                     backgroundColor: scope === s.value ? 'color-mix(in srgb, var(--mod-mfa) 12%, transparent)' : 'var(--bg-elevated)',
@@ -264,14 +270,14 @@ export function MaterialFlowPanel() {
             <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 6 }}>
               Group by
             </label>
-            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 4 }}>
               {GROUP_OPTIONS.map((g) => (
                 <button
                   key={g.value}
                   onClick={() => setGroupBy(g.value)}
                   disabled={materialFlowLoading}
                   style={{
-                    padding: '6px 12px', borderRadius: 'var(--radius-md)',
+                    padding: '6px 10px', borderRadius: 'var(--radius-md)',
                     cursor: materialFlowLoading ? 'not-allowed' : 'pointer',
                     border: '1px solid ' + (groupBy === g.value ? 'var(--mod-mfa)' : 'var(--border-default)'),
                     backgroundColor: groupBy === g.value ? 'color-mix(in srgb, var(--mod-mfa) 12%, transparent)' : 'var(--bg-elevated)',
@@ -311,6 +317,9 @@ export function MaterialFlowPanel() {
               </select>
             </div>
           </div>
+
+          {/* Spacer */}
+          <div style={{ flex: 1 }} />
 
           {/* Calculate */}
           <Button
@@ -373,7 +382,7 @@ export function MaterialFlowPanel() {
           {summary && (
             <div style={cardStyle}>
               <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-                Cumulative material demand ({materialFlows.scope})
+                Cumulative demand ({materialFlows.scope})
               </div>
               {materialFlows.stages_included.length > 0 && (
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4 }}>
@@ -381,10 +390,20 @@ export function MaterialFlowPanel() {
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'var(--text-2xl)', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--mod-mfa)' }}>
-                  {fmtQty(summary.grandTotal)}
-                </span>
-                <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{dominantUnit} (total)</span>
+                {summary.mixedUnits ? (
+                  <>
+                    <span style={{ fontSize: 'var(--text-lg)', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--mod-mfa)' }}>
+                      {summary.unitBreakdown.map(([u, t]) => `${fmtQty(t)} ${u}`).join(' · ')}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span style={{ fontSize: 'var(--text-2xl)', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--mod-mfa)' }}>
+                      {fmtQty(summary.unitBreakdown[0][1])}
+                    </span>
+                    <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>{summary.unitBreakdown[0][0]} (total)</span>
+                  </>
+                )}
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginLeft: 16 }}>
                   Peak in {summary.peakYear}: {fmtQty(summary.peakVal)} {dominantUnit} | {summary.materialCount} series
                 </span>
@@ -393,7 +412,7 @@ export function MaterialFlowPanel() {
           )}
 
           {/* Stacked area chart */}
-          <div style={cardStyle}>
+          <div style={cardStyle} key={chartKey}>
             <h4 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-3)' }}>
               Material quantities over time
             </h4>

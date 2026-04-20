@@ -386,7 +386,7 @@ export const useMFAStore = create<MFAStore>((set, get) => ({
   calcMaterialFlows: async (scope, yearStart, yearEnd, groupBy) => {
     const { activeSystem } = get()
     if (!activeSystem?.id) throw new Error('No active system')
-    set({ materialFlowLoading: true, error: null })
+    set({ materialFlows: null, materialFlowLoading: true, error: null })
     try {
       const result = await apiCalculateMaterialFlows(activeSystem.id, {
         scope,

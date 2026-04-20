@@ -211,7 +211,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
       </div>
 
       {/* ── Card 3: Archetype Summary ─────────────────────────────────── */}
-      <Card title="Archetype summary" icon={<FileSpreadsheet size={14} />}>
+      <Card title="Archetype summary" icon={null}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
           <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
             <span><strong style={{ color: 'var(--text-primary)' }}>{totals.count}</strong> archetype{totals.count === 1 ? '' : 's'}</span>
@@ -319,7 +319,7 @@ function Card({ title, icon, children }: { title: string; icon: React.ReactNode;
         textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
         marginBottom: 'var(--space-3)',
       }}>
-        <span style={{ color: 'var(--mod-lca)', display: 'inline-flex' }}>{icon}</span>
+        {icon && <span style={{ color: 'var(--mod-lca)', display: 'inline-flex' }}>{icon}</span>}
         {title}
       </h3>
       {children}

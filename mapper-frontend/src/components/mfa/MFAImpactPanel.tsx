@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Calculator, Save, Zap, AlertCircle, CheckSquare, Square, Wand2, Loader2, Download, ChevronDown } from 'lucide-react'
+import { Calculator, Save, AlertCircle, CheckSquare, Square, Wand2, Loader2, Download } from 'lucide-react'
 import {
   Area,
   AreaChart,
@@ -17,7 +17,8 @@ import { Badge } from '../ui/Badge'
 import { useMFAStore, type CohortMappingValue } from '../../stores/mfaStore'
 import { useBOMStore } from '../../stores/bomStore'
 import { useImpactStore } from '../../stores/impactStore'
-import { getMethods, type DimensionDef, type MethodFamily } from '../../api/client'
+import { type DimensionDef } from '../../api/client'
+import { IndicatorChecklist, MethodFamilySelect, useMethodSelection } from '../MethodPicker'
 
 const CHART_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)',
@@ -95,169 +96,6 @@ function enumerateCohortKeys(dims: DimensionDef[]): string[] {
   return out.map((parts) => parts.join(COHORT_SEP))
 }
 
-const indicatorKey = (t: string[]) => t.join('|')
-
-function MethodPicker({ onChange }: { onChange: (methods: string[][]) => void }) {
-  const [methods, setMethods] = useState<MethodFamily[]>([])
-  const [family, setFamily] = useState('')
-  const [category, setCategory] = useState('')
-  const [selected, setSelected] = useState<Record<string, string[]>>({})
-  const [open, setOpen] = useState(false)
-  const popRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => { getMethods().then((m) => { setMethods(m); if (m[0]) setFamily(m[0].family) }) }, [])
-
-  const categories = methods.find((m) => m.family === family)?.categories ?? []
-  const indicators = categories.find((c) => c.category === category)?.indicators ?? []
-
-  useEffect(() => { if (categories.length > 0 && !category) setCategory(categories[0].category) }, [categories, category])
-
-  useEffect(() => {
-    onChange(Object.values(selected))
-  }, [selected, onChange])
-
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => {
-      if (popRef.current && !popRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    window.addEventListener('mousedown', h)
-    return () => window.removeEventListener('mousedown', h)
-  }, [open])
-
-  const toggle = (tuple: string[]) => {
-    const k = indicatorKey(tuple)
-    setSelected((prev) => {
-      const next = { ...prev }
-      if (next[k]) delete next[k]
-      else next[k] = tuple
-      return next
-    })
-  }
-
-  const selectAll = () => {
-    setSelected((prev) => {
-      const next = { ...prev }
-      for (const i of indicators) next[indicatorKey(i.tuple)] = i.tuple
-      return next
-    })
-  }
-
-  const deselectCurrent = () => {
-    setSelected((prev) => {
-      const next = { ...prev }
-      for (const i of indicators) delete next[indicatorKey(i.tuple)]
-      return next
-    })
-  }
-
-  const selectRecommended = () => {
-    const keywords = [
-      'climate change', 'acidification', 'eutrophication, freshwater',
-      'ozone depletion', 'photochemical ozone formation',
-      'particulate matter', 'resource use, minerals', 'resource use, fossils',
-      'resource use, energy', 'water use',
-    ]
-    const next: Record<string, string[]> = {}
-    for (const fam of methods) {
-      for (const cat of fam.categories) {
-        const cl = cat.category.toLowerCase()
-        if (keywords.some((k) => cl.includes(k) || k.includes(cl))) {
-          for (const ind of cat.indicators) next[indicatorKey(ind.tuple)] = ind.tuple
-        }
-      }
-    }
-    if (Object.keys(next).length === 0) {
-      // Fallback: pick all indicators from the first family
-      const fam = methods.find((m) => m.family === family)
-      if (fam) for (const cat of fam.categories) for (const ind of cat.indicators) next[indicatorKey(ind.tuple)] = ind.tuple
-    }
-    setSelected(next)
-  }
-
-  const count = Object.keys(selected).length
-  const triggerLabel = count === 0 ? 'Select indicators…' : `${count} indicator${count === 1 ? '' : 's'} selected`
-
-  const sty: React.CSSProperties = {
-    height: 32, padding: '0 8px', backgroundColor: 'var(--bg-elevated)',
-    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-    color: 'var(--text-primary)', fontSize: 'var(--text-xs)', outline: 'none',
-  }
-
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', position: 'relative' }}>
-      <select value={family} onChange={(e) => setFamily(e.target.value)} style={sty}>
-        {methods.map((m) => <option key={m.family} value={m.family}>{m.family}</option>)}
-      </select>
-      <select value={category} onChange={(e) => setCategory(e.target.value)} style={sty}>
-        {categories.map((c) => <option key={c.category} value={c.category}>{c.category}</option>)}
-      </select>
-
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          ...sty,
-          minWidth: 200, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between',
-          gap: 6, cursor: 'pointer',
-        }}
-      >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{triggerLabel}</span>
-        <ChevronDown size={12} />
-      </button>
-
-      {open && (
-        <div
-          ref={popRef}
-          style={{
-            position: 'absolute', top: 36, right: 0, zIndex: 10, width: 320, maxHeight: 320, overflow: 'auto',
-            backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg, 0 8px 24px rgba(0,0,0,0.2))',
-          }}
-        >
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', padding: '6px 10px',
-            borderBottom: '1px solid var(--border-subtle)', position: 'sticky', top: 0,
-            backgroundColor: 'var(--bg-elevated)', fontSize: 'var(--text-xs)', gap: 8,
-          }}>
-            <button type="button" onClick={selectAll} style={{ background: 'none', border: 'none', color: 'var(--mod-lca)', cursor: 'pointer', fontSize: 'var(--text-xs)' }}>
-              All
-            </button>
-            <button type="button" onClick={selectRecommended} style={{ background: 'none', border: 'none', color: 'var(--mod-lca)', cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
-              Recommended
-            </button>
-            <button type="button" onClick={deselectCurrent} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'var(--text-xs)' }}>
-              Clear
-            </button>
-          </div>
-          {indicators.length === 0 && (
-            <div style={{ padding: 12, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>No indicators for this category.</div>
-          )}
-          {indicators.map((i) => {
-            const k = indicatorKey(i.tuple)
-            const checked = !!selected[k]
-            return (
-              <label
-                key={k}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                  fontSize: 'var(--text-xs)', color: 'var(--text-primary)', cursor: 'pointer',
-                  backgroundColor: checked ? 'color-mix(in srgb, var(--mod-lca) 10%, transparent)' : 'transparent',
-                }}
-              >
-                <input type="checkbox" checked={checked} onChange={() => toggle(i.tuple)} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={i.indicator}>
-                  {i.indicator}
-                </span>
-              </label>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export function MFAImpactPanel() {
   const {
     activeSystem,
@@ -280,6 +118,7 @@ export function MFAImpactPanel() {
   const [draftMappings, setDraftMappings] = useState<Record<string, CohortMappingValue>>({})
   const [scope, setScope] = useState<'inflows' | 'outflows' | 'stock' | 'all'>('stock')
   const [methods, setMethods] = useState<string[][]>([])
+  const methodSelection = useMethodSelection(setMethods)
   const [yearStart, setYearStart] = useState<number | null>(null)
   const [yearEnd, setYearEnd] = useState<number | null>(null)
   const [savedFlash, setSavedFlash] = useState(false)
@@ -499,24 +338,36 @@ export function MFAImpactPanel() {
           <div>
             <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Cohort → Archetype</h3>
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
-              Map each cohort to an archetype and optionally tune the scale (Small ≈ 1.00, Sedan ≈ 1.30, SUV ≈ 1.55 based on ICCT/IEA kerb weight). {mappedCount} of {cohortKeys.length} mapped.
+              Map each cohort to an archetype and optionally tune the scaling factor. {mappedCount} of {cohortKeys.length} mapped.
             </div>
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             {mappingToast && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{mappingToast}</span>}
             {savedFlash && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--success)' }}>Saved ✓</span>}
-            <Button variant="ghost" onClick={handleAutoMatch} disabled={archetypes.length === 0} title="Guess mappings by fuzzy-matching cohort names to archetype names">
+            <Button variant="ghost" size="sm" onClick={handleAutoMatch} disabled={archetypes.length === 0} title="Guess mappings by fuzzy-matching cohort names to archetype names">
               <Wand2 size={14} /> Auto-match
             </Button>
-            <Button variant="ghost" onClick={handleSelectAll} disabled={archetypes.length === 0} title="Assign the first archetype to every unmapped cohort">
+            <Button variant="ghost" size="sm" onClick={handleSelectAll} disabled={archetypes.length === 0} title="Assign the first archetype to every unmapped cohort">
               <CheckSquare size={14} /> Select all
             </Button>
-            <Button variant="ghost" onClick={handleClearAll} disabled={Object.keys(draftMappings).length === 0} title="Remove all archetype assignments">
+            <Button variant="ghost" size="sm" onClick={handleClearAll} disabled={Object.keys(draftMappings).length === 0} title="Remove all archetype assignments">
               <Square size={14} /> Clear all
             </Button>
-            <Button variant="primary" onClick={handleSaveMappings} disabled={!dirty} style={{ backgroundColor: 'var(--mod-mfa)' }}>
-              <Save size={14} /> Save mappings
-            </Button>
+            <button
+              onClick={handleSaveMappings}
+              disabled={!dirty}
+              title="Save mappings"
+              style={{
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 32, height: 32, borderRadius: 'var(--radius-md)',
+                border: dirty ? '1px solid var(--mod-mfa)' : '1px solid var(--border-default)',
+                backgroundColor: dirty ? 'var(--mod-mfa)' : 'var(--bg-elevated)',
+                color: dirty ? '#fff' : 'var(--text-tertiary)',
+                cursor: dirty ? 'pointer' : 'default', opacity: dirty ? 1 : 0.5,
+              }}
+            >
+              <Save size={14} />
+            </button>
           </div>
         </div>
 
@@ -629,22 +480,14 @@ export function MFAImpactPanel() {
 
       {/* ── Calculate environmental impact ─── */}
       <div style={cardStyle}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-3)' }}>
-          <Zap size={16} color="var(--mod-lca)" />
-          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Calculate Environmental Impact</h3>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(260px, 1.5fr) 1fr 1fr auto', gap: 'var(--space-4)', alignItems: 'flex-end' }}>
-          <div>
-            <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 6 }}>
-              Impact Method
-            </label>
-            <MethodPicker onChange={setMethods} />
+        {/* Top row: Impact Method · Scope · Years */}
+        <div style={{ display: 'flex', gap: 'var(--space-5)', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 240 }}>
+            <label style={topLabel}>Impact Method</label>
+            <MethodFamilySelect selection={methodSelection} />
           </div>
-          <div>
-            <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 6 }}>
-              Scope
-            </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 280px' }}>
+            <label style={topLabel}>Scope</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {([
                 { value: 'inflows', label: 'Manufacturing', tip: 'Manufacturing stage × inflows (units produced each year).' },
@@ -658,7 +501,7 @@ export function MFAImpactPanel() {
                   disabled={isCalculatingLCA}
                   title={s.tip}
                   style={{
-                    padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: isCalculatingLCA ? 'not-allowed' : 'pointer',
+                    padding: '0 12px', height: 36, borderRadius: 'var(--radius-md)', cursor: isCalculatingLCA ? 'not-allowed' : 'pointer',
                     border: '1px solid ' + (scope === s.value ? 'var(--mod-lca)' : 'var(--border-default)'),
                     backgroundColor: scope === s.value ? 'color-mix(in srgb, var(--mod-lca) 12%, transparent)' : 'var(--bg-elevated)',
                     color: scope === s.value ? 'var(--mod-lca)' : 'var(--text-primary)',
@@ -670,24 +513,15 @@ export function MFAImpactPanel() {
                 </button>
               ))}
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', margin: '6px 0 0 0', lineHeight: 1.4 }}>
-              Each scope filters the BOM to the relevant lifecycle stage: Manufacturing → inflows, Use Phase + Maintenance → stock, End of Life → outflows.
-            </p>
           </div>
-          <div>
-            <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 6 }}>
-              Years
-            </label>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={topLabel}>Years</label>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <select
                 value={yearStart ?? ''}
                 onChange={(e) => setYearStart(Number(e.target.value))}
                 disabled={isCalculatingLCA || availableYears.length === 0}
-                style={{
-                  height: 32, padding: '0 6px', backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                  color: 'var(--text-primary)', fontSize: 'var(--text-xs)', outline: 'none',
-                }}
+                style={yearSel}
               >
                 {availableYears.map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
@@ -696,16 +530,22 @@ export function MFAImpactPanel() {
                 value={yearEnd ?? ''}
                 onChange={(e) => setYearEnd(Number(e.target.value))}
                 disabled={isCalculatingLCA || availableYears.length === 0}
-                style={{
-                  height: 32, padding: '0 6px', backgroundColor: 'var(--bg-elevated)',
-                  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                  color: 'var(--text-primary)', fontSize: 'var(--text-xs)', outline: 'none',
-                }}
+                style={yearSel}
               >
                 {availableYears.filter((y) => yearStart == null || y >= yearStart).map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
           </div>
+        </div>
+
+        {/* Middle: indicator selection */}
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <label style={{ ...topLabel, marginBottom: 8, display: 'block' }}>Indicator selection</label>
+          <IndicatorChecklist selection={methodSelection} accent="var(--mod-lca)" maxHeight={320} />
+        </div>
+
+        {/* Bottom: Calculate pinned right */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button
             variant="primary"
             onClick={handleCalculate}
@@ -759,34 +599,49 @@ export function MFAImpactPanel() {
 
       {/* ── Results ─── */}
       {mfaLCAResult && (
-        <>
-          {/* Method tab bar (only when multiple methods) + export */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
-            {mfaLCAResults.length > 1 ? (
-              <div style={{ display: 'flex', gap: 0, borderBottom: '1px solid var(--border-subtle)', flex: 1, overflowX: 'auto' }}>
-                {mfaLCAResults.map((r, i) => {
-                  const active = i === selectedResultIndex
-                  const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
-                  return (
-                    <button
-                      key={i}
-                      onClick={() => selectResultIndex(i)}
-                      style={{
-                        padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer',
-                        fontSize: 'var(--text-sm)', fontWeight: active ? 600 : 500,
-                        color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                        borderBottom: active ? '2px solid var(--mod-lca)' : '2px solid transparent',
-                        whiteSpace: 'nowrap',
-                      }}
-                      title={r.method.join(' › ')}
-                    >
-                      {label}{r.unit ? ` (${r.unit})` : ''}
-                    </button>
-                  )
-                })}
+        <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
+          {/* Vertical indicator sidebar */}
+          {mfaLCAResults.length > 1 && (
+            <div style={{ width: 220, minWidth: 220, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 0 }}>
+              <div style={cardStyle}>
+                <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', marginBottom: 'var(--space-3)' }}>
+                  Indicators
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 600, overflowY: 'auto' }}>
+                  {mfaLCAResults.map((r, i) => {
+                    const active = i === selectedResultIndex
+                    const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => selectResultIndex(i)}
+                        title={r.method.join(' › ')}
+                        style={{
+                          width: '100%', textAlign: 'left', padding: '8px 10px',
+                          background: active ? 'color-mix(in srgb, var(--mod-lca) 10%, transparent)' : 'transparent',
+                          border: 'none', borderLeft: active ? '3px solid var(--mod-lca)' : '3px solid transparent',
+                          borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: active ? 600 : 400, color: active ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.3 }}>
+                          {label}
+                        </div>
+                        {r.unit && (
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>{r.unit}</div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
-            ) : <span />}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            </div>
+          )}
+
+          {/* Right content panel */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', minWidth: 0 }}>
+            {/* Export + elapsed */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 8 }}>
               {completedElapsed != null && completedElapsed > 0 && (
                 <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--text-tertiary)', padding: '2px 8px', backgroundColor: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
                   Calculated in {Math.floor(completedElapsed / 60) > 0 ? `${Math.floor(completedElapsed / 60)}m ` : ''}{completedElapsed % 60}s
@@ -796,7 +651,6 @@ export function MFAImpactPanel() {
                 <Download size={14} /> {isExporting ? 'Exporting…' : 'Export Excel'}
               </Button>
             </div>
-          </div>
 
           {/* Summary card */}
           <div style={cardStyle}>
@@ -948,8 +802,19 @@ export function MFAImpactPanel() {
               </div>
             </div>
           </div>
-        </>
+          </div>
+        </div>
       )}
     </div>
   )
+}
+
+const topLabel: React.CSSProperties = {
+  fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)',
+  textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
+}
+const yearSel: React.CSSProperties = {
+  height: 36, padding: '0 8px', backgroundColor: 'var(--bg-elevated)',
+  border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+  color: 'var(--text-primary)', fontSize: 'var(--text-xs)', outline: 'none',
 }

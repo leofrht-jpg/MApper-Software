@@ -298,6 +298,7 @@ export interface BOMNode {
   node_type: 'component' | 'material'
   quantity: number
   unit: string
+  is_annual?: boolean
   children?: BOMNode[] | null
   ecoinvent_activity?: EcoinventLink | null
   evolution?: MaterialEvolution | null
@@ -361,6 +362,8 @@ export interface ArchetypeSummary {
   folder: string | null
   material_count: number
   unlinked_count: number
+  stages: string[]
+  stage_annual: Record<string, boolean>
   created_at: string
   updated_at: string
 }
@@ -560,6 +563,16 @@ export async function getActivities(
   return request<ActivityPage>(`/activities/${encodeURIComponent(database)}?${params}`)
 }
 
+export async function searchAllActivities(
+  search: string,
+  limit = 50,
+  technosphereOnly = false,
+): Promise<ActivitySummary[]> {
+  const params = new URLSearchParams({ search, limit: String(limit) })
+  if (technosphereOnly) params.set('technosphere_only', 'true')
+  return request<ActivitySummary[]>(`/activities/search-all?${params}`)
+}
+
 export async function getActivityDetail(database: string, code: string): Promise<ActivityDetail> {
   return request<ActivityDetail>(
     `/activities/detail/${encodeURIComponent(database)}/${encodeURIComponent(code)}`,
@@ -693,6 +706,121 @@ export async function getLCAContributions(taskId: string, limit = 10): Promise<C
 
 export async function getLCASupplyChain(taskId: string): Promise<SankeyData> {
   return request<SankeyData>(`/lca/results/${taskId}/supply-chain`)
+}
+
+// ── Multi-Activity LCA Calculator ─────────────────────────────────────────────
+
+export interface ActivityDemandItem {
+  database: string
+  code: string
+  amount: number
+}
+
+export interface ActivityContribution {
+  name: string
+  location: string
+  database: string
+  code: string
+  demand_amount: number
+  demand_unit: string
+  impact: number
+  percentage: number
+}
+
+export interface ActivityLCAMethodResult {
+  method: string[]
+  method_label: string
+  score: number
+  unit: string
+  contributions: ActivityContribution[]
+}
+
+export interface ActivityLCAResult {
+  results: ActivityLCAMethodResult[]
+  elapsed_seconds: number
+}
+
+export async function calculateActivityLCA(
+  activities: ActivityDemandItem[],
+  methods: string[][],
+): Promise<ActivityLCAResult> {
+  return request<ActivityLCAResult>('/lca/calculate-activities', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ activities, methods }),
+  })
+}
+
+// ── Archetype LCA Calculator ─────────────────────────────────────────────────
+
+export interface MaterialContribution {
+  name: string
+  stage: string
+  component: string
+  quantity: number
+  unit: string
+  impact: number
+  percentage: number
+}
+
+export interface ArchetypeLCAMethodResult {
+  method: string[]
+  method_label: string
+  score: number
+  unit: string
+  contributions: MaterialContribution[]
+}
+
+export interface ArchetypeLCACalculateResult {
+  archetype_id: string
+  archetype_name: string
+  scope: string
+  amount: number
+  stage_amounts: Record<string, number>
+  stages_included: string[]
+  results: ArchetypeLCAMethodResult[]
+  elapsed_seconds: number
+}
+
+export async function calculateArchetypeLCA(
+  archetypeId: string,
+  scope: string,
+  methods: string[][],
+  stageAmounts?: Record<string, number>,
+  amount?: number,
+): Promise<ArchetypeLCACalculateResult> {
+  return request<ArchetypeLCACalculateResult>('/lca/calculate-archetype', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      archetype_id: archetypeId,
+      scope,
+      amount: amount ?? 1,
+      stage_amounts: stageAmounts ?? null,
+      methods,
+    }),
+  })
+}
+
+export async function exportArchetypeLCA(
+  results: ArchetypeLCACalculateResult[],
+  filename: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/lca/export-archetype`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ results }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
 }
 
 // ── MFA endpoints ────────────────────────────────────────────────────────────
@@ -988,7 +1116,7 @@ export async function moveArchetype(
 export async function updateBOMNode(
   arcId: string,
   nodeId: string,
-  patch: { name?: string; quantity?: number; unit?: string; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null },
+  patch: { name?: string; quantity?: number; unit?: string; is_annual?: boolean; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null },
 ): Promise<BOMNode> {
   return request<BOMNode>(`/bom/archetypes/${arcId}/nodes/${nodeId}`, {
     method: 'PUT',
@@ -1122,17 +1250,21 @@ export async function downloadCohortMappingsTemplate(
   systemId: string,
   filename: string,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/mfa/systems/${systemId}/cohort-mappings/template`)
-  if (!res.ok) throw new Error(`Template download failed (${res.status})`)
+  const url = `${API_BASE}/mfa/systems/${encodeURIComponent(systemId)}/cohort-mappings/template`
+  const res = await fetch(url)
+  if (!res.ok) {
+    const body = await res.text().catch(() => '')
+    throw new Error(`Template download failed (${res.status}) ${url} — ${body || '(no body)'}`)
+  }
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
+  const blobUrl = URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url
+  a.href = blobUrl
   a.download = filename
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  URL.revokeObjectURL(blobUrl)
 }
 
 export interface MFALCARunOptions {
@@ -1258,7 +1390,9 @@ export function connectToTask(
 export interface PLCAScenarios {
   iams: string[]
   ssps: string[]
+  ssps_by_iam: Record<string, string[]>
   years: number[]
+  key_configured: boolean
 }
 
 export interface ProspectiveDB {
@@ -1320,6 +1454,35 @@ export async function startPLCAGeneration(body: PLCAGenerateRequest): Promise<PL
 export async function deletePLCADatabase(name: string): Promise<void> {
   const res = await fetch(`${API_BASE}/plca/databases/${encodeURIComponent(name)}`, { method: 'DELETE' })
   if (!res.ok) throw new Error(`DELETE /plca/databases failed: ${res.status}`)
+}
+
+export interface PremiseKeyStatus {
+  configured: boolean
+  path: string
+}
+
+export async function getPremiseKeyStatus(): Promise<PremiseKeyStatus> {
+  const res = await fetch(`${API_BASE}/plca/key/status`)
+  if (!res.ok) throw new Error(`GET /plca/key/status failed: ${res.status}`)
+  return res.json()
+}
+
+export async function savePremiseKey(key: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/plca/key`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ key }),
+  })
+  if (!res.ok) {
+    let detail: string
+    try { detail = (await res.json()).detail ?? (await res.text()) } catch { detail = await res.text() }
+    throw new Error(detail || `POST /plca/key failed: ${res.status}`)
+  }
+}
+
+export async function deletePremiseKey(): Promise<void> {
+  const res = await fetch(`${API_BASE}/plca/key`, { method: 'DELETE' })
+  if (!res.ok) throw new Error(`DELETE /plca/key failed: ${res.status}`)
 }
 
 export function connectToPLCATask(
@@ -1459,11 +1622,14 @@ export async function exportImpact(body: ImpactExportBody, filename: string): Pr
     body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`POST /impact/export failed: ${res.status} ${await res.text()}`)
+  // Prefer server-generated filename from Content-Disposition
+  const cd = res.headers.get('Content-Disposition')
+  const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename
+  a.download = serverName || filename
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -1485,37 +1651,61 @@ export function connectToImpactTask(
   return ws
 }
 
-// ── Phase 3D: AESA (Absolute Environmental Sustainability Assessment) ────────
+// ── Phase 2B: AESA — Multi-D allocation model (Ferhati et al., SETAC 36th) ───
+
+export type SharingPrincipleId = 'EpC' | 'IN' | 'AGR' | 'LA' | 'AR'
+export type PBBoundaryType = 'cumulative' | 'flow'
+export type PBStatus2023 = 'safe' | 'exceeded' | 'increasing_risk' | 'regional'
+export type AESAZone = 'safe' | 'zone_of_uncertainty' | 'high_risk'
 
 export interface PlanetaryBoundary {
   id: string
   name: string
-  description: string
-  global_limit: number | null
-  global_limit_unit: string
   control_variable: string
-  status: string
-  source: string
+  ef_indicator: string
+  pb_value: number
+  unit: string
+  zone_of_uncertainty: [number, number]
+  boundary_type: PBBoundaryType
+  status_2023: PBStatus2023
+  provisional?: boolean
 }
 
-export interface SharingPrinciple {
+export interface BoundarySet {
   id: string
   name: string
-  description: string
+  source: string
+  boundaries: Record<string, PlanetaryBoundary>
 }
 
-export interface BoundaryAllocation {
-  boundary_id: string
-  sharing_principle_id: string
-  allocated_threshold: number
-  allocated_unit: string
-  year?: number | null
-  notes?: string | null
+export interface SharingPrincipleConfig {
+  principle: SharingPrincipleId
+  justification: string
+  system_value: number
+  global_value: number
+  system_time_series?: Record<number, number> | null
+  global_time_series?: Record<number, number> | null
 }
 
-export interface MethodBoundaryMapping {
+export interface MultiDConfig {
+  layer1: Record<string, SharingPrincipleConfig>
+  layer2_sector_share: number
+  layer2_source: string
+}
+
+export interface CarbonBudgetConfig {
+  initial_budget_gt: number
+  budget_source: string
+  start_year: number
+  end_year: number
+  projected_emissions: Record<number, number>
+  ssp_scenario: string
+  provisional?: boolean
+}
+
+export interface MethodPBMapping {
   method_tuple: string[]
-  boundary_id: string
+  pb_id: string
   conversion_factor?: number
 }
 
@@ -1523,60 +1713,108 @@ export interface AESAConfiguration {
   id: string
   name: string
   mfa_system_id: string
-  impact_mode: string
-  sharing_principle_id: string
-  sharing_params: Record<string, unknown>
-  method_mapping: MethodBoundaryMapping[]
-  custom_thresholds: BoundaryAllocation[]
+  impact_mode: 'static' | 'projected'
+  boundary_set_id: string
+  multi_d: MultiDConfig
+  carbon_budget: CarbonBudgetConfig | null
+  method_mapping: MethodPBMapping[]
   created_at: string
 }
 
 export interface AESAConfigurationCreate {
   name: string
   mfa_system_id: string
-  impact_mode?: string
-  sharing_principle_id: string
-  sharing_params?: Record<string, unknown>
-  method_mapping: MethodBoundaryMapping[]
-  custom_thresholds: BoundaryAllocation[]
+  impact_mode?: 'static' | 'projected'
+  boundary_set_id?: string
+  multi_d: MultiDConfig
+  carbon_budget?: CarbonBudgetConfig | null
+  method_mapping?: MethodPBMapping[]
 }
 
-export interface AESAIndicatorResult {
-  boundary_id: string
-  boundary_name: string
-  method_label: string
-  impact_value: number
-  threshold_value: number
-  ratio: number
-  unit: string
-  status: 'safe' | 'caution' | 'exceeded'
-}
-
-export interface AESAYearResult {
+export interface SustainabilityRatioResult {
   year: number
-  indicators: AESAIndicatorResult[]
+  pb_id: string
+  pb_name: string
+  ef_indicator: string
+  impact: number
+  allocated_sos: number
+  /** null when allocated SOS is 0 (e.g. carbon budget depleted). Treat as +∞; zone will be 'high_risk'. */
+  sr: number | null
+  zone: AESAZone
+  sharing_principle: SharingPrincipleId
+  sharing_factor_l1: number
+  sharing_factor_l2: number
+  boundary_type: PBBoundaryType
+  confidence: 'high' | 'medium' | 'low'
+  unit: string
+  impact_by_cohort: Record<string, number>
+  method_label: string
 }
 
-export interface AESASummary {
-  boundaries_assessed: number
-  boundaries_safe: number
-  boundaries_caution: number
-  boundaries_exceeded: number
-  worst_indicator?: string
-  best_indicator?: string
-  trend?: 'improving' | 'stable' | 'worsening'
+export interface AESAYearSummary {
+  year: number
+  safe: number
+  zone_of_uncertainty: number
+  high_risk: number
+  total_assessed: number
 }
 
-export interface AESAResult {
-  config_id: string
-  years: AESAYearResult[]
-  summary: AESASummary
+export interface AESAComputeResult {
+  config_id: string | null
+  results: SustainabilityRatioResult[]
+  summary_by_year: AESAYearSummary[]
+  missing_categories: string[]
+  sensitivity?: Partial<Record<SharingPrincipleId, SustainabilityRatioResult[]>> | null
 }
 
-export interface AESAMethodSuggestion {
-  method_tuple: string[]
-  boundary_id: string | null
-  match_score: number
+export interface MultiDDefault {
+  pb_id: string
+  principle: SharingPrincipleId
+  justification: string
+}
+
+export interface SharingDataLayer1 {
+  description: string
+  system_value: number
+  global_value: number
+  unit?: string
+  source: string
+  provisional?: boolean
+}
+
+export interface SharingData {
+  entity: string
+  sector: string
+  year_base: number
+  layer1_defaults: Record<SharingPrincipleId, SharingDataLayer1>
+  layer2: { sector_share: number; source: string; provisional?: boolean }
+}
+
+export interface SSPTrajectory {
+  id: string
+  name: string
+  source: string
+  anchors_gt_co2: Record<string, number>
+  projected_emissions: Record<number, number>
+  provisional?: boolean
+}
+
+export interface CarbonBudgetOption {
+  id: string
+  name: string
+  remaining_gt_from_2025: number
+  source: string
+  provisional?: boolean
+}
+
+export interface AESADefaultsBundle {
+  boundary_sets: BoundarySet[]
+  multi_d_defaults: MultiDDefault[]
+  sharing_data: SharingData
+  ssp_trajectories: SSPTrajectory[]
+  carbon_budget_options: CarbonBudgetOption[]
+  default_multi_d: MultiDConfig
+  default_carbon_budget: CarbonBudgetConfig
 }
 
 async function _aesaJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -1585,28 +1823,26 @@ async function _aesaJson<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json()
 }
 
-export async function getBoundaries(): Promise<PlanetaryBoundary[]> {
-  return _aesaJson('/aesa/boundaries')
+export async function getAESADefaults(): Promise<AESADefaultsBundle> {
+  return _aesaJson('/aesa/defaults')
 }
 
-export async function getSharingPrinciples(): Promise<SharingPrinciple[]> {
-  return _aesaJson('/aesa/sharing-principles')
+export async function getBoundarySets(): Promise<BoundarySet[]> {
+  return _aesaJson('/aesa/boundary-sets')
 }
 
-export async function getMethodSuggestions(methods: string[][]): Promise<AESAMethodSuggestion[]> {
-  return _aesaJson('/aesa/method-suggestions', {
+export async function suggestAESAMethodMapping(
+  methods: string[][], boundarySetId = 'Sala2020_EF',
+): Promise<MethodPBMapping[]> {
+  return _aesaJson('/aesa/method-mapping/suggest', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ methods }),
+    body: JSON.stringify({ methods, boundary_set_id: boundarySetId }),
   })
 }
 
 export async function getAESAConfigurations(): Promise<AESAConfiguration[]> {
   return _aesaJson('/aesa/configurations')
-}
-
-export async function getAESAConfiguration(id: string): Promise<AESAConfiguration> {
-  return _aesaJson(`/aesa/configurations/${encodeURIComponent(id)}`)
 }
 
 export async function createAESAConfiguration(body: AESAConfigurationCreate): Promise<AESAConfiguration> {
@@ -1630,25 +1866,29 @@ export async function deleteAESAConfiguration(id: string): Promise<void> {
   if (!res.ok) throw new Error(`DELETE /aesa/configurations failed: ${res.status}`)
 }
 
-export interface AESAAssessBody {
-  config_id: string
+export interface AESAComputeBody {
+  config_id?: string | null
+  config?: AESAConfiguration | null
   impact_task_id?: string | null
   impact_result?: ImpactAssessmentResult | null
+  run_sensitivity?: boolean
 }
 
-export async function assessAESA(body: AESAAssessBody): Promise<AESAResult> {
-  return _aesaJson('/aesa/assess', {
+export async function computeAESA(body: AESAComputeBody): Promise<AESAComputeResult> {
+  return _aesaJson('/aesa/compute', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   })
 }
 
-export async function exportAESA(configId: string, result: AESAResult, filename: string): Promise<void> {
+export async function exportAESA(
+  config: AESAConfiguration, result: AESAComputeResult, filename: string,
+): Promise<void> {
   const res = await fetch(`${API_BASE}/aesa/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config_id: configId, result }),
+    body: JSON.stringify({ config, result }),
   })
   if (!res.ok) throw new Error(`POST /aesa/export failed: ${res.status} ${await res.text()}`)
   const blob = await res.blob()

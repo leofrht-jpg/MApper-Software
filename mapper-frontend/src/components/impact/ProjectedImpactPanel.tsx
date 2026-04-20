@@ -3,14 +3,15 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import { Calculator, ChevronDown, Download, Loader2, Telescope, Info, AlertCircle } from 'lucide-react'
+import { Calculator, Download, Loader2, Info, AlertCircle, Sparkles } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { useMFAStore } from '../../stores/mfaStore'
 import { useBOMStore } from '../../stores/bomStore'
 import { usePLCAStore } from '../../stores/plcaStore'
 import { useImpactStore } from '../../stores/impactStore'
-import { exportImpact, getMethods, type MethodFamily, type ProspectiveScenarioRef } from '../../api/client'
+import { exportImpact, type ProspectiveScenarioRef } from '../../api/client'
+import { IndicatorChecklist, MethodFamilySelect, useMethodSelection } from '../MethodPicker'
 
 const CHART_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)',
@@ -36,117 +37,6 @@ const fmtAxis = (n: number) => {
   if (a >= 1000 || a < 0.01) return n.toExponential(2)
   return String(n)
 }
-const indicatorKey = (t: string[]) => t.join('|')
-
-// ── Compact method picker (mirrors the one in MFAImpactPanel but standalone) ──
-
-function MethodPicker({ onChange }: { onChange: (methods: string[][]) => void }) {
-  const [methods, setMethods] = useState<MethodFamily[]>([])
-  const [family, setFamily] = useState('')
-  const [category, setCategory] = useState('')
-  const [selected, setSelected] = useState<Record<string, string[]>>({})
-  const [open, setOpen] = useState(false)
-  const popRef = useRef<HTMLDivElement | null>(null)
-
-  useEffect(() => { getMethods().then((m) => { setMethods(m); if (m[0]) setFamily(m[0].family) }) }, [])
-  const categories = methods.find((m) => m.family === family)?.categories ?? []
-  const indicators = categories.find((c) => c.category === category)?.indicators ?? []
-  useEffect(() => { if (categories.length > 0 && !category) setCategory(categories[0].category) }, [categories, category])
-  useEffect(() => { onChange(Object.values(selected)) }, [selected, onChange])
-  useEffect(() => {
-    if (!open) return
-    const h = (e: MouseEvent) => { if (popRef.current && !popRef.current.contains(e.target as Node)) setOpen(false) }
-    window.addEventListener('mousedown', h)
-    return () => window.removeEventListener('mousedown', h)
-  }, [open])
-
-  const toggle = (t: string[]) => setSelected((prev) => {
-    const k = indicatorKey(t); const next = { ...prev }
-    if (next[k]) delete next[k]; else next[k] = t
-    return next
-  })
-
-  const selectRecommended = () => {
-    const keywords = [
-      'climate change', 'acidification', 'eutrophication, freshwater',
-      'ozone depletion', 'photochemical ozone formation',
-      'particulate matter', 'resource use, minerals', 'resource use, fossils',
-      'resource use, energy', 'water use',
-    ]
-    const next: Record<string, string[]> = {}
-    for (const fam of methods) {
-      for (const cat of fam.categories) {
-        const cl = cat.category.toLowerCase()
-        if (keywords.some((k) => cl.includes(k) || k.includes(cl))) {
-          for (const ind of cat.indicators) next[indicatorKey(ind.tuple)] = ind.tuple
-        }
-      }
-    }
-    if (Object.keys(next).length === 0) {
-      const fam = methods.find((m) => m.family === family)
-      if (fam) for (const cat of fam.categories) for (const ind of cat.indicators) next[indicatorKey(ind.tuple)] = ind.tuple
-    }
-    setSelected(next)
-  }
-
-  const sty: React.CSSProperties = {
-    height: 32, padding: '0 8px', backgroundColor: 'var(--bg-elevated)',
-    border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-    color: 'var(--text-primary)', fontSize: 'var(--text-xs)', outline: 'none',
-  }
-  const count = Object.keys(selected).length
-  const triggerLabel = count === 0 ? 'Select indicators…' : `${count} indicator${count === 1 ? '' : 's'} selected`
-
-  return (
-    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', position: 'relative' }}>
-      <select value={family} onChange={(e) => setFamily(e.target.value)} style={sty}>
-        {methods.map((m) => <option key={m.family} value={m.family}>{m.family}</option>)}
-      </select>
-      <select value={category} onChange={(e) => setCategory(e.target.value)} style={sty}>
-        {categories.map((c) => <option key={c.category} value={c.category}>{c.category}</option>)}
-      </select>
-      <button type="button" onClick={() => setOpen((v) => !v)} style={{ ...sty, minWidth: 220, display: 'inline-flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, cursor: 'pointer' }}>
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{triggerLabel}</span>
-        <ChevronDown size={12} />
-      </button>
-      {open && (
-        <div ref={popRef} style={{
-          position: 'absolute', top: 36, right: 0, zIndex: 10, width: 320, maxHeight: 320, overflow: 'auto',
-          backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-          borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-        }}>
-          <div style={{
-            display: 'flex', justifyContent: 'space-between', padding: '6px 10px',
-            borderBottom: '1px solid var(--border-subtle)', position: 'sticky', top: 0,
-            backgroundColor: 'var(--bg-elevated)', fontSize: 'var(--text-xs)', gap: 8,
-          }}>
-            <button type="button" onClick={() => setSelected((prev) => { const n = { ...prev }; for (const i of indicators) n[indicatorKey(i.tuple)] = i.tuple; return n })} style={{ background: 'none', border: 'none', color: 'var(--mod-plca)', cursor: 'pointer', fontSize: 'var(--text-xs)' }}>All</button>
-            <button type="button" onClick={selectRecommended} style={{ background: 'none', border: 'none', color: 'var(--mod-plca)', cursor: 'pointer', fontSize: 'var(--text-xs)', fontWeight: 600 }}>Recommended</button>
-            <button type="button" onClick={() => setSelected((prev) => { const n = { ...prev }; for (const i of indicators) delete n[indicatorKey(i.tuple)]; return n })} style={{ background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: 'var(--text-xs)' }}>Clear</button>
-          </div>
-          {indicators.length === 0 && (
-            <div style={{ padding: 12, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>No indicators.</div>
-          )}
-          {indicators.map((i) => {
-            const k = indicatorKey(i.tuple)
-            const checked = !!selected[k]
-            return (
-              <label key={k} style={{
-                display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px',
-                fontSize: 'var(--text-xs)', color: 'var(--text-primary)', cursor: 'pointer',
-                backgroundColor: checked ? 'color-mix(in srgb, var(--mod-plca) 12%, transparent)' : 'transparent',
-              }}>
-                <input type="checkbox" checked={checked} onChange={() => toggle(i.tuple)} />
-                <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={i.indicator}>{i.indicator}</span>
-              </label>
-            )
-          })}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
 function parseCohortKey(key: string, dims: { is_age: boolean }[]): string[] {
@@ -165,6 +55,7 @@ export function ProjectedImpactPanel() {
 
   const [scope, setScope] = useState<'inflows' | 'outflows' | 'stock' | 'all'>('stock')
   const [methods, setMethods] = useState<string[][]>([])
+  const methodSelection = useMethodSelection(setMethods)
   const [yearStart, setYearStart] = useState<number | null>(null)
   const [yearEnd, setYearEnd] = useState<number | null>(null)
   const [scenarioKey, setScenarioKey] = useState<string>('')  // `${base_db}|${iam}|${ssp}`
@@ -173,6 +64,8 @@ export function ProjectedImpactPanel() {
   const [elapsed, setElapsed] = useState(0)
   const [detailYear, setDetailYear] = useState<number | null>(null)
   const startRef = useRef<number | null>(null)
+
+  const isRunning = !!projectedJob && !projectedJob.done
 
   const handleExport = async () => {
     if (!projectedResult || !activeSystem) return
@@ -252,9 +145,31 @@ export function ProjectedImpactPanel() {
   const unlinkedArchetypes = useMemo(() => new Set(archetypes.filter((a) => a.unlinked_count > 0).map((a) => a.id)), [archetypes])
   const mappedUnlinked = Object.values(cohortMappings).filter((v) => v?.archetype_id && unlinkedArchetypes.has(v.archetype_id)).length
 
-  const canRun = !!(activeSystem && simulationResult && mappedCount > 0 && methods.length > 0 && selectedScenario && !mappedUnlinked)
+  const preflightIssues = useMemo(() => {
+    const issues: string[] = []
+    if (!activeSystem) issues.push('Select an MFA system.')
+    if (!simulationResult) issues.push('Run the MFA simulation first (Simulation tab).')
+    if (mappedCount === 0) issues.push('Save at least one cohort → archetype mapping (Static LCI tab).')
+    if (methods.length === 0) issues.push('Select at least one impact indicator below.')
+    if (!selectedScenario) issues.push('Pick a prospective scenario.')
+    if (mappedUnlinked > 0) issues.push(`Resolve unlinked materials in ${mappedUnlinked} mapped archetype(s).`)
+    return issues
+  }, [activeSystem, simulationResult, mappedCount, methods.length, selectedScenario, mappedUnlinked])
+
+  const canRun = preflightIssues.length === 0
 
   const handleRun = async () => {
+    console.log('[Projected LCI] Calculate clicked', {
+      canRun, preflightIssues,
+      activeSystemId: activeSystem?.id, hasSimulation: !!simulationResult,
+      mappedCount, methods: methods.length, scenario: selectedScenario,
+    })
+    if (!canRun) {
+      useImpactStore.setState({
+        error: 'Cannot run: ' + preflightIssues.join(' '),
+      })
+      return
+    }
     if (!activeSystem || !selectedScenario) return
     const fullStart = availableYears[0]
     const fullEnd = availableYears[availableYears.length - 1]
@@ -265,22 +180,23 @@ export function ProjectedImpactPanel() {
       iam: selectedScenario.iam,
       ssp: selectedScenario.ssp,
     }
+    const payload = {
+      mode: 'projected' as const,
+      mfa_system_id: activeSystem.id,
+      scope,
+      methods,
+      year_start: ys,
+      year_end: ye,
+      scenario: scenarioRef,
+    }
+    console.log('[Projected LCI] POST /impact/calculate', payload)
     try {
-      await run({
-        mode: 'projected',
-        mfa_system_id: activeSystem.id,
-        scope,
-        methods,
-        year_start: ys,
-        year_end: ye,
-        scenario: scenarioRef,
-      })
+      await run(payload)
     } catch (e) {
-      /* handled via store */
+      console.error('[Projected LCI] run() threw', e)
     }
   }
 
-  const isRunning = !!projectedJob && !projectedJob.done
   const selectedResult = projectedResult?.results[selectedResultIdx] ?? null
 
   const areaData = useMemo(() => {
@@ -336,6 +252,30 @@ export function ProjectedImpactPanel() {
     return <div style={{ padding: 24, color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>Select an MFA system first.</div>
   }
 
+  if (scenarios.length === 0) {
+    return (
+      <div style={{
+        ...card,
+        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        gap: 10, textAlign: 'center', padding: 'var(--space-8)', minHeight: 240,
+      }}>
+        <div style={{
+          width: 44, height: 44, borderRadius: '50%',
+          background: 'color-mix(in srgb, var(--mod-plca) 12%, transparent)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          <Sparkles size={20} color="var(--mod-plca)" />
+        </div>
+        <div style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>
+          No prospective databases generated yet
+        </div>
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', maxWidth: 440 }}>
+          Go to <b>pLCA Developer</b> to generate premise databases for future years, then come back here to run the projected LCI against your MFA system.
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {/* Preflight */}
@@ -349,51 +289,19 @@ export function ProjectedImpactPanel() {
       }}>
         <Info size={14} color="var(--mod-plca)" />
         <span>
-          Uses cohort mappings from <strong>Static LCI</strong> ({mappedCount} mapped). Matches every year to a prospective database via premise (exact → nearest earlier → earliest available).
+          Cohort mappings ({mappedCount} mapped) are shared across Static and Projected LCI — one per MFA system. Each year is matched to a prospective database via premise (exact → nearest earlier → earliest available).
         </span>
       </div>
 
       {/* Controls */}
       <div style={card}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 'var(--space-3)' }}>
-          <Telescope size={16} color="var(--mod-plca)" />
-          <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Projected LCI run</h3>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(240px, 1.2fr) minmax(240px, 1.4fr) 1fr 1fr auto', gap: 'var(--space-4)', alignItems: 'flex-end' }}>
-          <div>
-            <label style={labelS}>Scenario</label>
-            {scenarios.length === 0 ? (
-              <div style={{ padding: '8px 10px', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
-                No prospective DBs. Generate some in pLCA Developer.
-              </div>
-            ) : (
-              <select
-                value={scenarioKey}
-                onChange={(e) => setScenarioKey(e.target.value)}
-                disabled={isRunning}
-                style={selS}
-              >
-                {scenarios.map((s) => (
-                  <option key={s.key} value={s.key}>
-                    {s.base_db} · {s.iam.toUpperCase()} / {s.ssp} ({s.years.length} year{s.years.length === 1 ? '' : 's'})
-                  </option>
-                ))}
-              </select>
-            )}
-            {selectedScenario && (
-              <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
-                Years: {selectedScenario.years.join(', ')}
-              </div>
-            )}
+        {/* Top row: Impact Method · Scope · Years */}
+        <div style={{ display: 'flex', gap: 'var(--space-5)', alignItems: 'flex-start', flexWrap: 'wrap', marginBottom: 'var(--space-4)' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, minWidth: 240 }}>
+            <label style={labelS}>Impact Method</label>
+            <MethodFamilySelect selection={methodSelection} />
           </div>
-
-          <div>
-            <label style={labelS}>Impact method</label>
-            <MethodPicker onChange={setMethods} />
-          </div>
-
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: '1 1 280px' }}>
             <label style={labelS}>Scope</label>
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {([
@@ -408,7 +316,7 @@ export function ProjectedImpactPanel() {
                   disabled={isRunning}
                   title={s.tip}
                   style={{
-                    padding: '6px 12px', borderRadius: 'var(--radius-md)', cursor: isRunning ? 'not-allowed' : 'pointer',
+                    padding: '0 12px', height: 36, borderRadius: 'var(--radius-md)', cursor: isRunning ? 'not-allowed' : 'pointer',
                     border: '1px solid ' + (scope === s.value ? 'var(--mod-plca)' : 'var(--border-default)'),
                     backgroundColor: scope === s.value ? 'color-mix(in srgb, var(--mod-plca) 12%, transparent)' : 'var(--bg-elevated)',
                     color: scope === s.value ? 'var(--mod-plca)' : 'var(--text-primary)',
@@ -420,12 +328,8 @@ export function ProjectedImpactPanel() {
                 </button>
               ))}
             </div>
-            <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', margin: '6px 0 0 0', lineHeight: 1.4 }}>
-              Each scope filters the BOM to the relevant lifecycle stage: Manufacturing → inflows, Use Phase + Maintenance → stock, End of Life → outflows.
-            </p>
           </div>
-
-          <div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
             <label style={labelS}>Years</label>
             <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
               <select value={yearStart ?? ''} onChange={(e) => setYearStart(Number(e.target.value))} disabled={isRunning} style={selS}>
@@ -437,22 +341,59 @@ export function ProjectedImpactPanel() {
               </select>
             </div>
           </div>
+        </div>
 
-          <Button variant="primary" onClick={handleRun} disabled={!canRun || isRunning} style={{ backgroundColor: 'var(--mod-plca)', height: 36 }}>
+        {/* Second row: Scenario (Projected LCI only) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 'var(--space-4)' }}>
+          <label style={labelS}>Scenario</label>
+          <select
+            value={scenarioKey}
+            onChange={(e) => setScenarioKey(e.target.value)}
+            disabled={isRunning}
+            style={{ ...selS, height: 36, minWidth: 360, maxWidth: 560 }}
+          >
+            {scenarios.map((s) => (
+              <option key={s.key} value={s.key}>
+                {s.base_db} · {s.iam.toUpperCase()} / {s.ssp} ({s.years.length} year{s.years.length === 1 ? '' : 's'})
+              </option>
+            ))}
+          </select>
+          {selectedScenario && (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+              Years: {selectedScenario.years.join(', ')}
+            </div>
+          )}
+        </div>
+
+        {/* Middle: indicator selection */}
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <label style={{ ...labelS, marginBottom: 8, display: 'block' }}>Indicator selection</label>
+          <IndicatorChecklist selection={methodSelection} accent="var(--mod-plca)" maxHeight={320} />
+        </div>
+
+        {/* Preflight checklist + Calculate pinned right */}
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            {preflightIssues.length > 0 && (
+              <div style={{
+                padding: '8px 10px', backgroundColor: 'var(--warning-muted, color-mix(in srgb, var(--warning) 10%, transparent))',
+                border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+                borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--warning)',
+                display: 'flex', flexDirection: 'column', gap: 4,
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                  <AlertCircle size={13} /> Cannot calculate yet — fix the following:
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 22 }}>
+                  {preflightIssues.map((msg, i) => <li key={i}>{msg}</li>)}
+                </ul>
+              </div>
+            )}
+          </div>
+          <Button variant="primary" onClick={handleRun} disabled={isRunning} style={{ backgroundColor: 'var(--mod-plca)', height: 36, flexShrink: 0, opacity: canRun ? 1 : 0.6 }}>
             {isRunning ? <><Loader2 size={14} style={{ animation: 'impact-spin 1s linear infinite' }} /> Calculating…</> : <><Calculator size={14} /> {methods.length > 1 ? `Calculate (${methods.length} methods)` : 'Calculate'}</>}
           </Button>
         </div>
-
-        {mappedCount === 0 && (
-          <div style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <AlertCircle size={13} /> No cohorts mapped. Set them in Static LCI first.
-          </div>
-        )}
-        {mappedUnlinked > 0 && (
-          <div style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--warning)', display: 'flex', alignItems: 'center', gap: 6 }}>
-            <AlertCircle size={13} /> {mappedUnlinked} mapped archetype{mappedUnlinked === 1 ? '' : 's'} still ha{mappedUnlinked === 1 ? 's' : 've'} unlinked materials.
-          </div>
-        )}
 
         {isRunning && (
           <div style={{ marginTop: 'var(--space-3)', padding: '10px 12px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
@@ -478,7 +419,47 @@ export function ProjectedImpactPanel() {
 
       {/* Results */}
       {projectedResult && selectedResult && (
-        <>
+        <div style={{ display: 'flex', gap: 'var(--space-4)' }}>
+          {/* Vertical indicator sidebar */}
+          {projectedResult.results.length > 1 && (
+            <div style={{ width: 220, minWidth: 220, flexShrink: 0, alignSelf: 'flex-start', position: 'sticky', top: 0 }}>
+              <div style={card}>
+                <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', marginBottom: 'var(--space-3)' }}>
+                  Indicators
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 600, overflowY: 'auto' }}>
+                  {projectedResult.results.map((r, i) => {
+                    const active = i === selectedResultIdx
+                    const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => setSelectedResultIdx(i)}
+                        title={r.method.join(' › ')}
+                        style={{
+                          width: '100%', textAlign: 'left', padding: '8px 10px',
+                          background: active ? 'color-mix(in srgb, var(--mod-plca) 10%, transparent)' : 'transparent',
+                          border: 'none', borderLeft: active ? '3px solid var(--mod-plca)' : '3px solid transparent',
+                          borderRadius: '0 var(--radius-sm) var(--radius-sm) 0',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <div style={{ fontSize: 'var(--text-sm)', fontWeight: active ? 600 : 400, color: active ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.3 }}>
+                          {label}
+                        </div>
+                        {r.unit && (
+                          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>{r.unit}</div>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Right content panel */}
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', minWidth: 0 }}>
           {/* Year→Database mapping strip */}
           {Object.keys(projectedResult.meta.year_to_database).length > 0 && (
             <div style={{ ...card, padding: 'var(--space-3) var(--space-5)' }}>
@@ -496,32 +477,6 @@ export function ProjectedImpactPanel() {
                     </div>
                   ))}
               </div>
-            </div>
-          )}
-
-          {/* Method tabs */}
-          {projectedResult.results.length > 1 && (
-            <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', overflowX: 'auto' }}>
-              {projectedResult.results.map((r, i) => {
-                const active = i === selectedResultIdx
-                const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
-                return (
-                  <button
-                    key={i}
-                    onClick={() => setSelectedResultIdx(i)}
-                    style={{
-                      padding: '8px 14px', background: 'none', border: 'none', cursor: 'pointer',
-                      fontSize: 'var(--text-sm)', fontWeight: active ? 600 : 500,
-                      color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-                      borderBottom: active ? '2px solid var(--mod-plca)' : '2px solid transparent',
-                      whiteSpace: 'nowrap',
-                    }}
-                    title={r.method.join(' › ')}
-                  >
-                    {label}{r.unit ? ` (${r.unit})` : ''}
-                  </button>
-                )
-              })}
             </div>
           )}
 
@@ -674,7 +629,8 @@ export function ProjectedImpactPanel() {
               </div>
             </div>
           </div>
-        </>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -685,7 +641,7 @@ const labelS: React.CSSProperties = {
   textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 6,
 }
 const selS: React.CSSProperties = {
-  height: 32, padding: '0 8px', backgroundColor: 'var(--bg-elevated)',
+  height: 36, padding: '0 8px', backgroundColor: 'var(--bg-elevated)',
   border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
   color: 'var(--text-primary)', fontSize: 'var(--text-xs)', outline: 'none',
 }

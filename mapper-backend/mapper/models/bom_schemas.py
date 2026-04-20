@@ -68,6 +68,7 @@ class BOMNode(BaseModel):
     node_type: str  # "component" | "material"
     quantity: float = 1.0
     unit: str = "unit"
+    is_annual: bool = False  # True → quantities are per-year (Use Phase, Maintenance)
     children: list["BOMNode"] | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None
@@ -98,6 +99,8 @@ class ArchetypeSummary(BaseModel):
     folder: str | None = None
     material_count: int
     unlinked_count: int
+    stages: list[str] = Field(default_factory=list)
+    stage_annual: dict[str, bool] = Field(default_factory=dict)  # stage_name → is_annual
     created_at: str
     updated_at: str
 
@@ -119,6 +122,7 @@ class BOMNodeUpdate(BaseModel):
     name: str | None = None
     quantity: float | None = None
     unit: str | None = None
+    is_annual: bool | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None
 

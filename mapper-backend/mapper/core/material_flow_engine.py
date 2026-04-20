@@ -53,15 +53,21 @@ def _year_in_range(year: int, year_start: int | None, year_end: int | None) -> b
 def _group_key(
     mat: FlattenedMaterial, group_by: str, archetype_name: str,
 ) -> tuple[str, str]:
-    """Return ``(display_name, unit)`` for grouping."""
+    """Return ``(display_name, unit)`` for grouping.
+
+    For "stage" and "archetype" group_by modes, unit is left empty so
+    materials with different physical units are merged into a single
+    series per stage / archetype.  The dominant unit is resolved later
+    by ``_compute_single_scope``.
+    """
     if group_by == "component":
         name = mat.path[1] if len(mat.path) > 2 else (mat.path[0] if mat.path else mat.name)
         return (name, mat.unit)
     if group_by == "stage":
         name = mat.path[0] if mat.path else "Unknown"
-        return (name, mat.unit)
+        return (name, "")
     if group_by == "archetype":
-        return (archetype_name, mat.unit)
+        return (archetype_name, "")
     # default: "material"
     return (mat.name, mat.unit)
 
@@ -96,6 +102,8 @@ def _compute_single_scope(
     """
     accum: dict[tuple[str, str], dict[str, Any]] = {}
     flat_cache: dict[tuple[str, int | None, str], list[FlattenedMaterial]] = {}
+    # Track per-unit totals for group_by modes that merge across units.
+    unit_totals: dict[tuple[str, str], dict[str, float]] = {}
 
     for yr in sim.years:
         if not _year_in_range(yr.year, year_start, year_end):
@@ -132,12 +140,20 @@ def _compute_single_scope(
                     continue
                 key = _group_key(mat, group_by, arc.name)
 
+                # Track per-unit contributions when key merges across units.
+                if key[1] == "":
+                    if key not in unit_totals:
+                        unit_totals[key] = {}
+                    unit_totals[key][mat.unit] = (
+                        unit_totals[key].get(mat.unit, 0.0) + abs(qty)
+                    )
+
                 if key not in accum:
                     ea = mat.ecoinvent_activity
                     accum[key] = {
                         "values": {},
                         "by_archetype": {},
-                        "unit": key[1],
+                        "unit": mat.unit,
                         "stage": mat.path[0] if mat.path else "",
                         "component": mat.path[1] if len(mat.path) > 2 else "",
                         "ecoinvent_name": ea.name if ea else "",
@@ -168,16 +184,21 @@ def _compute_single_scope(
                             else node.evolution.rebound_rate
                         )
 
+    # Resolve dominant unit for keys that merged across units.
+    for key, ut in unit_totals.items():
+        if key in accum:
+            accum[key]["unit"] = max(ut, key=ut.get)
+
     return accum
 
 
 def _accum_to_series(accum: dict[tuple[str, str], dict[str, Any]]) -> list[MaterialSeries]:
     series: list[MaterialSeries] = []
-    for (name, unit), data in accum.items():
+    for (name, _unit), data in accum.items():
         series.append(
             MaterialSeries(
                 name=name,
-                unit=unit,
+                unit=data["unit"],
                 ecoinvent_name=data["ecoinvent_name"],
                 ecoinvent_code=data["ecoinvent_code"],
                 stage=data["stage"],

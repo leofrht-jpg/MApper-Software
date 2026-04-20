@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
+import { PremiseKeyManager } from '../components/PremiseKeyManager'
 import { usePLCAStore } from '../stores/plcaStore'
 import { useProjectStore } from '../stores/projectStore'
 
@@ -35,21 +36,69 @@ export function PLCADeveloper() {
   useEffect(() => { fetchScenarios().catch(() => undefined) }, [fetchScenarios])
   useEffect(() => { fetchDatabases().catch(() => undefined) }, [fetchDatabases])
 
+  // SSP narrative labels
+  const SSP_LABELS: Record<string, string> = {
+    'SSP1-Base': 'SSP1-Base (Sustainability)',
+    'SSP2-Base': 'SSP2-Base (Middle of the Road)',
+    'SSP3-Base': 'SSP3-Base (Regional Rivalry)',
+    'SSP5-Base': 'SSP5-Base (Fossil-fueled Dev.)',
+    'SSP1-NDC': 'SSP1-NDC (Nationally Determined)',
+    'SSP1-NPi': 'SSP1-NPi (National Policies)',
+    'SSP1-PkBudg500': 'SSP1-PkBudg500 (1.5°C budget)',
+    'SSP1-PkBudg1150': 'SSP1-PkBudg1150 (2°C budget)',
+    'SSP1-RCP19': 'SSP1-RCP19 (1.9 W/m²)',
+    'SSP1-RCP26': 'SSP1-RCP26 (2.6 W/m²)',
+    'SSP2-NDC': 'SSP2-NDC (Nationally Determined)',
+    'SSP2-NPi': 'SSP2-NPi (National Policies)',
+    'SSP2-PkBudg500': 'SSP2-PkBudg500 (1.5°C budget)',
+    'SSP2-PkBudg900': 'SSP2-PkBudg900 (1.8°C budget)',
+    'SSP2-PkBudg1150': 'SSP2-PkBudg1150 (2°C budget)',
+    'SSP2-RCP19': 'SSP2-RCP19 (1.9 W/m²)',
+    'SSP2-RCP26': 'SSP2-RCP26 (2.6 W/m²)',
+    'SSP2-RCP45': 'SSP2-RCP45 (4.5 W/m²)',
+    'SSP5-NDC': 'SSP5-NDC (Nationally Determined)',
+    'SSP5-NPi': 'SSP5-NPi (National Policies)',
+    'SSP5-PkBudg500': 'SSP5-PkBudg500 (1.5°C budget)',
+    'SSP5-PkBudg1150': 'SSP5-PkBudg1150 (2°C budget)',
+  }
+
+  const IAM_LABELS: Record<string, string> = {
+    'remind': 'REMIND',
+    'remind-eu': 'REMIND-EU',
+    'image': 'IMAGE',
+    'message': 'MESSAGE',
+    'gcam': 'GCAM',
+    'tiam-ucl': 'TIAM-UCL',
+  }
+
+  // Available SSPs filtered by selected IAM
+  const availableSsps = useMemo(() => {
+    if (!scenarios) return []
+    if (iam && scenarios.ssps_by_iam?.[iam]) return scenarios.ssps_by_iam[iam]
+    return scenarios.ssps
+  }, [scenarios, iam])
+
   // Sensible defaults once options arrive.
   useEffect(() => {
     if (!baseDb && baseDbCandidates.length > 0) setBaseDb(baseDbCandidates[0])
   }, [baseDb, baseDbCandidates])
   useEffect(() => {
     if (scenarios && !iam) setIam(scenarios.iams[0] ?? '')
-    if (scenarios && !ssp) setSsp(scenarios.ssps[0] ?? '')
-  }, [scenarios, iam, ssp])
+  }, [scenarios, iam])
+  // Reset SSP when IAM changes or when SSP list updates
+  useEffect(() => {
+    if (!ssp || !availableSsps.includes(ssp)) {
+      setSsp(availableSsps[0] ?? '')
+    }
+  }, [availableSsps, ssp])
 
   const toggleYear = (y: number) => {
     setYears((prev) => (prev.includes(y) ? prev.filter((v) => v !== y) : [...prev, y].sort((a, b) => a - b)))
   }
 
   const isGenerating = !!activeJob && !activeJob.done
-  const canSubmit = !isGenerating && !!baseDb && !!iam && !!ssp && years.length > 0
+  const keyConfigured = scenarios?.key_configured !== false
+  const canSubmit = !isGenerating && keyConfigured && !!baseDb && !!iam && !!ssp && years.length > 0
 
   const handleGenerate = async () => {
     setSubmitError(null)
@@ -90,6 +139,13 @@ export function PLCADeveloper() {
         </h1>
       </div>
 
+      {scenarios && !scenarios.key_configured && (
+        <PremiseKeyManager
+          variant="banner"
+          onStatusChange={(configured) => { if (configured) void fetchScenarios() }}
+        />
+      )}
+
       {/* Generator form */}
       <section
         style={{
@@ -124,14 +180,14 @@ export function PLCADeveloper() {
           <LabeledField label="IAM">
             <select value={iam} onChange={(e) => setIam(e.target.value)} disabled={isGenerating} style={selectStyle}>
               {(scenarios?.iams ?? []).map((v) => (
-                <option key={v} value={v}>{v.toUpperCase()}</option>
+                <option key={v} value={v}>{IAM_LABELS[v] ?? v.toUpperCase()}</option>
               ))}
             </select>
           </LabeledField>
-          <LabeledField label="SSP">
+          <LabeledField label="SSP / Pathway">
             <select value={ssp} onChange={(e) => setSsp(e.target.value)} disabled={isGenerating} style={selectStyle}>
-              {(scenarios?.ssps ?? []).map((v) => (
-                <option key={v} value={v}>{v}</option>
+              {availableSsps.map((v) => (
+                <option key={v} value={v}>{SSP_LABELS[v] ?? v}</option>
               ))}
             </select>
           </LabeledField>

@@ -9,7 +9,7 @@
   /* ── Borders ── */
   --border-subtle:  #1E2530;
   --border-default: #2A3340;
-  --border-focus:   #3ECFCF;
+  --border-focus:   #14b8a6;
 
   /* ── Text hierarchy ── */
   --text-primary:   #E8ECF1;
@@ -17,11 +17,11 @@
   --text-tertiary:  #5A6577;
   --text-inverse:   #0B0E11;
 
-  /* ── Accent — Teal/Cyan ── */
-  --accent:         #3ECFCF;
-  --accent-hover:   #5DDADA;
-  --accent-muted:   #3ECFCF1A;
-  --accent-subtle:  #3ECFCF0D;
+  /* ── Accent — themed (default: Teal). Overridden at runtime by themeStore. ── */
+  --accent:         #14b8a6;
+  --accent-hover:   #2dd4bf;
+  --accent-muted:   #14b8a61A;
+  --accent-subtle:  #14b8a60D;
 
   /* ── Semantic colors ── */
   --success:        #34D399;
@@ -34,13 +34,13 @@
   --info-muted:     #60A5FA1A;
 
   /* ── Module identity colors ── */
-  --mod-lca:        #3ECFCF;
+  --mod-lca:        #14b8a6;
   --mod-mfa:        #A78BFA;
   --mod-plca:       #F59E0B;
   --mod-aesa:       #34D399;
 
   /* ── Chart palette ── */
-  --chart-1:        #3ECFCF;
+  --chart-1:        #14b8a6;
   --chart-2:        #A78BFA;
   --chart-3:        #F59E0B;
   --chart-4:        #F87171;

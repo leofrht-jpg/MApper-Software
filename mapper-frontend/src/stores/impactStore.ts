@@ -61,7 +61,23 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
 
   const run: ImpactStore['run'] = async (body) => {
     set({ error: null })
-    const { task_id } = await startImpactCalculation(body)
+    if (body.mode === 'static') set({ staticJob: null })
+    else set({ projectedJob: null })
+
+    let task_id: string
+    try {
+      ;({ task_id } = await startImpactCalculation(body))
+    } catch (e) {
+      const err = e instanceof Error ? e.message : String(e)
+      const failedJob: ImpactJob = {
+        taskId: '', mode: body.mode,
+        stage: 'failed', pct: 0, done: true, error: err,
+      }
+      if (body.mode === 'static') set({ staticJob: failedJob, error: err })
+      else set({ projectedJob: failedJob, error: err })
+      return
+    }
+
     const job: ImpactJob = {
       taskId: task_id,
       mode: body.mode,

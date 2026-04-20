@@ -229,6 +229,52 @@ def get_activities(
     return [_activity_to_summary(a) for a in page], total
 
 
+def search_all_activities(
+    search: str,
+    limit: int = 50,
+    technosphere_only: bool = False,
+) -> list[dict]:
+    """Search across ALL databases in the current project. Returns up to *limit* results.
+
+    Uses ``Database.search()`` when available (Whoosh-indexed — sub-100 ms
+    even for 23 k activities).  Falls back to linear scan if search() fails.
+
+    When *technosphere_only* is True, biosphere databases are skipped
+    (biosphere flows cannot be used as LCA functional units).
+    """
+    q = search.strip()
+    if not q:
+        return []
+
+    results: list[dict] = []
+    for db_name in bw2data.databases:
+        if technosphere_only and "biosphere" in db_name.lower():
+            continue
+        db = bw2data.Database(db_name)
+        remaining = limit - len(results)
+        if remaining <= 0:
+            break
+        try:
+            # Whoosh-indexed search — fast
+            hits = db.search(q, limit=remaining)
+            for act in hits:
+                results.append(_activity_to_summary(act))
+                if len(results) >= limit:
+                    return results
+        except Exception:
+            # Fallback: linear scan
+            ql = q.lower()
+            for act in db:
+                name = (act.get("name", "") or "").lower()
+                product = (act.get("reference product", "") or "").lower()
+                location = str(act.get("location", "") or "").lower()
+                if ql in name or ql in product or ql in location:
+                    results.append(_activity_to_summary(act))
+                    if len(results) >= limit:
+                        return results
+    return results
+
+
 # Cache: (db_name, signature) -> {locations, units}. Signature is derived from
 # the bw2 database's record count + last-modified timestamp so the cache
 # invalidates automatically after imports/updates.

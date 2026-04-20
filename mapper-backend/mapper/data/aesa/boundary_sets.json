@@ -1,0 +1,204 @@
+{
+  "_notice": "Boundary values are provisional approximations of Sala et al. 2020 PB-EF. Refine with exact Table 3 values before publishing results.",
+  "sets": [
+    {
+      "id": "Sala2020_EF",
+      "name": "Sala et al. 2020 — PB-EF",
+      "source": "Sala, S., et al. (2020). Environmental sustainability of European production and consumption assessed against planetary boundaries. J. Environ. Manage. 269: 110686.",
+      "boundaries": {
+        "climate_change": {
+          "id": "climate_change",
+          "name": "Climate change",
+          "control_variable": "CO2 concentration",
+          "ef_indicator": "climate change",
+          "pb_value": 8.0e12,
+          "unit": "kg CO2 eq/yr",
+          "zone_of_uncertainty": [8.0e12, 1.6e13],
+          "boundary_type": "cumulative",
+          "status_2023": "exceeded",
+          "provisional": true
+        },
+        "acidification": {
+          "id": "acidification",
+          "name": "Acidification",
+          "control_variable": "H+ deposition",
+          "ef_indicator": "acidification",
+          "pb_value": 1.0e12,
+          "unit": "mol H+ eq/yr",
+          "zone_of_uncertainty": [1.0e12, 2.0e12],
+          "boundary_type": "flow",
+          "status_2023": "regional",
+          "provisional": true
+        },
+        "ecotoxicity_freshwater": {
+          "id": "ecotoxicity_freshwater",
+          "name": "Ecotoxicity, freshwater",
+          "control_variable": "Comparative toxic units for ecosystems",
+          "ef_indicator": "ecotoxicity: freshwater",
+          "pb_value": 1.0e13,
+          "unit": "CTUe/yr",
+          "zone_of_uncertainty": [1.0e13, 2.0e13],
+          "boundary_type": "flow",
+          "status_2023": "increasing_risk",
+          "provisional": true
+        },
+        "resource_use_fossils": {
+          "id": "resource_use_fossils",
+          "name": "Resource use, fossils",
+          "control_variable": "Abiotic depletion, fossil fuels",
+          "ef_indicator": "energy resources: non-renewable",
+          "pb_value": 3.0e14,
+          "unit": "MJ/yr",
+          "zone_of_uncertainty": [3.0e14, 6.0e14],
+          "boundary_type": "flow",
+          "status_2023": "increasing_risk",
+          "provisional": true
+        },
+        "eutrophication_freshwater": {
+          "id": "eutrophication_freshwater",
+          "name": "Eutrophication, freshwater",
+          "control_variable": "P flow to freshwater",
+          "ef_indicator": "eutrophication: freshwater",
+          "pb_value": 5.8e9,
+          "unit": "kg P eq/yr",
+          "zone_of_uncertainty": [5.8e9, 1.2e10],
+          "boundary_type": "flow",
+          "status_2023": "exceeded",
+          "provisional": true
+        },
+        "eutrophication_marine": {
+          "id": "eutrophication_marine",
+          "name": "Eutrophication, marine",
+          "control_variable": "N flow to marine",
+          "ef_indicator": "eutrophication: marine",
+          "pb_value": 2.9e11,
+          "unit": "kg N eq/yr",
+          "zone_of_uncertainty": [2.9e11, 5.8e11],
+          "boundary_type": "flow",
+          "status_2023": "exceeded",
+          "provisional": true
+        },
+        "eutrophication_terrestrial": {
+          "id": "eutrophication_terrestrial",
+          "name": "Eutrophication, terrestrial",
+          "control_variable": "Reactive N deposition",
+          "ef_indicator": "eutrophication: terrestrial",
+          "pb_value": 6.1e12,
+          "unit": "mol N eq/yr",
+          "zone_of_uncertainty": [6.1e12, 1.2e13],
+          "boundary_type": "flow",
+          "status_2023": "regional",
+          "provisional": true
+        },
+        "human_toxicity_cancer": {
+          "id": "human_toxicity_cancer",
+          "name": "Human toxicity, cancer",
+          "control_variable": "Comparative toxic units for humans",
+          "ef_indicator": "human toxicity: carcinogenic",
+          "pb_value": 9.6e4,
+          "unit": "CTUh/yr",
+          "zone_of_uncertainty": [9.6e4, 1.9e5],
+          "boundary_type": "flow",
+          "status_2023": "increasing_risk",
+          "provisional": true
+        },
+        "human_toxicity_non_cancer": {
+          "id": "human_toxicity_non_cancer",
+          "name": "Human toxicity, non-cancer",
+          "control_variable": "Comparative toxic units for humans",
+          "ef_indicator": "human toxicity: non-carcinogenic",
+          "pb_value": 5.4e5,
+          "unit": "CTUh/yr",
+          "zone_of_uncertainty": [5.4e5, 1.1e6],
+          "boundary_type": "flow",
+          "status_2023": "increasing_risk",
+          "provisional": true
+        },
+        "ionising_radiation": {
+          "id": "ionising_radiation",
+          "name": "Ionising radiation",
+          "control_variable": "Human exposure, ionising radiation",
+          "ef_indicator": "ionising radiation: human health",
+          "pb_value": 5.3e13,
+          "unit": "kBq U-235 eq/yr",
+          "zone_of_uncertainty": [5.3e13, 1.0e14],
+          "boundary_type": "flow",
+          "status_2023": "safe",
+          "provisional": true
+        },
+        "land_use": {
+          "id": "land_use",
+          "name": "Land use",
+          "control_variable": "Soil quality index",
+          "ef_indicator": "land use",
+          "pb_value": 1.0e14,
+          "unit": "Pt/yr",
+          "zone_of_uncertainty": [1.0e14, 2.0e14],
+          "boundary_type": "flow",
+          "status_2023": "exceeded",
+          "provisional": true
+        },
+        "resource_use_minerals_metals": {
+          "id": "resource_use_minerals_metals",
+          "name": "Resource use, minerals and metals",
+          "control_variable": "Abiotic depletion, elements",
+          "ef_indicator": "material resources: metals/minerals",
+          "pb_value": 2.4e8,
+          "unit": "kg Sb eq/yr",
+          "zone_of_uncertainty": [2.4e8, 4.8e8],
+          "boundary_type": "flow",
+          "status_2023": "increasing_risk",
+          "provisional": true
+        },
+        "ozone_depletion": {
+          "id": "ozone_depletion",
+          "name": "Ozone depletion",
+          "control_variable": "Stratospheric O3 concentration",
+          "ef_indicator": "ozone depletion",
+          "pb_value": 5.4e7,
+          "unit": "kg CFC-11 eq/yr",
+          "zone_of_uncertainty": [5.4e7, 1.1e8],
+          "boundary_type": "flow",
+          "status_2023": "safe",
+          "provisional": true
+        },
+        "particulate_matter": {
+          "id": "particulate_matter",
+          "name": "Particulate matter",
+          "control_variable": "PM2.5 disease incidence",
+          "ef_indicator": "particulate matter formation",
+          "pb_value": 5.0e5,
+          "unit": "disease incidence/yr",
+          "zone_of_uncertainty": [5.0e5, 1.0e6],
+          "boundary_type": "flow",
+          "status_2023": "increasing_risk",
+          "provisional": true
+        },
+        "photochemical_ozone_formation": {
+          "id": "photochemical_ozone_formation",
+          "name": "Photochemical ozone formation",
+          "control_variable": "Tropospheric O3 formation",
+          "ef_indicator": "photochemical oxidant formation",
+          "pb_value": 4.1e11,
+          "unit": "kg NMVOC eq/yr",
+          "zone_of_uncertainty": [4.1e11, 8.2e11],
+          "boundary_type": "flow",
+          "status_2023": "regional",
+          "provisional": true
+        },
+        "water_use": {
+          "id": "water_use",
+          "name": "Water use",
+          "control_variable": "Blue water consumption",
+          "ef_indicator": "water use",
+          "pb_value": 1.8e13,
+          "unit": "m3 depriv./yr",
+          "zone_of_uncertainty": [1.8e13, 3.6e13],
+          "boundary_type": "flow",
+          "status_2023": "regional",
+          "provisional": true
+        }
+      }
+    }
+  ]
+}

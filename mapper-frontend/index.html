@@ -8,6 +8,36 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          var PRESETS = {
+            teal:    { a: '#14b8a6', h: '#2dd4bf', m: '#14b8a61A', s: '#14b8a60D' },
+            blue:    { a: '#3b82f6', h: '#60a5fa', m: '#3b82f61A', s: '#3b82f60D' },
+            purple:  { a: '#8b5cf6', h: '#a78bfa', m: '#8b5cf61A', s: '#8b5cf60D' },
+            orange:  { a: '#f97316', h: '#fb923c', m: '#f973161A', s: '#f973160D' },
+            rose:    { a: '#f43f5e', h: '#fb7185', m: '#f43f5e1A', s: '#f43f5e0D' },
+            emerald: { a: '#10b981', h: '#34d399', m: '#10b9811A', s: '#10b9810D' },
+          };
+          var id = 'teal';
+          try {
+            var raw = localStorage.getItem('mapper-theme');
+            if (raw && Object.prototype.hasOwnProperty.call(PRESETS, raw)) id = raw;
+          } catch (_) {}
+          var p = PRESETS[id];
+          var r = document.documentElement.style;
+          r.setProperty('--accent', p.a);
+          r.setProperty('--accent-hover', p.h);
+          r.setProperty('--accent-muted', p.m);
+          r.setProperty('--accent-subtle', p.s);
+          r.setProperty('--border-focus', p.a);
+          r.setProperty('--mod-lca', p.a);
+          r.setProperty('--chart-1', p.a);
+        } catch (_) {
+          /* never block app render on theme injection */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

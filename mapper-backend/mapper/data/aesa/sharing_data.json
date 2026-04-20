@@ -1,0 +1,52 @@
+{
+  "_notice": "Default values for Multi-D sharing factors. Denmark / world values are provisional estimates — refine with Eurostat, World Bank, FAOSTAT, Global Carbon Budget, and Danish EPA (Miljøstyrelsen) before publication.",
+  "entity": "Denmark",
+  "sector": "passenger cars",
+  "year_base": 2025,
+  "layer1_defaults": {
+    "EpC": {
+      "description": "Equal-per-capita — population share",
+      "system_value": 5960000,
+      "global_value": 8100000000,
+      "source": "Danmarks Statistik / UN World Population Prospects 2024",
+      "provisional": false
+    },
+    "IN": {
+      "description": "Industrial causation — industrial output share",
+      "system_value": 120e9,
+      "global_value": 40e12,
+      "unit": "USD (industrial GVA)",
+      "source": "World Bank / Eurostat industrial GVA, provisional",
+      "provisional": true
+    },
+    "AGR": {
+      "description": "Agricultural driver — agricultural output share",
+      "system_value": 12e9,
+      "global_value": 4.3e12,
+      "unit": "USD (agricultural GVA)",
+      "source": "FAOSTAT / World Bank, provisional",
+      "provisional": true
+    },
+    "LA": {
+      "description": "Land-based — land area share",
+      "system_value": 43094,
+      "global_value": 148940000,
+      "unit": "km2",
+      "source": "Denmark land area 43,094 km2 / world land area 148.94 M km2",
+      "provisional": false
+    },
+    "AR": {
+      "description": "Acquired rights — historical cumulative CO2 emissions share",
+      "system_value": 3.5e9,
+      "global_value": 2.4e12,
+      "unit": "t CO2 cumulative (1850-2020)",
+      "source": "Global Carbon Budget 2023, provisional",
+      "provisional": true
+    }
+  },
+  "layer2": {
+    "sector_share": 0.15,
+    "source": "Passenger cars ~60% of Danish transport GHG × transport ~25% of national total ≈ 0.15. Provisional — refine with Danish EPA sectoral breakdown.",
+    "provisional": true
+  }
+}

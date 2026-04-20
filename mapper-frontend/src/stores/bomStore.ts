@@ -55,7 +55,7 @@ interface BOMStore {
 
   addNode: (parentId: string | null, node: BOMNode) => Promise<void>
   addRootStage: (name: string) => Promise<void>
-  patchNode: (nodeId: string, patch: { name?: string; quantity?: number; unit?: string; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
+  patchNode: (nodeId: string, patch: { name?: string; quantity?: number; unit?: string; is_annual?: boolean; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
   removeNode: (nodeId: string) => Promise<void>
 
   flatten: (year?: number | null) => Promise<void>

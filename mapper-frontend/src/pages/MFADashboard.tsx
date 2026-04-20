@@ -276,6 +276,7 @@ export function MFADashboard() {
               activeId={activeSystem.id ?? ''}
               onSelect={async (id) => { setSystemListOpen(false); await selectSystem(id) }}
               onDelete={async (id) => { if (confirm('Delete this system?')) await removeSystem(id) }}
+              onCreateNew={() => setShowCreator(true)}
             />
           </div>
           {activeSystem.description && (
@@ -284,13 +285,10 @@ export function MFADashboard() {
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
           <Button variant="ghost" onClick={() => setShowEdit(true)}>
-            <Edit2 size={14} strokeWidth={1.5} /> Edit system
+            <Edit2 size={14} strokeWidth={1.5} /> Edit
           </Button>
           <Button variant="ghost" onClick={() => setShowSurvival(true)}>
             <Settings2 size={14} strokeWidth={1.5} /> Survival
-          </Button>
-          <Button variant="secondary" onClick={() => setShowCreator(true)}>
-            <Plus size={14} strokeWidth={1.5} /> New system
           </Button>
           <Button
             variant="ghost"
@@ -298,7 +296,7 @@ export function MFADashboard() {
             disabled={importing}
             title="Restore a simulation from a previously exported Excel"
           >
-            <Upload size={14} strokeWidth={1.5} /> {importing ? 'Importing…' : 'Import results'}
+            <Upload size={14} strokeWidth={1.5} /> {importing ? 'Importing…' : 'Import MFA'}
           </Button>
           <input
             ref={importSimInputRef}
@@ -791,9 +789,10 @@ interface SystemSwitcherProps {
   activeId: string
   onSelect: (id: string) => void
   onDelete: (id: string) => void
+  onCreateNew: () => void
 }
 
-function SystemSwitcher({ open, onToggle, systems, activeId, onSelect, onDelete }: SystemSwitcherProps) {
+function SystemSwitcher({ open, onToggle, systems, activeId, onSelect, onDelete, onCreateNew }: SystemSwitcherProps) {
   return (
     <div style={{ position: 'relative' }}>
       <button
@@ -802,7 +801,7 @@ function SystemSwitcher({ open, onToggle, systems, activeId, onSelect, onDelete 
       >
         Switch <ChevronDown size={12} />
       </button>
-      {open && systems.length > 0 && (
+      {open && (
         <div style={{ position: 'absolute', top: 32, left: 0, minWidth: 240, backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)', zIndex: 30, overflow: 'hidden' }}>
           {systems.map((s) => (
             <div key={s.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '6px 10px', backgroundColor: s.id === activeId ? 'var(--bg-active)' : 'transparent' }}>
@@ -817,6 +816,15 @@ function SystemSwitcher({ open, onToggle, systems, activeId, onSelect, onDelete 
               </button>
             </div>
           ))}
+          {systems.length > 0 && (
+            <div style={{ borderTop: '1px solid var(--border-subtle)' }} />
+          )}
+          <button
+            onClick={() => { onCreateNew(); onToggle() }}
+            style={{ display: 'flex', alignItems: 'center', gap: 6, width: '100%', padding: '8px 10px', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--mod-mfa)', fontSize: 'var(--text-sm)', fontWeight: 500, textAlign: 'left' }}
+          >
+            <Plus size={14} strokeWidth={1.5} /> New system
+          </button>
         </div>
       )}
     </div>

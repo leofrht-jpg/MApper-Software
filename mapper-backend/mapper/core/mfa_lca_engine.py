@@ -17,7 +17,10 @@ matrix solves vs 380.
 """
 from __future__ import annotations
 
+import logging
 from typing import Callable
+
+_log = logging.getLogger(__name__)
 
 from mapper.models.bom_schemas import (
     Archetype,
@@ -382,11 +385,20 @@ class ProjectedMFALCAPipeline(MFALCAPipeline):
 
     def _rewrite_db(self, flat: list, year: int) -> list:
         if not self.prospective_dbs:
+            _log.debug("_rewrite_db(year=%d): no prospective_dbs, keeping base links", year)
             return flat
         match = resolve_database_for_year(year, self.prospective_dbs)
         if match is None:
+            _log.warning(
+                "_rewrite_db(year=%d): resolve_database_for_year returned None "
+                "(prospective_dbs=%s)", year, self.prospective_dbs,
+            )
             return flat
-        target_db, _ = match
+        target_db, matched_year = match
+        _log.info(
+            "_rewrite_db(year=%d): matched → db=%r (year=%d) from %d candidates",
+            year, target_db, matched_year, len(self.prospective_dbs),
+        )
         rewritten = []
         for m in flat:
             if m.ecoinvent_activity is None:

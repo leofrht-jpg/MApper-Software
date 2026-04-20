@@ -1,414 +1,346 @@
-"""AESA engine: compares Impact Assessment results against allocated
-planetary-boundary thresholds.
+"""AESA engine: Multi-Dimensional allocation model (Ferhati et al., SETAC 36th).
 
-Design note on units
---------------------
-Planetary-boundary global limits are expressed in biophysical units
-(ppm CO2, DU, Tg N/yr, ...) that are NOT directly comparable to LCIA-method
-results (kg CO2-eq/yr, kg P-eq/yr, ...). The engine therefore trusts the
-user-supplied ``allocated_threshold`` (in ``allocated_unit``) as the
-ground-truth comparison target. The ``global_limit`` in DEFAULT_BOUNDARIES
-is informational context only — it helps the user reason about *their own*
-allocation, it is never automatically converted.
+Given an Impact Assessment result (per-year total fleet impact per LCIA
+method), produce Sustainability Ratios (SR = impact / allocated_SOS) for
+each Planetary Boundary category and year. Allocated SOS is computed via
+two-layer Multi-D downscaling (global → entity → sector) with a per-category
+first-layer sharing principle and fixed-grandfathering second layer.
+
+Reference data is loaded from ``mapper/data/aesa/*.json`` (boundary sets,
+SSP trajectories, carbon budgets, default sharing values).
 """
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from typing import Literal
+
 from mapper.models.aesa_schemas import (
+    AESAComputeResult,
     AESAConfiguration,
-    AESAIndicatorResult,
-    AESAResult,
-    AESASummary,
-    AESAYearResult,
+    AESAYearSummary,
+    BoundarySet,
+    CarbonBudgetConfig,
+    MethodPBMapping,
+    MultiDConfig,
+    PlanetaryBoundary,
+    SharingPrincipleConfig,
+    SustainabilityRatioResult,
 )
 from mapper.models.bom_schemas import MFALCAResult
 
 
-# ── Reference data ───────────────────────────────────────────────────────────
+DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "aesa"
 
 
-DEFAULT_BOUNDARIES: list[dict] = [
-    {
-        "id": "climate_change",
-        "name": "Climate Change",
-        "description": "Atmospheric CO2 concentration and radiative forcing",
-        "global_limit": 350.0,
-        "global_limit_unit": "ppm CO2",
-        "control_variable": "Atmospheric CO2 concentration",
-        "status": "beyond_boundary",
-        "source": "Steffen et al. 2015; updated Richardson et al. 2023",
-    },
-    {
-        "id": "ocean_acidification",
-        "name": "Ocean Acidification",
-        "description": "Carbonate ion concentration in surface seawater",
-        "global_limit": 2.75,
-        "global_limit_unit": "Ω aragonite",
-        "control_variable": "Aragonite saturation state",
-        "status": "safe",
-        "source": "Steffen et al. 2015",
-    },
-    {
-        "id": "ozone_depletion",
-        "name": "Stratospheric Ozone Depletion",
-        "description": "Stratospheric O3 concentration",
-        "global_limit": 275.0,
-        "global_limit_unit": "DU",
-        "control_variable": "Stratospheric O3 concentration",
-        "status": "safe",
-        "source": "Steffen et al. 2015",
-    },
-    {
-        "id": "nitrogen_flow",
-        "name": "Biogeochemical Flows (N)",
-        "description": "Industrial and intentional biological fixation of N",
-        "global_limit": 62.0,
-        "global_limit_unit": "Tg N/yr",
-        "control_variable": "N fixation",
-        "status": "beyond_boundary",
-        "source": "Steffen et al. 2015",
-    },
-    {
-        "id": "phosphorus_flow",
-        "name": "Biogeochemical Flows (P)",
-        "description": "P flow from freshwater systems into the ocean",
-        "global_limit": 11.0,
-        "global_limit_unit": "Tg P/yr",
-        "control_variable": "P flow to ocean",
-        "status": "beyond_boundary",
-        "source": "Steffen et al. 2015",
-    },
-    {
-        "id": "land_system_change",
-        "name": "Land-System Change",
-        "description": "Area of forested land as % of original forest cover",
-        "global_limit": 75.0,
-        "global_limit_unit": "% forest cover",
-        "control_variable": "Forested land area",
-        "status": "beyond_boundary",
-        "source": "Steffen et al. 2015",
-    },
-    {
-        "id": "freshwater_use",
-        "name": "Freshwater Use",
-        "description": "Global consumptive blue water use",
-        "global_limit": 4000.0,
-        "global_limit_unit": "km³/yr",
-        "control_variable": "Consumptive blue water use",
-        "status": "safe",
-        "source": "Steffen et al. 2015",
-    },
-    {
-        "id": "biosphere_integrity",
-        "name": "Biosphere Integrity",
-        "description": "Functional and genetic diversity",
-        "global_limit": 10.0,
-        "global_limit_unit": "E/MSY",
-        "control_variable": "Extinction rate",
-        "status": "beyond_boundary",
-        "source": "Steffen et al. 2015",
-    },
-    {
-        "id": "novel_entities",
-        "name": "Novel Entities",
-        "description": "Chemical pollution and plastics",
-        "global_limit": None,
-        "global_limit_unit": "not quantified",
-        "control_variable": "Various",
-        "status": "beyond_boundary",
-        "source": "Persson et al. 2022",
-    },
-    {
-        "id": "atmospheric_aerosol",
-        "name": "Atmospheric Aerosol Loading",
-        "description": "Aerosol optical depth",
-        "global_limit": 0.25,
-        "global_limit_unit": "AOD",
-        "control_variable": "Aerosol optical depth",
-        "status": "increasing_risk",
-        "source": "Steffen et al. 2015",
-    },
-]
+# ─── Multi-D defaults (per poster) ───────────────────────────────────────────
 
 
-SHARING_PRINCIPLES: list[dict] = [
-    {
-        "id": "per_capita",
-        "name": "Equal Per Capita",
-        "description": "Global boundary divided equally by world population. "
-                       "System share = (system population / world population) × global boundary.",
-    },
-    {
-        "id": "per_gdp",
-        "name": "GDP Share",
-        "description": "Allocated proportionally to economic output. "
-                       "System share = (system GDP / world GDP) × global boundary.",
-    },
-    {
-        "id": "grandfathering",
-        "name": "Grandfathering",
-        "description": "Allocated based on historical contribution. System keeps its current share.",
-    },
-    {
-        "id": "custom",
-        "name": "Custom Allocation",
-        "description": "User defines thresholds directly for each boundary indicator.",
-    },
-]
-
-
-SUGGESTED_METHOD_MAPPINGS: dict[str, dict] = {
-    "climate_change": {
-        "keywords": ["climate change", "global warming", "gwp"],
-        "suggested_methods": [
-            ["EF v3.1", "climate change", "global warming potential (GWP100)"],
-            ["IPCC 2021", "climate change", "GWP100"],
-            ["CML v4.8 2016", "climate change", "global warming potential (GWP100)"],
-        ],
-    },
-    "ocean_acidification": {
-        "keywords": ["acidification", "ocean"],
-        "suggested_methods": [],
-    },
-    "nitrogen_flow": {
-        "keywords": ["eutrophication", "nitrogen", "marine"],
-        "suggested_methods": [
-            ["EF v3.1", "eutrophication: marine",
-             "fraction of nutrients reaching marine end compartment (N)"],
-        ],
-    },
-    "phosphorus_flow": {
-        "keywords": ["eutrophication", "phosphorus", "freshwater"],
-        "suggested_methods": [
-            ["EF v3.1", "eutrophication: freshwater",
-             "fraction of nutrients reaching freshwater end compartment (P)"],
-        ],
-    },
-    "freshwater_use": {
-        "keywords": ["water use", "freshwater", "water scarcity", "water"],
-        "suggested_methods": [
-            ["EF v3.1", "water use",
-             "user deprivation potential (deprivation-weighted water consumption)"],
-        ],
-    },
-    "land_system_change": {
-        "keywords": ["land use", "land occupation", "land transformation"],
-        "suggested_methods": [
-            ["EF v3.1", "land use", "soil quality index"],
-        ],
-    },
-    "ozone_depletion": {
-        "keywords": ["ozone", "odp"],
-        "suggested_methods": [
-            ["EF v3.1", "ozone depletion", "ozone depletion potential (ODP)"],
-        ],
-    },
-    "biosphere_integrity": {
-        "keywords": ["biodiversity", "ecotoxicity"],
-        "suggested_methods": [],
-    },
-    "atmospheric_aerosol": {
-        "keywords": ["particulate", "pm2.5", "pm", "aerosol"],
-        "suggested_methods": [
-            ["EF v3.1", "particulate matter formation", "impact on human health"],
-        ],
-    },
-    "novel_entities": {
-        "keywords": ["toxicity", "human toxicity", "cancer", "non-cancer"],
-        "suggested_methods": [],
-    },
+MULTI_D_DEFAULTS: dict[str, tuple[str, str]] = {
+    "acidification":                 ("EpC", "Global issue, equal right"),
+    "climate_change":                ("EpC", "Global issue, equal right"),
+    "ecotoxicity_freshwater":        ("EpC", "Equal right"),
+    "resource_use_fossils":          ("IN",  "Industrial causation"),
+    "eutrophication_marine":         ("AGR", "Driven by food system"),
+    "eutrophication_freshwater":     ("AGR", "Driven by food system"),
+    "eutrophication_terrestrial":    ("AGR", "Driven by food system"),
+    "human_toxicity_cancer":         ("EpC", "Equal rights"),
+    "human_toxicity_non_cancer":     ("EpC", "Equal rights"),
+    "ionising_radiation":            ("EpC", "Equal rights"),
+    "land_use":                      ("LA",  "Land-based"),
+    "resource_use_minerals_metals":  ("IN",  "Industrial causation"),
+    "ozone_depletion":               ("AR",  "Legacy responsibility"),
+    "particulate_matter":            ("AR",  "Legacy responsibility"),
+    "photochemical_ozone_formation": ("AR",  "Legacy responsibility"),
+    "water_use":                     ("EpC", "Global issue, equal right"),
 }
 
 
-# ── Helpers exposed for the API ──────────────────────────────────────────────
+# ─── Built-in data loaders ───────────────────────────────────────────────────
 
 
-def _boundary_name(boundary_id: str) -> str:
-    for b in DEFAULT_BOUNDARIES:
-        if b["id"] == boundary_id:
-            return b["name"]
-    return boundary_id
+def _read_json(name: str) -> dict:
+    return json.loads((DATA_DIR / name).read_text(encoding="utf-8"))
 
 
-def suggest_mappings_for_methods(method_tuples: list[list[str]]) -> list[dict]:
-    """For each method, pick the first boundary whose keyword list matches any
-    token in the method label. Returns list of
-    ``{"method_tuple": [...], "boundary_id": str | None, "match_score": int}``
-    — the frontend shows the suggestion; the user confirms or overrides.
-    """
-    out: list[dict] = []
-    for m in method_tuples:
-        label = " ".join(m).lower()
-        best_id: str | None = None
-        best_score = 0
-        for boundary_id, spec in SUGGESTED_METHOD_MAPPINGS.items():
-            score = 0
-            for kw in spec.get("keywords", []):
-                if kw.lower() in label:
-                    score += 1
-            if score > best_score:
-                best_id = boundary_id
-                best_score = score
-        out.append({
-            "method_tuple": list(m),
-            "boundary_id": best_id,
-            "match_score": best_score,
-        })
+def load_boundary_sets() -> dict[str, BoundarySet]:
+    raw = _read_json("boundary_sets.json")
+    out: dict[str, BoundarySet] = {}
+    for s in raw.get("sets", []):
+        boundaries = {
+            bid: PlanetaryBoundary(**bdata)
+            for bid, bdata in s["boundaries"].items()
+        }
+        out[s["id"]] = BoundarySet(
+            id=s["id"], name=s["name"], source=s["source"],
+            boundaries=boundaries,
+        )
     return out
 
 
-def compute_per_capita_threshold(
-    global_limit: float,
-    system_population: float,
-    world_population: float = 8e9,
-) -> float:
-    if world_population <= 0:
-        return 0.0
-    return (system_population / world_population) * global_limit
+def load_sharing_data() -> dict:
+    return _read_json("sharing_data.json")
 
 
-# ── Assessment ───────────────────────────────────────────────────────────────
+def load_carbon_budget_options() -> list[dict]:
+    raw = _read_json("carbon_budgets.json")
+    return raw.get("options", [])
+
+
+def load_ssp_trajectories() -> list[dict]:
+    raw = _read_json("ssp_trajectories.json")
+    scenarios = raw.get("scenarios", [])
+    for s in scenarios:
+        s["projected_emissions"] = _expand_ssp_anchors(s["anchors_gt_co2"])
+    return scenarios
+
+
+def _expand_ssp_anchors(anchors: dict) -> dict[int, float]:
+    """Linear-interpolate between anchor years → annual dict year→Gt CO2."""
+    items = sorted(((int(y), float(v)) for y, v in anchors.items()), key=lambda t: t[0])
+    if not items:
+        return {}
+    out: dict[int, float] = {}
+    for (y0, v0), (y1, v1) in zip(items, items[1:]):
+        span = max(1, y1 - y0)
+        for y in range(y0, y1):
+            t = (y - y0) / span
+            out[y] = v0 + (v1 - v0) * t
+    out[items[-1][0]] = items[-1][1]
+    return out
+
+
+# ─── Default config builders ─────────────────────────────────────────────────
+
+
+def build_default_multi_d_config(sharing: dict | None = None) -> MultiDConfig:
+    """Build a MultiDConfig with MULTI_D_DEFAULTS principles applied to all
+    boundaries, using the values from sharing_data.json."""
+    data = sharing or load_sharing_data()
+    layer1_data = data.get("layer1_defaults", {})
+    layer2 = data.get("layer2", {})
+
+    def _sp_cfg(principle: str, justification: str) -> SharingPrincipleConfig:
+        d = layer1_data.get(principle, {})
+        return SharingPrincipleConfig(
+            principle=principle,
+            justification=justification,
+            system_value=float(d.get("system_value", 1.0)),
+            global_value=float(d.get("global_value", 1.0)),
+        )
+
+    layer1 = {
+        pb_id: _sp_cfg(principle, just)
+        for pb_id, (principle, just) in MULTI_D_DEFAULTS.items()
+    }
+    return MultiDConfig(
+        layer1=layer1,
+        layer2_sector_share=float(layer2.get("sector_share", 0.1)),
+        layer2_source=str(layer2.get("source", "")),
+    )
+
+
+def build_carbon_budget(
+    budget_option_id: str = "IPCC_AR6_1p5C_67",
+    ssp_id: str = "SSP2-4.5",
+    start_year: int = 2025,
+    end_year: int = 2100,
+) -> CarbonBudgetConfig:
+    opts = {o["id"]: o for o in load_carbon_budget_options()}
+    ssps = {s["id"]: s for s in load_ssp_trajectories()}
+    budget = opts.get(budget_option_id)
+    if budget is None:
+        raise ValueError(f"Unknown carbon budget option: {budget_option_id}")
+    ssp = ssps.get(ssp_id)
+    if ssp is None:
+        raise ValueError(f"Unknown SSP scenario: {ssp_id}")
+    return CarbonBudgetConfig(
+        initial_budget_gt=float(budget["remaining_gt_from_2025"]),
+        budget_source=str(budget["source"]),
+        start_year=start_year,
+        end_year=end_year,
+        projected_emissions={int(y): float(v) for y, v in ssp["projected_emissions"].items()},
+        ssp_scenario=ssp_id,
+        provisional=bool(budget.get("provisional", True) or ssp.get("provisional", True)),
+    )
+
+
+# ─── Method → PB auto-mapping ────────────────────────────────────────────────
+
+
+def suggest_method_mapping(
+    methods: list[list[str]], boundary_set: BoundarySet,
+) -> list[MethodPBMapping]:
+    """Token-match method[1] to PlanetaryBoundary.ef_indicator. Returns one
+    mapping per method; methods with no match are skipped (caller can inspect
+    the returned list to see which boundaries were covered)."""
+    out: list[MethodPBMapping] = []
+    for m in methods:
+        if len(m) < 2:
+            continue
+        label = " ".join(m).lower()
+        best_id: str | None = None
+        best_score = 0
+        for pb in boundary_set.boundaries.values():
+            kw = pb.ef_indicator.lower()
+            # score = number of whitespace-split tokens of ef_indicator present in label
+            score = sum(1 for tok in kw.replace(":", "").split() if tok in label)
+            if score > best_score:
+                best_id = pb.id
+                best_score = score
+        if best_id and best_score > 0:
+            out.append(MethodPBMapping(method_tuple=list(m), pb_id=best_id))
+    return out
+
+
+# ─── Engine ──────────────────────────────────────────────────────────────────
+
+
+def _zone_for_sr(sr: float) -> Literal["safe", "zone_of_uncertainty", "high_risk"]:
+    if sr <= 1.0:
+        return "safe"
+    if sr <= 2.0:
+        return "zone_of_uncertainty"
+    return "high_risk"
 
 
 class AESAEngine:
-    """Stateless assessor. Call ``assess(impact_results, config)``."""
-
-    SAFE_THRESHOLD = 0.8  # ratio < 0.8 → safe
-    CAUTION_THRESHOLD = 1.0  # 0.8 ≤ ratio < 1.0 → caution, else exceeded
+    """Stateless compute: ``AESAEngine.compute(impact_results, config, boundary_set)``."""
 
     @classmethod
-    def _status_for_ratio(cls, ratio: float) -> str:
-        if ratio < cls.SAFE_THRESHOLD:
-            return "safe"
-        if ratio < cls.CAUTION_THRESHOLD:
-            return "caution"
-        return "exceeded"
-
-    @classmethod
-    def assess(
+    def compute(
         cls,
         impact_results: list[MFALCAResult],
         config: AESAConfiguration,
-    ) -> AESAResult:
-        # method_tuple (joined) → MFALCAResult for fast lookup
+        boundary_set: BoundarySet,
+    ) -> AESAComputeResult:
+        # Resolve method_mapping: use config.method_mapping or auto-suggest.
+        mapping = config.method_mapping
+        if not mapping:
+            methods = [list(r.method) for r in impact_results]
+            mapping = suggest_method_mapping(methods, boundary_set)
+
+        # Method tuple (joined) → MFALCAResult
         results_by_method: dict[str, MFALCAResult] = {
             "|".join(r.method): r for r in impact_results
         }
 
-        # Build (boundary_id, year) → threshold lookup from custom_thresholds.
-        thresholds: dict[tuple[str, int | None], float] = {}
-        threshold_units: dict[str, str] = {}
-        for alloc in config.custom_thresholds:
-            thresholds[(alloc.boundary_id, alloc.year)] = alloc.allocated_threshold
-            threshold_units[alloc.boundary_id] = alloc.allocated_unit
+        sr_results: list[SustainabilityRatioResult] = []
+        matched_pb_ids: set[str] = set()
 
-        def resolve_threshold(boundary_id: str, year: int) -> float | None:
-            if (boundary_id, year) in thresholds:
-                return thresholds[(boundary_id, year)]
-            if (boundary_id, None) in thresholds:
-                return thresholds[(boundary_id, None)]
-            return None
-
-        # Collect all years across mapped methods.
-        all_years: set[int] = set()
-        for mapping in config.method_mapping:
-            mkey = "|".join(mapping.method_tuple)
-            mres = results_by_method.get(mkey)
-            if not mres:
+        for mp in mapping:
+            pb = boundary_set.boundaries.get(mp.pb_id)
+            if pb is None:
                 continue
+            mres = results_by_method.get("|".join(mp.method_tuple))
+            if mres is None:
+                continue
+            matched_pb_ids.add(pb.id)
+
             for yr in mres.years:
-                all_years.add(yr.year)
-        sorted_years = sorted(all_years)
+                impact = yr.total_impact * mp.conversion_factor
+                if impact == 0:
+                    continue
 
-        years_out: list[AESAYearResult] = []
-        # Boundary → list of ratios over years, used for trend + summary.
-        ratios_over_time: dict[str, list[tuple[int, float]]] = {}
+                # Allocated SOS
+                if pb.boundary_type == "cumulative" and config.carbon_budget is not None:
+                    allocated = config.carbon_budget.annual_fleet_allocation(
+                        yr.year, config.multi_d,
+                    )
+                else:
+                    allocated = config.multi_d.compute_allocated_sos(
+                        pb.id, pb.pb_value, yr.year,
+                    )
 
-        for y in sorted_years:
-            indicators: list[AESAIndicatorResult] = []
-            for mapping in config.method_mapping:
-                mkey = "|".join(mapping.method_tuple)
-                mres = results_by_method.get(mkey)
-                if not mres:
-                    continue
-                yr = next((yy for yy in mres.years if yy.year == y), None)
-                if yr is None:
-                    continue
-                impact_raw = yr.total_impact * (mapping.conversion_factor or 1.0)
-                threshold = resolve_threshold(mapping.boundary_id, y)
-                if threshold is None or threshold == 0:
-                    continue
-                ratio = impact_raw / threshold
-                status = cls._status_for_ratio(ratio)
-                bname = _boundary_name(mapping.boundary_id)
-                indicators.append(AESAIndicatorResult(
-                    boundary_id=mapping.boundary_id,
-                    boundary_name=bname,
+                sr: float | None
+                if allocated <= 0:
+                    sr = None
+                    zone = "high_risk"
+                else:
+                    sr = impact / allocated
+                    zone = _zone_for_sr(sr)
+
+                l1_factor = config.multi_d.layer1_factor(pb.id, yr.year)
+                principle = config.multi_d.layer1_principle(pb.id)
+
+                sr_results.append(SustainabilityRatioResult(
+                    year=yr.year,
+                    pb_id=pb.id,
+                    pb_name=pb.name,
+                    ef_indicator=pb.ef_indicator,
+                    impact=impact,
+                    allocated_sos=allocated,
+                    sr=sr,
+                    zone=zone,
+                    sharing_principle=principle,
+                    sharing_factor_l1=l1_factor,
+                    sharing_factor_l2=config.multi_d.layer2_sector_share,
+                    boundary_type=pb.boundary_type,
+                    unit=pb.unit,
+                    impact_by_cohort=dict(yr.impact_by_cohort),
                     method_label=mres.method_label or " › ".join(mres.method),
-                    impact_value=impact_raw,
-                    threshold_value=threshold,
-                    ratio=ratio,
-                    unit=threshold_units.get(mapping.boundary_id) or mres.unit or "",
-                    status=status,
                 ))
-                ratios_over_time.setdefault(mapping.boundary_id, []).append((y, ratio))
-            years_out.append(AESAYearResult(year=y, indicators=indicators))
 
-        summary = cls._build_summary(years_out, ratios_over_time)
-        return AESAResult(config_id=config.id, years=years_out, summary=summary)
+        # Summary per year: count zones
+        by_year: dict[int, dict[str, int]] = {}
+        for r in sr_results:
+            d = by_year.setdefault(r.year, {"safe": 0, "zone_of_uncertainty": 0, "high_risk": 0})
+            d[r.zone] += 1
+        summary_by_year = [
+            AESAYearSummary(
+                year=y,
+                safe=d["safe"],
+                zone_of_uncertainty=d["zone_of_uncertainty"],
+                high_risk=d["high_risk"],
+                total_assessed=d["safe"] + d["zone_of_uncertainty"] + d["high_risk"],
+            )
+            for y, d in sorted(by_year.items())
+        ]
+
+        # Boundaries in set that never got a method hit
+        missing = [
+            pb.id for pb in boundary_set.boundaries.values()
+            if pb.id not in matched_pb_ids
+        ]
+
+        return AESAComputeResult(
+            config_id=config.id,
+            results=sr_results,
+            summary_by_year=summary_by_year,
+            missing_categories=missing,
+        )
 
     @classmethod
-    def _build_summary(
+    def compute_with_sensitivity(
         cls,
-        years_out: list[AESAYearResult],
-        ratios_over_time: dict[str, list[tuple[int, float]]],
-    ) -> AESASummary:
-        if not years_out:
-            return AESASummary(
-                boundaries_assessed=0, boundaries_safe=0,
-                boundaries_caution=0, boundaries_exceeded=0,
+        impact_results: list[MFALCAResult],
+        config: AESAConfiguration,
+        boundary_set: BoundarySet,
+    ) -> AESAComputeResult:
+        """Run compute() once with the configured Multi-D mix, then run five
+        uniform-principle variants (all PBs use EpC, IN, AGR, LA, or AR) and
+        attach them under ``sensitivity``."""
+        base = cls.compute(impact_results, config, boundary_set)
+
+        sharing = load_sharing_data()
+        l1_data = sharing.get("layer1_defaults", {})
+        sensitivity: dict = {}
+
+        for principle in ("EpC", "IN", "AGR", "LA", "AR"):
+            d = l1_data.get(principle, {})
+            uniform_sp = SharingPrincipleConfig(
+                principle=principle,
+                justification=f"Sensitivity: all categories share via {principle}",
+                system_value=float(d.get("system_value", 1.0)),
+                global_value=float(d.get("global_value", 1.0)),
             )
+            uniform_multi_d = MultiDConfig(
+                layer1={pb_id: uniform_sp for pb_id in MULTI_D_DEFAULTS},
+                layer2_sector_share=config.multi_d.layer2_sector_share,
+                layer2_source=config.multi_d.layer2_source,
+            )
+            variant = config.model_copy(update={"multi_d": uniform_multi_d})
+            var_result = cls.compute(impact_results, variant, boundary_set)
+            sensitivity[principle] = var_result.results
 
-        # Use the last year for safe/caution/exceeded counts + worst/best.
-        last = years_out[-1]
-        n_safe = sum(1 for i in last.indicators if i.status == "safe")
-        n_caution = sum(1 for i in last.indicators if i.status == "caution")
-        n_exceeded = sum(1 for i in last.indicators if i.status == "exceeded")
-
-        worst = ""
-        best = ""
-        if last.indicators:
-            worst = max(last.indicators, key=lambda i: i.ratio).boundary_name
-            best = min(last.indicators, key=lambda i: i.ratio).boundary_name
-
-        # Trend: average ratio change from first→last year across all boundaries.
-        # > +5% → worsening; < -5% → improving; else stable.
-        deltas: list[float] = []
-        for _bid, series in ratios_over_time.items():
-            if len(series) < 2:
-                continue
-            series_sorted = sorted(series, key=lambda t: t[0])
-            first_ratio = series_sorted[0][1]
-            last_ratio = series_sorted[-1][1]
-            if first_ratio == 0:
-                continue
-            deltas.append((last_ratio - first_ratio) / abs(first_ratio))
-        if not deltas:
-            trend = "stable"
-        else:
-            avg = sum(deltas) / len(deltas)
-            if avg > 0.05:
-                trend = "worsening"
-            elif avg < -0.05:
-                trend = "improving"
-            else:
-                trend = "stable"
-
-        return AESASummary(
-            boundaries_assessed=len(last.indicators),
-            boundaries_safe=n_safe,
-            boundaries_caution=n_caution,
-            boundaries_exceeded=n_exceeded,
-            worst_indicator=worst,
-            best_indicator=best,
-            trend=trend,
-        )
+        return base.model_copy(update={"sensitivity": sensitivity})

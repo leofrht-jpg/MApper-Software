@@ -6,10 +6,17 @@ import { ImpactAssessment } from './pages/ImpactAssessment'
 import { LCAPage } from './pages/LCAPage'
 import { MFADashboard } from './pages/MFADashboard'
 import { PLCADeveloper } from './pages/PLCADeveloper'
+import { SettingsPage } from './pages/SettingsPage'
 import { useProjectStore } from './stores/projectStore'
+import { useThemeStore } from './stores/themeStore'
 
 function App() {
   const { fetchProjects, fetchDatabases } = useProjectStore()
+  const initTheme = useThemeStore((s) => s.initTheme)
+
+  useEffect(() => {
+    initTheme()
+  }, [initTheme])
 
   useEffect(() => {
     fetchProjects().then(() => fetchDatabases())
@@ -39,6 +46,9 @@ function App() {
         }
         if (activeItem === 'aesa') {
           return <AESADashboard />
+        }
+        if (activeItem === 'settings') {
+          return <SettingsPage />
         }
         return (
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>

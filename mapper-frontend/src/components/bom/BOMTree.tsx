@@ -11,7 +11,7 @@ interface BOMTreeProps {
   node: BOMNode
   depth?: number
   isRoot?: boolean
-  onPatch: (nodeId: string, patch: { name?: string; quantity?: number; unit?: string; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
+  onPatch: (nodeId: string, patch: { name?: string; quantity?: number; unit?: string; is_annual?: boolean; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
   onAddChild: (parentId: string, child: BOMNode) => Promise<void>
   onDelete: (nodeId: string) => Promise<void>
 }
@@ -188,6 +188,33 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
                 · {node.children!.length} {node.children!.length === 1 ? 'component' : 'components'}
               </span>
+            )}
+
+            {/* Annual toggle (root stage nodes only) */}
+            {isRoot && isComponent && (
+              <button
+                onClick={() => onPatch(nodeId, { is_annual: !node.is_annual })}
+                title={node.is_annual ? 'Annual quantities (per year) — click to set as one-time' : 'One-time quantities — click to set as annual'}
+                style={{
+                  background: node.is_annual
+                    ? 'color-mix(in srgb, var(--accent) 15%, transparent)'
+                    : 'transparent',
+                  border: `1px solid ${node.is_annual ? 'var(--accent)' : 'var(--border-default)'}`,
+                  borderRadius: 'var(--radius-sm)',
+                  cursor: 'pointer',
+                  color: node.is_annual ? 'var(--accent)' : 'var(--text-tertiary)',
+                  padding: '2px 6px',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                  fontSize: 9,
+                  fontWeight: 600,
+                  textTransform: 'uppercase' as const,
+                  letterSpacing: '0.05em',
+                }}
+              >
+                {node.is_annual ? 'ANNUAL' : 'ONE-TIME'}
+              </button>
             )}
 
             {/* Evolution badge (materials only) */}

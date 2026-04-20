@@ -148,6 +148,7 @@ export function Archetypes() {
   >(null)
   const [dragOverPath, setDragOverPath] = useState<string | '__root__' | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
 
   const [expanded, setExpanded] = useState<Set<string>>(() => {
     try {
@@ -182,6 +183,22 @@ export function Archetypes() {
     return () => {
       window.removeEventListener('click', close)
       window.removeEventListener('keydown', onKey)
+    }
+  }, [menu])
+
+  // Reposition context menu if it overflows the viewport.
+  useEffect(() => {
+    if (!menu || !menuRef.current) return
+    const el = menuRef.current
+    const rect = el.getBoundingClientRect()
+    const vw = window.innerWidth
+    const vh = window.innerHeight
+    let { x, y } = menu
+    if (rect.bottom > vh) y = Math.max(4, vh - rect.height - 4)
+    if (rect.right > vw) x = Math.max(4, vw - rect.width - 4)
+    if (x !== menu.x || y !== menu.y) {
+      el.style.left = `${x}px`
+      el.style.top = `${y}px`
     }
   }, [menu])
 
@@ -267,25 +284,27 @@ export function Archetypes() {
   }
 
   const handleDeleteFolder = async (path: string) => {
-    const inside = archetypes.filter(
+    const folderName = path.split('/').pop() || path
+    const insideArcs = archetypes.filter(
       (a) => a.folder === path || (a.folder && a.folder.startsWith(path + '/')),
     )
-    let deleteArcs = false
-    if (inside.length > 0) {
-      const choice = prompt(
-        `Folder "${path}" contains ${inside.length} archetype(s).\n\n` +
-        `Type "move" to move them to the root and delete the folder,\n` +
-        `or type "delete" to delete the folder AND all archetypes inside.`,
-        'move',
-      )
-      if (!choice) return
-      if (choice.toLowerCase() === 'delete') deleteArcs = true
-      else if (choice.toLowerCase() !== 'move') return
-    } else if (!confirm(`Delete empty folder "${path}"?`)) {
+    const subfolders = folders.filter(
+      (f) => f === path || f.startsWith(path + '/'),
+    ).length - 1 // exclude the folder itself
+    const hasContents = insideArcs.length > 0 || subfolders > 0
+    if (hasContents) {
+      const parts: string[] = []
+      if (insideArcs.length > 0) parts.push(`${insideArcs.length} archetype${insideArcs.length === 1 ? '' : 's'}`)
+      if (subfolders > 0) parts.push(`${subfolders} subfolder${subfolders === 1 ? '' : 's'}`)
+      if (!confirm(
+        `Delete folder "${folderName}" and all its contents? ` +
+        `This will delete ${parts.join(' and ')}. This action cannot be undone.`
+      )) return
+    } else if (!confirm(`Delete empty folder "${folderName}"?`)) {
       return
     }
     try {
-      await deleteFolder(path, deleteArcs)
+      await deleteFolder(path, hasContents)
     } catch (e) {
       alert(`Delete failed: ${e instanceof Error ? e.message : e}`)
     }
@@ -668,17 +687,7 @@ export function Archetypes() {
                     )}
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 8, flexShrink: 0, alignItems: 'center' }}>
-                  <Button variant="secondary" onClick={() => setShowBulkLR(true)} title="Set learning rates">
-                    <TrendingDown size={14} /> Learning rates
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowBulkRebound(true)} title="Set rebound effects" style={{ color: 'var(--warning)' }}>
-                    <TrendingUp size={14} /> Rebound effects
-                  </Button>
-                  <Button variant="secondary" onClick={() => setShowTimeline(true)} title="Preview timeline">
-                    <CalendarRange size={14} /> Timeline
-                  </Button>
-                  <div style={{ width: 1, height: 24, backgroundColor: 'var(--border-subtle)', margin: '0 4px' }} />
+                <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
                   <Button variant="secondary" onClick={handleExport} title="Export archetype" aria-label="Export archetype">
                     <Download size={14} />
                   </Button>
@@ -689,6 +698,17 @@ export function Archetypes() {
                     <Trash2 size={14} />
                   </Button>
                 </div>
+              </div>
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                <Button variant="secondary" onClick={() => setShowBulkLR(true)} title="Set learning rates" style={{ fontSize: 'var(--text-xs)' }}>
+                  <TrendingDown size={13} /> Learning rates
+                </Button>
+                <Button variant="secondary" onClick={() => setShowBulkRebound(true)} title="Set rebound effects" style={{ color: 'var(--warning)', fontSize: 'var(--text-xs)' }}>
+                  <TrendingUp size={13} /> Rebound effects
+                </Button>
+                <Button variant="secondary" onClick={() => setShowTimeline(true)} title="Preview timeline" style={{ fontSize: 'var(--text-xs)' }}>
+                  <CalendarRange size={13} /> Timeline
+                </Button>
               </div>
             </div>
 
@@ -760,6 +780,7 @@ export function Archetypes() {
       {/* ── Context menu ─────────────────────────────────────────────── */}
       {menu && (
         <div
+          ref={menuRef}
           onClick={(e) => e.stopPropagation()}
           style={{
             position: 'fixed', top: menu.y, left: menu.x, zIndex: 1000,
@@ -776,10 +797,10 @@ export function Archetypes() {
               <MenuItem icon={<FolderPlus size={12} />} onClick={() => { handleNewFolder(menu.path); setMenu(null) }}>
                 New subfolder
               </MenuItem>
-              <MenuDivider />
               <MenuItem icon={<Pencil size={12} />} onClick={() => { handleRenameFolder(menu.path); setMenu(null) }}>
                 Rename folder
               </MenuItem>
+              <MenuDivider />
               <MenuItem icon={<Trash2 size={12} />} danger onClick={() => { handleDeleteFolder(menu.path); setMenu(null) }}>
                 Delete folder
               </MenuItem>

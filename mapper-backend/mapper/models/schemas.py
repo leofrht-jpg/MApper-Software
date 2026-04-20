@@ -228,3 +228,85 @@ class SankeyLink(BaseModel):
 class SankeyData(BaseModel):
     nodes: list[SankeyNode]
     links: list[SankeyLink]
+
+
+# ── Multi-Activity LCA Calculator ──────────────────────────────────────────────
+
+
+class ActivityDemandItem(BaseModel):
+    database: str
+    code: str
+    amount: float = 1.0
+
+
+class ActivityLCARequest(BaseModel):
+    activities: list[ActivityDemandItem]
+    methods: list[list[str]]
+
+
+class ActivityContribution(BaseModel):
+    name: str
+    location: str
+    database: str
+    code: str
+    demand_amount: float
+    demand_unit: str
+    impact: float
+    percentage: float
+
+
+class ActivityLCAMethodResult(BaseModel):
+    method: list[str]
+    method_label: str
+    score: float
+    unit: str
+    contributions: list[ActivityContribution]
+
+
+class ActivityLCAResult(BaseModel):
+    results: list[ActivityLCAMethodResult]
+    elapsed_seconds: float = 0.0
+
+
+# ── Archetype LCA Calculator ────────────────────────────────────────────────
+
+
+class ArchetypeLCACalculateRequest(BaseModel):
+    archetype_id: str
+    scope: str = "all"  # "inflows" | "stock" | "outflows" | "all"
+    amount: float = 1.0  # legacy fallback when stage_amounts is empty
+    stage_amounts: dict[str, float] | None = None  # {"Manufacturing": 1, "Use Phase": 15, ...}
+    methods: list[list[str]]
+
+
+class MaterialContribution(BaseModel):
+    name: str
+    stage: str
+    component: str
+    quantity: float
+    unit: str
+    impact: float
+    percentage: float
+
+
+class ArchetypeLCAMethodResult(BaseModel):
+    method: list[str]
+    method_label: str
+    score: float
+    unit: str
+    contributions: list[MaterialContribution]
+
+
+class ArchetypeLCACalculateResult(BaseModel):
+    archetype_id: str
+    archetype_name: str
+    scope: str
+    amount: float
+    stage_amounts: dict[str, float] = {}
+    stages_included: list[str]
+    results: list[ArchetypeLCAMethodResult]
+    elapsed_seconds: float = 0.0
+
+
+class ArchetypeLCAExportRequest(BaseModel):
+    results: list[ArchetypeLCACalculateResult]

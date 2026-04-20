@@ -26,6 +26,7 @@ from mapper.core.bom_engine import (
     material_count_total,
     remove_node_in_roots,
     resolve_quantity,
+    stage_to_scope,
     summarize_archetype,
     total_mass_kg,
     unlinked_count_total,
@@ -407,6 +408,8 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
         node.quantity = body.quantity
     if body.unit is not None:
         node.unit = body.unit
+    if body.is_annual is not None:
+        node.is_annual = body.is_annual
     if body.ecoinvent_activity is not None:
         node.ecoinvent_activity = body.ecoinvent_activity
         # Linking an activity makes a node a material.
@@ -1059,15 +1062,35 @@ def _build_mfa_lca_workbook(
     elapsed_seconds: float | None = None,
     sim_result=None,
 ) -> Workbook:
+    """Build a comprehensive XLSX workbook with 9 sheets for Impact Assessment
+    results. Designed for easy analysis in Excel (pivot tables, filtering).
+    """
+    import datetime
+
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
     wb = Workbook()
     wb.remove(wb.active)
 
+    # ── Styles ─────────────────────────────────────────────────────────────────
     header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="2D8A8A")  # MApper teal
-    num_fmt = "0.00E+00"
+    header_fill = PatternFill("solid", fgColor="3ECFCF")
+    meta_font = Font(bold=True, color="374151")
+    meta_val_font = Font(color="374151")
+
+    def _num_fmt(v: float) -> str:
+        """Pick number format for a value."""
+        if v == 0:
+            return "0.00"
+        a = abs(v)
+        if a < 0.01 or a > 1e6:
+            return "0.00E+00"
+        return "#,##0.00"
+
+    SCI_FMT = "0.00E+00"
+    INT_FMT = "#,##0"
+    PCT_FMT = "0.00"
 
     mapping_by_cohort: dict[str, tuple[str, float]] = {}
     if cohort_mapping is not None:
@@ -1083,304 +1106,380 @@ def _build_mfa_lca_workbook(
                 is_age = d.get("is_age", False)
             if name and not is_age:
                 nonage_dim_names.append(name)
+    dim_headers = [d.capitalize() for d in nonage_dim_names] or ["Cohort"]
+    n_dims = len(dim_headers)
 
-    def _autosize(ws) -> None:
+    def _split_cohort(ck: str) -> list[str]:
+        parts = ck.split("|")
+        out = parts[:n_dims] if nonage_dim_names else [ck]
+        while len(out) < n_dims:
+            out.append("")
+        return out
+
+    def _style_header(ws, row_num: int = 1) -> None:
+        for cell in ws[row_num]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+
+    def _autosize(ws, max_width: int = 40, sample_rows: int = 50) -> None:
         for col_idx, col_cells in enumerate(ws.columns, start=1):
             widest = 0
-            for cell in col_cells:
+            for i, cell in enumerate(col_cells):
+                if i >= sample_rows + 1:
+                    break
                 v = cell.value
-                if v is None:
-                    continue
-                widest = max(widest, min(60, len(str(v))))
+                if v is not None:
+                    widest = max(widest, min(max_width, len(str(v))))
             ws.column_dimensions[get_column_letter(col_idx)].width = max(12, widest + 2)
 
-    # ── Sheet 1 — Impact by Year (one per method to keep it readable) ────────
-    for res in results:
-        short = _short_method_label(res.method)
-        title = f"Impact by Year — {short}"[:31]
-        ws = wb.create_sheet(title)
-        ws.append([f"Method: {' › '.join(res.method)}   Unit: {res.unit}   Scope: {res.scope}"])
-        ws.merge_cells(start_row=1, start_column=1, end_row=1, end_column=2)
-        ws["A1"].font = Font(italic=True, color="6B7280")
-
-        cohort_keys = sorted({ck for yr in res.years for ck in yr.impact_by_cohort.keys()})
-        header = ["Year", *cohort_keys, "Total"]
-        ws.append(header)
-        for cell in ws[2]:
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-        for yr in res.years:
-            row = [yr.year]
-            for ck in cohort_keys:
-                row.append(yr.impact_by_cohort.get(ck, 0.0))
-            row.append(yr.total_impact)
-            ws.append(row)
-        # Number format on data rows.
-        for r in ws.iter_rows(min_row=3, min_col=2, max_col=len(header)):
-            for cell in r:
-                cell.number_format = num_fmt
-        ws.freeze_panes = "A3"
-        _autosize(ws)
-
-    # ── Sheet 2 — Impact by Cohort (per method, selected year) ───────────────
-    for res in results:
-        if not res.years:
-            continue
-        target_year = selected_year if selected_year is not None else res.years[0].year
-        yr = next((y for y in res.years if y.year == target_year), res.years[0])
-        scope_counts = (sim_counts or {}).get(yr.year, {})
-
-        short = _short_method_label(res.method)
-        title = f"Cohort {yr.year} — {short}"[:31]
-        ws = wb.create_sheet(title)
-        ws.append([f"Method: {' › '.join(res.method)}   Year: {yr.year}   Unit: {res.unit}"])
-        ws["A1"].font = Font(italic=True, color="6B7280")
-
-        dim_headers = [d.capitalize() for d in nonage_dim_names] or ["Cohort"]
-        header = [*dim_headers, "Archetype", "Scale", "Count", f"Impact per Unit ({res.unit})",
-                  f"Total Impact ({res.unit})", "% of Total"]
-        ws.append(header)
-        for cell in ws[2]:
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-
-        rows: list[tuple] = []
-        total = yr.total_impact or 0.0
-        for ck, impact in yr.impact_by_cohort.items():
-            parts = ck.split("|")
-            dim_vals = parts[: len(nonage_dim_names)] if nonage_dim_names else [ck]
-            while len(dim_vals) < len(dim_headers):
-                dim_vals.append("")
-            arc_id, scale = mapping_by_cohort.get(ck, ("", 1.0))
-            arc_name = archetypes[arc_id].name if arc_id in archetypes else ""
-            count = scope_counts.get(ck, 0.0)
-            per_unit = (impact / count) if count else 0.0
-            pct = (impact / total * 100.0) if total else 0.0
-            rows.append((*dim_vals, arc_name, scale, count, per_unit, impact, pct))
-        rows.sort(key=lambda r: abs(r[-2]), reverse=True)
-        for r in rows:
-            ws.append(list(r))
-        # Number formats.
-        n_dims = len(dim_headers)
-        for row in ws.iter_rows(min_row=3, min_col=n_dims + 2, max_col=len(header)):
+    def _apply_sci(ws, min_row, min_col, max_col) -> None:
+        for row in ws.iter_rows(min_row=min_row, min_col=min_col, max_col=max_col):
             for cell in row:
-                cell.number_format = num_fmt
-        # Percent column.
-        pct_col = len(header)
-        for row in ws.iter_rows(min_row=3, min_col=pct_col, max_col=pct_col):
-            for cell in row:
-                cell.number_format = "0.00"
-        ws.freeze_panes = "A3"
-        _autosize(ws)
+                cell.number_format = SCI_FMT
 
-    # ── Sheet 3 — Material Contribution (per method, selected year) ──────────
-    for res in results:
-        if not res.years:
-            continue
-        target_year = selected_year if selected_year is not None else res.years[0].year
-        yr = next((y for y in res.years if y.year == target_year), res.years[0])
-
-        short = _short_method_label(res.method)
-        title = f"Materials {yr.year} — {short}"[:31]
-        ws = wb.create_sheet(title)
-        ws.append([f"Method: {' › '.join(res.method)}   Year: {yr.year}   Unit: {res.unit}"])
-        ws["A1"].font = Font(italic=True, color="6B7280")
-
-        header = ["Material", f"Impact ({res.unit})", "% of Total"]
-        ws.append(header)
-        for cell in ws[2]:
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-
-        total = yr.total_impact or 0.0
-        rows = [(name, impact, (impact / total * 100.0) if total else 0.0)
-                for name, impact in yr.impact_by_material.items()]
-        rows.sort(key=lambda r: abs(r[1]), reverse=True)
-        for r in rows:
-            ws.append(list(r))
-        for row in ws.iter_rows(min_row=3, min_col=2, max_col=2):
-            for cell in row:
-                cell.number_format = num_fmt
-        for row in ws.iter_rows(min_row=3, min_col=3, max_col=3):
-            for cell in row:
-                cell.number_format = "0.00"
-        ws.freeze_panes = "A3"
-        _autosize(ws)
-
-    # ── Sheet 4 — Summary ────────────────────────────────────────────────────
-    ws = wb.create_sheet("Summary", 0)
-    year_start = results[0].years[0].year if results and results[0].years else None
-    year_end = results[0].years[-1].year if results and results[0].years else None
+    # Collect common data
+    labels = [_short_method_label(r.method) for r in results]
+    units = [r.unit for r in results]
+    years_set: set[int] = set()
+    for r in results:
+        for yr in r.years:
+            years_set.add(yr.year)
+    years_list = sorted(years_set)
+    year_start_val = years_list[0] if years_list else None
+    year_end_val = years_list[-1] if years_list else None
     stages_included = results[0].stages_included if results else []
-    ws.append(["System", system_name])
-    ws.append(["Scope", scope])
-    ws.append(["Stages included", ", ".join(stages_included) if stages_included else "—"])
-    ws.append(["Year range", f"{year_start}–{year_end}" if year_start else "—"])
-    ws.append(["Methods calculated", len(results)])
+    cohort_keys = sorted({
+        ck for r in results for yr in r.years for ck in yr.impact_by_cohort
+    })
+
+    # Precompute archetype name per cohort
+    cohort_arc_name: dict[str, str] = {}
+    cohort_arc_scale: dict[str, float] = {}
+    for ck in cohort_keys:
+        arc_id, scale = mapping_by_cohort.get(ck, ("", 1.0))
+        cohort_arc_name[ck] = archetypes[arc_id].name if arc_id in archetypes else ""
+        cohort_arc_scale[ck] = scale
+
+    # Unique archetype names used
+    arc_names_set = sorted({n for n in cohort_arc_name.values() if n})
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 1: Summary
+    # ══════════════════════════════════════════════════════════════════════════
+    ws = wb.create_sheet("Summary")
+    ws.sheet_properties.tabColor = "3ECFCF"
+
+    scope_labels = {"inflows": "Manufacturing", "stock": "Operation", "outflows": "End of Life", "all": "Full lifecycle"}
+    meta_rows = [
+        ("Project", system_name),
+        ("Scope", scope_labels.get(scope, scope)),
+        ("Stages included", ", ".join(stages_included) if stages_included else "—"),
+        ("Year range", f"{year_start_val}–{year_end_val}" if year_start_val else "—"),
+        ("Indicators calculated", len(results)),
+        ("Cohorts", len(cohort_keys)),
+        ("Archetypes", len(arc_names_set)),
+        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+    ]
     if elapsed_seconds is not None:
         m, s = divmod(int(elapsed_seconds), 60)
-        ws.append(["Calculation time", f"{m}m {s}s" if m else f"{s}s"])
+        meta_rows.append(("Calculation time", f"{m}m {s}s" if m else f"{s}s"))
+    meta_rows.append(("MApper version", "1.0"))
+
+    for label, value in meta_rows:
+        ws.append([label, value])
+        ws[ws.max_row][0].font = meta_font
+        ws[ws.max_row][1].font = meta_val_font
+
     ws.append([])
-    ws.append(["Method", "Unit", "Cumulative Impact", "Peak Year", "Peak Impact"])
-    method_header_row = ws.max_row
-    for cell in ws[method_header_row]:
-        cell.font = header_font
-        cell.fill = header_fill
+    ws.append(["Indicator", "Method path", "Unit", "Cumulative impact", "Peak year", "Peak impact"])
+    _style_header(ws, ws.max_row)
+    data_start = ws.max_row + 1
     for res in results:
         ws.append([
+            _short_method_label(res.method),
             " › ".join(res.method),
             res.unit,
             res.summary.total_impact,
             res.summary.peak_year,
             res.summary.peak_impact,
         ])
-    # Scientific formatting for impact columns.
-    data_start = method_header_row + 1
-    for row in ws.iter_rows(min_row=data_start, min_col=3, max_col=3):
-        for cell in row:
-            cell.number_format = num_fmt
-    for row in ws.iter_rows(min_row=data_start, min_col=5, max_col=5):
-        for cell in row:
-            cell.number_format = num_fmt
-
-    # Top 5 cohorts / materials — use first method, selected year.
-    if results and results[0].years:
-        res0 = results[0]
-        target_year = selected_year if selected_year is not None else res0.years[0].year
-        yr0 = next((y for y in res0.years if y.year == target_year), res0.years[0])
-        ws.append([])
-        ws.append([f"Top 5 cohorts — {res0.method[-1] if res0.method else ''} — year {yr0.year}"])
-        ws[ws.max_row][0].font = Font(bold=True)
-        ws.append(["Cohort", f"Impact ({res0.unit})"])
-        for cell in ws[ws.max_row]:
-            cell.font = header_font
-            cell.fill = header_fill
-        top_cohorts = sorted(yr0.impact_by_cohort.items(), key=lambda kv: abs(kv[1]), reverse=True)[:5]
-        start_row = ws.max_row + 1
-        for ck, impact in top_cohorts:
-            ws.append([ck, impact])
-        for row in ws.iter_rows(min_row=start_row, min_col=2, max_col=2):
-            for cell in row:
-                cell.number_format = num_fmt
-
-        ws.append([])
-        ws.append([f"Top 5 materials — {res0.method[-1] if res0.method else ''} — year {yr0.year}"])
-        ws[ws.max_row][0].font = Font(bold=True)
-        ws.append(["Material", f"Impact ({res0.unit})"])
-        for cell in ws[ws.max_row]:
-            cell.font = header_font
-            cell.fill = header_fill
-        top_mats = sorted(yr0.impact_by_material.items(), key=lambda kv: abs(kv[1]), reverse=True)[:5]
-        start_row = ws.max_row + 1
-        for name, impact in top_mats:
-            ws.append([name, impact])
-        for row in ws.iter_rows(min_row=start_row, min_col=2, max_col=2):
-            for cell in row:
-                cell.number_format = num_fmt
+    _apply_sci(ws, data_start, 4, 4)
+    _apply_sci(ws, data_start, 6, 6)
 
     _autosize(ws)
     ws.freeze_panes = "A2"
 
-    # ── Sheet: Annual Totals (all indicators side by side) ────────────────────
-    if len(results) > 1:
-        ws_at = wb.create_sheet("Annual Totals")
-        labels = [_short_method_label(r.method) for r in results]
-        units = [r.unit for r in results]
-        header = ["Year"] + [f"{l} ({u})" for l, u in zip(labels, units)]
-        ws_at.append(header)
-        for cell in ws_at[1]:
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-        years_set: set[int] = set()
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 2: Annual totals
+    # ══════════════════════════════════════════════════════════════════════════
+    ws_at = wb.create_sheet("Annual totals")
+    ws_at.sheet_properties.tabColor = "4A90D9"
+    header = ["Year"] + [f"{l} ({u})" for l, u in zip(labels, units)]
+    ws_at.append(header)
+    _style_header(ws_at)
+    for y in years_list:
+        row: list = [y]
         for r in results:
-            for yr in r.years:
-                years_set.add(yr.year)
-        for y in sorted(years_set):
-            row = [y]
-            for r in results:
-                yr = next((v for v in r.years if v.year == y), None)
-                row.append(yr.total_impact if yr else 0.0)
-            ws_at.append(row)
-        for row in ws_at.iter_rows(min_row=2, min_col=2, max_col=len(header)):
-            for cell in row:
-                cell.number_format = num_fmt
-        ws_at.freeze_panes = "B2"
-        _autosize(ws_at)
+            yr = next((v for v in r.years if v.year == y), None)
+            row.append(yr.total_impact if yr else 0.0)
+        ws_at.append(row)
+    _apply_sci(ws_at, 2, 2, len(header))
+    ws_at.freeze_panes = "B2"
+    _autosize(ws_at)
 
-    # ── Sheet: By Cohort × Year (full granularity, all indicators) ───────────
-    if results:
-        ws_coh = wb.create_sheet("By Cohort × Year")
-        dim_headers = [d.capitalize() for d in nonage_dim_names] or ["Cohort"]
-        labels = [_short_method_label(r.method) for r in results]
-        units = [r.unit for r in results]
-        header = ["Year"] + dim_headers + [f"{l} ({u})" for l, u in zip(labels, units)]
-        ws_coh.append(header)
-        for cell in ws_coh[1]:
-            cell.font = header_font
-            cell.fill = header_fill
-            cell.alignment = Alignment(horizontal="center")
-        years_list = sorted({yr.year for r in results for yr in r.years})
-        cohort_keys = sorted({
-            ck for r in results for yr in r.years
-            for ck in yr.impact_by_cohort.keys()
-        })
-        for y in years_list:
-            for ck in cohort_keys:
-                parts = ck.split("|")
-                dim_vals = parts[: len(dim_headers)] if nonage_dim_names else [ck]
-                while len(dim_vals) < len(dim_headers):
-                    dim_vals.append("")
-                row = [y] + dim_vals
-                for r in results:
-                    yr = next((v for v in r.years if v.year == y), None)
-                    row.append(yr.impact_by_cohort.get(ck, 0.0) if yr else 0.0)
-                ws_coh.append(row)
-        data_col_start = 1 + len(dim_headers) + 1
-        for row in ws_coh.iter_rows(min_row=2, min_col=data_col_start, max_col=len(header)):
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 3: By indicator (annual, cumulative, YoY %)
+    # ══════════════════════════════════════════════════════════════════════════
+    ws_bi = wb.create_sheet("By indicator")
+    ws_bi.sheet_properties.tabColor = "4A90D9"
+    # Build header: Year | for each indicator: Annual | Cumulative | YoY %
+    bi_header: list[str] = ["Year"]
+    for l, u in zip(labels, units):
+        bi_header.append(f"{l} ({u})")
+        bi_header.append(f"{l} cumulative")
+        bi_header.append(f"{l} YoY %")
+    ws_bi.append(bi_header)
+    _style_header(ws_bi)
+
+    # Pre-compute year→total for each result
+    year_totals_by_result: list[dict[int, float]] = []
+    for r in results:
+        d: dict[int, float] = {}
+        for yr in r.years:
+            d[yr.year] = yr.total_impact
+        year_totals_by_result.append(d)
+
+    for y in years_list:
+        row: list = [y]
+        for ri, r in enumerate(results):
+            annual = year_totals_by_result[ri].get(y, 0.0)
+            cumul = sum(year_totals_by_result[ri].get(yy, 0.0) for yy in years_list if yy <= y)
+            prev_y = y - 1
+            prev_val = year_totals_by_result[ri].get(prev_y, 0.0)
+            yoy = ((annual - prev_val) / abs(prev_val) * 100.0) if prev_val else None
+            row.extend([annual, cumul, yoy if yoy is not None else ""])
+        ws_bi.append(row)
+
+    for col_idx in range(2, len(bi_header) + 1):
+        # Annual and cumulative columns get sci format, YoY gets %
+        col_offset = (col_idx - 2) % 3  # 0=annual, 1=cumul, 2=yoy
+        fmt = SCI_FMT if col_offset < 2 else PCT_FMT
+        for row in ws_bi.iter_rows(min_row=2, min_col=col_idx, max_col=col_idx):
             for cell in row:
-                cell.number_format = num_fmt
-        ws_coh.freeze_panes = "B2"
+                cell.number_format = fmt
+    ws_bi.freeze_panes = "B2"
+    _autosize(ws_bi)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 4: By fuel type (first non-age dimension)
+    # ══════════════════════════════════════════════════════════════════════════
+    if results and n_dims >= 1:
+        ws_ft = wb.create_sheet("By fuel type")
+        ws_ft.sheet_properties.tabColor = "4A90D9"
+        primary_dim = dim_headers[0]
+        ft_header = ["Year", primary_dim, "Vehicle count"] + [f"{l} ({u})" for l, u in zip(labels, units)]
+        ws_ft.append(ft_header)
+        _style_header(ws_ft)
+
+        # Collect unique primary-dim values
+        primary_vals: set[str] = set()
+        for ck in cohort_keys:
+            primary_vals.add(_split_cohort(ck)[0])
+        primary_sorted = sorted(primary_vals)
+
+        for y in years_list:
+            ft_rows: list[tuple] = []
+            for pv in primary_sorted:
+                # Aggregate across cohorts that share this primary dim
+                total_count = 0.0
+                impacts: list[float] = [0.0] * len(results)
+                for ck in cohort_keys:
+                    if _split_cohort(ck)[0] != pv:
+                        continue
+                    sc = (sim_counts or {}).get(y, {})
+                    total_count += sc.get(ck, 0.0)
+                    for ri, r in enumerate(results):
+                        yr = next((v for v in r.years if v.year == y), None)
+                        if yr:
+                            impacts[ri] += yr.impact_by_cohort.get(ck, 0.0)
+                ft_rows.append((y, pv, total_count, *impacts))
+            # Sort by total impact of first indicator desc within this year
+            ft_rows.sort(key=lambda r: abs(r[3]) if len(r) > 3 else 0, reverse=True)
+            for r in ft_rows:
+                ws_ft.append(list(r))
+
+        for row in ws_ft.iter_rows(min_row=2, min_col=3, max_col=3):
+            for cell in row:
+                cell.number_format = INT_FMT
+        _apply_sci(ws_ft, 2, 4, len(ft_header))
+        ws_ft.freeze_panes = "C2"
+        _autosize(ws_ft)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 5: By cohort (full granularity)
+    # ══════════════════════════════════════════════════════════════════════════
+    if results:
+        ws_coh = wb.create_sheet("By cohort")
+        ws_coh.sheet_properties.tabColor = "4A90D9"
+        # Header: Year | dims... | Archetype | Scale | Count | per-vehicle + total per indicator
+        coh_header = ["Year"] + dim_headers + ["Archetype", "Scale", "Vehicle count"]
+        for l, u in zip(labels, units):
+            coh_header.append(f"{l} per vehicle ({u})")
+            coh_header.append(f"{l} total ({u})")
+        ws_coh.append(coh_header)
+        _style_header(ws_coh)
+
+        for y in years_list:
+            sc = (sim_counts or {}).get(y, {})
+            for ck in cohort_keys:
+                dim_vals = _split_cohort(ck)
+                count = sc.get(ck, 0.0)
+                row: list = [y] + dim_vals + [
+                    cohort_arc_name.get(ck, ""),
+                    cohort_arc_scale.get(ck, 1.0),
+                    count,
+                ]
+                for ri, r in enumerate(results):
+                    yr = next((v for v in r.years if v.year == y), None)
+                    impact = yr.impact_by_cohort.get(ck, 0.0) if yr else 0.0
+                    per_v = (impact / count) if count else 0.0
+                    row.extend([per_v, impact])
+                ws_coh.append(row)
+
+        count_col = 1 + n_dims + 3  # Vehicle count column
+        for row in ws_coh.iter_rows(min_row=2, min_col=count_col, max_col=count_col):
+            for cell in row:
+                cell.number_format = INT_FMT
+        _apply_sci(ws_coh, 2, count_col + 1, len(coh_header))
+        ws_coh.freeze_panes = f"{get_column_letter(n_dims + 2)}2"
         _autosize(ws_coh)
 
-    # ── Sheet: Cohort Mappings ────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 6: By archetype
+    # ══════════════════════════════════════════════════════════════════════════
+    if results and arc_names_set:
+        ws_arc = wb.create_sheet("By archetype")
+        ws_arc.sheet_properties.tabColor = "4A90D9"
+        arc_header = ["Year", "Archetype", "Vehicle count"] + [f"{l} ({u})" for l, u in zip(labels, units)]
+        ws_arc.append(arc_header)
+        _style_header(ws_arc)
+
+        for y in years_list:
+            sc = (sim_counts or {}).get(y, {})
+            for an in arc_names_set:
+                total_count = 0.0
+                impacts: list[float] = [0.0] * len(results)
+                for ck in cohort_keys:
+                    if cohort_arc_name.get(ck) != an:
+                        continue
+                    total_count += sc.get(ck, 0.0)
+                    for ri, r in enumerate(results):
+                        yr = next((v for v in r.years if v.year == y), None)
+                        if yr:
+                            impacts[ri] += yr.impact_by_cohort.get(ck, 0.0)
+                ws_arc.append([y, an, total_count, *impacts])
+
+        for row in ws_arc.iter_rows(min_row=2, min_col=3, max_col=3):
+            for cell in row:
+                cell.number_format = INT_FMT
+        _apply_sci(ws_arc, 2, 4, len(arc_header))
+        ws_arc.freeze_panes = "C2"
+        _autosize(ws_arc)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 7: By stage
+    # ══════════════════════════════════════════════════════════════════════════
+    if results and stages_included:
+        ws_stg = wb.create_sheet("By stage")
+        ws_stg.sheet_properties.tabColor = "4A90D9"
+        if scope == "all" and len(stages_included) > 1:
+            # For full lifecycle, show per-stage column. We don't have per-stage
+            # breakdown in the results, so show the included stages as info.
+            stg_header = ["Year", "Stage"] + [f"{l} ({u})" for l, u in zip(labels, units)]
+            ws_stg.append(stg_header)
+            _style_header(ws_stg)
+            ws_stg.append([])
+            ws_stg.append(["Per-stage breakdown requires running each scope separately."])
+            ws_stg.append(["Stages included in this calculation: " + ", ".join(stages_included)])
+            ws_stg.append([])
+            ws_stg.append(["Showing fleet-level totals (all stages combined):"])
+            ws_stg.append([])
+            # Fall back to total per year
+            for y in years_list:
+                row: list = [y, ", ".join(stages_included)]
+                for r in results:
+                    yr = next((v for v in r.years if v.year == y), None)
+                    row.append(yr.total_impact if yr else 0.0)
+                ws_stg.append(row)
+        else:
+            # Single scope — one stage grouping
+            stage_name = stages_included[0] if stages_included else scope_labels.get(scope, scope)
+            stg_header = ["Year", "Stage"] + [f"{l} ({u})" for l, u in zip(labels, units)]
+            ws_stg.append(stg_header)
+            _style_header(ws_stg)
+            for y in years_list:
+                row = [y, stage_name]
+                for r in results:
+                    yr = next((v for v in r.years if v.year == y), None)
+                    row.append(yr.total_impact if yr else 0.0)
+                ws_stg.append(row)
+
+        _apply_sci(ws_stg, 2, 3, len(stg_header))
+        ws_stg.freeze_panes = "C2"
+        _autosize(ws_stg)
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 8: Cohort mappings
+    # ══════════════════════════════════════════════════════════════════════════
     if cohort_mapping is not None and cohort_mapping.mappings:
-        ws_cm = wb.create_sheet("Cohort Mappings")
-        dim_headers_cm = [d.capitalize() for d in nonage_dim_names] or ["Cohort"]
-        header = dim_headers_cm + ["Archetype", "Scaling Factor"]
-        ws_cm.append(header)
-        for cell in ws_cm[1]:
-            cell.font = header_font
-            cell.fill = header_fill
+        ws_cm = wb.create_sheet("Cohort mappings")
+        ws_cm.sheet_properties.tabColor = "4A90D9"
+        cm_header = dim_headers + ["Archetype", "Scaling factor"]
+        ws_cm.append(cm_header)
+        _style_header(ws_cm)
         for entry in cohort_mapping.mappings:
-            parts = entry.cohort_key.split("|")
-            dim_vals = parts[: len(dim_headers_cm)] if nonage_dim_names else [entry.cohort_key]
-            while len(dim_vals) < len(dim_headers_cm):
-                dim_vals.append("")
+            dim_vals = _split_cohort(entry.cohort_key)
             arc_name = archetypes[entry.archetype_id].name if entry.archetype_id in archetypes else entry.archetype_id
             ws_cm.append(dim_vals + [arc_name, entry.scaling_factor])
         ws_cm.freeze_panes = "A2"
         _autosize(ws_cm)
 
-    # ── Sheet: MFA Summary ────────────────────────────────────────────────────
+    # ══════════════════════════════════════════════════════════════════════════
+    # Sheet 9: MFA fleet data
+    # ══════════════════════════════════════════════════════════════════════════
     if sim_result is not None:
-        ws_mfa = wb.create_sheet("MFA Summary")
-        ws_mfa.append(["Year", "Total Stock", "Total Inflows", "Total Outflows"])
-        for cell in ws_mfa[1]:
-            cell.font = header_font
-            cell.fill = header_fill
+        ws_mfa = wb.create_sheet("MFA fleet data")
+        ws_mfa.sheet_properties.tabColor = "4A90D9"
+
+        # Collect all primary-dim values from stock for per-type columns
+        primary_dim = dim_headers[0] if dim_headers else "Cohort"
+        all_primaries: set[str] = set()
+        for yr in sim_result.years:
+            for ck in yr.stock:
+                all_primaries.add(_split_cohort(ck)[0])
+        primary_sorted_mfa = sorted(all_primaries)
+
+        mfa_header = ["Year", "Total stock", "Total inflows", "Total outflows"]
+        for pv in primary_sorted_mfa:
+            mfa_header.append(f"Stock: {pv}")
+        ws_mfa.append(mfa_header)
+        _style_header(ws_mfa)
+
         for yr in sim_result.years:
             total_stock = sum(yr.stock.values())
             total_in = sum(yr.inflow.values())
             total_out = sum(yr.outflow.values())
-            ws_mfa.append([yr.year, total_stock, total_in, total_out])
-        for row in ws_mfa.iter_rows(min_row=2, min_col=2, max_col=4):
+            row: list = [yr.year, total_stock, total_in, total_out]
+            for pv in primary_sorted_mfa:
+                s = sum(v for ck, v in yr.stock.items() if _split_cohort(ck)[0] == pv)
+                row.append(s)
+            ws_mfa.append(row)
+
+        for row in ws_mfa.iter_rows(min_row=2, min_col=2, max_col=len(mfa_header)):
             for cell in row:
-                cell.number_format = "#,##0"
-        ws_mfa.freeze_panes = "A2"
+                cell.number_format = INT_FMT
+        ws_mfa.freeze_panes = "B2"
         _autosize(ws_mfa)
 
     return wb
@@ -1421,8 +1520,10 @@ async def export_mfa_lca(system_id: str, year: int | None = None) -> Response:
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
+    import datetime as _dt
     scope = results[0].scope
-    filename = f"{_sanitize_filename(sys_def.name, 'mfa_lca')}_impact_{scope}.xlsx"
+    scope_tags = {"inflows": "Manufacturing", "stock": "Operation", "outflows": "End_of_Life", "all": "Full_lifecycle"}
+    filename = f"MApper_Impact_{_sanitize_filename(sys_def.name, 'system')}_{scope_tags.get(scope, scope)}_{_dt.date.today().isoformat()}.xlsx"
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2038,7 +2139,9 @@ def _parse_bom_workbook(
         if stage_name in stages:
             return stages[stage_name]
         stage_root = BOMNode(
-            name=stage_name, node_type="component", quantity=1, unit="piece", children=[]
+            name=stage_name, node_type="component", quantity=1, unit="piece",
+            is_annual=(stage_to_scope(stage_name) == "stock"),
+            children=[],
         )
         stages[stage_name] = stage_root
         node_by_name[(stage_name, stage_name)] = stage_root
@@ -2140,6 +2243,7 @@ def _parse_bom_workbook(
             # Stage root row. If Name == Stage, this row IS the stage root;
             # otherwise make a stage root and attach as top-level child.
             if name == stage and stage not in stages:
+                node.is_annual = stage_to_scope(stage) == "stock"
                 stages[stage] = node
                 node_by_name[(stage, stage)] = node
                 continue

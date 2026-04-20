@@ -27,6 +27,13 @@ mapper-backend/export/
 mapper-backend/unlinked.log
 *.log
 
+# Secrets & user data
+premise_key
+waitlist.json
+
+# ecoinvent archives (licensed — never commit)
+*.7z
+
 # Reference codebases (not part of MApper)
 _reference/
 

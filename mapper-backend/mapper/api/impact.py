@@ -240,10 +240,14 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
             # Create a persistent runner that factorizes the technosphere
             # matrix ONCE and reuses it across all years via redo_lci().
             persistent = PersistentLCARunner()
-            # scope="all" runs three sub-scopes; each iterates all years.
-            scope_passes = 3 if body.scope == "all" else 1
+            # scope="all" runs three sub-scopes (inflows → stock → outflows);
+            # each iterates all years. Labels match the user-facing stage names.
+            if body.scope == "all":
+                scope_labels = ["Manufacturing", "Operation", "End of Life"]
+            else:
+                scope_labels = [_SCOPE_LABELS.get(body.scope, body.scope)]
             runner = _progress_runner(
-                _publish, total_years * scope_passes, persistent
+                _publish, in_range_years, scope_labels, persistent
             )
 
             if mode == "projected":
@@ -321,25 +325,54 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
     return {"task_id": task_id}
 
 
+_SCOPE_LABELS = {
+    "inflows": "Manufacturing",
+    "stock": "Operation",
+    "outflows": "End of Life",
+    "all": "Full lifecycle",
+}
+
+
 def _progress_runner(
     publish,
-    total_years: int,
+    years: list[int],
+    scope_labels: list[str],
     persistent: PersistentLCARunner | None = None,
 ):
     """Wrap a ``PersistentLCARunner`` (or fall back to ``run_lca_multi_method``)
-    and emit a progress tick per year.
+    and emit a progress tick per (scope, year) pair.
 
     When *persistent* is provided, the runner reuses a single LU
     factorization of the technosphere matrix across all years — turning
     ~0.5 s per year into ~1 ms back-substitution.
+
+    The pipeline iterates scopes sequentially (``_ATOMIC_SCOPES`` order:
+    inflows → stock → outflows), each looping over all in-range years,
+    so the (scope, year) pair can be derived from the call counter.
     """
     lca_fn = persistent or run_lca_multi_method
     counter = {"n": 0}
+    total_years = max(len(years), 1)
+    total = total_years * max(len(scope_labels), 1)
 
     def runner(demand, method_tuples):
         counter["n"] += 1
-        pct = 0.1 + 0.85 * min(1.0, counter["n"] / total_years)
-        publish(f"year {counter['n']}/{total_years}", pct)
+        n = counter["n"]
+        pct = 0.1 + 0.85 * min(1.0, n / total)
+        idx = n - 1
+        scope_idx = min(idx // total_years, len(scope_labels) - 1)
+        year_idx = idx % total_years
+        year = years[year_idx] if years else None
+        scope_label = scope_labels[scope_idx] if scope_labels else None
+        if year is not None and scope_label and len(scope_labels) > 1:
+            stage = f"{year} · {scope_label} ({n}/{total})"
+        elif year is not None and scope_label:
+            stage = f"year {year} · {scope_label} ({n}/{total})"
+        elif year is not None:
+            stage = f"year {year} ({n}/{total})"
+        else:
+            stage = f"{n}/{total}"
+        publish(stage, pct)
         return lca_fn(demand, method_tuples)
 
     return runner

@@ -11,7 +11,7 @@
 
 ```bash
 git clone https://github.com/leofrht-jpg/MApper-Software.git
-cd MApper
+cd MApper-Software
 chmod +x setup.sh
 ./setup.sh
 ./start.sh
@@ -23,7 +23,7 @@ Then open http://localhost:5173
 
 ```bat
 git clone https://github.com/leofrht-jpg/MApper-Software.git
-cd MApper
+cd MApper-Software
 setup.bat
 ```
 

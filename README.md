@@ -35,7 +35,7 @@ The first desktop application integrating Life Cycle Assessment, Material Flow A
 ### Setup
 
 ```bash
-git clone https://github.com/leofrht-jpg/MApper.git
+git clone https://github.com/leofrht-jpg/MApper-Software.git
 cd MApper
 chmod +x setup.sh
 ./setup.sh

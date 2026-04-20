@@ -10,7 +10,7 @@
 ## Quick Start (macOS / Linux)
 
 ```bash
-git clone https://github.com/leofrht-jpg/MApper.git
+git clone https://github.com/leofrht-jpg/MApper-Software.git
 cd MApper
 chmod +x setup.sh
 ./setup.sh
@@ -22,7 +22,7 @@ Then open http://localhost:5173
 ## Quick Start (Windows)
 
 ```bat
-git clone https://github.com/leofrht-jpg/MApper.git
+git clone https://github.com/leofrht-jpg/MApper-Software.git
 cd MApper
 setup.bat
 ```

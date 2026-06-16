@@ -329,6 +329,14 @@ class SustainabilityRatioResult(BaseModel):
     # null when allocated_sos <= 0 (e.g. carbon budget depleted). Treat as +∞;
     # zone is still 'high_risk'. Nullable so compute→export round-trips cleanly.
     sr: float | None
+    # Patch 5AS — climate (cumulative) allocation-chain intermediates, surfaced
+    # so the Excel export shows the full per-year chain (remaining budget →
+    # global allocation → × system share = allocated_sos) from ONE authoritative
+    # row, with no recompute. None for non-cumulative boundaries. These are the
+    # values `annual_system_allocation` already computes internally — exposing
+    # them is NOT a methodology change.
+    remaining_budget_gt: float | None = None   # global remaining budget at `year` (Gt CO2)
+    global_allocation_gt: float | None = None  # remaining_budget(year) / (end_year − year) (Gt CO2/yr)
     zone: ZONE
     # Principle chosen at the (first) category_specific layer; None if the
     # chain has no category_specific layer (e.g. a single fixed layer).

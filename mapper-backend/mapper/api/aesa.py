@@ -586,13 +586,21 @@ def _build_aesa_workbook(
     ws.append(["AESA Configuration", config.name])
     ws.append(["Boundary Set", config.boundary_set_id])
     ws.append(["Impact Mode", config.impact_mode])
+    # Patch 5AS — metadata header so an exported workbook is self-describing.
+    ws.append(["DSM scenario", config.dsm_scenario_id or "(active)"])
     ws.append(["Layer 2 (sector share)", config.multi_d.layer2_sector_share])
+    if config.carbon_budget is not None:
+        cb = config.carbon_budget
+        ws.append(["Carbon budget", f"{cb.budget_source} — {cb.initial_budget_gt} Gt"])
+        ws.append(["SSP scenario", cb.ssp_scenario])
+        ws.append(["Budget horizon", f"{cb.start_year}–{cb.end_year}"])
+    ws.append(["Sensitivity", "all 5 principles" if getattr(result, "sensitivity", None) else "primary only"])
     ws.append([])
+    hdr_row = ws.max_row + 1
     ws.append(["Year", "Safe", "Zone of Uncertainty", "High Risk", "Assessed"])
-    for row in ws.iter_rows(min_row=7, max_row=7):
-        for cell in row:
-            cell.font = header_font
-            cell.fill = header_fill
+    for cell in ws[hdr_row]:
+        cell.font = header_font
+        cell.fill = header_fill
     for y in result.summary_by_year:
         ws.append([y.year, y.safe, y.zone_of_uncertainty, y.high_risk, y.total_assessed])
     _autosize(ws)
@@ -623,10 +631,17 @@ def _build_aesa_workbook(
 
     # ── Impacts vs SOS (long-form) ──
     ws = wb.create_sheet("Impacts vs SOS")
+    # Patch 5AS — each per-year, per-indicator row now carries the numbers
+    # behind the SR timeline: system impact (numerator), assigned SOS share
+    # (denominator), SR, the total system share, and — for climate (cumulative)
+    # — the allocation chain (global remaining budget → per-year global
+    # allocation → × system share = allocated SOS). All read from the
+    # authoritative result row; nothing recomputed in the export.
     ws.append([
         "Year", "PB ID", "PB Name", "EF Indicator", "Method",
         "Impact", "Allocated SOS", "SR", "Zone",
         "Principle", "L1 Factor", "L2 Factor", "Boundary Type", "Unit",
+        "System Share", "Remaining Budget (Gt)", "Global Allocation (Gt/yr)",
     ])
     _style_header(ws)
     for r in result.results:
@@ -635,6 +650,7 @@ def _build_aesa_workbook(
             r.impact, r.allocated_sos, r.sr, r.zone,
             r.sharing_principle, r.sharing_factor_l1, r.sharing_factor_l2,
             r.boundary_type, r.unit,
+            r.total_sharing_factor, r.remaining_budget_gt, r.global_allocation_gt,
         ])
     for row in ws.iter_rows(min_row=2, min_col=6, max_col=7):
         for cell in row:
@@ -642,6 +658,13 @@ def _build_aesa_workbook(
     for row in ws.iter_rows(min_row=2, min_col=8, max_col=8):
         for cell in row:
             cell.number_format = "0.000"
+    for row in ws.iter_rows(min_row=2, min_col=15, max_col=15):  # System Share
+        for cell in row:
+            cell.number_format = num_fmt
+    for row in ws.iter_rows(min_row=2, min_col=16, max_col=17):  # Gt columns
+        for cell in row:
+            if cell.value is not None:
+                cell.number_format = "0.00"
     ws.freeze_panes = "A2"
     _autosize(ws)
 

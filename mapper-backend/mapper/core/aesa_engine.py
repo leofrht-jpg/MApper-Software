@@ -492,8 +492,16 @@ class AESAEngine:
                     total_factor *= f
 
                 # Allocated SOS
+                remaining_budget_gt: float | None = None
+                global_allocation_gt: float | None = None
                 if pb.boundary_type == "cumulative" and config.carbon_budget is not None:
-                    allocated = config.carbon_budget.annual_system_allocation(
+                    cb = config.carbon_budget
+                    # Patch 5AS — capture the same intermediates
+                    # `annual_system_allocation` derives, to surface on the row
+                    # (pure deterministic functions → no drift vs `allocated`).
+                    remaining_budget_gt = cb.remaining_budget(yr.year)
+                    global_allocation_gt = cb.annual_global_allocation(yr.year)
+                    allocated = cb.annual_system_allocation(
                         yr.year, chain, assignments,
                     )
                 else:
@@ -521,6 +529,8 @@ class AESAEngine:
                     impact=impact,
                     allocated_sos=allocated,
                     sr=sr,
+                    remaining_budget_gt=remaining_budget_gt,
+                    global_allocation_gt=global_allocation_gt,
                     zone=zone,
                     sharing_principle=principle,
                     layer_factors=layer_factors,

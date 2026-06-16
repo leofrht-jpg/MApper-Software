@@ -1,6 +1,9 @@
-import { useMemo, useState } from 'react'
-import type { AESAComputeResult, SharingPrincipleId, SustainabilityRatioResult } from '../../api/client'
+import { useMemo, useRef, useState } from 'react'
+import type { AESAComputeResult, SharingPrincipleId } from '../../api/client'
 import { PRINCIPLE_COLOR, ZONE_COLOR, shortPbName, srOrInf } from './zones'
+import { ChartExportButton } from '../charts/ChartExportButton'
+import { ChartExportContainer } from '../charts/ChartExportContainer'
+import { YearSlider } from '../ui/YearSlider'
 
 interface Props {
   result: AESAComputeResult
@@ -27,6 +30,13 @@ export function BoxPlotView({ result }: Props) {
   }, [result.results])
 
   const [year, setYear] = useState(() => years[years.length - 1] ?? 0)
+  const boxRef = useRef<HTMLDivElement>(null)
+  // Patch 4J — sibling ref on the existing legend block (Multi-D
+  // baseline + per-principle swatches) so ChartExportButton's Mode
+  // picker appears. Patch 4I missed this chart because the audit
+  // grepped for Recharts `<Legend>` rather than custom HTML legend
+  // blocks rendered as children of the parent div.
+  const legendRef = useRef<HTMLDivElement>(null)
 
   const yearResults = useMemo(
     () => result.results.filter((r) => r.year === year),
@@ -89,17 +99,21 @@ export function BoxPlotView({ result }: Props) {
         <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
           Multi-D vs uniform sharing principles — SR distribution per boundary
         </div>
-        {years.length > 1 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>Year:</span>
-            <select value={year} onChange={(e) => setYear(Number(e.target.value))} style={selStyle}>
-              {years.map((y) => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-        )}
+        <ChartExportButton chartRef={boxRef} legendRef={legendRef} filename={`aesa_boxplot_${year}`} />
       </div>
 
-      <div style={{ overflow: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
+      {years.length > 1 && (
+        <YearSlider
+          years={years}
+          value={year}
+          onChange={setYear}
+          accentColor="var(--mod-aesa)"
+          variant="inline"
+          showDots={years.length <= 30}
+        />
+      )}
+
+      <ChartExportContainer ref={boxRef} style={{ overflow: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
         <svg width={W} height={H} style={{ display: 'block' }}>
           {/* Zone shading */}
           <rect x={xFor(0)} y={0} width={xFor(1) - xFor(0)} height={H} fill={ZONE_COLOR.safe} fillOpacity={0.06} />
@@ -193,9 +207,9 @@ export function BoxPlotView({ result }: Props) {
             </text>
           </g>
         </svg>
-      </div>
+      </ChartExportContainer>
 
-      <div style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+      <div ref={legendRef} data-testid="aesa-boxplot-legend" style={{ display: 'flex', gap: 14, fontSize: 11, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
           <span style={{ width: 12, height: 8, background: MULTI_D_COLOR, border: `1.5px solid ${MULTI_D_COLOR}` }} />
           <b>Multi-D (baseline)</b>
@@ -242,10 +256,3 @@ function Empty({ msg }: { msg: string }) {
   )
 }
 
-const selStyle: React.CSSProperties = {
-  padding: '3px 6px', fontSize: 11,
-  backgroundColor: 'var(--bg-elevated)',
-  border: '1px solid var(--border-subtle)',
-  borderRadius: 'var(--radius-sm)',
-  color: 'var(--text-primary)',
-}

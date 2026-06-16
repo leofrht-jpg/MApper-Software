@@ -1,6 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { SustainabilityRatioResult } from '../../api/client'
-import { ZONE_COLOR, shortPbName, srOrInf, fmtSR } from './zones'
+import { ZONE_COLOR, shortPbName, srOrInf } from './zones'
+import { ChartExportButton } from '../charts/ChartExportButton'
+import { ChartExportContainer } from '../charts/ChartExportContainer'
+import { NumberFormatControl } from '../charts/NumberFormatControl'
+import { useNumberFormatter } from '../charts/numberFormat'
+import { YearSlider } from '../ui/YearSlider'
 
 interface Props {
   results: SustainabilityRatioResult[]
@@ -17,6 +22,14 @@ export function RadarView({ results, size = 480 }: Props) {
   }, [results])
 
   const [year, setYear] = useState(() => years[years.length - 1] ?? 0)
+  const radarRef = useRef<HTMLDivElement>(null)
+  // SR values cluster around 1.0 (sustainability ratio). Scientific/SI
+  // notation makes no sense — restrict to Fixed only.
+  const srFormat = useNumberFormatter({ notation: 'fixed', decimals: 3 })
+  const fmtSRDisplay = (sr: number | null) => {
+    if (sr === null || !isFinite(sr)) return '∞'
+    return srFormat.format(sr)
+  }
   const yearResults = useMemo(
     () => results.filter((r) => r.year === year),
     [results, year],
@@ -64,7 +77,16 @@ export function RadarView({ results, size = 480 }: Props) {
   const rUncert = (2.0 / MAX_DISPLAY_SR) * radius
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, alignItems: 'center', position: 'relative' }}>
+      <div style={{ position: 'absolute', top: 0, right: 0, display: 'flex', alignItems: 'center', gap: 6 }}>
+        <NumberFormatControl
+          settings={srFormat.settings}
+          onChange={srFormat.setSettings}
+          notations={['fixed']}
+        />
+        <ChartExportButton chartRef={radarRef} filename={`aesa_radar_${year}`} />
+      </div>
+      <ChartExportContainer ref={radarRef} style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ display: 'block' }} role="img">
         {/* Zone-shaded background: safe → uncertainty → high_risk */}
         <circle cx={cx} cy={cy} r={radius} fill={ZONE_COLOR.high_risk} fillOpacity={0.08} />
@@ -94,7 +116,7 @@ export function RadarView({ results, size = 480 }: Props) {
           return (
             <g key={r.pb_id}>
               <circle cx={p.x} cy={p.y} r={5} fill={ZONE_COLOR[r.zone]} stroke="var(--bg-surface)" strokeWidth={1.5}>
-                <title>{`${r.pb_name}: SR=${fmtSR(r.sr)} (${r.zone})`}</title>
+                <title>{`${r.pb_name}: SR=${fmtSRDisplay(r.sr)} (${r.zone})`}</title>
               </circle>
             </g>
           )
@@ -118,25 +140,18 @@ export function RadarView({ results, size = 480 }: Props) {
           )
         })}
       </svg>
+      </ChartExportContainer>
 
       {years.length > 1 && (
-        <div style={{ width: '80%', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{years[0]}</span>
-          <input
-            type="range"
-            min={years[0]}
-            max={years[years.length - 1]}
-            step={1}
+        <div style={{ width: '80%' }}>
+          <YearSlider
+            years={years}
             value={year}
-            onChange={(e) => setYear(Number(e.target.value))}
-            style={{ flex: 1, accentColor: 'var(--mod-aesa)' }}
+            onChange={setYear}
+            accentColor="var(--mod-aesa)"
+            variant="inline"
+            showDots={years.length <= 30}
           />
-          <span style={{ fontSize: 11, color: 'var(--text-tertiary)' }}>{years[years.length - 1]}</span>
-          <span style={{
-            minWidth: 50, textAlign: 'right', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)',
-          }}>
-            {year}
-          </span>
         </div>
       )}
 

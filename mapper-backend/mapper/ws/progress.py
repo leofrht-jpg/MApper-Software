@@ -4,6 +4,7 @@ import json
 
 from fastapi import WebSocket, WebSocketDisconnect
 
+from mapper.api import tasks as task_registry
 from mapper.core.tasks import get_task
 
 
@@ -33,17 +34,25 @@ async def stream_task_progress(websocket: WebSocket, task_id: str) -> None:
             try:
                 payload = await asyncio.wait_for(queue.get(), timeout=30.0)
                 await websocket.send_json(payload)
-                if payload.get("step") in ("done", "error"):
+                if payload.get("step") in ("done", "error", "cancelled"):
                     break
             except asyncio.TimeoutError:
                 # Send heartbeat
                 await websocket.send_json({"step": task.step, "progress": task.progress, "message": task.message})
-                if task.status in ("done", "error"):
+                if task.status in ("done", "error", "cancelled"):
                     break
     except WebSocketDisconnect:
         pass
     finally:
         task.unsubscribe(on_update)
+        # Disconnect-cancel for tasks that registered with the cancellation
+        # registry (legacy single-year LCA does; ecoinvent imports do not —
+        # the registry's maybe_cancel returns False for unregistered ids).
+        task_registry.maybe_cancel_on_last_subscriber_leave(
+            task_id,
+            remaining_subscribers=len(task.subscribers),
+            task_done=task.status in ("done", "error", "cancelled"),
+        )
         try:
             await websocket.close()
         except Exception:

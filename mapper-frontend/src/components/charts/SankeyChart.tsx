@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import * as d3 from 'd3'
 import { sankey, sankeyLinkHorizontal, type SankeyNode as D3SankeyNode, type SankeyLink as D3SankeyLink } from 'd3-sankey'
 import { type SankeyData } from '../../api/client'
@@ -14,8 +14,14 @@ type LinkDatum = D3SankeyLink<{ id: string; name: string; location: string }, ob
 
 export function SankeyChart({ data }: Props) {
   const svgRef = useRef<SVGSVGElement>(null)
+  // ``layoutFailed`` flips on when d3-sankey throws (typically circular links
+  // or self-loops in cyclic technosphere graphs). We surface this in the UI
+  // instead of returning silently — a blank panel is indistinguishable from
+  // an empty payload, and we just spent a session debugging exactly that.
+  const [layoutFailed, setLayoutFailed] = useState(false)
 
   useEffect(() => {
+    setLayoutFailed(false)
     if (!svgRef.current || data.nodes.length === 0) return
     const el = svgRef.current
     const W = el.clientWidth || 700
@@ -40,7 +46,9 @@ export function SankeyChart({ data }: Props) {
         nodes: data.nodes.map((n) => ({ ...n })) as NodeDatum[],
         links: validLinks.map((l) => ({ source: l.source, target: l.target, value: l.value || 0.001 })) as LinkDatum[],
       })
-    } catch {
+    } catch (err) {
+      console.warn('[SankeyChart] d3-sankey layout failed:', err)
+      setLayoutFailed(true)
       return
     }
 
@@ -88,8 +96,28 @@ export function SankeyChart({ data }: Props) {
   }, [data])
 
   return (
-    <div style={{ height: 420, width: '100%', overflow: 'hidden' }}>
+    <div style={{ height: 420, width: '100%', overflow: 'hidden', position: 'relative' }}>
       <svg ref={svgRef} style={{ width: '100%', height: '100%' }} />
+      {layoutFailed && (
+        <div
+          role="status"
+          style={{
+            position: 'absolute',
+            inset: 0,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '0 var(--space-5)',
+            textAlign: 'center',
+            fontSize: 'var(--text-xs)',
+            color: 'var(--text-tertiary)',
+            pointerEvents: 'none',
+          }}
+        >
+          Could not render supply chain — the graph may be too dense or contain
+          cycles. Try Tree view.
+        </div>
+      )}
     </div>
   )
 }

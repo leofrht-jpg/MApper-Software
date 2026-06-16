@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Search, Upload, X, Check, ArrowLeft, Download, BarChart3, ChevronDown, Filter } from 'lucide-react'
+import { Upload, X, Check, ArrowLeft, Download, BarChart3, ChevronDown, Filter } from 'lucide-react'
+import { SearchInput } from '../components/ui/SearchInput'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { FilterDropdown } from '../components/ui/FilterDropdown'
 import { useProjectStore } from '../stores/projectStore'
 import { useActivityStore } from '../stores/activityStore'
 import { Badge } from '../components/ui/Badge'
@@ -141,7 +143,10 @@ function ActivityDetailPanel({
                       onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--bg-hover)')}
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
-                      <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span
+                        title={exc.input_location ? `${exc.input_name} · ${exc.input_location}` : exc.input_name}
+                        style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                      >
                         {exc.input_name}
                         {exc.input_location && (
                           <span style={{ color: 'var(--text-secondary)', marginLeft: 6 }}>
@@ -171,145 +176,6 @@ function ActivityDetailPanel({
           </div>
         )}
       </div>
-    </div>
-  )
-}
-
-// ── Multi-select dropdown ─────────────────────────────────────────────────────
-
-function MultiSelectDropdown({
-  label, options, selected, onChange, disabled,
-}: {
-  label: string
-  options: string[]
-  selected: string[]
-  onChange: (next: string[]) => void
-  disabled?: boolean
-}) {
-  const [open, setOpen] = useState(false)
-  const [q, setQ] = useState('')
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    if (!open) return
-    const onDoc = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
-    document.addEventListener('mousedown', onDoc)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('mousedown', onDoc)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
-
-  const filtered = useMemo(
-    () => options.filter((o) => o.toLowerCase().includes(q.toLowerCase())),
-    [options, q],
-  )
-  const summary =
-    selected.length === 0 ? `All ${label.toLowerCase()}` :
-    selected.length === 1 ? selected[0] :
-    `${selected.length} ${label.toLowerCase()}`
-
-  const toggle = (opt: string) => {
-    onChange(selected.includes(opt) ? selected.filter((s) => s !== opt) : [...selected, opt])
-  }
-
-  return (
-    <div ref={ref} style={{ position: 'relative' }}>
-      <button
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          display: 'inline-flex', alignItems: 'center', gap: 6,
-          height: 28, padding: '0 10px',
-          background: selected.length ? 'var(--accent-muted)' : 'var(--bg-elevated)',
-          border: `1px solid ${selected.length ? 'var(--accent)' : 'var(--border-default)'}`,
-          borderRadius: 'var(--radius-md)',
-          color: 'var(--text-primary)', fontSize: 'var(--text-xs)',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          opacity: disabled ? 0.5 : 1,
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <span style={{ color: 'var(--text-secondary)' }}>{label}:</span>
-        <span>{summary}</span>
-        <ChevronDown size={12} />
-      </button>
-      {open && (
-        <div
-          style={{
-            position: 'absolute', top: 32, left: 0, zIndex: 20,
-            minWidth: 220, maxHeight: 320, overflow: 'hidden',
-            backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-            borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-lg)',
-            display: 'flex', flexDirection: 'column',
-          }}
-        >
-          <input
-            autoFocus
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder={`Search ${label.toLowerCase()}…`}
-            style={{
-              height: 30, padding: '0 10px', border: 'none',
-              borderBottom: '1px solid var(--border-subtle)', outline: 'none',
-              backgroundColor: 'transparent', color: 'var(--text-primary)',
-              fontSize: 'var(--text-xs)',
-            }}
-          />
-          <div style={{ overflow: 'auto', flex: 1 }}>
-            {filtered.length === 0 && (
-              <div style={{ padding: '8px 10px', color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', fontStyle: 'italic' }}>
-                No matches
-              </div>
-            )}
-            {filtered.map((opt) => {
-              const on = selected.includes(opt)
-              return (
-                <button
-                  key={opt}
-                  onClick={() => toggle(opt)}
-                  style={{
-                    display: 'flex', alignItems: 'center', gap: 8,
-                    width: '100%', padding: '6px 10px', border: 'none',
-                    background: on ? 'var(--accent-muted)' : 'transparent',
-                    color: 'var(--text-primary)', fontSize: 'var(--text-xs)',
-                    cursor: 'pointer', textAlign: 'left',
-                  }}
-                  onMouseEnter={(e) => { if (!on) e.currentTarget.style.background = 'var(--bg-hover)' }}
-                  onMouseLeave={(e) => { if (!on) e.currentTarget.style.background = 'transparent' }}
-                >
-                  <span style={{
-                    width: 14, height: 14, borderRadius: 'var(--radius-xs)',
-                    border: `1px solid ${on ? 'var(--accent)' : 'var(--border-default)'}`,
-                    backgroundColor: on ? 'var(--accent)' : 'transparent',
-                    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                    flexShrink: 0,
-                  }}>
-                    {on && <Check size={10} color="#fff" />}
-                  </span>
-                  <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
-                </button>
-              )
-            })}
-          </div>
-          {selected.length > 0 && (
-            <button
-              onClick={() => onChange([])}
-              style={{
-                height: 28, border: 'none', borderTop: '1px solid var(--border-subtle)',
-                background: 'transparent', color: 'var(--text-secondary)',
-                fontSize: 'var(--text-xs)', cursor: 'pointer',
-              }}
-            >
-              Clear
-            </button>
-          )}
-        </div>
-      )}
     </div>
   )
 }
@@ -554,7 +420,7 @@ function SelectionPanel({
               title="Click to view detail"
             >
               <div style={{ overflow: 'hidden' }}>
-                <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div title={a.name} style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {a.name}
                 </div>
                 <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
@@ -593,14 +459,34 @@ function DatabaseDropdown({
   onSelect: (name: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const [hover, setHover] = useState<{ name: string; x: number; y: number } | null>(null)
   const ref = useRef<HTMLDivElement>(null)
+  const hoverTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const cancelHover = () => {
+    if (hoverTimerRef.current) {
+      clearTimeout(hoverTimerRef.current)
+      hoverTimerRef.current = null
+    }
+  }
+
+  useEffect(() => {
+    if (!open) { cancelHover(); setHover(null) }
+  }, [open])
+
+  useEffect(() => () => cancelHover(), [])
 
   useEffect(() => {
     if (!open) return
     const onDoc = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      setOpen(false)
+    }
     document.addEventListener('mousedown', onDoc)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -634,18 +520,41 @@ function DatabaseDropdown({
           color: 'var(--text-primary)', fontSize: 'var(--text-sm)',
           cursor: 'pointer', textAlign: 'left',
         }}
-        onMouseEnter={(e) => { if (!isActive) e.currentTarget.style.background = 'var(--bg-hover)' }}
-        onMouseLeave={(e) => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
+        onMouseEnter={(e) => {
+          if (!isActive) e.currentTarget.style.background = 'var(--bg-hover)'
+          const r = e.currentTarget.getBoundingClientRect()
+          const pos = { name: db.name, x: r.right + 8, y: r.top + r.height / 2 }
+          cancelHover()
+          hoverTimerRef.current = setTimeout(() => setHover(pos), 400)
+        }}
+        onMouseLeave={(e) => {
+          if (!isActive) e.currentTarget.style.background = 'transparent'
+          cancelHover()
+          setHover((h) => (h && h.name === db.name ? null : h))
+        }}
       >
-        {db.is_prospective && (
-          <span
-            title={`Prospective — ${db.prospective_meta?.iam?.toUpperCase() ?? ''} ${db.prospective_meta?.ssp ?? ''} ${db.prospective_meta?.year ?? ''}`.trim()}
-            style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--mod-plca)', flexShrink: 0 }}
-          />
-        )}
+        {db.is_prospective && (() => {
+          const meta = db.prospective_meta
+          const isSuper = meta?.mode === 'superstructure'
+          const yearLabel = isSuper
+            ? (meta?.years && meta.years.length > 1 ? `${meta.years[0]}–${meta.years[meta.years.length - 1]}` : (meta?.years?.[0] ?? ''))
+            : (meta?.year ?? '')
+          const tip = `Prospective — ${meta?.iam?.toUpperCase() ?? ''} ${meta?.ssp ?? ''} ${yearLabel}${isSuper ? ` · superstructure (${meta?.years?.length ?? 0} scenarios)` : ''}`.trim()
+          return (
+            <span
+              title={tip}
+              style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', backgroundColor: 'var(--mod-plca)', flexShrink: 0 }}
+            />
+          )
+        })()}
         <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
           {db.name}
         </span>
+        {db.is_prospective && db.prospective_meta?.mode === 'superstructure' && (
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--mod-plca)', fontWeight: 500, flexShrink: 0 }}>
+            Superstructure · {db.prospective_meta.years?.length ?? 0} scenarios
+          </span>
+        )}
         <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)', fontVariantNumeric: 'tabular-nums', flexShrink: 0 }}>
           {db.records.toLocaleString()} activities
         </span>
@@ -711,6 +620,29 @@ function DatabaseDropdown({
               {biosphere.map(renderItem)}
             </>
           )}
+        </div>
+      )}
+      {open && hover && (
+        <div
+          style={{
+            position: 'fixed',
+            left: hover.x,
+            top: hover.y,
+            transform: 'translateY(-50%)',
+            backgroundColor: '#1c2128',
+            border: '1px solid #30363d',
+            borderRadius: 'var(--radius-sm)',
+            padding: '6px 10px',
+            fontSize: 'var(--text-xs)',
+            color: '#e6edf3',
+            whiteSpace: 'nowrap',
+            boxShadow: 'var(--shadow-lg)',
+            zIndex: 100,
+            pointerEvents: 'none',
+            fontFamily: 'var(--font-mono)',
+          }}
+        >
+          {hover.name}
         </div>
       )}
     </div>
@@ -902,68 +834,30 @@ export function DatabaseExplorer() {
         <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
           {/* Search bar */}
           <div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
-            <div style={{ position: 'relative' }}>
-              <Search size={16} strokeWidth={1.5} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Search activities…"
-                value={searchInput}
-                onChange={(e) => handleSearch(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Escape' && searchInput) {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    clearSearch()
-                  }
-                }}
-                style={{
-                  width: '100%', height: 36, paddingLeft: 34, paddingRight: searchInput ? 36 : 12,
-                  background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-                  borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
-                  fontSize: 'var(--text-sm)', outline: 'none',
-                  transition: 'border-color var(--duration-fast) var(--ease-out)',
-                }}
-                onFocus={(e) => { e.target.style.borderColor = 'var(--border-focus)'; e.target.style.boxShadow = '0 0 0 3px var(--accent-muted)' }}
-                onBlur={(e) => { e.target.style.borderColor = 'var(--border-default)'; e.target.style.boxShadow = 'none' }}
-              />
-              {searchInput && (
-                <button
-                  type="button"
-                  onClick={clearSearch}
-                  aria-label="Clear search"
-                  title="Clear search (Esc)"
-                  style={{
-                    position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)',
-                    width: 24, height: 24, display: 'inline-flex',
-                    alignItems: 'center', justifyContent: 'center',
-                    background: 'transparent', border: 'none',
-                    borderRadius: 'var(--radius-full)',
-                    color: 'var(--text-tertiary)', cursor: 'pointer', padding: 0,
-                    transition: 'background var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out)',
-                  }}
-                  onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-hover)'; e.currentTarget.style.color = 'var(--text-primary)' }}
-                  onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-tertiary)' }}
-                >
-                  <X size={16} strokeWidth={1.5} />
-                </button>
-              )}
-            </div>
+            <SearchInput
+              ref={searchInputRef}
+              value={searchInput}
+              onChange={handleSearch}
+              onClear={clearSearch}
+              placeholder="Search activities…"
+            />
 
             {/* Filter row */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, flexWrap: 'wrap' }}>
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>
                 <Filter size={12} /> Filters{filterCount > 0 ? ` (${filterCount})` : ''}
               </span>
-              <MultiSelectDropdown
+              <FilterDropdown
                 label="Location"
+                testId="db-location-filter"
                 options={distinctValues.locations}
                 selected={selectedLocations}
                 onChange={setLocations}
                 disabled={distinctValues.locations.length === 0}
               />
-              <MultiSelectDropdown
+              <FilterDropdown
                 label="Unit"
+                testId="db-unit-filter"
                 options={distinctValues.units}
                 selected={selectedUnits}
                 onChange={setUnits}
@@ -1085,7 +979,7 @@ export function DatabaseExplorer() {
                       }}>
                         {isSelected && <Check size={11} color="#fff" />}
                       </span>
-                      <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.name}</span>
+                      <span title={act.name} style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.name}</span>
                       {act.location ? <Badge label={act.location} variant="default" /> : <span />}
                       {act.unit ? <Badge label={act.unit} variant="default" /> : <span />}
                     </div>

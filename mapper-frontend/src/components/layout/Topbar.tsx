@@ -1,5 +1,6 @@
 import React from 'react'
 import { ProjectSwitcher } from '../ProjectSwitcher'
+import { CarbonBadge } from '../CarbonBadge'
 
 interface TopbarProps {
   actions?: React.ReactNode
@@ -46,6 +47,7 @@ export function Topbar({ actions }: TopbarProps) {
           Project:
         </span>
         <ProjectSwitcher />
+        <CarbonBadge />
       </div>
 
       {/* Right slot — custom actions */}

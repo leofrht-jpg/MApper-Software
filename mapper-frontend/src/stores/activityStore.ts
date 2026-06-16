@@ -77,13 +77,16 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   isLoading: false,
 
   setDatabase: (name) => {
-    // Database change clears selection + detail + filters' chosen values but
-    // keeps the sort preference. Distinct values refetch in parallel.
+    // Database change clears selection + detail + filters' chosen values AND
+    // the search query — a stale query from a prior db can make the new one
+    // look empty (e.g. it had matches in ecoinvent but none in a premise
+    // variant where activities are renamed). Sort preference is preserved.
     set({
       selectedDatabase: name,
       activities: [],
       totalActivities: 0,
       offset: 0,
+      searchQuery: '',
       selectedActivity: null,
       selectedKeys: [],
       selectedActivitiesByKey: {},

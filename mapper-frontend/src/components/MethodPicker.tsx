@@ -25,16 +25,49 @@ export interface MethodSelection {
   count: number
 }
 
-export function useMethodSelection(onChange: (methods: string[][]) => void): MethodSelection {
+export function useMethodSelection(
+  onChange: (methods: string[][]) => void,
+  initialSelected?: string[][],
+): MethodSelection {
   const [methods, setMethods] = useState<MethodFamily[]>([])
   const [family, setFamilyState] = useState('')
-  const [selected, setSelected] = useState<Record<string, string[]>>({})
+  // Patch 4D — when a parent passes `initialSelected` (single-product
+  // inheritance from Static → Projected), seed the selected map from it on
+  // mount. Re-seed by remounting via a `key` prop on the parent — useState
+  // initializer runs once per mount.
+  const [selected, setSelected] = useState<Record<string, string[]>>(() => {
+    if (initialSelected && initialSelected.length > 0) {
+      const seed: Record<string, string[]> = {}
+      for (const t of initialSelected) seed[indicatorKey(t)] = t
+      return seed
+    }
+    return {}
+  })
 
   useEffect(() => {
-    getMethods().then((m) => {
-      setMethods(m)
-      if (m[0]) setFamilyState(m[0].family)
-    })
+    const load = () => {
+      getMethods().then((m) => {
+        setMethods(m)
+        setFamilyState((prev) => {
+          if (prev) return prev
+          // If we were seeded with a selection, prefer the family that owns
+          // those tuples (tuple[0] is the family name in the bw2 method
+          // tuple convention) so the checkboxes light up correctly.
+          if (initialSelected && initialSelected.length > 0) {
+            const seedFam = initialSelected[0][0]
+            if (m.find((f) => f.family === seedFam)) return seedFam
+          }
+          // Prefer EF v3.1 if installed; fall back to first available.
+          const ef = m.find((f) => f.family.startsWith('EF v3.1'))?.family
+          return ef ?? m[0]?.family ?? ''
+        })
+      })
+    }
+    load()
+    // Re-fetch whenever the LCIA Method Library installs/uninstalls a method.
+    const handler = () => load()
+    window.addEventListener('lcia-library-changed', handler)
+    return () => window.removeEventListener('lcia-library-changed', handler)
   }, [])
 
   const allCategories = useMemo(
@@ -202,10 +235,14 @@ const actionBtn = (color: string): React.CSSProperties => ({
 interface MethodPickerProps {
   onChange: (methods: string[][]) => void
   accent?: string
+  // Patch 4D — used by single-product Projected panel to seed its picker on
+  // first-visit inheritance from Static. To re-seed (e.g. archetype change),
+  // bump a `key` prop on this component so React remounts it.
+  initialSelected?: string[][]
 }
 
-export function MethodPicker({ onChange, accent = 'var(--accent)' }: MethodPickerProps) {
-  const selection = useMethodSelection(onChange)
+export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelected }: MethodPickerProps) {
+  const selection = useMethodSelection(onChange, initialSelected)
   const { selected, count } = selection
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

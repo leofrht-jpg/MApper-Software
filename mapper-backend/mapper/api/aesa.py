@@ -10,24 +10,29 @@ import io
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException, Response
-from openpyxl import Workbook
+from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
+
+from mapper.api.project_guard import verify_project_state
+from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from mapper.api.bom import _sanitize_filename
 from mapper.api.impact import _TASKS as IMPACT_TASKS, _TASK_LOCK as IMPACT_LOCK
-from mapper.api.mfa import _current_project, _get_system
-from mapper.core import aesa_storage
+from mapper.api.dsm import _current_project, _get_system
+from mapper.core import aesa_session_storage, aesa_storage, sharing_preset_storage
 from mapper.core.aesa_engine import (
     AESAEngine,
+    BUILTIN_PRINCIPLES,
     MULTI_D_DEFAULTS,
     build_carbon_budget,
     build_default_multi_d_config,
+    build_default_sharing_preset,
     load_boundary_sets,
     load_carbon_budget_options,
     load_sharing_data,
     load_ssp_trajectories,
+    resolve_sharing,
     suggest_method_mapping,
 )
 from mapper.models.aesa_schemas import (
@@ -36,9 +41,18 @@ from mapper.models.aesa_schemas import (
     AESAConfiguration,
     AESAConfigurationCreate,
     AESAExportRequest,
+    AESASession,
+    AESASessionCreate,
+    AESASessionRename,
     BoundarySet,
+    CategoryAssignment,
+    DownscalingChain,
+    DownscalingLayer,
     MethodPBMapping,
     PlanetaryBoundary,
+    PrincipleDefinition,
+    SharingPreset,
+    SharingPresetCreate,
 )
 from mapper.models.bom_schemas import ImpactAssessmentResult
 
@@ -143,7 +157,11 @@ async def get_configuration(config_id: str) -> AESAConfiguration:
     return AESAConfiguration(**raw)
 
 
-@router.post("/configurations", response_model=AESAConfiguration)
+@router.post(
+    "/configurations",
+    response_model=AESAConfiguration,
+    dependencies=[Depends(verify_project_state)],
+)
 async def post_configuration(body: AESAConfigurationCreate) -> AESAConfiguration:
     _get_system(body.mfa_system_id)  # 404 if system missing
     project = _current_project()
@@ -195,6 +213,81 @@ async def delete_configuration(config_id: str) -> dict:
     return {"deleted": True}
 
 
+# ─── Saved sessions (Patch 4R) ───────────────────────────────────────────────
+
+
+@router.get("/sessions", response_model=list[AESASession])
+async def list_sessions() -> list[AESASession]:
+    project = _current_project()
+    raw = aesa_session_storage.load_all(project)
+    out: list[AESASession] = []
+    for r in raw:
+        try:
+            out.append(AESASession(**r))
+        except Exception:
+            # Skip malformed sessions rather than 500ing the list. A
+            # corrupt file (manual edit, schema drift) shouldn't block
+            # access to the remaining sessions.
+            continue
+    return out
+
+
+@router.get("/sessions/{session_id}", response_model=AESASession)
+async def get_session(session_id: str) -> AESASession:
+    project = _current_project()
+    raw = aesa_session_storage.load(project, session_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail="AESA session not found")
+    return AESASession(**raw)
+
+
+@router.post(
+    "/sessions",
+    response_model=AESASession,
+    dependencies=[Depends(verify_project_state)],
+)
+async def create_session(body: AESASessionCreate) -> AESASession:
+    project = _current_project()
+    now = datetime.now(timezone.utc).isoformat()
+    session = AESASession(
+        id=uuid.uuid4().hex,
+        name=body.name,
+        project=project or "default",
+        created_at=now,
+        modified_at=now,
+        configuration_snapshot=body.configuration_snapshot,
+        result=body.result,
+        upstream_ia_task_id=body.upstream_ia_task_id,
+        # Patch 4T — round-trip the display filter. ``None`` (default)
+        # restores as "show all" on load; an explicit list narrows the
+        # view to the saved subset.
+        displayed_indicators=body.displayed_indicators,
+    )
+    aesa_session_storage.save(project, session.model_dump())
+    return session
+
+
+@router.patch("/sessions/{session_id}", response_model=AESASession)
+async def rename_session(session_id: str, body: AESASessionRename) -> AESASession:
+    project = _current_project()
+    existing = aesa_session_storage.load(project, session_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="AESA session not found")
+    existing["name"] = body.name
+    existing["modified_at"] = datetime.now(timezone.utc).isoformat()
+    aesa_session_storage.save(project, existing)
+    return AESASession(**existing)
+
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str) -> dict:
+    project = _current_project()
+    deleted = aesa_session_storage.delete(project, session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="AESA session not found")
+    return {"deleted": True}
+
+
 # ─── Compute ─────────────────────────────────────────────────────────────────
 
 
@@ -226,12 +319,14 @@ def _resolve_config(body: AESAComputeRequest) -> AESAConfiguration:
 
 @router.post("/compute", response_model=AESAComputeResult)
 async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
+    from mapper.core.compute_metrics import measure_compute
+    meter = measure_compute()
     config = _resolve_config(body)
     impact = _resolve_impact(body.impact_task_id, body.impact_result)
     if impact.meta.mfa_system_id != config.mfa_system_id:
         raise HTTPException(
             status_code=400,
-            detail="Impact result is for a different MFA system than the AESA config.",
+            detail="Impact result is for a different DSM system than the AESA config.",
         )
     sets = load_boundary_sets()
     bset = sets.get(config.boundary_set_id)
@@ -241,8 +336,201 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
             detail=f"Boundary set '{config.boundary_set_id}' not found",
         )
     if body.run_sensitivity:
-        return AESAEngine.compute_with_sensitivity(impact.results, config, bset)
-    return AESAEngine.compute(impact.results, config, bset)
+        result = AESAEngine.compute_with_sensitivity(impact.results, config, bset)
+    else:
+        result = AESAEngine.compute(impact.results, config, bset)
+    result.compute_metrics = meter.build()
+    return result
+
+
+# ─── Sharing Presets (global) ────────────────────────────────────────────────
+
+
+@router.get("/sharing-presets", response_model=list[SharingPreset])
+async def get_sharing_presets() -> list[SharingPreset]:
+    raw = sharing_preset_storage.load_all()
+    out: list[SharingPreset] = []
+    for r in raw:
+        try:
+            out.append(SharingPreset(**r))
+        except Exception:
+            continue
+    return out
+
+
+@router.get("/sharing-presets/{preset_id}", response_model=SharingPreset)
+async def get_sharing_preset(preset_id: str) -> SharingPreset:
+    raw = sharing_preset_storage.load(preset_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    return SharingPreset(**raw)
+
+
+@router.post("/sharing-presets", response_model=SharingPreset)
+async def post_sharing_preset(body: SharingPresetCreate) -> SharingPreset:
+    now = datetime.now(timezone.utc).isoformat()
+    preset = SharingPreset(
+        id=uuid.uuid4().hex,
+        name=body.name,
+        description=body.description,
+        built_in=False,
+        principles=body.principles,
+        category_assignments=body.category_assignments,
+        chain=body.chain,
+        created_at=now,
+        updated_at=now,
+    )
+    sharing_preset_storage.save(preset.model_dump())
+    return preset
+
+
+@router.put("/sharing-presets/{preset_id}", response_model=SharingPreset)
+async def put_sharing_preset(preset_id: str, body: SharingPresetCreate) -> SharingPreset:
+    if sharing_preset_storage.is_built_in(preset_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Built-in presets are read-only. Duplicate the preset to customize it.",
+        )
+    existing = sharing_preset_storage.load(preset_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    updated = SharingPreset(
+        id=preset_id,
+        name=body.name,
+        description=body.description,
+        built_in=False,
+        principles=body.principles,
+        category_assignments=body.category_assignments,
+        chain=body.chain,
+        created_at=existing.get("created_at") or datetime.now(timezone.utc).isoformat(),
+        updated_at=datetime.now(timezone.utc).isoformat(),
+    )
+    sharing_preset_storage.save(updated.model_dump())
+    return updated
+
+
+@router.delete("/sharing-presets/{preset_id}")
+async def delete_sharing_preset(preset_id: str) -> dict:
+    if sharing_preset_storage.is_built_in(preset_id):
+        raise HTTPException(status_code=400, detail="Built-in presets cannot be deleted.")
+    if not sharing_preset_storage.delete(preset_id):
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    return {"deleted": True}
+
+
+@router.post("/sharing-presets/{preset_id}/duplicate", response_model=SharingPreset)
+async def post_duplicate_preset(preset_id: str, body: dict | None = None) -> SharingPreset:
+    """Duplicate any preset (including built-ins) into a new editable one."""
+    raw = sharing_preset_storage.load(preset_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    src = SharingPreset(**raw)
+    new_name = (body or {}).get("name") or f"{src.name} (copy)"
+    now = datetime.now(timezone.utc).isoformat()
+    dup = SharingPreset(
+        id=uuid.uuid4().hex,
+        name=new_name,
+        description=src.description,
+        built_in=False,
+        principles=list(src.principles),
+        category_assignments=list(src.category_assignments),
+        chain=src.chain.model_copy(deep=True),
+        created_at=now,
+        updated_at=now,
+    )
+    sharing_preset_storage.save(dup.model_dump())
+    return dup
+
+
+# ─── Downscaling chain (convenience: read / update the chain on a preset) ────
+
+
+@router.get("/downscaling-chain/{preset_id}", response_model=DownscalingChain)
+async def get_downscaling_chain(preset_id: str) -> DownscalingChain:
+    raw = sharing_preset_storage.load(preset_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    return SharingPreset(**raw).chain
+
+
+@router.put("/downscaling-chain/{preset_id}", response_model=SharingPreset)
+async def put_downscaling_chain(preset_id: str, chain: DownscalingChain) -> SharingPreset:
+    if sharing_preset_storage.is_built_in(preset_id):
+        raise HTTPException(
+            status_code=400,
+            detail="Built-in presets are read-only. Duplicate the preset first.",
+        )
+    raw = sharing_preset_storage.load(preset_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    preset = SharingPreset(**raw).model_copy(update={
+        "chain": chain,
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    })
+    sharing_preset_storage.save(preset.model_dump())
+    return preset
+
+
+# ─── Sharing xlsx: template / export / import ────────────────────────────────
+
+
+@router.get("/sharing/template")
+async def get_sharing_template() -> Response:
+    """Download an xlsx template pre-filled with the built-in Ferhati preset."""
+    preset = build_default_sharing_preset()
+    wb = _build_sharing_workbook(preset, include_instructions=True)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": 'attachment; filename="aesa_sharing_template.xlsx"'},
+    )
+
+
+@router.get("/sharing/export/{preset_id}")
+async def get_sharing_export(preset_id: str) -> Response:
+    raw = sharing_preset_storage.load(preset_id)
+    if raw is None:
+        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
+    preset = SharingPreset(**raw)
+    wb = _build_sharing_workbook(preset, include_instructions=True)
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    filename = f"{_sanitize_filename(preset.name, 'aesa_sharing')}.xlsx"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+@router.post("/sharing/import", response_model=SharingPreset)
+async def post_sharing_import(
+    file: UploadFile = File(...),
+    name: str | None = None,
+) -> SharingPreset:
+    """Parse an uploaded xlsx into a new editable preset and persist it."""
+    content = await file.read()
+    try:
+        wb = load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot read xlsx: {e}") from e
+    try:
+        preset = _parse_sharing_workbook(wb, name or (file.filename or "Imported preset"))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    now = datetime.now(timezone.utc).isoformat()
+    preset = preset.model_copy(update={
+        "id": uuid.uuid4().hex,
+        "built_in": False,
+        "created_at": now,
+        "updated_at": now,
+    })
+    sharing_preset_storage.save(preset.model_dump())
+    return preset
 
 
 # ─── Export ──────────────────────────────────────────────────────────────────
@@ -452,3 +740,282 @@ def _build_aesa_workbook(
     _autosize(ws)
 
     return wb
+
+
+# ─── Sharing preset xlsx (template / export / import helpers) ────────────────
+
+
+_SHARING_HEADER_FONT = Font(bold=True, color="FFFFFF")
+_SHARING_HEADER_FILL = PatternFill("solid", fgColor="064E3B")
+
+
+def _style_sharing_header(ws) -> None:
+    for cell in ws[1]:
+        cell.font = _SHARING_HEADER_FONT
+        cell.fill = _SHARING_HEADER_FILL
+        cell.alignment = Alignment(horizontal="center")
+
+
+def _autosize_sharing(ws) -> None:
+    for col_idx, col_cells in enumerate(ws.columns, start=1):
+        widest = 0
+        for cell in col_cells:
+            v = cell.value
+            if v is None:
+                continue
+            widest = max(widest, min(60, len(str(v))))
+        ws.column_dimensions[get_column_letter(col_idx)].width = max(12, widest + 2)
+
+
+def _build_sharing_workbook(preset: SharingPreset, include_instructions: bool = True) -> Workbook:
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # Sheet 1: Principles
+    ws = wb.create_sheet("Principles")
+    ws.append(["Principle ID", "Name", "Description"])
+    _style_sharing_header(ws)
+    for p in preset.principles:
+        ws.append([p.id, p.name, p.description])
+    _autosize_sharing(ws)
+
+    # Sheet 2: Category Assignments
+    ws = wb.create_sheet("Category Assignments")
+    ws.append(["PB ID", "Principle ID", "Justification"])
+    _style_sharing_header(ws)
+    for a in preset.category_assignments:
+        ws.append([a.pb_id, a.principle_id, a.justification])
+    _autosize_sharing(ws)
+
+    # Sheet 3: Downscaling Chain
+    ws = wb.create_sheet("Downscaling Chain")
+    ws.append(["Layer", "Name", "Mode", "Fixed Principle", "Description"])
+    _style_sharing_header(ws)
+    for layer in preset.chain.layers:
+        ws.append([
+            layer.layer_number, layer.name, layer.principle_mode,
+            layer.fixed_principle or "", layer.description,
+        ])
+    _autosize_sharing(ws)
+
+    # Sheet 4: Sharing Data
+    ws = wb.create_sheet("Sharing Data")
+    ws.append(["Layer", "Principle", "System Value", "Global Value", "Year", "Source"])
+    _style_sharing_header(ws)
+    for layer in preset.chain.layers:
+        for principle_id, years in layer.data.items():
+            for year, pair in sorted(years.items()):
+                sys_val, glob_val = pair
+                ws.append([layer.layer_number, principle_id, sys_val, glob_val, year, ""])
+    _autosize_sharing(ws)
+
+    # Sheet 5: Instructions
+    if include_instructions:
+        ws = wb.create_sheet("Instructions")
+        rows = [
+            ["AESA Sharing Preset — Template"],
+            [""],
+            ["This workbook defines a sharing preset: which principle applies to each"],
+            ["impact category, how the downscaling chain is structured, and the data"],
+            ["that parameterises each layer."],
+            [""],
+            ["Sheet: Principles"],
+            ["  One row per sharing principle. 'Principle ID' is the short key referenced"],
+            ["  elsewhere (e.g. EpC, IN, GDP). You may add custom principles."],
+            [""],
+            ["Sheet: Category Assignments"],
+            ["  Maps each planetary boundary (PB ID) to a principle. Used by layers"],
+            ["  whose Mode is 'category_specific'."],
+            [""],
+            ["Sheet: Downscaling Chain"],
+            ["  Ordered list of layers (minimum 1)."],
+            ["    Layer            : integer order (1, 2, 3, ...)."],
+            ["    Name             : human-readable label."],
+            ["    Mode             : 'category_specific' or 'fixed'."],
+            ["    Fixed Principle  : required if Mode = 'fixed'."],
+            [""],
+            ["Sheet: Sharing Data"],
+            ["  (Layer × Principle × Year) → (System Value, Global Value)."],
+            ["  Factor = System Value / Global Value."],
+            ["  One row per combination. If only one year is given for a principle"],
+            ["  the engine uses it as constant across all years."],
+            [""],
+            ["Allocated SOS formula"],
+            ["  allocated_sos(pb, year) = PB_value × ∏ layer_factor(layer, pb, year)"],
+        ]
+        for r in rows:
+            ws.append(r)
+        ws.column_dimensions["A"].width = 95
+
+    return wb
+
+
+def _norm_header(value) -> str:
+    return str(value).strip().lower() if value is not None else ""
+
+
+def _read_sheet_rows(ws) -> tuple[list[str], list[list]]:
+    """Return (headers lowercased, data rows) ignoring fully-empty trailing rows."""
+    rows = list(ws.iter_rows(values_only=True))
+    if not rows:
+        return [], []
+    headers = [_norm_header(h) for h in rows[0]]
+    data = []
+    for r in rows[1:]:
+        if all(c is None or (isinstance(c, str) and not c.strip()) for c in r):
+            continue
+        data.append(list(r))
+    return headers, data
+
+
+def _col(headers: list[str], *aliases: str) -> int:
+    """Find a column by any of its alias names; -1 if absent."""
+    for alias in aliases:
+        key = alias.strip().lower()
+        if key in headers:
+            return headers.index(key)
+    return -1
+
+
+def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
+    required = {"Principles", "Category Assignments", "Downscaling Chain", "Sharing Data"}
+    missing = required - set(wb.sheetnames)
+    if missing:
+        raise ValueError(f"xlsx missing required sheet(s): {sorted(missing)}")
+
+    # Principles
+    p_headers, p_rows = _read_sheet_rows(wb["Principles"])
+    i_id = _col(p_headers, "principle id", "id")
+    i_name = _col(p_headers, "name")
+    i_desc = _col(p_headers, "description")
+    if i_id < 0 or i_name < 0:
+        raise ValueError("Principles sheet requires 'Principle ID' and 'Name' columns.")
+    principles: list[PrincipleDefinition] = []
+    for r in p_rows:
+        pid = r[i_id]
+        if pid is None or str(pid).strip() == "":
+            continue
+        principles.append(PrincipleDefinition(
+            id=str(pid).strip(),
+            name=str(r[i_name] or pid).strip(),
+            description=str(r[i_desc] or "").strip() if i_desc >= 0 else "",
+        ))
+    if not principles:
+        raise ValueError("Principles sheet is empty.")
+    principle_ids = {p.id for p in principles}
+
+    # Category Assignments
+    a_headers, a_rows = _read_sheet_rows(wb["Category Assignments"])
+    i_pb = _col(a_headers, "pb id", "impact category")
+    i_pri = _col(a_headers, "principle id", "sharing principle", "principle")
+    i_just = _col(a_headers, "justification")
+    if i_pb < 0 or i_pri < 0:
+        raise ValueError("Category Assignments sheet requires 'PB ID' and 'Principle ID' columns.")
+    assignments: list[CategoryAssignment] = []
+    for r in a_rows:
+        pb = r[i_pb]
+        pri = r[i_pri]
+        if pb is None or pri is None:
+            continue
+        pri_s = str(pri).strip()
+        if pri_s not in principle_ids:
+            raise ValueError(
+                f"Category '{pb}' references unknown principle '{pri_s}'. "
+                f"Add it to the Principles sheet first.",
+            )
+        assignments.append(CategoryAssignment(
+            pb_id=str(pb).strip(),
+            principle_id=pri_s,
+            justification=str(r[i_just] or "").strip() if i_just >= 0 else "",
+        ))
+
+    # Downscaling Chain (definitions)
+    c_headers, c_rows = _read_sheet_rows(wb["Downscaling Chain"])
+    i_layer = _col(c_headers, "layer")
+    i_ln = _col(c_headers, "name")
+    i_mode = _col(c_headers, "mode")
+    i_fp = _col(c_headers, "fixed principle")
+    i_cdesc = _col(c_headers, "description")
+    if i_layer < 0 or i_ln < 0 or i_mode < 0:
+        raise ValueError("Downscaling Chain sheet requires 'Layer', 'Name', 'Mode' columns.")
+    layers_meta: dict[int, dict] = {}
+    for r in c_rows:
+        if r[i_layer] is None:
+            continue
+        try:
+            num = int(r[i_layer])
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Layer column must be integer, got {r[i_layer]!r}") from e
+        mode = str(r[i_mode]).strip().lower() if r[i_mode] is not None else ""
+        if mode not in ("category_specific", "fixed"):
+            raise ValueError(
+                f"Layer {num}: mode must be 'category_specific' or 'fixed', got '{mode}'.",
+            )
+        fp = str(r[i_fp]).strip() if i_fp >= 0 and r[i_fp] else None
+        if mode == "fixed":
+            if not fp:
+                raise ValueError(f"Layer {num}: 'Fixed Principle' required when mode=fixed.")
+            if fp not in principle_ids:
+                raise ValueError(f"Layer {num}: unknown principle '{fp}'.")
+        layers_meta[num] = {
+            "name": str(r[i_ln] or f"Layer {num}").strip(),
+            "mode": mode,
+            "fixed_principle": fp if mode == "fixed" else None,
+            "description": str(r[i_cdesc] or "").strip() if i_cdesc >= 0 else "",
+            "data": {},
+        }
+    if not layers_meta:
+        raise ValueError("Downscaling Chain sheet is empty.")
+
+    # Sharing Data — populate layer data
+    d_headers, d_rows = _read_sheet_rows(wb["Sharing Data"])
+    i_dl = _col(d_headers, "layer")
+    i_dp = _col(d_headers, "principle", "principle id")
+    i_sv = _col(d_headers, "system value")
+    i_gv = _col(d_headers, "global value")
+    i_yr = _col(d_headers, "year")
+    if min(i_dl, i_dp, i_sv, i_gv, i_yr) < 0:
+        raise ValueError(
+            "Sharing Data sheet requires Layer, Principle, System Value, Global Value, Year columns.",
+        )
+    for r in d_rows:
+        if r[i_dl] is None or r[i_dp] is None:
+            continue
+        try:
+            num = int(r[i_dl])
+            year = int(r[i_yr])
+            sys_v = float(r[i_sv])
+            glob_v = float(r[i_gv])
+        except (TypeError, ValueError) as e:
+            raise ValueError(f"Sharing Data row has invalid numeric cell: {r}") from e
+        if num not in layers_meta:
+            raise ValueError(
+                f"Sharing Data references layer {num}, not defined in Downscaling Chain.",
+            )
+        pid = str(r[i_dp]).strip()
+        if pid not in principle_ids:
+            raise ValueError(f"Sharing Data row references unknown principle '{pid}'.")
+        layers_meta[num]["data"].setdefault(pid, {})[year] = (sys_v, glob_v)
+
+    # Build layers in order
+    layers: list[DownscalingLayer] = []
+    for num in sorted(layers_meta):
+        meta = layers_meta[num]
+        layers.append(DownscalingLayer(
+            layer_number=num,
+            name=meta["name"],
+            principle_mode=meta["mode"],
+            fixed_principle=meta["fixed_principle"],
+            description=meta["description"],
+            data=meta["data"],
+        ))
+
+    return SharingPreset(
+        id="",  # caller assigns
+        name=default_name,
+        description="",
+        built_in=False,
+        principles=principles,
+        category_assignments=assignments,
+        chain=DownscalingChain(layers=layers),
+    )

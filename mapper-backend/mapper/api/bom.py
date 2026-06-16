@@ -1,4 +1,4 @@
-"""FastAPI router for the BOM / Archetype module + MFA × LCA pipeline (Phase 2B)."""
+"""FastAPI router for the BOM / Archetype module + DSM × LCA pipeline (Phase 2B)."""
 from __future__ import annotations
 
 import datetime
@@ -7,12 +7,14 @@ import re
 import threading
 import uuid
 
-from fastapi import APIRouter, File, HTTPException, Response, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
+
+from mapper.api.project_guard import verify_project_state
 from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel
 
-from mapper.api.mfa import _current_project, _get_system, _proj_results, _proj_states
-from mapper.core import mfa_storage
+from mapper.api.dsm import _current_project, _get_system, _proj_results, _proj_states
+from mapper.core import dsm_storage
 from mapper.core.bom_engine import (
     add_child_in_roots,
     assign_ids_to_roots,
@@ -31,11 +33,13 @@ from mapper.core.bom_engine import (
     total_mass_kg,
     unlinked_count_total,
     validate_roots,
+    validation_error_count,
 )
+from mapper.core.bom_validator import BOMValidationRow, issues_by_node_key, validate_bom
 from mapper.core.bw2_wrapper import PersistentLCARunner, run_archetype_lca, run_lca_multi_method
-from mapper.core.mfa_engine import all_cohort_keys
+from mapper.core.dsm_engine import all_cohort_keys
 from mapper.core.material_flow_engine import compute_material_flows
-from mapper.core.mfa_lca_engine import MFALCAPipeline
+from mapper.core.dsm_lca_engine import DSMLCAPipeline
 from mapper.models.bom_schemas import (
     Archetype,
     ArchetypeCreate,
@@ -52,12 +56,16 @@ from mapper.models.bom_schemas import (
     FlattenedBOM,
     FlattenedMaterial,
     MaterialEvolution,
+    MaterialFlowMultiRequest,
     MaterialFlowRequest,
     MaterialFlowResult,
-    MFALCABatchResult,
-    MFALCARequest,
-    MFALCAResult,
+    MaterialFlowScenarioRun,
+    MultiMaterialFlowResult,
+    DSMLCABatchResult,
+    DSMLCARequest,
+    DSMLCAResult,
     QuantityMilestone,
+    ValidationReport,
 )
 
 
@@ -99,7 +107,7 @@ def _normalize_folder(path: str | None) -> str | None:
 def _all_folder_paths(project: str | None = None) -> list[str]:
     """Union of folders used by archetypes + persisted empty folders."""
     p = project or _current_project()
-    folders: set[str] = set(mfa_storage.load_folders(p))
+    folders: set[str] = set(dsm_storage.load_folders(p))
     for arc in _proj_archetypes(p).values():
         if arc.folder:
             folders.add(arc.folder)
@@ -114,12 +122,12 @@ router = APIRouter(tags=["bom"])
 
 
 # In-memory stores — nested by bw2 project name (outer key). Archetypes persist
-# to disk alongside MFA systems; cohort mappings persist with their system;
-# MFA×LCA results are transient.
+# to disk alongside DSM systems; cohort mappings persist with their system;
+# DSM×LCA results are transient.
 _archetypes: dict[str, dict[str, Archetype]] = {}
 _cohort_mappings: dict[str, dict[str, CohortMapping]] = {}
-# Per-system batch of results — one MFALCAResult per method.
-_mfa_lca_results: dict[str, dict[str, list[MFALCAResult]]] = {}
+# Per-system batch of results — one DSMLCAResult per method.
+_dsm_lca_results: dict[str, dict[str, list[DSMLCAResult]]] = {}
 _lock = threading.Lock()
 
 
@@ -137,9 +145,9 @@ def _proj_cohort_mappings(project: str | None = None) -> dict[str, CohortMapping
     return _cohort_mappings.setdefault(p, {})
 
 
-def _proj_mfa_lca_results(project: str | None = None) -> dict[str, list[MFALCAResult]]:
+def _proj_dsm_lca_results(project: str | None = None) -> dict[str, list[DSMLCAResult]]:
     p = project or _current_project()
-    return _mfa_lca_results.setdefault(p, {})
+    return _dsm_lca_results.setdefault(p, {})
 
 
 def _get_archetype(arc_id: str) -> Archetype:
@@ -152,7 +160,11 @@ def _get_archetype(arc_id: str) -> Archetype:
 # ── Archetype CRUD ───────────────────────────────────────────────────────────
 
 
-@router.post("/bom/archetypes", response_model=Archetype)
+@router.post(
+    "/bom/archetypes",
+    response_model=Archetype,
+    dependencies=[Depends(verify_project_state)],
+)
 async def create_archetype(body: ArchetypeCreate) -> Archetype:
     folder = _normalize_folder(body.folder)
     arc = Archetype(
@@ -169,7 +181,7 @@ async def create_archetype(body: ArchetypeCreate) -> Archetype:
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
-    mfa_storage.save_archetype(project, arc)
+    dsm_storage.save_archetype(project, arc)
     return arc
 
 
@@ -209,6 +221,23 @@ async def export_all_archetypes(folder: str | None = None) -> Response:
     )
 
 
+@router.get("/bom/archetypes/{arc_id}/validation-report", response_model=ValidationReport)
+async def get_archetype_validation_report(arc_id: str) -> ValidationReport:
+    """Return the persisted validation report for ``arc_id``.
+
+    A 404 means the archetype itself is missing. A 200 with ``total_rows == 0``
+    and an empty ``issues`` list means the archetype was imported before
+    Patch 2 (no validation) or contains no LCA-linked materials yet.
+    """
+    arc = _get_archetype(arc_id)
+    if arc.validation_report is not None:
+        return arc.validation_report
+    return ValidationReport(
+        total_rows=0, valid_rows=0, error_rows=0, warning_rows=0,
+        project_name=_current_project(),
+    )
+
+
 @router.get("/bom/archetypes/{arc_id}", response_model=Archetype)
 async def get_archetype(arc_id: str) -> Archetype:
     return _get_archetype(arc_id)
@@ -232,7 +261,7 @@ async def update_archetype(arc_id: str, body: ArchetypeCreate) -> Archetype:
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc_id] = updated
-    mfa_storage.save_archetype(project, updated)
+    dsm_storage.save_archetype(project, updated)
     return updated
 
 
@@ -249,8 +278,8 @@ async def delete_archetype(arc_id: str) -> dict[str, bool]:
         for sys_id, mapping in list(mappings.items()):
             mapping.mappings = [m for m in mapping.mappings if m.archetype_id != arc_id]
             mappings[sys_id] = mapping
-            mfa_storage.save_cohort_mappings(project, sys_id, mapping)
-    mfa_storage.delete_archetype_file(project, arc_id)
+            dsm_storage.save_cohort_mappings(project, sys_id, mapping)
+    dsm_storage.delete_archetype_file(project, arc_id)
     return {"deleted": True}
 
 
@@ -287,13 +316,13 @@ async def create_folder(body: FolderCreateBody) -> dict:
     if norm is None:
         raise HTTPException(status_code=400, detail="Root folder cannot be explicitly created.")
     project = _current_project()
-    folders = set(mfa_storage.load_folders(project))
+    folders = set(dsm_storage.load_folders(project))
     folders.add(norm)
     # Include all ancestors so the tree visibly expands.
     parts = norm.split("/")
     for i in range(1, len(parts)):
         folders.add("/".join(parts[:i]))
-    mfa_storage.save_folders(project, sorted(folders))
+    dsm_storage.save_folders(project, sorted(folders))
     return {"path": norm, "folders": _all_folder_paths(project)}
 
 
@@ -315,17 +344,17 @@ async def rename_folder(body: FolderRenameBody) -> dict:
             if arc.folder == old or arc.folder.startswith(old + "/"):
                 arc.folder = new + arc.folder[len(old):]
                 arc.updated_at = _now_iso()
-                mfa_storage.save_archetype(project, arc)
+                dsm_storage.save_archetype(project, arc)
                 renamed += 1
         # Update persisted empty-folder list.
-        folders = set(mfa_storage.load_folders(project))
+        folders = set(dsm_storage.load_folders(project))
         remapped: set[str] = set()
         for f in folders:
             if f == old or f.startswith(old + "/"):
                 remapped.add(new + f[len(old):])
             else:
                 remapped.add(f)
-        mfa_storage.save_folders(project, sorted(remapped))
+        dsm_storage.save_folders(project, sorted(remapped))
     return {"renamed": renamed, "folders": _all_folder_paths(project)}
 
 
@@ -347,24 +376,24 @@ async def delete_folder(body: FolderDeleteBody) -> dict:
             for arc in affected:
                 if arc.id:
                     archetypes.pop(arc.id, None)
-                    mfa_storage.delete_archetype_file(project, arc.id)
+                    dsm_storage.delete_archetype_file(project, arc.id)
                     for sys_id, mapping in list(mappings.items()):
                         before = len(mapping.mappings)
                         mapping.mappings = [m for m in mapping.mappings if m.archetype_id != arc.id]
                         if len(mapping.mappings) != before:
-                            mfa_storage.save_cohort_mappings(project, sys_id, mapping)
+                            dsm_storage.save_cohort_mappings(project, sys_id, mapping)
                     deleted_arcs += 1
         else:
             # Move to root.
             for arc in affected:
                 arc.folder = None
                 arc.updated_at = _now_iso()
-                mfa_storage.save_archetype(project, arc)
+                dsm_storage.save_archetype(project, arc)
                 moved_arcs += 1
         # Remove the folder and any descendants from the persisted list.
-        folders = set(mfa_storage.load_folders(project))
+        folders = set(dsm_storage.load_folders(project))
         folders = {f for f in folders if not (f == path or f.startswith(path + "/"))}
-        mfa_storage.save_folders(project, sorted(folders))
+        dsm_storage.save_folders(project, sorted(folders))
     return {"deleted_archetypes": deleted_arcs, "moved_archetypes": moved_arcs, "folders": _all_folder_paths(project)}
 
 
@@ -375,7 +404,7 @@ async def move_archetype(body: MoveArchetypeBody) -> Archetype:
     arc.folder = new_folder
     arc.updated_at = _now_iso()
     project = _current_project()
-    mfa_storage.save_archetype(project, arc)
+    dsm_storage.save_archetype(project, arc)
     return arc
 
 
@@ -392,7 +421,7 @@ async def add_bom_node(arc_id: str, body: BOMNodeCreate) -> Archetype:
             detail=f"Parent node '{body.parent_node_id}' not found in this archetype",
         )
     arc.updated_at = _now_iso()
-    mfa_storage.save_archetype(_current_project(), arc)
+    dsm_storage.save_archetype(_current_project(), arc)
     return arc
 
 
@@ -408,6 +437,17 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
         node.quantity = body.quantity
     if body.unit is not None:
         node.unit = body.unit
+    if "scope" in body.model_fields_set:
+        if body.scope is None:
+            node.scope = None
+        elif body.scope in ("inflows", "stock", "outflows"):
+            node.scope = body.scope
+            # Auto-derive is_annual from scope unless the same request also
+            # sets is_annual explicitly (caller override wins).
+            if body.is_annual is None:
+                node.is_annual = body.scope == "stock"
+        else:
+            raise HTTPException(status_code=400, detail=f"Invalid scope: {body.scope!r}")
     if body.is_annual is not None:
         node.is_annual = body.is_annual
     if body.ecoinvent_activity is not None:
@@ -433,7 +473,7 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
                 )
             node.evolution = body.evolution
     arc.updated_at = _now_iso()
-    mfa_storage.save_archetype(_current_project(), arc)
+    dsm_storage.save_archetype(_current_project(), arc)
     return node
 
 
@@ -444,7 +484,7 @@ async def delete_bom_node(arc_id: str, node_id: str) -> Archetype:
     if not ok:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
     arc.updated_at = _now_iso()
-    mfa_storage.save_archetype(_current_project(), arc)
+    dsm_storage.save_archetype(_current_project(), arc)
     return arc
 
 
@@ -603,7 +643,7 @@ async def apply_learning_rate(
     if touched == 0:
         raise HTTPException(status_code=400, detail="No materials matched the given node_ids.")
     arc.updated_at = _now_iso()
-    mfa_storage.save_archetype(_current_project(), arc)
+    dsm_storage.save_archetype(_current_project(), arc)
     return arc
 
 
@@ -639,7 +679,7 @@ async def apply_rebound_effect(
     if touched == 0:
         raise HTTPException(status_code=400, detail="No materials matched the given node_ids.")
     arc.updated_at = _now_iso()
-    mfa_storage.save_archetype(_current_project(), arc)
+    dsm_storage.save_archetype(_current_project(), arc)
     return arc
 
 
@@ -663,13 +703,29 @@ async def apply_milestones(arc_id: str, body: ApplyMilestonesRequest) -> BOMNode
         milestones=sorted(body.milestones, key=lambda m: m.year),
     )
     arc.updated_at = _now_iso()
-    mfa_storage.save_archetype(_current_project(), arc)
+    dsm_storage.save_archetype(_current_project(), arc)
     return node
 
 
 @router.post("/bom/archetypes/{arc_id}/lca", response_model=ArchetypeLCAResult)
 async def standalone_lca(arc_id: str, body: ArchetypeLCARequest) -> ArchetypeLCAResult:
     arc = _get_archetype(arc_id)
+    err_count = validation_error_count(arc.bom)
+    if err_count:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "validation_failed",
+                "message": (
+                    f"Archetype '{arc.name}' has {err_count} row(s) with unresolved "
+                    "ecoinvent links. LCA computation is blocked until they are fixed."
+                ),
+                "archetype_id": arc.id,
+                "archetype_name": arc.name,
+                "error_rows": err_count,
+                "report_url": f"/api/bom/archetypes/{arc.id}/validation-report",
+            },
+        )
     issues = validate_roots(arc.bom)
     unlinked = [i for i in issues if "no ecoinvent activity" in i]
     if unlinked:
@@ -722,7 +778,7 @@ async def standalone_lca(arc_id: str, body: ArchetypeLCARequest) -> ArchetypeLCA
 
 
 @router.post(
-    "/mfa/systems/{system_id}/cohort-mappings", response_model=CohortMappingResult
+    "/dsm/systems/{system_id}/cohort-mappings", response_model=CohortMappingResult
 )
 async def set_cohort_mappings(system_id: str, body: CohortMapping) -> CohortMappingResult:
     sys_def = _get_system(system_id)
@@ -753,7 +809,7 @@ async def set_cohort_mappings(system_id: str, body: CohortMapping) -> CohortMapp
     body.mappings = cleaned
     body.mfa_system_id = system_id
     _proj_cohort_mappings(project)[system_id] = body
-    mfa_storage.save_cohort_mappings(project, system_id, body)
+    dsm_storage.save_cohort_mappings(project, system_id, body)
 
     return CohortMappingResult(
         mapped_cohorts=len(cleaned),
@@ -764,7 +820,7 @@ async def set_cohort_mappings(system_id: str, body: CohortMapping) -> CohortMapp
 
 
 @router.get(
-    "/mfa/systems/{system_id}/cohort-mappings", response_model=CohortMapping
+    "/dsm/systems/{system_id}/cohort-mappings", response_model=CohortMapping
 )
 async def get_cohort_mappings(system_id: str) -> CohortMapping:
     _get_system(system_id)
@@ -776,9 +832,20 @@ async def get_cohort_mappings(system_id: str) -> CohortMapping:
 _COHORT_MAPPING_COLUMNS = ["fuel_type", "size", "archetype", "scaling_factor"]
 
 
-def _cohort_template_workbook(sys_def) -> Workbook:
+def _cohort_template_workbook(
+    sys_def,
+    existing: CohortMapping | None = None,
+    archetypes_by_id: dict[str, str] | None = None,
+) -> Workbook:
     """Build a cohort-mappings xlsx template listing every valid cohort combination
-    for the system. ``archetype`` and ``scaling_factor`` columns are left blank."""
+    for the system. When ``existing`` is provided, pre-fills the archetype +
+    scaling_factor + color cells from current mappings — supports round-trip
+    export.
+
+    Column order: nad dimensions, archetype, scaling_factor, color (Patch 4AK).
+    The Color column stores per-row color overrides as ``#RRGGBB`` hex; empty
+    cells mean "no override → algorithm default."
+    """
     wb = Workbook()
     ws = wb.active
     ws.title = "Mappings"
@@ -788,8 +855,8 @@ def _cohort_template_workbook(sys_def) -> Workbook:
     header_fill = PatternFill("solid", fgColor="374151")
     nads = [d for d in sys_def.dimensions if not d.is_age]
     nad_names = [d.name for d in nads]
-    # Column order: each non-age dimension (in order), then archetype + scaling_factor.
-    headers = nad_names + ["archetype", "scaling_factor"]
+    # Patch 4AK — Color column appended at the end.
+    headers = nad_names + ["archetype", "scaling_factor", "color"]
     ws.append(headers)
     for cell in ws[1]:
         cell.font = header_font
@@ -797,20 +864,47 @@ def _cohort_template_workbook(sys_def) -> Workbook:
         cell.alignment = Alignment(horizontal="center")
     ws.freeze_panes = "A2"
 
+    # Build lookups from `existing` for round-trip fill.
+    entries_by_ck: dict[str, CohortMappingEntry] = {}
+    row_colors: dict[str, str] = {}
+    if existing is not None:
+        for entry in existing.mappings:
+            entries_by_ck[entry.cohort_key] = entry
+        row_colors = dict(existing.row_colors or {})
+    archetypes_by_id = archetypes_by_id or {}
+
     for ck in all_cohort_keys(sys_def.dimensions):
         parts = ck.split("|") if ck else []
-        row = list(parts) + ["", ""]
+        entry = entries_by_ck.get(ck)
+        arc_name = ""
+        sf_val: str | float = ""
+        if entry is not None:
+            arc_name = archetypes_by_id.get(entry.archetype_id, entry.archetype_id)
+            sf_val = entry.scaling_factor
+        color = row_colors.get(ck, "")
+        row = list(parts) + [arc_name, sf_val, color]
         ws.append(row)
 
-    for col_letter, width in zip("ABCDEFGHIJ", [16, 16, 16, 16, 28, 14]):
+    for col_letter, width in zip(
+        "ABCDEFGHIJK",
+        [16, 16, 16, 16, 28, 14, 12],
+    ):
         ws.column_dimensions[col_letter].width = width
     return wb
 
 
-@router.get("/mfa/systems/{system_id}/cohort-mappings/template")
+@router.get("/dsm/systems/{system_id}/cohort-mappings/template")
 async def get_cohort_mappings_template(system_id: str) -> Response:
     sys_def = _get_system(system_id)
-    wb = _cohort_template_workbook(sys_def)
+    # Patch 4AK — round-trip export: include current mappings + row colors
+    # if any. Existing single-system callers (the LCA Architect "blank
+    # template" path) still work because the file structure is identical;
+    # the cells are just filled in.
+    project = _current_project()
+    existing = _proj_cohort_mappings(project).get(system_id)
+    archetypes = _proj_archetypes(project)
+    archetypes_by_id = {arc_id: arc.name for arc_id, arc in archetypes.items()}
+    wb = _cohort_template_workbook(sys_def, existing, archetypes_by_id)
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -863,6 +957,9 @@ def _parse_cohort_upload(data: bytes, filename: str, nad_names: list[str]) -> li
         )
     arc_idx = header.index("archetype")
     scale_idx = header.index("scaling_factor")
+    # Patch 4AK — optional Color column. Absent in pre-4AK templates,
+    # which still parse cleanly (color defaults to '').
+    color_idx = header.index("color") if "color" in header else -1
 
     out: list[dict] = []
     for raw in rows[1:]:
@@ -882,12 +979,33 @@ def _parse_cohort_upload(data: bytes, filename: str, nad_names: list[str]) -> li
             entry["scaling_factor"] = float(sf) if sf not in (None, "") else 1.0
         except (TypeError, ValueError):
             entry["scaling_factor"] = 1.0
+        if color_idx >= 0:
+            cval = raw[color_idx]
+            entry["color"] = str(cval).strip() if cval is not None else ""
+        else:
+            entry["color"] = ""
         out.append(entry)
     return out
 
 
+# Patch 4AK — strict #RRGGBB hex matcher for the Color column.
+_HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _normalize_color(raw: str) -> tuple[str | None, bool]:
+    """Returns (hex_or_None, is_error). Empty / 'auto' → (None, False).
+    Valid hex → (normalized lowercase hex, False). Otherwise → (None, True).
+    """
+    s = (raw or "").strip()
+    if s == "" or s.lower() == "auto":
+        return None, False
+    if _HEX_RE.match(s):
+        return s.lower(), False
+    return None, True
+
+
 @router.post(
-    "/mfa/systems/{system_id}/cohort-mappings/upload",
+    "/dsm/systems/{system_id}/cohort-mappings/upload",
     response_model=CohortMappingResult,
 )
 async def upload_cohort_mappings(
@@ -914,6 +1032,9 @@ async def upload_cohort_mappings(
     entries = []
     invalid_cohorts: list[str] = []
     invalid_archetypes: list[str] = []
+    # Patch 4AK — Color column tracking.
+    row_colors: dict[str, str] = {}
+    invalid_row_colors: list[str] = []
     seen: set[str] = set()
     valid_keys = set(all_cohort_keys(sys_def.dimensions))
 
@@ -938,41 +1059,53 @@ async def upload_cohort_mappings(
             sf = 1.0
         seen.add(ck)
         entries.append({"cohort_key": ck, "archetype_id": arc_id, "scaling_factor": float(sf)})
+        # Patch 4AK — parse Color column. Errors recorded but don't abort
+        # the row's other data (archetype + scale still saved).
+        color_raw = row.get("color", "") or ""
+        normalized, is_error = _normalize_color(color_raw)
+        if is_error:
+            invalid_row_colors.append(f"{ck}: {color_raw}")
+        elif normalized is not None:
+            row_colors[ck] = normalized
 
     from mapper.models.bom_schemas import CohortMappingEntry
     mapping = CohortMapping(
         mfa_system_id=system_id,
         mappings=[CohortMappingEntry(**e) for e in entries],
+        row_colors=row_colors,
     )
     _proj_cohort_mappings(project)[system_id] = mapping
-    mfa_storage.save_cohort_mappings(project, system_id, mapping)
+    dsm_storage.save_cohort_mappings(project, system_id, mapping)
 
     return CohortMappingResult(
         mapped_cohorts=len(entries),
         unmapped_cohorts=sorted(valid_keys - seen),
         invalid_cohorts=sorted(set(invalid_cohorts)),
         invalid_archetypes=sorted(set(invalid_archetypes)),
+        invalid_row_colors=sorted(set(invalid_row_colors)),
     )
 
 
-# ── Combined MFA × LCA ───────────────────────────────────────────────────────
+# ── Combined DSM × LCA ───────────────────────────────────────────────────────
 
 
-@router.post("/mfa/systems/{system_id}/mfa-lca", response_model=MFALCABatchResult)
-async def run_mfa_lca(system_id: str, body: MFALCARequest) -> MFALCABatchResult:
+@router.post("/dsm/systems/{system_id}/dsm-lca", response_model=DSMLCABatchResult)
+async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
+    from mapper.core.compute_metrics import measure_compute
+    meter = measure_compute()
     _get_system(system_id)
     project = _current_project()
     sim = _proj_results(project).get(system_id)
     if sim is None:
         raise HTTPException(
             status_code=400,
-            detail="No simulation results yet. Run /mfa/systems/{id}/simulate first.",
+            detail="No simulation results yet. Run /dsm/systems/{id}/simulate first.",
         )
     mapping = _proj_cohort_mappings(project).get(system_id)
     if mapping is None or not mapping.mappings:
         raise HTTPException(
             status_code=400,
-            detail="No cohort mappings set. POST /mfa/systems/{id}/cohort-mappings first.",
+            detail="No cohort mappings set. POST /dsm/systems/{id}/cohort-mappings first.",
         )
 
     # Normalize methods: prefer ``methods`` (list); fall back to legacy ``method``.
@@ -1008,41 +1141,126 @@ async def run_mfa_lca(system_id: str, body: MFALCARequest) -> MFALCABatchResult:
             )
         cohort_to_archetype[entry.cohort_key] = (entry.archetype_id, entry.scaling_factor)
 
+    # Resolve parameter expressions against the selected set (if any).
+    from mapper.api import parameters as _parameters
+    from mapper.core.parameter_engine import ParameterEngine, ParameterError
+    engine: ParameterEngine | None = None
+    if body.parameter_set_id:
+        pset = _parameters.get_parameter_set(body.parameter_set_id, project)
+        if pset is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Parameter set '{body.parameter_set_id}' not found",
+            )
+        engine = ParameterEngine(pset.parameters)
+
+    # Discover dependent subsystems with user-defined cohort mappings so their
+    # BOM impacts can be aggregated into the total (matches /impact/calculate).
+    from mapper.api import subsystems as _subs
+    from mapper.core.dsm_lca_engine import (
+        aggregate_subsystem_results,
+        build_subsystem_cohort_mapping,
+    )
+    from mapper.core.subsystem_engine import compute_dependent_subsystem
+
+    dep_subs = _subs.get_subsystems_for_system(system_id, project)
+    sub_sim_results: dict[str, object] = {}
+    sub_cohort_mappings: dict[str, dict[str, tuple[str, float]]] = {}
+    setup_warnings: list[str] = []
+    for sub_id, sub in dep_subs.items():
+        if not sub.dependency_rules:
+            continue
+        sub_mapping, unmapped = build_subsystem_cohort_mapping(sub)
+        if unmapped:
+            setup_warnings.append(
+                f"Subsystem '{sub.name}': {len(unmapped)} unmapped archetype"
+                f"{'s' if len(unmapped) != 1 else ''} excluded from calculation: "
+                f"{', '.join(unmapped)}"
+            )
+        if not sub_mapping:
+            continue
+        for aid in {bom_id for bom_id, _ in sub_mapping.values()}:
+            arc = archetypes.get(aid)
+            if arc is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"Dependent subsystem '{sub.name}' is mapped to archetype "
+                        f"'{aid}' which does not exist in the BOM library."
+                    ),
+                )
+            unlinked = sum(1 for m in iter_all_materials(arc.bom) if m.ecoinvent_activity is None)
+            if unlinked:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Archetype '{arc.name}' has {unlinked} unlinked material(s).",
+                )
+        try:
+            sub_sim = compute_dependent_subsystem(sub, _get_system(system_id), sim, engine)
+        except (ParameterError, ValueError) as e:
+            raise HTTPException(
+                status_code=400, detail=f"Dependent subsystem '{sub.name}': {e}"
+            )
+        sub_sim_results[sub_id] = sub_sim
+        sub_cohort_mappings[sub_id] = sub_mapping
+
     try:
-        pipeline = MFALCAPipeline(
-            simulation_result=sim,
-            archetypes=archetypes,
-            cohort_mappings=cohort_to_archetype,
-            methods=method_tuples,
-            lca_runner=PersistentLCARunner(),
-            year_start=body.year_start,
-            year_end=body.year_end,
-        )
-        results = pipeline.calculate(body.scope)
+        persistent = PersistentLCARunner()
+
+        def _pipeline(sim_result, cohort_map):
+            return DSMLCAPipeline(
+                simulation_result=sim_result,
+                archetypes=archetypes,
+                cohort_mappings=cohort_map,
+                methods=method_tuples,
+                lca_runner=persistent,
+                year_start=body.year_start,
+                year_end=body.year_end,
+                parameter_engine=engine,
+            )
+
+        primary_results = _pipeline(sim, cohort_to_archetype).calculate(body.scope)
+        if sub_sim_results:
+            results_by_subsystem: dict[str, list[DSMLCAResult]] = {
+                system_id: primary_results,
+            }
+            for sub_id, sub_sim in sub_sim_results.items():
+                results_by_subsystem[sub_id] = _pipeline(
+                    sub_sim, sub_cohort_mappings[sub_id]
+                ).calculate(body.scope)
+            results = aggregate_subsystem_results(results_by_subsystem)
+            for r in results:
+                r.mfa_system_id = system_id
+        else:
+            results = primary_results
+    except ParameterError as e:
+        raise HTTPException(status_code=400, detail=f"Parameter resolution failed: {e}")
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:  # pragma: no cover
-        raise HTTPException(status_code=500, detail=f"MFA×LCA failed: {e}")
+        raise HTTPException(status_code=500, detail=f"DSM×LCA failed: {e}")
 
-    _proj_mfa_lca_results(project)[system_id] = results
-    return MFALCABatchResult(
+    _proj_dsm_lca_results(project)[system_id] = results
+    return DSMLCABatchResult(
         results=results,
         methods_calculated=len(results),
         year_start=body.year_start,
         year_end=body.year_end,
+        warnings=setup_warnings,
+        compute_metrics=meter.build(),
     )
 
 
-@router.get("/mfa/systems/{system_id}/mfa-lca", response_model=MFALCABatchResult)
-async def get_mfa_lca(system_id: str) -> MFALCABatchResult:
+@router.get("/dsm/systems/{system_id}/dsm-lca", response_model=DSMLCABatchResult)
+async def get_dsm_lca(system_id: str) -> DSMLCABatchResult:
     _get_system(system_id)
-    res = _proj_mfa_lca_results().get(system_id)
+    res = _proj_dsm_lca_results().get(system_id)
     if res is None:
-        raise HTTPException(status_code=404, detail="No MFA × LCA results yet.")
-    return MFALCABatchResult(results=res, methods_calculated=len(res))
+        raise HTTPException(status_code=404, detail="No DSM × LCA results yet.")
+    return DSMLCABatchResult(results=res, methods_calculated=len(res))
 
 
-# ── MFA × LCA Excel export ───────────────────────────────────────────────────
+# ── DSM × LCA Excel export ───────────────────────────────────────────────────
 
 
 def _short_method_label(method: list[str]) -> str:
@@ -1051,7 +1269,7 @@ def _short_method_label(method: list[str]) -> str:
 
 def _build_mfa_lca_workbook(
     system_name: str,
-    results: list[MFALCAResult],
+    results: list[DSMLCAResult],
     scope: str,
     selected_year: int | None,
     cohort_mapping: CohortMapping | None,
@@ -1446,11 +1664,11 @@ def _build_mfa_lca_workbook(
         _autosize(ws_cm)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Sheet 9: MFA fleet data
+    # Sheet 9: DSM fleet data
     # ══════════════════════════════════════════════════════════════════════════
     if sim_result is not None:
-        ws_mfa = wb.create_sheet("MFA fleet data")
-        ws_mfa.sheet_properties.tabColor = "4A90D9"
+        ws_dsm = wb.create_sheet("DSM fleet data")
+        ws_dsm.sheet_properties.tabColor = "4A90D9"
 
         # Collect all primary-dim values from stock for per-type columns
         primary_dim = dim_headers[0] if dim_headers else "Cohort"
@@ -1458,40 +1676,40 @@ def _build_mfa_lca_workbook(
         for yr in sim_result.years:
             for ck in yr.stock:
                 all_primaries.add(_split_cohort(ck)[0])
-        primary_sorted_mfa = sorted(all_primaries)
+        primary_sorted_dsm = sorted(all_primaries)
 
         mfa_header = ["Year", "Total stock", "Total inflows", "Total outflows"]
-        for pv in primary_sorted_mfa:
+        for pv in primary_sorted_dsm:
             mfa_header.append(f"Stock: {pv}")
-        ws_mfa.append(mfa_header)
-        _style_header(ws_mfa)
+        ws_dsm.append(mfa_header)
+        _style_header(ws_dsm)
 
         for yr in sim_result.years:
             total_stock = sum(yr.stock.values())
             total_in = sum(yr.inflow.values())
             total_out = sum(yr.outflow.values())
             row: list = [yr.year, total_stock, total_in, total_out]
-            for pv in primary_sorted_mfa:
+            for pv in primary_sorted_dsm:
                 s = sum(v for ck, v in yr.stock.items() if _split_cohort(ck)[0] == pv)
                 row.append(s)
-            ws_mfa.append(row)
+            ws_dsm.append(row)
 
-        for row in ws_mfa.iter_rows(min_row=2, min_col=2, max_col=len(mfa_header)):
+        for row in ws_dsm.iter_rows(min_row=2, min_col=2, max_col=len(mfa_header)):
             for cell in row:
                 cell.number_format = INT_FMT
-        ws_mfa.freeze_panes = "B2"
-        _autosize(ws_mfa)
+        ws_dsm.freeze_panes = "B2"
+        _autosize(ws_dsm)
 
     return wb
 
 
-@router.post("/mfa/systems/{system_id}/mfa-lca/export")
-async def export_mfa_lca(system_id: str, year: int | None = None) -> Response:
+@router.post("/dsm/systems/{system_id}/dsm-lca/export")
+async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
     sys_def = _get_system(system_id)
     project = _current_project()
-    results = _proj_mfa_lca_results(project).get(system_id)
+    results = _proj_dsm_lca_results(project).get(system_id)
     if not results:
-        raise HTTPException(status_code=400, detail="No MFA × LCA results to export — run a calculation first.")
+        raise HTTPException(status_code=400, detail="No DSM × LCA results to export — run a calculation first.")
 
     mapping = _proj_cohort_mappings(project).get(system_id)
     sim = _proj_results(project).get(system_id)
@@ -1534,15 +1752,26 @@ async def export_mfa_lca(system_id: str, year: int | None = None) -> Response:
 # ── Material Flows ──────────────────────────────────────────────────────────
 
 
-@router.post("/mfa/systems/{system_id}/material-flows", response_model=MaterialFlowResult)
+@router.post("/dsm/systems/{system_id}/material-flows", response_model=MaterialFlowResult)
 async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialFlowResult:
+    from mapper.core.compute_metrics import measure_compute
+    meter = measure_compute()
     _get_system(system_id)
     project = _current_project()
-    sim = _proj_results(project).get(system_id)
+    # Patch 4M — when ``dsm_scenario_id`` is set, run a fresh sim for
+    # that scenario via the same helper Impact Assessment uses for
+    # multi-DSM fan-out (Patch 2E.1). When unset, read the cached
+    # active-scenario sim — full backward compat with the pre-Patch-4M
+    # behavior every existing single-scenario caller relies on.
+    if body.dsm_scenario_id is not None:
+        from mapper.api.dsm import simulate_for_scenario
+        sim = simulate_for_scenario(system_id, body.dsm_scenario_id)
+    else:
+        sim = _proj_results(project).get(system_id)
     if sim is None:
         raise HTTPException(
             status_code=400,
-            detail="No simulation results yet. Run /mfa/systems/{id}/simulate first.",
+            detail="No simulation results yet. Run /dsm/systems/{id}/simulate first.",
         )
     mapping = _proj_cohort_mappings(project).get(system_id)
     if mapping is None or not mapping.mappings:
@@ -1553,15 +1782,81 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
     if body.year_start is not None and body.year_end is not None and body.year_start > body.year_end:
         raise HTTPException(status_code=400, detail="year_start must be <= year_end.")
 
-    archetypes = _proj_archetypes(project)
+    # Patch 4M — parameter scenario resolution. When the scenario name
+    # is set (and not "Base"), apply the parameter engine to clone each
+    # archetype with resolved quantity expressions before flowing
+    # through ``compute_material_flows``. Mirrors single-product LCA's
+    # ``calculate_archetype`` (lca.py) pattern. ``None`` / "Base" keeps
+    # base values — full backward compat.
+    archetypes_raw = _proj_archetypes(project)
+    archetypes = archetypes_raw
+    if body.parameter_scenario is not None and body.parameter_scenario != "Base":
+        from mapper.api.parameters import _table_for
+        from mapper.core.bom_engine import resolve_archetype_with_engine
+        from mapper.core.parameter_engine import ParameterEngine, ParameterError
+        table = _table_for(project)
+        if body.parameter_scenario not in table.list_scenarios():
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Parameter scenario '{body.parameter_scenario}' not found in active table"
+                ),
+            )
+        try:
+            engine = ParameterEngine(table, scenario=body.parameter_scenario)
+            archetypes = {
+                aid: resolve_archetype_with_engine(arc, engine)
+                for aid, arc in archetypes_raw.items()
+            }
+        except ParameterError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Parameter resolution failed: {e}",
+            )
     cohort_to_archetype: dict[str, tuple[str, float]] = {}
     for entry in mapping.mappings:
         if entry.archetype_id not in archetypes:
             continue
         cohort_to_archetype[entry.cohort_key] = (entry.archetype_id, entry.scaling_factor)
 
+    sys_def = _get_system(system_id)
+
+    # Discover dependent subsystems and compute their flows too.
+    from mapper.api import subsystems as _subs
+    from mapper.core.dsm_lca_engine import build_subsystem_cohort_mapping
+    from mapper.core.subsystem_engine import compute_dependent_subsystem
+    from mapper.models.bom_schemas import SubsystemRef
+
+    dep_subs = _subs.get_subsystems_for_system(system_id, project)
+    setup_warnings: list[str] = []
+    sub_runs: list[tuple[str, str, object, dict[str, tuple[str, float]]]] = []
+    for sub_id, sub in dep_subs.items():
+        if not sub.dependency_rules:
+            continue
+        sub_mapping, unmapped = build_subsystem_cohort_mapping(sub)
+        if unmapped:
+            setup_warnings.append(
+                f"Subsystem '{sub.name}': {len(unmapped)} unmapped archetype"
+                f"{'s' if len(unmapped) != 1 else ''} excluded from material flows: "
+                f"{', '.join(unmapped)}"
+            )
+        if not sub_mapping:
+            continue
+        missing = [aid for aid, _ in sub_mapping.values() if aid not in archetypes]
+        if missing:
+            setup_warnings.append(
+                f"Subsystem '{sub.name}': archetypes not in library, skipped: {', '.join(sorted(set(missing)))}"
+            )
+            continue
+        try:
+            sub_sim = compute_dependent_subsystem(sub, sys_def, sim, None)
+        except ValueError as e:
+            setup_warnings.append(f"Subsystem '{sub.name}': {e}")
+            continue
+        sub_runs.append((sub_id, sub.name, sub_sim, sub_mapping))
+
     try:
-        result = compute_material_flows(
+        primary = compute_material_flows(
             sim=sim,
             archetypes=archetypes,
             cohort_mappings=cohort_to_archetype,
@@ -1573,10 +1868,185 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    return result
+    subsystems_meta: list[SubsystemRef] = []
+    if sub_runs:
+        subsystems_meta.append(SubsystemRef(id=system_id, name=sys_def.name))
+
+    merged_materials = list(primary.materials)
+    stage_set: set[str] = set(primary.stages_included)
+    stages_out: list[str] = list(primary.stages_included)
+    year_min = primary.year_start
+    year_max = primary.year_end
+
+    for sub_id, sub_name, sub_sim, sub_mapping in sub_runs:
+        try:
+            sub_result = compute_material_flows(
+                sim=sub_sim,
+                archetypes=archetypes,
+                cohort_mappings=sub_mapping,
+                scope=body.scope,
+                year_start=body.year_start,
+                year_end=body.year_end,
+                group_by=body.group_by,
+            )
+        except ValueError as e:
+            setup_warnings.append(f"Subsystem '{sub_name}': {e}")
+            continue
+        subsystems_meta.append(SubsystemRef(id=sub_id, name=sub_name))
+        for m in sub_result.materials:
+            m.subsystem_id = sub_id
+            m.subsystem_name = sub_name
+            merged_materials.append(m)
+        for s in sub_result.stages_included:
+            if s not in stage_set:
+                stage_set.add(s)
+                stages_out.append(s)
+        if sub_result.materials:
+            year_min = min(year_min, sub_result.year_start)
+            year_max = max(year_max, sub_result.year_end)
+
+    merged_materials.sort(key=lambda s: sum(s.values.values()), reverse=True)
+
+    # Unit-count context from the DSM simulation result. Maps scope → which
+    # YearResult surface to read. "all" folds everything into stock (the
+    # operating-fleet count) as a sensible default for the full-lifecycle view.
+    scope_attr = {
+        "inflows": "inflow",
+        "stock": "stock",
+        "outflows": "outflow",
+        "all": "stock",
+    }.get(primary.scope, "stock")
+    system_units_by_year: dict[int, float] = {}
+    # Key by archetype *name* (not id) so frontend can index it with
+    # ``MaterialSeries.name`` under group_by="archetype".
+    archetype_units_by_year: dict[str, dict[int, float]] = {}
+    for yr in sim.years:
+        if yr.year < year_min or yr.year > year_max:
+            continue
+        per_cohort = getattr(yr, scope_attr, {}) or {}
+        system_units_by_year[yr.year] = float(sum(per_cohort.values()))
+        for ck, count in per_cohort.items():
+            archetype_id = cohort_to_archetype.get(ck, (ck, 1.0))[0]
+            arc = archetypes.get(archetype_id)
+            arc_key = arc.name if arc else archetype_id
+            bucket = archetype_units_by_year.setdefault(arc_key, {})
+            bucket[yr.year] = bucket.get(yr.year, 0.0) + float(count)
+
+    return MaterialFlowResult(
+        scope=primary.scope,
+        stages_included=stages_out,
+        year_start=year_min,
+        year_end=year_max,
+        group_by=primary.group_by,
+        materials=merged_materials,
+        elapsed_seconds=primary.elapsed_seconds,
+        subsystems=subsystems_meta,
+        warnings=setup_warnings,
+        compute_metrics=meter.build(),
+        unit_name=sys_def.unit_name or "units",
+        system_units_by_year=system_units_by_year,
+        archetype_units_by_year=archetype_units_by_year,
+    )
 
 
-@router.get("/mfa/systems/{system_id}/material-flows/export")
+@router.post(
+    "/dsm/systems/{system_id}/material-flows-multi",
+    response_model=MultiMaterialFlowResult,
+)
+async def material_flows_multi(
+    system_id: str, body: MaterialFlowMultiRequest,
+) -> MultiMaterialFlowResult:
+    """Patch 4M — multi-axis fan-out for Material Flows.
+
+    One axis at a time (axisConflict). Server-side sync loop:
+    each scenario in the chosen axis spawns a single
+    ``compute_material_flows`` call (same code path as the legacy
+    single-result endpoint, just with the per-scenario in-task
+    fields set on the cloned request body). Returns the assembled
+    envelope; the frontend renders a scenario tab bar above the
+    result table to switch between runs.
+
+    LCI scenarios are deliberately not an axis here — MFA tracks
+    physical material throughputs, which don't depend on the
+    background LCI database. See CLAUDE.md "Material Flows axes".
+    """
+    import time as _time
+    dsm_ids = body.dsm_scenario_ids or []
+    param_ids = body.parameter_scenarios or []
+    if dsm_ids and param_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Cannot fan out across DSM and parameter axes "
+                "simultaneously (axisConflict). Pick one axis at a time."
+            ),
+        )
+    if not dsm_ids and not param_ids:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "At least one of dsm_scenario_ids / parameter_scenarios "
+                "must be non-empty."
+            ),
+        )
+
+    axis = "dsm" if dsm_ids else "parameter"
+    runs: list[MaterialFlowScenarioRun] = []
+    t0 = _time.perf_counter()
+
+    if axis == "dsm":
+        # Resolve scenario labels up front so the envelope is
+        # self-contained for the frontend tab bar — no follow-up
+        # round trip to the DSM scenario list endpoint.
+        from mapper.api.dsm import _get_or_create_state
+        state = _get_or_create_state(system_id)
+        label_by_id: dict[str, str] = {}
+        for sc in state.scenarios:
+            label_by_id[sc.id] = sc.name
+        for sid in dsm_ids:
+            if sid not in label_by_id:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"DSM scenario '{sid}' not found on system '{system_id}'.",
+                )
+            sub_body = MaterialFlowRequest(
+                scope=body.scope,
+                year_start=body.year_start,
+                year_end=body.year_end,
+                group_by=body.group_by,
+                dsm_scenario_id=sid,
+                parameter_scenario=None,
+            )
+            sub_result = await material_flows(system_id, sub_body)
+            runs.append(MaterialFlowScenarioRun(
+                axis="dsm",
+                scenario_id=sid,
+                scenario_label=label_by_id[sid],
+                result=sub_result,
+            ))
+    else:  # parameter axis
+        for pid in param_ids:
+            sub_body = MaterialFlowRequest(
+                scope=body.scope,
+                year_start=body.year_start,
+                year_end=body.year_end,
+                group_by=body.group_by,
+                dsm_scenario_id=None,
+                parameter_scenario=pid,
+            )
+            sub_result = await material_flows(system_id, sub_body)
+            runs.append(MaterialFlowScenarioRun(
+                axis="parameter",
+                scenario_id=pid,
+                scenario_label=pid,  # parameter scenario name == its label
+                result=sub_result,
+            ))
+
+    elapsed = _time.perf_counter() - t0
+    return MultiMaterialFlowResult(axis=axis, runs=runs, elapsed_seconds=elapsed)
+
+
+@router.get("/dsm/systems/{system_id}/material-flows/export")
 async def export_material_flows(
     system_id: str,
     scope: str = "stock",
@@ -1612,6 +2082,27 @@ async def export_material_flows(
         group_by="material",
     )
 
+    # Pre-compute unit counts aligned to the export scope — used on the Summary
+    # sheet and the long-format "By Archetype" sheet.
+    scope_attr = {
+        "inflows": "inflow",
+        "stock": "stock",
+        "outflows": "outflow",
+        "all": "stock",
+    }.get(scope, "stock")
+    unit_label = (sys_def.unit_name or "units").strip() or "units"
+    system_units_by_year_exp: dict[int, float] = {}
+    archetype_units_by_year_exp: dict[str, dict[int, float]] = {}
+    for yr in sim.years:
+        if yr.year < result.year_start or yr.year > result.year_end:
+            continue
+        per_cohort = getattr(yr, scope_attr, {}) or {}
+        system_units_by_year_exp[yr.year] = float(sum(per_cohort.values()))
+        for ck, count in per_cohort.items():
+            archetype_id = cohort_to_archetype.get(ck, (ck, 1.0))[0]
+            bucket = archetype_units_by_year_exp.setdefault(archetype_id, {})
+            bucket[yr.year] = bucket.get(yr.year, 0.0) + float(count)
+
     # ── Build workbook ──────────────────────────────────────────────────────
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="2D8A8A")
@@ -1637,6 +2128,11 @@ async def export_material_flows(
     ws.append(["Years", f"{result.year_start} - {result.year_end}"])
     ws.append(["Stages included", ", ".join(result.stages_included)])
     ws.append(["Materials", len(result.materials)])
+    ws.append([f"Unit label ({unit_label})", unit_label])
+    total_units_start = system_units_by_year_exp.get(result.year_start, 0.0)
+    total_units_end = system_units_by_year_exp.get(result.year_end, 0.0)
+    ws.append([f"Total {unit_label} ({result.year_start})", total_units_start])
+    ws.append([f"Total {unit_label} ({result.year_end})", total_units_end])
     ws.append(["Elapsed (s)", result.elapsed_seconds])
     for cell in ws[1]:
         if cell.value:
@@ -1736,6 +2232,118 @@ async def export_material_flows(
             ws.append([m.name, m.unit, m.evolution_method, rate_str])
         _auto(ws)
 
+    # Sheet 6: By Material (long) — one row per (year, material).
+    if years:
+        ws = wb.create_sheet("By Material (long)")
+        header = ["Year", "Scope", "Material", "Unit", "Stage", "Component", "Value"]
+        ws.append(header)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        for y in years:
+            for m in result.materials:
+                v = m.values.get(y, 0.0)
+                if v == 0:
+                    continue
+                ws.append([y, result.scope, m.name, m.unit, m.stage, m.component, v])
+        ws.freeze_panes = "A2"
+        for row in ws.iter_rows(min_row=2, min_col=7, max_col=7):
+            for cell in row:
+                cell.number_format = num_fmt
+        _auto(ws)
+
+    # Sheet 7: By Component (long)
+    if years and comp_result.materials:
+        ws = wb.create_sheet("By Component (long)")
+        header = ["Year", "Scope", "Component", "Unit", "Value"]
+        ws.append(header)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        for y in years:
+            for m in comp_result.materials:
+                v = m.values.get(y, 0.0)
+                if v == 0:
+                    continue
+                ws.append([y, result.scope, m.name, m.unit, v])
+        ws.freeze_panes = "A2"
+        for row in ws.iter_rows(min_row=2, min_col=5, max_col=5):
+            for cell in row:
+                cell.number_format = num_fmt
+        _auto(ws)
+
+    # Sheet 8: By Stage (long) — kg per stage per year, plus a system-wide
+    # stage split. Stage grouping folds all materials into the stage buckets
+    # the compute engine emits.
+    stage_result = compute_material_flows(
+        sim=sim, archetypes=archetypes, cohort_mappings=cohort_to_archetype,
+        scope=scope, year_start=year_start, year_end=year_end, group_by="stage",
+    )
+    if years and stage_result.materials:
+        ws = wb.create_sheet("By Stage (long)")
+        header = ["Year", "Scope", "Stage", "Unit", "Value"]
+        ws.append(header)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        for y in years:
+            for m in stage_result.materials:
+                v = m.values.get(y, 0.0)
+                if v == 0:
+                    continue
+                ws.append([y, result.scope, m.name, m.unit, v])
+        ws.freeze_panes = "A2"
+        for row in ws.iter_rows(min_row=2, min_col=5, max_col=5):
+            for cell in row:
+                cell.number_format = num_fmt
+        _auto(ws)
+
+    # Sheet 9: By Archetype (long) — year × archetype × kg PLUS unit counts
+    # from the DSM simulation. One "Units" column captures the product-level
+    # count for the selected scope (inflows/stock/outflows).
+    if years:
+        ws = wb.create_sheet("By Archetype (long)")
+        header = ["Year", "Scope", "Archetype", "Material", "Unit", "Value", f"Units ({unit_label})"]
+        ws.append(header)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        for y in years:
+            for m in result.materials:
+                for arc_name, arc_years in sorted(m.by_archetype.items()):
+                    v = arc_years.get(y, 0.0)
+                    if v == 0:
+                        continue
+                    arc_units = archetype_units_by_year_exp.get(arc_name, {}).get(y, 0.0)
+                    ws.append([y, result.scope, arc_name, m.name, m.unit, v, arc_units])
+        ws.freeze_panes = "A2"
+        for row in ws.iter_rows(min_row=2, min_col=6, max_col=7):
+            for cell in row:
+                cell.number_format = num_fmt
+        _auto(ws)
+
+    # Sheet 10: Unit Counts — system-wide product counts per year for the
+    # selected scope. Small sheet, but makes the "context" explicit so users
+    # don't have to cross-reference the DSM simulation export.
+    if system_units_by_year_exp:
+        ws = wb.create_sheet("Unit Counts")
+        header = ["Year", "Scope", f"System {unit_label}"]
+        ws.append(header)
+        for cell in ws[1]:
+            cell.font = header_font
+            cell.fill = header_fill
+            cell.alignment = Alignment(horizontal="center")
+        for y in sorted(system_units_by_year_exp):
+            ws.append([y, scope, system_units_by_year_exp[y]])
+        for row in ws.iter_rows(min_row=2, min_col=3, max_col=3):
+            for cell in row:
+                cell.number_format = num_fmt
+        _auto(ws)
+
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
@@ -1747,15 +2355,15 @@ async def export_material_flows(
     )
 
 
-# Useful for cleanup if the user deletes the parent MFA system from another router.
+# Useful for cleanup if the user deletes the parent DSM system from another router.
 def purge_system(system_id: str) -> None:
-    # Called from mfa.delete_system after the system is already removed from the
-    # current project's stores. Clean any cohort mappings / MFA-LCA results for
+    # Called from dsm.delete_system after the system is already removed from the
+    # current project's stores. Clean any cohort mappings / DSM-LCA results for
     # this system across every project (the system id is unique per project in
     # practice, but cheap to sweep all).
     for proj_map in _cohort_mappings.values():
         proj_map.pop(system_id, None)
-    for proj_res in _mfa_lca_results.values():
+    for proj_res in _dsm_lca_results.values():
         proj_res.pop(system_id, None)
 
 
@@ -1767,6 +2375,7 @@ def purge_system(system_id: str) -> None:
 
 _BOM_COLUMNS = [
     "Stage",
+    "Scope",
     "Parent",
     "Name",
     "Type",
@@ -1814,6 +2423,7 @@ def _walk_for_export(
     stage: str,
     parent_name: str,
     rows: list[list],
+    stage_scope: str = "",
 ) -> None:
     link = node.ecoinvent_activity
     ev = node.evolution
@@ -1835,12 +2445,19 @@ def _walk_for_export(
         if (ev and ev.method == "rebound_effect" and ev.applies_to_stages)
         else ""
     )
+    # Scope is only emitted on the stage root row (parent_name == "").
+    scope_cell = stage_scope if not parent_name else ""
+    # Preserve parameter expressions across round-trip: if the node was
+    # defined with an expression, emit the expression string rather than the
+    # last-resolved numeric value.
+    quantity_cell = node.quantity_expression if node.quantity_expression else node.quantity
     rows.append([
         stage,
+        scope_cell,
         parent_name,
         node.name,
         node.node_type,
-        node.quantity,
+        quantity_cell,
         node.unit,
         link.database if link else "",
         link.code if link else "",
@@ -1856,7 +2473,7 @@ def _walk_for_export(
     ])
     if node.children:
         for child in node.children:
-            _walk_for_export(child, stage, node.name, rows)
+            _walk_for_export(child, stage, node.name, rows, stage_scope)
 
 
 def _build_export_workbook(arc: Archetype) -> Workbook:
@@ -1868,7 +2485,7 @@ def _build_export_workbook(arc: Archetype) -> Workbook:
     rows: list[list] = []
     for root in arc.bom:
         # Stage root itself has empty parent; children use root.name as parent.
-        _walk_for_export(root, root.name, "", rows)
+        _walk_for_export(root, root.name, "", rows, stage_scope=root.scope or "")
     for r in rows:
         bom_ws.append(r)
 
@@ -1943,7 +2560,7 @@ def _build_multi_export_workbook(archetypes: list[Archetype]) -> Workbook:
     for arc in archetypes:
         per_arc_rows: list[list] = []
         for root in arc.bom:
-            _walk_for_export(root, root.name, "", per_arc_rows)
+            _walk_for_export(root, root.name, "", per_arc_rows, stage_scope=root.scope or "")
         for r in per_arc_rows:
             bom_ws.append([arc.name, *r])
 
@@ -1957,10 +2574,10 @@ def _build_multi_export_workbook(archetypes: list[Archetype]) -> Workbook:
     ins = wb.create_sheet("Instructions")
     ins.append(["Column", "Notes"])
     ins.append(["archetype_name (Archetypes sheet)", "Unique within the file. Referenced by every row in the BOM sheet."])
-    ins.append(["folder (Archetypes sheet)", "Forward-slash path (e.g. 'Cars/BEVs'). Empty = root. Max depth 5."])
+    ins.append(["folder (Archetypes sheet)", "Forward-slash path (e.g. 'Group_1/Type_A'). Empty = root. Max depth 5."])
     ins.append(["description (Archetypes sheet)", "Optional description."])
     ins.append(["archetype_name (BOM sheet)", "Points at an archetype in the Archetypes sheet."])
-    ins.append(["Stage / Parent / Name / Type", "Same semantics as the single-archetype format."])
+    ins.append(["Stage / Scope / Parent / Name / Type", "Same semantics as the single-archetype format. 'Scope' is 'inflows' | 'stock' | 'outflows' and is set ONLY on the stage root row (Parent empty). Empty = fall back to keyword matching."])
     ins.append(["Evolution Method", "One of 'fixed', 'learning_rate', 'rebound_effect', 'milestones'. Materials only."])
     ins.append(["Rebound Rate", "For 'rebound_effect': annual fractional *increase* in consumption (e.g. 0.02 = +2%/yr)."])
     ins.append(["Rebound Applies To Stages", "Optional for 'rebound_effect': ';'-separated stage names limiting where rebound is applied. Empty = all stages."])
@@ -1975,9 +2592,12 @@ async def download_bom_template() -> Response:
     meta_ws = wb.active
     meta_ws.title = "Archetypes"
     meta_ws.append(["archetype_name", "folder", "description"])
-    meta_ws.append(["BEV-LFP", "Cars/BEVs", "Battery-electric vehicle with LFP pack"])
-    meta_ws.append(["ICEV-Petrol", "Cars/ICEVs", "Internal-combustion petrol car"])
-    meta_ws.append(["DC Fast Charger", "Charging Infrastructure/Electric", "150 kW DC fast charger"])
+    # Generic placeholders. MApper is domain-agnostic — examples cover three
+    # archetypes with different stage shapes so users see the structure, not a
+    # specific case study.
+    meta_ws.append(["Product_A", "Group_1/Type_A", "Replace with your archetype (e.g. wind turbine, vehicle, building, device)."])
+    meta_ws.append(["Product_B", "Group_1/Type_B", "A second archetype illustrating per-year stock-phase consumption."])
+    meta_ws.append(["Asset_C", "Group_2/Type_C", "An archetype with no stock-phase consumption (manufacture + EOL only)."])
 
     bom_ws = wb.create_sheet("BOM")
     bom_ws.append(_MULTI_BOM_COLUMNS)
@@ -1985,79 +2605,85 @@ async def download_bom_template() -> Response:
     def row(arc: str, *values):
         bom_ws.append([arc, *values])
 
-    # Columns after the 10 identity/ecoinvent columns:
-    #   Evolution Method, Learning Rate, Rebound Rate, Base Year, Milestone Years, Milestone Values, Rebound Applies To Stages
-    # BEV-LFP
-    row("BEV-LFP", "Body", "", "Body", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("BEV-LFP", "Body", "Body", "Steel frame", "material", 900, "kg",
+    # Column order after archetype_name: Stage, Scope, Parent, Name, Type,
+    # Quantity, Unit, Ecoinvent Database/Code/Name/Location, Evolution Method,
+    # Learning Rate, Rebound Rate, Base Year, Milestone Years, Milestone Values,
+    # Rebound Applies To Stages.
+    # Scope is set on the stage ROOT row (Parent empty); child rows leave it blank.
+
+    # Product_A — full lifecycle with all four evolution methods illustrated.
+    row("Product_A", "Manufacturing", "inflows", "", "Manufacturing", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_A", "Manufacturing", "", "Manufacturing", "Steel", "material", 900, "kg",
         "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
         "fixed", "", "", "", "", "", "")
-    row("BEV-LFP", "Body", "Body", "Aluminium panels", "material", 120, "kg",
+    row("Product_A", "Manufacturing", "", "Manufacturing", "Aluminium", "material", 120, "kg",
         "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_ALU", "aluminium production", "GLO",
         "learning_rate", -0.02, "", 2025, "", "", "")
-    row("BEV-LFP", "Battery Pack", "", "Battery Pack", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("BEV-LFP", "Battery Pack", "Battery Pack", "LFP cells", "material", 300, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_LFP", "battery cell, Li-ion, LFP", "GLO",
+    row("Product_A", "Key Component", "inflows", "", "Key Component", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_A", "Key Component", "", "Key Component", "Functional material", "material", 300, "kg",
+        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_FUNCMAT", "functional material, generic", "GLO",
         "milestones", "", "", "", "2025;2035;2050", "300;230;180", "")
-    row("BEV-LFP", "Use Phase", "", "Use Phase", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("BEV-LFP", "Use Phase", "Use Phase", "Electricity (lifetime)", "material", 30000, "kWh",
+    row("Product_A", "Use Phase", "stock", "", "Use Phase", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_A", "Use Phase", "", "Use Phase", "Energy consumption", "material", 2550, "kWh",
         "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_ELEC_MIX", "market for electricity, low voltage", "EU",
         "rebound_effect", "", 0.015, 2025, "", "", "Use Phase")
-    row("BEV-LFP", "End of Life", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("BEV-LFP", "End of Life", "End of Life", "Treatment, used car", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_A", "End of Life", "outflows", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_A", "End of Life", "", "End of Life", "Treatment, generic", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
 
-    # ICEV-Petrol — rebound example with applies_to_stages filter
-    row("ICEV-Petrol", "Body", "", "Body", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("ICEV-Petrol", "Body", "Body", "Steel frame", "material", 1100, "kg",
+    # Product_B — rebound with applies_to_stages filter + maintenance stage.
+    row("Product_B", "Manufacturing", "inflows", "", "Manufacturing", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_B", "Manufacturing", "", "Manufacturing", "Steel", "material", 1100, "kg",
         "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
         "fixed", "", "", "", "", "", "")
-    row("ICEV-Petrol", "Use Phase", "", "Use Phase", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("ICEV-Petrol", "Use Phase", "Use Phase", "Petrol consumption (lifetime)", "material", 18000, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_PETROL", "petrol, production", "Europe",
+    row("Product_B", "Use Phase", "stock", "", "Use Phase", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_B", "Use Phase", "", "Use Phase", "Fuel consumption", "material", 727, "kg",
+        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_FUEL", "fuel, generic", "GLO",
         "rebound_effect", "", 0.02, 2025, "", "", "Use Phase")
-    row("ICEV-Petrol", "Maintenance", "", "Maintenance", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("ICEV-Petrol", "Maintenance", "Maintenance", "Tyres (lifetime)", "material", 80, "kg", "", "", "", "", "", "", "", "", "", "", "")
-    row("ICEV-Petrol", "End of Life", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("ICEV-Petrol", "End of Life", "End of Life", "Treatment, used car", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_B", "Maintenance", "stock", "", "Maintenance", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_B", "Maintenance", "", "Maintenance", "Replacement part", "material", 13, "kg", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_B", "End of Life", "outflows", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Product_B", "End of Life", "", "End of Life", "Treatment, generic", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
 
-    # DC Fast Charger
-    row("DC Fast Charger", "Housing", "", "Housing", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("DC Fast Charger", "Housing", "Housing", "Steel enclosure", "material", 250, "kg",
+    # Asset_C — no stock-phase consumption (manufacture + EOL only).
+    row("Asset_C", "Housing", "inflows", "", "Housing", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Asset_C", "Housing", "", "Housing", "Steel enclosure", "material", 250, "kg",
         "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
         "fixed", "", "", "", "", "", "")
-    row("DC Fast Charger", "Electronics", "", "Electronics", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("DC Fast Charger", "Electronics", "Electronics", "Power electronics", "material", 60, "kg",
+    row("Asset_C", "Electronics", "inflows", "", "Electronics", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Asset_C", "Electronics", "", "Electronics", "Power electronics", "material", 60, "kg",
         "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_ELEC", "electronics, unspecified", "GLO",
         "learning_rate", -0.03, "", 2025, "", "", "")
-    row("DC Fast Charger", "End of Life", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("DC Fast Charger", "End of Life", "End of Life", "Treatment, e-waste", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Asset_C", "End of Life", "outflows", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    row("Asset_C", "End of Life", "", "End of Life", "Treatment, e-waste", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
 
     instructions = wb.create_sheet("Instructions")
     instructions.append(["Column", "Notes"])
     instructions.append(["archetype_name (Archetypes sheet)", "Unique per file. Referenced by every row in the BOM sheet."])
-    instructions.append(["folder (Archetypes sheet)", "Forward-slash path, e.g. 'Cars/BEVs'. Empty = root. Max depth 5. Allowed characters: letters, digits, space, _, -"])
+    instructions.append(["folder (Archetypes sheet)", "Forward-slash path, e.g. 'Group_1/Type_A'. Empty = root. Max depth 5. Allowed characters: letters, digits, space, _, -"])
     instructions.append(["description (Archetypes sheet)", "Optional description."])
     instructions.append(["archetype_name (BOM sheet, first column)", "Points at an archetype defined in the Archetypes sheet."])
-    instructions.append(["Stage", "Life cycle stage name (e.g. Body, Battery Pack, Maintenance, End of Life). One row per unique Stage with empty Parent acts as that stage's root component."])
+    instructions.append(["Stage", "Life cycle stage name. Examples: Manufacturing, Use Phase, Maintenance, End of Life — but you can name them anything that fits your system. One row per unique Stage with empty Parent acts as that stage's root component."])
+    instructions.append(["Scope", "Explicit DSM scope for the stage: 'inflows' (manufacturing / one-time), 'stock' (per-year use-phase / maintenance), 'outflows' (end-of-life). Set ONLY on the stage root row; child rows leave it blank. If empty, the system falls back to keyword-matching on the stage name."])
     instructions.append(["Parent", "Direct parent component name within the same Stage. Empty for stage roots."])
     instructions.append(["Name", "Node name."])
-    instructions.append(["Type", "'component' or 'material'. Materials are leaves and may link to ecoinvent."])
-    instructions.append(["Quantity / Unit", "Numeric quantity. Unit for materials is typically kg."])
+    instructions.append(["Type", "'component' or 'material'. Materials are leaves and may link to ecoinvent. A 'unit' of an archetype is whatever your system tracks: a discrete item (vehicle, building, machine, device) or a continuous quantity (kg, kWh, m³)."])
+    instructions.append(["Quantity / Unit", "Numeric quantity (e.g. 53.0) OR a parameter expression (e.g. material_mass * 0.35). Expressions resolve against the active ParameterSet at pipeline time. Operators: + - * / ** ( ). Functions: min, max, abs, round, sum. Use whatever unit fits the material (kg, kWh, m³, kg-CO₂eq, …)."])
     instructions.append(["Ecoinvent *", "Populate Database + Code for materials to link them. Name and Location are informational."])
     instructions.append(["Evolution Method", "One of 'fixed' (or blank), 'learning_rate', 'rebound_effect', 'milestones'. Materials only."])
     instructions.append(["Learning Rate / Base Year", "For 'learning_rate': Quantity(year) = Quantity × (1 + rate)^(year − base_year). Typically negative (efficiency gain)."])
-    instructions.append(["Rebound Rate / Base Year", "For 'rebound_effect': annual fractional *increase* in consumption (e.g. 0.02 = +2%/yr). Typically positive. Mutually exclusive with Learning Rate and Milestones. Example: vehicle becomes more efficient (less fuel per km) but drivers compensate by driving further — net consumption grows ~2%/yr in the early transition years."])
+    instructions.append(["Rebound Rate / Base Year", "For 'rebound_effect': annual fractional *increase* in consumption (e.g. 0.02 = +2%/yr). Typically positive. Mutually exclusive with Learning Rate and Milestones. Example: a product becomes more efficient (less consumption per unit of service) but users compensate by using it more — net consumption grows ~2%/yr in the early transition years."])
     instructions.append(["Rebound Applies To Stages", "Optional filter for rebound_effect: semicolon-separated list of stage names (e.g. 'Use Phase' or 'Use Phase;Maintenance'). If empty, rebound applies regardless of stage."])
     instructions.append(["Milestone Years / Values", "For 'milestones': two ';'-separated parallel lists. Linear interpolation between."])
 
     scaling = wb.create_sheet("Scaling Reference")
     scaling.append(["Cohort Key", "Archetype", "Scaling Factor", "Notes"])
-    scaling.append(["BEV-LFP|Small", "BEV-LFP", 1.00, "Base compact car"])
-    scaling.append(["BEV-LFP|Sedan", "BEV-LFP", 1.25, "Mid-size sedan"])
-    scaling.append(["BEV-LFP|SUV", "BEV-LFP", 1.50, "Large SUV"])
+    scaling.append(["Product_A|Class_1", "Product_A", 1.00, "Base size"])
+    scaling.append(["Product_A|Class_2", "Product_A", 1.25, "Mid size"])
+    scaling.append(["Product_A|Class_3", "Product_A", 1.50, "Large size"])
     scaling.append([])
     scaling.append(["Usage", "Apply these factors when mapping cohorts to an archetype."])
     scaling.append(["Formula", "demand = count × scaling_factor × material_quantity"])
+    scaling.append(["Cohort key format", "Pipe-delimited concatenation of your DSM dimension labels (e.g. 'Type_A|Class_1' if your system has 'type' and 'class' dimensions)."])
 
     buf = io.BytesIO()
     wb.save(buf)
@@ -2082,8 +2708,13 @@ class BOMImportResult(BaseModel):
 def _parse_bom_workbook(
     wb: Workbook,
     archetype_filter: str | None = None,
-) -> tuple[list[BOMNode], list[str]]:
+) -> tuple[list[BOMNode], list[str], list["BOMValidationRow"]]:
     """Parse the BOM sheet into stage-root BOMNode trees.
+
+    Returns ``(roots, parse_warnings, validation_rows)``. The third element is
+    a flat list of every material row's bw2 link context (db, code, name,
+    location) tagged with its Excel row index — fed into ``validate_bom`` by
+    the import endpoint. The validator runs once per workbook (Patch 2).
 
     If ``archetype_filter`` is set, only rows whose ``archetype_name`` column
     matches are included (for multi-archetype workbooks). The column is
@@ -2117,6 +2748,8 @@ def _parse_bom_workbook(
         return default if v is None else v
 
     warnings: list[str] = []
+    validation_rows: list[BOMValidationRow] = []
+    archetype_label = archetype_filter or ""
     # stage_name -> root BOMNode
     stages: dict[str, BOMNode] = {}
     # (stage, node_name) -> node map — parent lookup is scoped to its stage.
@@ -2135,12 +2768,20 @@ def _parse_bom_workbook(
     # Process stage roots (empty Parent) first so children resolve.
     rows.sort(key=lambda r: 0 if not str(col(r, "Parent") or "").strip() else 1)
 
-    def _ensure_stage_root(stage_name: str) -> BOMNode:
+    def _ensure_stage_root(stage_name: str, explicit_scope: str | None = None) -> BOMNode:
         if stage_name in stages:
-            return stages[stage_name]
+            root = stages[stage_name]
+            # Late-arriving explicit scope from a root row processed out of order
+            # upgrades the placeholder's scope and is_annual.
+            if explicit_scope and not root.scope:
+                root.scope = explicit_scope
+                root.is_annual = explicit_scope == "stock"
+            return root
+        resolved = stage_to_scope(stage_name, explicit_scope)
         stage_root = BOMNode(
             name=stage_name, node_type="component", quantity=1, unit="piece",
-            is_annual=(stage_to_scope(stage_name) == "stock"),
+            scope=explicit_scope or None,
+            is_annual=(resolved == "stock"),
             children=[],
         )
         stages[stage_name] = stage_root
@@ -2153,12 +2794,40 @@ def _parse_bom_workbook(
         stage = str(col(row, "Stage") or "").strip()
         parent_name = str(col(row, "Parent") or "").strip()
         name = str(col(row, "Name") or "").strip()
+        scope_cell = str(col(row, "Scope") or "").strip().lower()
+        explicit_scope: str | None = None
+        if scope_cell:
+            if scope_cell in ("inflows", "stock", "outflows"):
+                explicit_scope = scope_cell
+            else:
+                warnings.append(
+                    f"Row {r_idx}: invalid Scope '{scope_cell}'; must be inflows|stock|outflows. Ignored."
+                )
         node_type = str(col(row, "Type") or "").strip().lower() or "component"
-        try:
-            qty = float(col(row, "Quantity", 1) or 1)
-        except (TypeError, ValueError):
+        raw_qty = col(row, "Quantity", 1)
+        qty: float = 1.0
+        qty_expr: str | None = None
+        if raw_qty is None or (isinstance(raw_qty, str) and not raw_qty.strip()):
             qty = 1.0
-            warnings.append(f"Row {r_idx}: non-numeric Quantity; defaulted to 1.")
+        elif isinstance(raw_qty, (int, float)) and not isinstance(raw_qty, bool):
+            qty = float(raw_qty)
+        else:
+            # String cell: try numeric first (Excel sometimes stores numbers
+            # as text), then treat as a parameter expression.
+            s = str(raw_qty).strip()
+            try:
+                qty = float(s)
+            except ValueError:
+                qty_expr = s
+                # Leave ``qty`` at 1.0 as a safe pre-resolution placeholder; the
+                # pipeline will re-resolve against the active ParameterSet.
+                # If the expression is a plain parameter name and no set is
+                # active at import time, we still get 1.0 here — documented
+                # behaviour: the editor shows "1 (unresolved)" until a set is
+                # picked.
+                warnings.append(
+                    f"Row {r_idx}: Quantity '{s}' stored as expression; resolved at pipeline time."
+                )
         unit = str(col(row, "Unit") or "unit").strip() or "unit"
 
         if not stage or not name:
@@ -2173,13 +2842,29 @@ def _parse_bom_workbook(
         if node_type == "material":
             db = str(col(row, "Ecoinvent Database") or "").strip()
             code = str(col(row, "Ecoinvent Code") or "").strip()
+            ec_name = str(col(row, "Ecoinvent Name") or "").strip()
+            ec_loc = str(col(row, "Ecoinvent Location") or "").strip()
             if db and code:
                 link = EcoinventLink(
                     database=db,
                     code=code,
-                    name=str(col(row, "Ecoinvent Name") or "").strip(),
-                    location=str(col(row, "Ecoinvent Location") or "").strip(),
+                    name=ec_name,
+                    location=ec_loc,
                 )
+            # Always emit a validation row for materials — even if one of
+            # (db, code) is empty, the validator distinguishes "abstract row"
+            # (both blank) from "structural error" (one set, one blank).
+            if db or code:
+                validation_rows.append(BOMValidationRow(
+                    archetype=archetype_label,
+                    stage=stage,
+                    row_idx=r_idx,
+                    name=name,
+                    database=db or None,
+                    code=code or None,
+                    ecoinvent_name=ec_name,
+                    ecoinvent_location=ec_loc,
+                ))
 
             ev_method = str(col(row, "Evolution Method") or "").strip().lower()
             if ev_method == "learning_rate":
@@ -2233,6 +2918,7 @@ def _parse_bom_workbook(
             name=name,
             node_type=node_type,
             quantity=qty,
+            quantity_expression=qty_expr,
             unit=unit,
             children=[] if node_type == "component" else None,
             ecoinvent_activity=link,
@@ -2243,11 +2929,12 @@ def _parse_bom_workbook(
             # Stage root row. If Name == Stage, this row IS the stage root;
             # otherwise make a stage root and attach as top-level child.
             if name == stage and stage not in stages:
-                node.is_annual = stage_to_scope(stage) == "stock"
+                node.scope = explicit_scope or None
+                node.is_annual = stage_to_scope(stage, explicit_scope) == "stock"
                 stages[stage] = node
                 node_by_name[(stage, stage)] = node
                 continue
-            parent = _ensure_stage_root(stage)
+            parent = _ensure_stage_root(stage, explicit_scope)
             parent.children = parent.children or []
             parent.children.append(node)
             node_by_name[(stage, name)] = node
@@ -2255,7 +2942,7 @@ def _parse_bom_workbook(
 
         # Non-root row: find parent by (stage, parent_name).
         if stage not in stages:
-            _ensure_stage_root(stage)
+            _ensure_stage_root(stage, explicit_scope)
             warnings.append(
                 f"Row {r_idx}: stage '{stage}' was not defined explicitly; created a default stage root."
             )
@@ -2279,7 +2966,7 @@ def _parse_bom_workbook(
 
     roots = list(stages.values())
     assign_ids_to_roots(roots)
-    return roots, warnings
+    return roots, warnings, validation_rows
 
 
 class MultiImportArchetypeSummary(BaseModel):
@@ -2290,14 +2977,24 @@ class MultiImportArchetypeSummary(BaseModel):
     materials: int
     linked: int
     unlinked: int
+    action: str = "created"  # "created" | "updated"
+    # Patch 2: counts surfaced in the post-upload UI banner.
+    validation_error_rows: int = 0
+    validation_warning_rows: int = 0
 
 
 class MultiImportResult(BaseModel):
     format: str  # "single" | "multi"
+    mode: str = "merge"  # "merge" | "replace"
     created: int
+    updated: int = 0
     folders_created: int
     archetypes: list[MultiImportArchetypeSummary]
     warnings: list[str]
+    # Patch 2: per-archetype validation reports keyed by archetype id. The UI
+    # renders these in the post-upload modal; the union of all errors here is
+    # what blocks LCA compute.
+    validation_reports: dict[str, ValidationReport] = {}
 
 
 def _read_archetypes_sheet(wb: Workbook) -> list[dict]:
@@ -2333,8 +3030,47 @@ def _read_archetypes_sheet(wb: Workbook) -> list[dict]:
     return out
 
 
-@router.post("/bom/archetypes/import", response_model=MultiImportResult)
-async def import_archetype(file: UploadFile = File(...)) -> MultiImportResult:
+def _apply_validation_to_archetype(arc: Archetype, report: ValidationReport) -> None:
+    """Stamp ``validation_status`` / ``validation_message`` onto every material
+    node in ``arc.bom`` based on the report, and attach the report to ``arc``.
+
+    Mutates ``arc`` in place. Resets all material nodes to ``"ok"`` first so
+    re-imports clear stale status from a previous validation."""
+    by_node = issues_by_node_key(report)
+    for node in iter_all_materials(arc.bom):
+        # Clear any stale status from a prior import.
+        node.validation_status = "ok"
+        node.validation_message = None
+        # The validator keys on (archetype, stage, name); the stage here is
+        # the root BOMNode's name. We need the path from root to material.
+        # Find the matching archetype root by walking the tree:
+    # Build (stage, name) → node lookup once per archetype.
+    node_lookup: dict[tuple[str, str], BOMNode] = {}
+    for stage_root in arc.bom:
+        for child in iter_all_materials([stage_root]):
+            node_lookup[(stage_root.name, child.name)] = child
+    for (arc_name, stage, name), bucket in by_node.items():
+        if arc_name and arc_name != arc.name:
+            continue
+        node = node_lookup.get((stage, name))
+        if node is None:
+            continue
+        # Pick the worst severity for this row's status.
+        has_error = any(i.severity == "error" for i in bucket)
+        node.validation_status = "error" if has_error else "warning"
+        node.validation_message = "; ".join(i.message for i in bucket)
+    arc.validation_report = report
+
+
+@router.post(
+    "/bom/archetypes/import",
+    response_model=MultiImportResult,
+    dependencies=[Depends(verify_project_state)],
+)
+async def import_archetype(
+    file: UploadFile = File(...),
+    mode: str = Query("merge", pattern="^(merge|replace)$"),
+) -> MultiImportResult:
     try:
         data = await file.read()
         wb = load_workbook(io.BytesIO(data), data_only=True)
@@ -2343,7 +3079,68 @@ async def import_archetype(file: UploadFile = File(...)) -> MultiImportResult:
 
     project = _current_project()
     warnings: list[str] = []
-    created_archetypes: list[Archetype] = []
+    touched: list[tuple[Archetype, str]] = []  # (archetype, "created" | "updated")
+
+    # In replace mode, wipe the existing library up front. Merge mode preserves
+    # everything not referenced by the file.
+    if mode == "replace":
+        with _lock:
+            existing = dict(_proj_archetypes(project))
+            _proj_archetypes(project).clear()
+        for arc_id in existing:
+            try:
+                dsm_storage.delete_archetype_file(project, arc_id)
+            except Exception:  # pragma: no cover — filesystem best-effort
+                pass
+
+    # Build a name → existing archetype index (merge mode only) so we can upsert.
+    name_to_existing: dict[str, Archetype] = {}
+    if mode == "merge":
+        for a in _proj_archetypes(project).values():
+            name_to_existing[a.name] = a
+
+    def _upsert(
+        name: str,
+        description: str | None,
+        category: str | None,
+        folder: str | None,
+        roots: list,
+    ) -> tuple[Archetype, str]:
+        existing = name_to_existing.get(name) if mode == "merge" else None
+        if existing is not None and existing.id:
+            arc = Archetype(
+                id=existing.id,
+                name=name,
+                description=description if description is not None else existing.description,
+                category=category if category is not None else existing.category,
+                folder=folder if folder is not None else existing.folder,
+                bom=roots,
+                created_at=existing.created_at or _now_iso(),
+                updated_at=_now_iso(),
+            )
+            action = "updated"
+        else:
+            arc = Archetype(
+                id=str(uuid.uuid4()),
+                name=name,
+                description=description,
+                category=category,
+                folder=folder,
+                bom=roots,
+                created_at=_now_iso(),
+                updated_at=_now_iso(),
+            )
+            action = "created"
+        with _lock:
+            _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
+        dsm_storage.save_archetype(project, arc)
+        return arc, action
+
+    # Per-archetype validation rows accumulated across the workbook so we can
+    # run the bw2 validator once at the end (cheap-first ordering relies on the
+    # per-(db,code) cache surviving across archetypes — the same upstream
+    # activity is referenced by many archetypes' BOMs).
+    arc_to_validation_rows: dict[str, list[BOMValidationRow]] = {}
 
     if "Archetypes" in wb.sheetnames:
         # ── Multi-archetype format ──
@@ -2360,31 +3157,20 @@ async def import_archetype(file: UploadFile = File(...)) -> MultiImportResult:
             seen_names.add(m["name"])
 
         for m in meta:
-            roots, wrn = _parse_bom_workbook(wb, archetype_filter=m["name"])
+            roots, wrn, vrows = _parse_bom_workbook(wb, archetype_filter=m["name"])
             if not roots:
                 warnings.append(f"Archetype '{m['name']}': no BOM rows found; skipped.")
                 continue
             for w in wrn:
                 warnings.append(f"[{m['name']}] {w}")
             folder = _normalize_folder(m["folder"])
-            arc = Archetype(
-                id=str(uuid.uuid4()),
-                name=m["name"],
-                description=m["description"],
-                category=None,
-                folder=folder,
-                bom=roots,
-                created_at=_now_iso(),
-                updated_at=_now_iso(),
-            )
-            with _lock:
-                _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
-            mfa_storage.save_archetype(project, arc)
-            created_archetypes.append(arc)
+            arc, action = _upsert(m["name"], m["description"], None, folder, roots)
+            touched.append((arc, action))
+            arc_to_validation_rows[arc.id or ""] = vrows
         fmt = "multi"
     else:
         # ── Legacy single-archetype format (Summary sheet optional). ──
-        roots, warnings = _parse_bom_workbook(wb)
+        roots, warnings, single_vrows = _parse_bom_workbook(wb)
         name = file.filename.rsplit(".", 1)[0] if file.filename else "Imported archetype"
         description: str | None = None
         category: str | None = None
@@ -2401,37 +3187,50 @@ async def import_archetype(file: UploadFile = File(...)) -> MultiImportResult:
                     description = val or None
                 elif key == "category":
                     category = val or None
-        arc = Archetype(
-            id=str(uuid.uuid4()),
-            name=name,
-            description=description,
-            category=category,
-            bom=roots,
-            created_at=_now_iso(),
-            updated_at=_now_iso(),
-        )
-        with _lock:
-            _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
-        mfa_storage.save_archetype(project, arc)
-        created_archetypes.append(arc)
+        arc, action = _upsert(name, description, category, None, roots)
+        touched.append((arc, action))
+        # Re-tag rows with the resolved archetype name (parser used "" since
+        # there's no archetype_name column in single-archetype workbooks).
+        for vr in single_vrows:
+            vr.archetype = arc.name
+        arc_to_validation_rows[arc.id or ""] = single_vrows
         fmt = "single"
 
+    # ── Validate every imported archetype against bw2data (Patch 2) ──────
+    # One pass per archetype keeps the per-row error messages accurate; the
+    # bw2 result cache lives inside each call but is cheap to rebuild.
+    for arc, _action in touched:
+        vrows = arc_to_validation_rows.get(arc.id or "", [])
+        report = validate_bom(vrows, project_name=project) if vrows else ValidationReport(
+            total_rows=0, valid_rows=0, error_rows=0, warning_rows=0,
+            project_name=project,
+        )
+        _apply_validation_to_archetype(arc, report)
+        # Persist the updated archetype JSON (now with per-row status + report).
+        dsm_storage.save_archetype(project, arc)
+
     # Auto-register any folders that were introduced.
-    existing_folders = set(mfa_storage.load_folders(project))
+    existing_folders = set(dsm_storage.load_folders(project))
     new_folders: set[str] = set()
-    for arc in created_archetypes:
+    for arc, _ in touched:
         if arc.folder and arc.folder not in existing_folders:
             new_folders.add(arc.folder)
             parts = arc.folder.split("/")
             for i in range(1, len(parts)):
                 new_folders.add("/".join(parts[:i]))
     if new_folders:
-        mfa_storage.save_folders(project, sorted(existing_folders | new_folders))
+        dsm_storage.save_folders(project, sorted(existing_folders | new_folders))
 
     summaries: list[MultiImportArchetypeSummary] = []
-    for arc in created_archetypes:
+    validation_reports: dict[str, ValidationReport] = {}
+    created_count = 0
+    updated_count = 0
+    for arc, action in touched:
         mats = material_count_total(arc.bom)
         unlinked = unlinked_count_total(arc.bom)
+        report = arc.validation_report
+        err_rows = report.error_rows if report else 0
+        warn_rows = report.warning_rows if report else 0
         summaries.append(MultiImportArchetypeSummary(
             id=arc.id or "",
             name=arc.name,
@@ -2440,12 +3239,24 @@ async def import_archetype(file: UploadFile = File(...)) -> MultiImportResult:
             materials=mats,
             linked=mats - unlinked,
             unlinked=unlinked,
+            action=action,
+            validation_error_rows=err_rows,
+            validation_warning_rows=warn_rows,
         ))
+        if report and arc.id:
+            validation_reports[arc.id] = report
+        if action == "updated":
+            updated_count += 1
+        else:
+            created_count += 1
 
     return MultiImportResult(
         format=fmt,
-        created=len(created_archetypes),
+        mode=mode,
+        created=created_count,
+        updated=updated_count,
         folders_created=len(new_folders),
         archetypes=summaries,
         warnings=warnings,
+        validation_reports=validation_reports,
     )

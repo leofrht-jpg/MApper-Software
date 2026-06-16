@@ -5,5 +5,6 @@ brightway2
 bw2data
 bw2io
 bw2calc
+bw2analyzer
 python-multipart
 websockets

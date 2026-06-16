@@ -1,6 +1,6 @@
-"""Material Flow engine — physical quantities through the MFA system.
+"""Material Flow engine — physical quantities through the DSM system.
 
-Combines MFA vehicle counts x archetype BOMs x learning rates to produce
+Combines DSM vehicle counts x archetype BOMs x learning rates to produce
 year-by-year material quantities (kg, kWh, tkm, etc.).  No LCA — this is
 the physical inventory that feeds into Impact Assessment.
 """
@@ -14,7 +14,7 @@ from mapper.models.bom_schemas import (
     MaterialFlowResult,
     MaterialSeries,
 )
-from mapper.models.mfa_schemas import SimulationResult, YearResult
+from mapper.models.dsm_schemas import SimulationResult, YearResult
 
 from mapper.core.bom_engine import (
     find_node_in_roots,

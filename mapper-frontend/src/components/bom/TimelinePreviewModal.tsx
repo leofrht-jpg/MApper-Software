@@ -1,7 +1,14 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, CalendarRange, Loader2 } from 'lucide-react'
 import { AreaChart, Area, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Button } from '../ui/Button'
+import { NumberInput } from '../ui/NumberInput'
+import { StackedTotalTooltip } from '../charts/StackedTotalTooltip'
+import { ChartExportButton } from '../charts/ChartExportButton'
+import { ChartExportContainer } from '../charts/ChartExportContainer'
+import { NumberFormatControl } from '../charts/NumberFormatControl'
+import { useNumberFormatter } from '../charts/numberFormat'
+import { tightStackedDomain } from '../charts/yAxisDomain'
 import type { ArchetypeTimeline } from '../../api/client'
 
 interface TimelinePreviewModalProps {
@@ -10,19 +17,12 @@ interface TimelinePreviewModalProps {
   onClose: () => void
 }
 
-const DEFAULT_YEARS = Array.from({ length: 6 }, (_, i) => 2025 + i * 5)
-
 const PALETTE = [
   '#6366f1', '#22c55e', '#f59e0b', '#ef4444', '#06b6d4',
   '#8b5cf6', '#f43f5e', '#10b981', '#facc15', '#3b82f6',
   '#ec4899', '#14b8a6',
 ]
 
-const fmt = (n: number) => {
-  if (!isFinite(n)) return '—'
-  if (Math.abs(n) >= 1000 || (Math.abs(n) > 0 && Math.abs(n) < 0.01)) return n.toExponential(2)
-  return n.toLocaleString(undefined, { maximumFractionDigits: 3 })
-}
 
 export function TimelinePreviewModal({ archetypeName, fetchTimeline, onClose }: TimelinePreviewModalProps) {
   const [yearStart, setYearStart] = useState(2025)
@@ -31,6 +31,11 @@ export function TimelinePreviewModal({ archetypeName, fetchTimeline, onClose }: 
   const [timeline, setTimeline] = useState<ArchetypeTimeline | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const chartRef = useRef<HTMLDivElement>(null)
+
+  // Single formatter — applies to chart axis, tooltip, header total-mass
+  // span, and the per-cell quantities in the year table.
+  const valueFormat = useNumberFormatter()
 
   const yearList = useMemo(() => {
     const out: number[] = []
@@ -110,33 +115,39 @@ export function TimelinePreviewModal({ archetypeName, fetchTimeline, onClose }: 
         </div>
 
         <div style={{ padding: 'var(--space-3) var(--space-6)', borderBottom: '1px solid var(--border-subtle)', display: 'flex', gap: 12, alignItems: 'center', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-          <label>Start <input type="number" value={yearStart} onChange={(e) => setYearStart(Math.round(Number(e.target.value)))} style={inputS} /></label>
-          <label>End <input type="number" value={yearEnd} onChange={(e) => setYearEnd(Math.round(Number(e.target.value)))} style={inputS} /></label>
-          <label>Step <input type="number" value={step} onChange={(e) => setStep(Math.max(1, Math.round(Number(e.target.value))))} style={inputS} /></label>
+          <label>Start <NumberInput value={yearStart} onChange={setYearStart} integerOnly emptyValue={2025} style={inputS} /></label>
+          <label>End <NumberInput value={yearEnd} onChange={setYearEnd} integerOnly emptyValue={2050} style={inputS} /></label>
+          <label>Step <NumberInput value={step} onChange={setStep} integerOnly min={1} emptyValue={1} style={inputS} /></label>
           <Button variant="secondary" onClick={load} disabled={loading} style={{ height: 26, padding: '0 10px', fontSize: 'var(--text-xs)' }}>
             {loading ? <Loader2 size={12} className="plca-spin" /> : 'Refresh'}
           </Button>
           {error && <span style={{ color: 'var(--danger)' }}>{error}</span>}
           {timeline && (
             <span style={{ marginLeft: 'auto', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-              Total mass: {fmt(timeline.total_mass_by_year[timeline.years[0]] ?? 0)} kg →
-              {' '}{fmt(timeline.total_mass_by_year[timeline.years[timeline.years.length - 1]] ?? 0)} kg
+              Total mass: {valueFormat.format(timeline.total_mass_by_year[timeline.years[0]] ?? 0)} kg →
+              {' '}{valueFormat.format(timeline.total_mass_by_year[timeline.years[timeline.years.length - 1]] ?? 0)} kg
             </span>
           )}
         </div>
 
         <div style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           {/* Chart */}
-          <div style={{ padding: 'var(--space-3) var(--space-6)', height: 280, flexShrink: 0 }}>
+          <div style={{ padding: 'var(--space-3) var(--space-6)', flexShrink: 0 }}>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+              <NumberFormatControl settings={valueFormat.settings} onChange={valueFormat.setSettings} />
+              <ChartExportButton
+                chartRef={chartRef}
+                legendSelector=".recharts-legend-wrapper"
+                filename={`timeline_${archetypeName.replace(/[^\w.-]+/g, '_').slice(0, 40)}_${yearStart}-${yearEnd}`}
+              />
+            </div>
+            <ChartExportContainer ref={chartRef} style={{ height: 280 }}>
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" />
                 <XAxis dataKey="year" stroke="var(--text-tertiary)" fontSize={11} />
-                <YAxis stroke="var(--text-tertiary)" fontSize={11} tickFormatter={(v) => fmt(v)} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 6, fontSize: 12 }}
-                  formatter={(v: number) => fmt(Number(v))}
-                />
+                <YAxis domain={tightStackedDomain} stroke="var(--text-tertiary)" fontSize={11} tickFormatter={(v) => valueFormat.format(v as number)} />
+                <Tooltip content={<StackedTotalTooltip unit="kg" formatValue={valueFormat.format} />} />
                 <Legend wrapperStyle={{ fontSize: 11 }} />
                 {sortedRows.map((r, idx) => (
                   <Area
@@ -151,6 +162,7 @@ export function TimelinePreviewModal({ archetypeName, fetchTimeline, onClose }: 
                 ))}
               </AreaChart>
             </ResponsiveContainer>
+            </ChartExportContainer>
           </div>
 
           {/* Table */}
@@ -185,7 +197,7 @@ export function TimelinePreviewModal({ archetypeName, fetchTimeline, onClose }: 
                           const q = row.quantities[y] ?? 0
                           return (
                             <td key={y} style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', backgroundColor: cellColor(qStart, q) }}>
-                              {fmt(q)}
+                              {valueFormat.format(q)}
                             </td>
                           )
                         })}

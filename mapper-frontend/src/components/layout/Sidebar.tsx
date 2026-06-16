@@ -10,9 +10,9 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { id: 'databases', icon: <Database size={18} strokeWidth={1.5} />, label: 'Databases', color: 'var(--mod-lca)' },
-  { id: 'lca',       icon: <FlaskConical size={18} strokeWidth={1.5} />, label: 'LCA Architect', color: 'var(--mod-lca)' },
   { id: 'plca',      icon: <Sparkles size={18} strokeWidth={1.5} />, label: 'pLCA Developer', color: 'var(--mod-plca)' },
-  { id: 'mfa',       icon: <GitBranch size={18} strokeWidth={1.5} />, label: 'MFA Modeller', color: 'var(--mod-mfa)' },
+  { id: 'lca',       icon: <FlaskConical size={18} strokeWidth={1.5} />, label: 'LCA Architect', color: 'var(--mod-lca)' },
+  { id: 'dsm',       icon: <GitBranch size={18} strokeWidth={1.5} />, label: 'Dynamic Stock Modeller', color: 'var(--mod-dsm)' },
   { id: 'impact',    icon: <BarChart3 size={18} strokeWidth={1.5} />, label: 'Impact Assessment', color: 'var(--mod-lca)' },
   { id: 'aesa',      icon: <Globe2 size={18} strokeWidth={1.5} />, label: 'AESA', color: 'var(--mod-aesa)' },
 ]
@@ -39,6 +39,7 @@ export function Sidebar({ activeItem, onItemClick }: SidebarProps) {
       <div key={item.id} style={{ position: 'relative', width: '100%' }}>
         <button
           aria-label={item.label}
+          data-tour={`nav-${item.id}`}
           onClick={() => onItemClick(item.id)}
           onMouseEnter={() => setHoveredItem(item.id)}
           onMouseLeave={() => setHoveredItem(null)}

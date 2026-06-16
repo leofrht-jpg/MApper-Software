@@ -1,34 +1,72 @@
 {
-  "_notice": "Remaining carbon budgets from 2025, adjusted from IPCC AR6 WG1 Table SPM.2 (originally expressed from 2020) to account for 2020-2024 cumulative emissions (~200 Gt CO2). Values are provisional — refer to the latest IPCC synthesis for publication.",
+  "_notice": "Remaining global CO2 budgets from 2025, derived from IPCC AR6 WG1 SPM Table SPM.2 ('Estimates of remaining carbon budgets from the beginning of 2020', Climate Change 2021: The Physical Science Basis, IPCC, 2021), adjusted by -200 Gt CO2 for cumulative 2020-2024 emissions per Global Carbon Budget 2024 (Friedlingstein et al. 2024, Earth System Science Data, 16, 2625-2659, https://doi.org/10.5194/essd-16-2625-2024). Values follow IPCC Table SPM.2 rounding convention (nearest 50 GtCO2); the 200 Gt deduction is itself rounded from the GCB 2024 ~209-225 Gt range at AR6 granularity for citation-chain consistency. All four `original_gt_from_2020` values verified against AR6 SPM Table SPM.2 published values as of Patch X1++ (cross-checked against Climate Brink's Hausfather 2023 comparison of AR6 vs Forster 2023 budgets, and the AR6CarbonBudgetCalc reference implementation; see sources[]). Values flagged provisional pending pre-publication refresh against the latest IPCC synthesis.",
   "start_year_reference": 2020,
   "consumed_2020_2024_gt": 200,
+  "sources": [
+    {
+      "id": "IPCC_AR6_WG1_SPM",
+      "citation": "IPCC, 2021: Climate Change 2021: The Physical Science Basis. Contribution of Working Group I to the Sixth Assessment Report of the Intergovernmental Panel on Climate Change. Cambridge University Press.",
+      "doi": "10.1017/9781009157896",
+      "table": "SPM.2",
+      "url": "https://www.ipcc.ch/report/ar6/wg1/"
+    },
+    {
+      "id": "GCB_2024",
+      "citation": "Friedlingstein, P., et al. (2024). Global Carbon Budget 2024. Earth System Science Data, 16, 2625-2659.",
+      "doi": "10.5194/essd-16-2625-2024",
+      "url": "https://essd.copernicus.org/articles/16/2625/2024/"
+    },
+    {
+      "id": "AR6_BUDGET_CALC",
+      "citation": "Lamboll, R., AR6CarbonBudgetCalc — Reference implementation for AR6 WG1 Table SPM.2 / Table 5.8 / Table TS.3.",
+      "doi": "10.5281/zenodo.8332951",
+      "url": "https://github.com/Rlamboll/AR6CarbonBudgetCalc"
+    },
+    {
+      "id": "HAUSFATHER_2023_CLIMATE_BRINK",
+      "citation": "Hausfather, Z. (2023). The remaining carbon budget for 1.5C and 2C is getting smaller. The Climate Brink. Cross-check reference for AR6 vs Forster 2023 budget comparison.",
+      "url": "https://www.theclimatebrink.com/p/the-remaining-carbon-budget-for-15c"
+    }
+  ],
   "options": [
     {
       "id": "IPCC_AR6_1p5C_50",
       "name": "IPCC AR6 — 1.5°C, 50th percentile",
-      "remaining_gt_from_2025": 250,
-      "source": "IPCC AR6 WG1 Table SPM.2 (500 Gt from 2020, −200 Gt 2020-2024)",
+      "remaining_gt_from_2025": 300,
+      "original_gt_from_2020": 500,
+      "source": "IPCC AR6 WG1 Table SPM.2 (500 Gt from 2020, -200 Gt 2020-2024 = 300 Gt remaining; AR6 50 Gt rounding convention)",
+      "source_budget": "IPCC_AR6_WG1_SPM",
+      "source_deduction": "GCB_2024",
       "provisional": true
     },
     {
       "id": "IPCC_AR6_1p5C_67",
       "name": "IPCC AR6 — 1.5°C, 67th percentile",
-      "remaining_gt_from_2025": 150,
-      "source": "IPCC AR6 WG1 Table SPM.2 (400 Gt from 2020, −200 Gt 2020-2024)",
+      "remaining_gt_from_2025": 200,
+      "original_gt_from_2020": 400,
+      "source": "IPCC AR6 WG1 Table SPM.2 (400 Gt from 2020, -200 Gt 2020-2024 = 200 Gt remaining; AR6 50 Gt rounding convention)",
+      "source_budget": "IPCC_AR6_WG1_SPM",
+      "source_deduction": "GCB_2024",
       "provisional": true
     },
     {
       "id": "IPCC_AR6_2C_50",
       "name": "IPCC AR6 — 2.0°C, 50th percentile",
-      "remaining_gt_from_2025": 900,
-      "source": "IPCC AR6 WG1 Table SPM.2 (1150 Gt from 2020, −200 Gt 2020-2024, rounded)",
+      "remaining_gt_from_2025": 1150,
+      "original_gt_from_2020": 1350,
+      "source": "IPCC AR6 WG1 Table SPM.2 (1350 Gt from 2020, -200 Gt 2020-2024 = 1150 Gt remaining; AR6 50 Gt rounding convention)",
+      "source_budget": "IPCC_AR6_WG1_SPM",
+      "source_deduction": "GCB_2024",
       "provisional": true
     },
     {
       "id": "IPCC_AR6_2C_67",
       "name": "IPCC AR6 — 2.0°C, 67th percentile",
-      "remaining_gt_from_2025": 600,
-      "source": "IPCC AR6 WG1 Table SPM.2 (800 Gt from 2020, −200 Gt 2020-2024, rounded)",
+      "remaining_gt_from_2025": 950,
+      "original_gt_from_2020": 1150,
+      "source": "IPCC AR6 WG1 Table SPM.2 (1150 Gt from 2020, -200 Gt 2020-2024 = 950 Gt remaining; AR6 50 Gt rounding convention)",
+      "source_budget": "IPCC_AR6_WG1_SPM",
+      "source_deduction": "GCB_2024",
       "provisional": true
     }
   ]

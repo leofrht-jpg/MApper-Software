@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, Download, Loader2, Upload } from 'lucide-react'
+import { AlertCircle, ChevronDown, ChevronRight, Download, Loader2, Upload } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
-import { useMFAStore, type CohortMappingValue } from '../../stores/mfaStore'
+import { DimensionColorPicker } from '../ui/DimensionColorPicker'
+import { useDSMStore, type CohortMappingValue } from '../../stores/dsmStore'
 import { useBOMStore } from '../../stores/bomStore'
+import { useChartColors, colorFor, getOverriddenLabels, setLabelColor } from '../../utils/chartColors'
+import { deriveDimColorsFromRowColors } from '../../utils/dsmCohortColors'
+import { useProjectStore } from '../../stores/projectStore'
 import {
   downloadCohortMappingsTemplate,
   uploadCohortMappings,
@@ -60,14 +64,36 @@ function enumerateCohortKeys(dims: DimensionDef[]): string[] {
 }
 
 export function CohortMappingEditor() {
-  const { activeSystem, cohortMappings, saveCohortMappings, fetchCohortMappings } = useMFAStore()
+  const {
+    activeSystem,
+    cohortMappings,
+    cohortRowColors,
+    saveCohortMappings,
+    fetchCohortMappings,
+    setRowColor,
+    clearRowColor,
+  } = useDSMStore()
   const { archetypes, fetchArchetypes } = useBOMStore()
+  const currentProject = useProjectStore((s) => s.currentProject)
 
   const [status, setStatus] = useState<{ kind: 'info' | 'success' | 'error'; msg: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [tableExpanded, setTableExpanded] = useState(false)
   const autoSaveTimer = useRef<number | null>(null)
   const didAutoGen = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  // Patch 4AJ → 4AK — color picker state. Carries both dim + row
+  // context so the picker's mode toggle has both layers' values.
+  const [pickerOpen, setPickerOpen] = useState<{
+    label: string
+    cohortKey: string
+    rect: DOMRect
+    dimColor: string
+    rowColor: string | null
+    hasDimOverride: boolean
+    hasRowOverride: boolean
+  } | null>(null)
 
   useEffect(() => { fetchArchetypes() }, [fetchArchetypes])
   useEffect(() => { if (activeSystem) fetchCohortMappings() }, [activeSystem?.id, fetchCohortMappings])
@@ -81,13 +107,32 @@ export function CohortMappingEditor() {
     [activeSystem],
   )
 
+  // Patch 4AJ — every unique dim-value label across all non-age
+  // dimensions. Feeding the full set into useChartColors means the
+  // algorithm assigns each label deterministically once; user
+  // overrides on individual labels persist within the same map.
+  const allDimLabels = useMemo(() => {
+    const out = new Set<string>()
+    for (const d of nonAgeDims) for (const l of d.labels) out.add(l)
+    return Array.from(out)
+  }, [nonAgeDims])
+
+  const colorMap = useChartColors(allDimLabels)
+
+  // Patch 4AJ — Set of labels with explicit user overrides. Re-reads
+  // on `colorMap` changes (which advance on every color event).
+  const overrideSet = useMemo(
+    () => getOverriddenLabels(currentProject),
+    [currentProject, colorMap],
+  )
+
   const archetypesWithIssues = useMemo(() => {
     const out = new Set<string>()
     for (const a of archetypes) if (a.unlinked_count > 0) out.add(a.id)
     return out
   }, [archetypes])
 
-  // Auto-generate + persist defaults when the panel loads an MFA system that
+  // Auto-generate + persist defaults when the panel loads an DSM system that
   // has archetypes available but no mappings stored yet. Runs once per system.
   useEffect(() => {
     didAutoGen.current = false
@@ -145,17 +190,36 @@ export function CohortMappingEditor() {
   const handleUploadClick = () => fileInputRef.current?.click()
 
   const handleFile = async (file: File) => {
-    if (!activeSystem) return
+    if (!activeSystem?.id) return
     setBusy(true)
     try {
       const res = await uploadCohortMappings(activeSystem.id, file)
       await fetchCohortMappings()
+      // Patch 4AK² — derive per-dimension color overrides from the
+      // freshly-uploaded row colors and write them to the per-dim
+      // store (localStorage via setLabelColor). For each dim value
+      // whose rows all share one color, set the dim override; rows
+      // with mixed colors do NOT derive. One-way at upload only — the
+      // in-app per-row picker continues to not auto-propagate.
+      const fresh = useDSMStore.getState().cohortRowColors
+      const derived = deriveDimColorsFromRowColors(
+        fresh,
+        activeSystem.dimensions,
+      )
+      let derivedCount = 0
+      for (const [value, color] of Object.entries(derived)) {
+        setLabelColor(value, color, currentProject)
+        derivedCount++
+      }
       const warnings: string[] = []
       if (res.invalid_archetypes.length > 0) warnings.push(`${res.invalid_archetypes.length} unknown archetype(s): ${res.invalid_archetypes.slice(0, 3).join(', ')}${res.invalid_archetypes.length > 3 ? '…' : ''}`)
       if (res.invalid_cohorts.length > 0) warnings.push(`${res.invalid_cohorts.length} invalid cohort(s)`)
       if (res.unmapped_cohorts.length > 0) warnings.push(`${res.unmapped_cohorts.length} cohort(s) still unmapped`)
-      const msg = warnings.length ? `${res.mapped_cohorts} imported · ${warnings.join(' · ')}` : `${res.mapped_cohorts} cohort mappings imported`
-      setStatus({ kind: warnings.length ? 'info' : 'success', msg })
+      if (res.invalid_row_colors && res.invalid_row_colors.length > 0) warnings.push(`${res.invalid_row_colors.length} invalid color(s)`)
+      const pieces = [`${res.mapped_cohorts} imported`]
+      if (derivedCount > 0) pieces.push(`${derivedCount} dim color(s) derived`)
+      if (warnings.length) pieces.push(...warnings)
+      setStatus({ kind: warnings.length ? 'info' : 'success', msg: pieces.join(' · ') })
     } catch (e) {
       setStatus({ kind: 'error', msg: `Upload failed: ${e instanceof Error ? e.message : String(e)}` })
     } finally {
@@ -166,7 +230,7 @@ export function CohortMappingEditor() {
   }
 
   const handleDownloadTemplate = async () => {
-    if (!activeSystem) return
+    if (!activeSystem?.id) return
     const safe = activeSystem.name.replace(/\s+/g, '_')
     try {
       await downloadCohortMappingsTemplate(activeSystem.id, `${safe}_cohort_mappings_template.xlsx`)
@@ -186,14 +250,26 @@ export function CohortMappingEditor() {
       borderRadius: 'var(--radius-lg)',
       padding: 'var(--space-4)',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Cohort mappings ({mappedCount})
+      <div
+        style={{
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+          gap: 12, flexWrap: 'wrap',
+          marginBottom: tableExpanded ? 'var(--space-3)' : 0,
+        }}
+      >
+        <div
+          onClick={() => setTableExpanded((v) => !v)}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flex: 1, minWidth: 0 }}
+        >
+          <span style={{ color: 'var(--text-tertiary)', display: 'flex' }}>
+            {tableExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </span>
+          <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+            Cohort mapping
           </h4>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
-            {mappedCount} of {cohortKeys.length} cohorts mapped. Edits auto-save.
-          </div>
+          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+            · {mappedCount} of {cohortKeys.length} mapped
+          </span>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           {status && <span style={{ fontSize: 'var(--text-xs)', color: statusColor }}>{status.msg}</span>}
@@ -207,17 +283,17 @@ export function CohortMappingEditor() {
               if (f) void handleFile(f)
             }}
           />
-          <Button variant="ghost" size="sm" onClick={handleUploadClick} disabled={busy} title="Upload cohort mappings from xlsx or csv">
+          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleUploadClick() }} disabled={busy} title="Upload cohort mappings from xlsx or csv">
             {busy ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={14} />}
             Upload
           </Button>
-          <Button variant="ghost" size="sm" onClick={handleDownloadTemplate} title="Download a blank template with all cohort combinations">
+          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); void handleDownloadTemplate() }} title="Download a blank template with all cohort combinations">
             <Download size={14} /> Template
           </Button>
         </div>
       </div>
 
-      {archetypes.length === 0 ? (
+      {tableExpanded && (archetypes.length === 0 ? (
         <div style={{
           padding: 12, fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)',
           textAlign: 'center', backgroundColor: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)',
@@ -245,11 +321,45 @@ export function CohortMappingEditor() {
                 const issue = archetypeId && archetypesWithIssues.has(archetypeId)
                 return (
                   <tr key={ck} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                    {nonAgeDims.map((d, i) => (
-                      <td key={d.name} style={{ padding: '6px 10px' }}>
-                        <Badge label={parts[i] ?? ''} variant="mfa" />
-                      </td>
-                    ))}
+                    {nonAgeDims.map((d, i) => {
+                      const dimLabel = parts[i] ?? ''
+                      const dimColor = colorFor(colorMap, dimLabel, i)
+                      const rowColor = cohortRowColors[ck] ?? null
+                      // Patch 4AK — row color (when set) wins for the
+                      // pill's visible color across all pills in the
+                      // row. Falls back to per-dim Patch 4AJ color when
+                      // no row override exists.
+                      const pillColor = rowColor ?? dimColor
+                      return (
+                        <td key={d.name} style={{ padding: '6px 10px' }}>
+                          <button
+                            type="button"
+                            data-testid={`cohort-mapping-pill-${dimLabel}`}
+                            data-cohort-key={ck}
+                            onClick={(e) => {
+                              if (!dimLabel) return
+                              const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                              setPickerOpen({
+                                label: dimLabel,
+                                cohortKey: ck,
+                                rect,
+                                dimColor,
+                                rowColor,
+                                hasDimOverride: overrideSet.has(dimLabel),
+                                hasRowOverride: rowColor != null,
+                              })
+                            }}
+                            title={dimLabel ? `Click to change color for this row or for all ${dimLabel}` : undefined}
+                            style={{
+                              background: 'none', border: 'none', padding: 0,
+                              cursor: dimLabel ? 'pointer' : 'default',
+                            }}
+                          >
+                            <Badge label={dimLabel} customColor={dimLabel ? pillColor : undefined} />
+                          </button>
+                        </td>
+                      )
+                    })}
                     <td style={{ padding: '6px 10px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <select
@@ -304,6 +414,22 @@ export function CohortMappingEditor() {
             </tbody>
           </table>
         </div>
+      ))}
+
+      {pickerOpen && (
+        <DimensionColorPicker
+          label={pickerOpen.label}
+          cohortKey={pickerOpen.cohortKey}
+          currentDimColor={pickerOpen.dimColor}
+          currentRowColor={pickerOpen.rowColor}
+          anchorRect={pickerOpen.rect}
+          hasDimOverride={pickerOpen.hasDimOverride}
+          hasRowOverride={pickerOpen.hasRowOverride}
+          scope={currentProject}
+          onSetRowColor={(ck, c) => { void setRowColor(ck, c) }}
+          onClearRowColor={(ck) => { void clearRowColor(ck) }}
+          onClose={() => setPickerOpen(null)}
+        />
       )}
     </div>
   )

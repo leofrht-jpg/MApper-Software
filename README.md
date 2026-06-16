@@ -1,15 +1,15 @@
 # MApper
 
-**Unified LCA · MFA · pLCA · AESA for environmental sustainability**
+**Unified LCA · DSM · pLCA · AESA for environmental sustainability**
 
-The first desktop application integrating Life Cycle Assessment, Material Flow Analysis, prospective LCA, and Absolute Environmental Sustainability Assessment in a single workflow. Built for researchers who need system-level, time-resolved environmental impact analysis against planetary boundaries.
+The first desktop application integrating Life Cycle Assessment, Dynamic Stock Modelling, prospective LCA, and Absolute Environmental Sustainability Assessment in a single workflow. Built for researchers who need system-level, time-resolved environmental impact analysis against planetary boundaries.
 
 **Website:** [mapper.leonardoferhati.com](https://mapper.leonardoferhati.com)
 
 ## Features
 
 - **LCA Engine** — Full brightway2 integration with ecoinvent 3.10. Multi-method LCIA with contribution analysis, treemaps, and Sankey diagrams. Multi-archetype comparison with per-stage breakdown.
-- **Material Flow Analysis** — Dynamic stock modeling with Weibull survival, cohort tracking, and system-level projections. Material flow quantification grouped by material, component, stage, or archetype.
+- **Dynamic Stock Modelling** — Cohort-based stock dynamics with Weibull survival and system-level projections. Material flow quantification grouped by material, component, stage, or archetype.
 - **Prospective LCA** — premise integration for 6 IAMs (REMIND, REMIND-EU, IMAGE, MESSAGE, GCAM, TIAM-UCL) × SSP1-5 scenarios. Year-matched background databases for time-resolved impact assessment.
 - **AESA** — Planetary boundary assessment with customizable sharing principles. Radar charts showing your system's position relative to the safe operating space.
 - **Archetype System** — Hierarchical Bills of Materials with ecoinvent linking, folder organization, and material evolution modeling (learning rates, milestones, rebound effects).
@@ -20,7 +20,7 @@ The first desktop application integrating Life Cycle Assessment, Material Flow A
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS
 - **Backend:** FastAPI + Python 3.11
 - **LCA engine:** brightway2 + bw2calc (UMFPACK factorization reuse)
-- **MFA engine:** Custom dynamic stock model with Weibull survival
+- **DSM engine:** Cohort-based dynamic stock model with Weibull survival
 - **Prospective:** premise 2.1.3
 - **Future:** Tauri v2 desktop packaging
 
@@ -52,16 +52,18 @@ Open [http://localhost:5173](http://localhost:5173)
 ### First Run
 
 1. Go to **Database Explorer** → Import your ecoinvent `.7z` file (~10 min)
-2. Go to **LCA Architect** → Import archetypes or create new ones
-3. Go to **MFA Modeller** → Upload stock + inflows data
-4. Go to **Impact Assessment** → Set cohort mappings → Calculate
+2. *(Optional)* Go to **pLCA Developer** → Generate prospective databases (see below)
+3. Go to **LCA Architect** → Import archetypes or create new ones
+4. Go to **DSM Modeller** → Upload stock + inflows data
+5. Go to **Impact Assessment** → Set cohort mappings → Calculate
+6. *(Optional)* Go to **AESA** → Compare impacts against planetary boundaries
 
 ### Prospective LCA (optional)
 
 Requires a premise encryption key:
 1. Email `romain.sacchi@psi.ch` to request a key
 2. Save it: `mkdir -p ~/.premise && echo 'YOUR_KEY' > ~/.premise/premise_key`
-3. Go to **pLCA Developer** → Generate prospective databases
+3. Go to **pLCA Developer** → Generate prospective databases (run before LCA Architect so archetypes can reference them)
 
 ## System Requirements
 

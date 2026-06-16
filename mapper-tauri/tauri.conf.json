@@ -1,0 +1,29 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "MApper",
+  "version": "0.1.0",
+  "identifier": "com.leonardoferhati.mapper",
+  "build": {
+    "frontendDist": "../mapper-frontend/dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "cd ../mapper-frontend && npm run dev",
+    "beforeBuildCommand": "cd ../mapper-frontend && npm run build"
+  },
+  "app": {
+    "windows": [
+      { "title": "MApper", "width": 1440, "height": 900, "minWidth": 1024, "minHeight": 700 }
+    ],
+    "security": { "csp": null }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ]
+  }
+}

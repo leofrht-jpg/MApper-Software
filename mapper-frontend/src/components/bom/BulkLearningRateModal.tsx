@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { X, TrendingDown, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { NumberInput } from '../ui/NumberInput'
 import type { Archetype } from '../../api/client'
 
 interface BulkLearningRateModalProps {
@@ -103,21 +104,21 @@ export function BulkLearningRateModal({ archetype, onApply, onClose }: BulkLearn
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 'var(--text-sm)', opacity: mode === 'apply' ? 1 : 0.4 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               Annual change (%)
-              <input
-                type="number"
-                value={(learningRate * 100).toFixed(2)}
-                onChange={(e) => setLearningRate(Number(e.target.value) / 100)}
-                step="0.1"
+              <NumberInput
+                value={Number((learningRate * 100).toFixed(4))}
+                onChange={(v) => setLearningRate(v / 100)}
+                allowNegative
                 disabled={mode !== 'apply'}
                 style={inputS}
               />
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               Base year
-              <input
-                type="number"
+              <NumberInput
                 value={baseYear}
-                onChange={(e) => setBaseYear(Math.round(Number(e.target.value)))}
+                onChange={setBaseYear}
+                integerOnly
+                emptyValue={2025}
                 disabled={mode !== 'apply'}
                 style={inputS}
               />

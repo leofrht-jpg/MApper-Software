@@ -1,6 +1,7 @@
 import ast
 import datetime
 import io
+import logging
 import shutil
 import tarfile
 import tempfile
@@ -10,6 +11,8 @@ from typing import Any
 import bw2analyzer
 import bw2calc
 import bw2data
+
+logger = logging.getLogger(__name__)
 
 
 # ── Phase 0 ──────────────────────────────────────────────────────────────────
@@ -535,7 +538,7 @@ def run_lca_from_demand(
 ) -> tuple[float, str]:
     """Run an LCA from a pre-built demand dict (key=(database, code) → amount).
 
-    Used by the MFA × LCA pipeline to do one LCA call per year over an
+    Used by the DSM × LCA pipeline to do one LCA call per year over an
     aggregated material demand vector.
     """
     if not demand:
@@ -835,53 +838,455 @@ def get_contributions(lca, total_score: float, limit: int = 10) -> dict[str, Any
     }
 
 
-def get_supply_chain(lca, depth: int = 3) -> dict[str, Any]:
-    """Build a Sankey graph by traversing the supply chain up to `depth` levels."""
+def get_biosphere_contributions(
+    lca, total_score: float, limit: int = 10
+) -> dict[str, Any]:
+    """Top biosphere flows contributing to the LCIA score.
+
+    Computes per-flow scores by summing rows of ``lca.characterized_inventory``
+    (a sparse biosphere-flows × technosphere-activities matrix). Replaces
+    ``bw2analyzer.annotated_top_emissions`` because that helper passes
+    ``numpy.float64`` indices into scipy sparse matrices — newer scipy
+    rejects this with "Inexact indices into sparse matrices are not allowed",
+    silently returning an empty list.
+    """
+    import numpy as np
+
+    method_unit = bw2data.methods.get(lca.method, {}).get("unit", "")
+
+    if not hasattr(lca, "characterized_inventory") or lca.characterized_inventory is None:
+        logger.warning("biosphere CA: lca.characterized_inventory missing — did lcia() run?")
+        return {"items": [], "rest_amount": float(total_score), "rest_percentage": 0.0}
+
+    try:
+        row_scores = np.asarray(lca.characterized_inventory.sum(axis=1)).ravel()
+    except Exception as e:
+        logger.warning("biosphere CA: failed to sum characterized_inventory: %s", e)
+        return {"items": [], "rest_amount": float(total_score), "rest_percentage": 0.0}
+
+    nonzero = int((row_scores != 0).sum())
+    if nonzero == 0:
+        logger.info(
+            "biosphere CA: characterized_inventory has no non-zero biosphere rows "
+            "(score=%s, method=%s) — method may not characterise any flows in this inventory",
+            total_score, lca.method,
+        )
+        return {"items": [], "rest_amount": float(total_score), "rest_percentage": 0.0}
+
+    # Top N by absolute contribution.
+    order = np.argsort(np.abs(row_scores))[::-1]
+    top_idx = order[:limit]
+
+    # Reverse biosphere dict: matrix-row → biosphere flow key.
+    try:
+        rev_bio = {v: k for k, v in lca.biosphere_dict.items()}
+    except AttributeError:
+        # Older bw2calc versions had reverse_dict() returning (ra, rp, rb).
+        try:
+            _, _, rev_bio = lca.reverse_dict()
+        except Exception as e:
+            logger.warning("biosphere CA: cannot build reverse biosphere dict: %s", e)
+            return {"items": [], "rest_amount": float(total_score), "rest_percentage": 0.0}
+
+    items: list[dict[str, Any]] = []
+    top_total = 0.0
+    inventory = getattr(lca, "inventory", None)
+    for raw_idx in top_idx:
+        idx = int(raw_idx)  # critical: scipy sparse rejects numpy.float64
+        score = float(row_scores[idx])
+        if score == 0:
+            continue
+        flow_key = rev_bio.get(idx)
+        if flow_key is None:
+            continue
+        try:
+            flow = bw2data.get_activity(flow_key)
+        except Exception:
+            continue
+        try:
+            inv_amount = float(inventory[idx, :].sum()) if inventory is not None else 0.0
+        except Exception:
+            inv_amount = 0.0
+        try:
+            categories = list(flow.get("categories") or [])
+        except Exception:
+            categories = []
+        pct = (abs(score) / abs(total_score) * 100) if total_score else 0.0
+        items.append({
+            "flow_name": flow.get("name", ""),
+            "flow_key": str(flow.key),
+            "categories": categories,
+            "compartment": categories[0] if categories else "",
+            "subcompartment": categories[1] if len(categories) > 1 else "",
+            "inventory_amount": inv_amount,
+            "inventory_unit": flow.get("unit", ""),
+            "amount": score,
+            "unit": method_unit,
+            "percentage": round(pct, 2),
+        })
+        top_total += score
+
+    rest = float(total_score) - top_total
+    rest_pct = (abs(rest) / abs(total_score) * 100) if total_score else 0.0
+    return {
+        "items": items,
+        "rest_amount": float(rest),
+        "rest_percentage": round(rest_pct, 2),
+    }
+
+
+def get_recursive_contribution_tree(
+    demand: dict[tuple[str, str], float],
+    method: tuple,
+    cutoff: float = 0.005,
+    max_depth: int = 6,
+    *,
+    runner: "PersistentLCARunner | None" = None,
+    unit_score_cache: dict[tuple[str, str], float] | None = None,
+) -> dict[str, Any]:
+    """Recursive impact-propagation tree.
+
+    Distinct from ``get_supply_chain`` (which does BFS over technosphere
+    exchanges directly): this walks the supply chain and at each node runs
+    a sub-LCA so the impact propagated to children is the *characterised*
+    contribution, not the raw exchange amount.
+
+    Parameters
+    ----------
+    demand: functional unit (single root activity in normal use, but a
+        multi-activity demand dict is accepted for archetype mode).
+    method: LCIA method tuple.
+    cutoff: minimum fraction of the root score below which a branch is
+        truncated. Use the lowest value the caller might want — shallower
+        views are derivable from a deeper tree without recomputing.
+    max_depth: hard cap on recursion depth.
+
+    Returns a tree::
+
+        {
+            "name": "<root>",
+            "key": "<db>|<code>",
+            "amount": <demand>,
+            "unit": "<unit>",
+            "score": <total characterised>,
+            "unit_score": "<method unit>",
+            "percentage": 100.0,
+            "children": [ {...same shape...}, ... ],
+        }
+    """
+    if not demand:
+        return {
+            "name": "(empty demand)",
+            "key": "",
+            "amount": 0.0,
+            "unit": "",
+            "score": 0.0,
+            "unit_score": "",
+            "percentage": 0.0,
+            "children": [],
+        }
+
+    method_unit = _method_unit(method)
+
+    # Use a persistent runner so the technosphere LU factorization is built
+    # once and every sub-LCA is back-substitution only (~15 ms instead of
+    # ~1.6 s). Critical for non-trivial trees on ecoinvent. Callers can pass
+    # an existing runner to share the factorization across multiple
+    # contribution-tree builds (e.g. multi-year trajectories).
+    if runner is None:
+        runner = PersistentLCARunner()
+
+    method_t = tuple(method)
+
+    # Unit-score memoization. Linear LCA: score(act, x) = x × unit_score(act).
+    # Caching unit scores instead of (act, amount) tuples collapses thousands
+    # of redo_calls (one per upstream demand of the same activity at different
+    # amounts) into one call per unique activity. The cache scope is implicitly
+    # (method, database) because both are fixed for the duration of the call;
+    # callers can pass their own dict to share the cache with sibling builders
+    # (e.g. ``get_supply_chain``) within the same year, and a fresh cache must
+    # be passed for each new (method, database) combination.
+    if unit_score_cache is None:
+        unit_score_cache = {}
+
+    def unit_score(act_key: tuple[str, str]) -> float:
+        cached = unit_score_cache.get(act_key)
+        if cached is not None:
+            return cached
+        try:
+            out = runner({act_key: 1.0}, [method_t])
+            s = float(out[method_t][0])
+        except Exception:
+            s = 0.0
+        unit_score_cache[act_key] = s
+        return s
+
+    def score_for(act_key: tuple[str, str], amount: float) -> float:
+        return float(amount) * unit_score(act_key)
+
+    # Aggregate root score = denominator for cutoff filtering.
+    out = runner(dict(demand), [method_t])
+    root_score = float(out[method_t][0])
+    abs_root = abs(root_score) if root_score else 1.0
+
+    # Memoise per-(activity, amount, depth) so revisited subgraphs aren't recomputed.
+    memo: dict[tuple[tuple[str, str], float, int], dict[str, Any]] = {}
+
+    def expand(act_key: tuple[str, str], amount: float, depth: int,
+               precomputed_score: float | None = None) -> dict[str, Any]:
+        cache_key = (act_key, round(amount, 12), depth)
+        if cache_key in memo:
+            return memo[cache_key]
+
+        act = bw2data.get_activity(act_key)
+        score = precomputed_score if precomputed_score is not None else score_for(act_key, amount)
+        pct = (abs(score) / abs_root * 100.0) if abs_root else 0.0
+
+        node: dict[str, Any] = {
+            "name": act.get("reference product", act.get("name", "")),
+            "key": f"{act_key[0]}|{act_key[1]}",
+            "location": str(act.get("location", "")),
+            "amount": float(amount),
+            "unit": act.get("unit", ""),
+            "score": score,
+            "unit_score": method_unit,
+            "percentage": round(pct, 4),
+            "children": [],
+        }
+
+        if depth >= max_depth or abs(score) <= 0:
+            memo[cache_key] = node
+            return node
+
+        # Walk technosphere exchanges; recurse into each whose propagated
+        # contribution clears the cutoff.
+        children: list[dict[str, Any]] = []
+        for exc in act.technosphere():
+            try:
+                child_key = exc.input.key
+            except Exception:
+                continue
+            exc_amount = float(exc.get("amount", 0.0)) * float(amount)
+            if exc_amount == 0:
+                continue
+            try:
+                child_score = score_for(child_key, exc_amount)
+            except Exception:
+                continue
+            if abs(child_score) / abs_root < cutoff:
+                continue
+            children.append(expand(child_key, exc_amount, depth + 1, precomputed_score=child_score))
+
+        children.sort(key=lambda n: abs(n["score"]), reverse=True)
+        node["children"] = children
+        memo[cache_key] = node
+        return node
+
+    if len(demand) == 1:
+        single_key, single_amt = next(iter(demand.items()))
+        return expand(single_key, float(single_amt), 0)
+
+    children = [expand(k, float(v), 0) for k, v in demand.items()]
+    children.sort(key=lambda n: abs(n["score"]), reverse=True)
+    return {
+        "name": "(aggregated demand)",
+        "key": "",
+        "location": "",
+        "amount": float(sum(demand.values())),
+        "unit": "",
+        "score": root_score,
+        "unit_score": method_unit,
+        "percentage": 100.0,
+        "children": children,
+    }
+
+
+def get_supply_chain(
+    lca,
+    *,
+    method,
+    runner: "PersistentLCARunner | None" = None,
+    depth: int = 3,
+    max_nodes: int = 200,
+    unit_score_cache: dict[tuple[str, str], float] | None = None,
+) -> dict[str, Any]:
+    """Build a Sankey graph by traversing the supply chain up to ``depth``
+    levels. The graph is **acyclic by construction** (Sankey can't render
+    cycles) and link values are **characterised impacts** in the active
+    method's unit, matching the Tree view.
+
+    Cycle handling
+    --------------
+    Each node is assigned a BFS level on first discovery. When processing an
+    exchange ``u → v``:
+      - ``v`` unvisited → add at ``level_u + 1``, emit edge.
+      - ``v`` already at ``level_u + 1`` → aggregate edge value (same node
+        reached via two distinct paths at the same depth — both are valid
+        forward edges).
+      - ``v`` at any other level (≤ ``level_u``, or > ``level_u + 1``) → drop
+        the edge. Same-level and back-edges are intentionally dropped to keep
+        the Sankey acyclic and layered, *not* because they're invalid in a
+        general supply-chain graph; they're displayed implicitly via the
+        already-discovered shorter path.
+
+    Link value
+    ----------
+    For each edge ``u → v`` with exchange amount ``a`` (per unit of ``u``)
+    and propagated upstream demand ``a × Q_u`` (where ``Q_u`` is what we've
+    propagated into ``u``), the link value is::
+
+        |a × Q_u × s_v|
+
+    where ``s_v`` is the unit characterised score of ``v`` (impact per
+    functional unit of ``v`` for ``method``). Single unit across the whole
+    graph (the LCIA method's unit), no mixed-unit widths.
+
+    Truncation
+    ----------
+    If the discovered graph has more than ``max_nodes`` nodes, prune by
+    expanding from the root in best-first order (highest-value outgoing edge
+    first) until the budget is met. The returned dict carries
+    ``total_nodes_discovered`` and ``truncated`` so the UI can annotate.
+    """
     from collections import deque
+    import heapq
+
+    if runner is None:
+        runner = PersistentLCARunner()
+    method_t = tuple(method)
 
     root_key = list(lca.demand.keys())[0]
     root_act = bw2data.get_activity(root_key)
-
-    nodes: dict[str, dict] = {}
-    links: list[dict] = {}
-    links_list: list[dict] = []
-    link_set: set[tuple] = set()
+    root_amount = float(lca.demand[root_key])
 
     def node_id(key: tuple) -> str:
         return f"{key[0]}_{key[1]}"
 
-    def add_node(act: bw2data.backends.Activity) -> str:
-        nid = node_id(act.key)
-        if nid not in nodes:
-            nodes[nid] = {
-                "id": nid,
-                "name": act.get("reference product", act.get("name", "")),
-                "location": str(act.get("location", "")),
-            }
-        return nid
+    nodes: dict[str, dict] = {}
+    levels: dict[str, int] = {}
+    # (src_id, tgt_id) → aggregated impact (always positive).
+    link_values: dict[tuple[str, str], float] = {}
 
-    add_node(root_act)
-    queue = deque([(root_act, 0)])
-    visited: set = {root_key}
+    # Cache unit scores so revisiting an activity at the same/forward level
+    # doesn't refactor the matrix or re-back-substitute (~15 ms per call).
+    # Caller can share this dict with ``get_recursive_contribution_tree`` so
+    # the tree builder doesn't recompute unit scores for activities the
+    # Sankey BFS already characterised. Cache scope is per (method, database).
+    if unit_score_cache is None:
+        unit_score_cache = {}
+
+    def unit_score(act_key: tuple[str, str]) -> float:
+        cached = unit_score_cache.get(act_key)
+        if cached is not None:
+            return cached
+        try:
+            out = runner({act_key: 1.0}, [method_t])
+            s = float(out[method_t][0])
+        except Exception:
+            s = 0.0
+        unit_score_cache[act_key] = s
+        return s
+
+    root_id = node_id(root_act.key)
+    nodes[root_id] = {
+        "id": root_id,
+        "name": root_act.get("reference product", root_act.get("name", "")),
+        "location": str(root_act.get("location", "")),
+    }
+    levels[root_id] = 0
+
+    # Queue holds (activity, level, propagated_demand) — the demand is what
+    # multiplies the per-unit exchange amounts into absolute upstream flow.
+    queue: deque = deque([(root_act, 0, root_amount)])
 
     while queue:
-        act, level = queue.popleft()
+        act, level, q_in = queue.popleft()
         if level >= depth:
             continue
+        src_id = node_id(act.key)
         for exc in act.technosphere():
             try:
-                inp_act = bw2data.get_activity(exc.input.key)
+                child_key = exc.input.key
+                child_act = bw2data.get_activity(child_key)
             except Exception:
                 continue
-            src_id = add_node(act)
-            tgt_id = add_node(inp_act)
-            amount = abs(float(exc.get("amount", 0)))
-            link_key = (src_id, tgt_id)
-            if link_key not in link_set and amount > 0:
-                link_set.add(link_key)
-                links_list.append({"source": src_id, "target": tgt_id, "value": amount})
-            if inp_act.key not in visited:
-                visited.add(inp_act.key)
-                queue.append((inp_act, level + 1))
+            try:
+                exc_per_unit = float(exc.get("amount", 0.0))
+            except Exception:
+                continue
+            propagated = exc_per_unit * q_in
+            if propagated == 0.0:
+                continue
+            tgt_id = node_id(child_act.key)
+            tgt_level = levels.get(tgt_id)
 
-    return {"nodes": list(nodes.values()), "links": links_list}
+            if tgt_level is None:
+                # First time we see ``child`` — it's a forward edge.
+                child_unit_score = unit_score(child_key)
+                impact = abs(propagated * child_unit_score)
+                if impact == 0.0:
+                    continue
+                nodes[tgt_id] = {
+                    "id": tgt_id,
+                    "name": child_act.get("reference product", child_act.get("name", "")),
+                    "location": str(child_act.get("location", "")),
+                }
+                levels[tgt_id] = level + 1
+                link_values[(src_id, tgt_id)] = link_values.get((src_id, tgt_id), 0.0) + impact
+                queue.append((child_act, level + 1, propagated))
+            elif tgt_level == level + 1:
+                # Same forward layer reached via a different parent — aggregate.
+                child_unit_score = unit_score(child_key)
+                impact = abs(propagated * child_unit_score)
+                if impact == 0.0:
+                    continue
+                link_values[(src_id, tgt_id)] = link_values.get((src_id, tgt_id), 0.0) + impact
+            # Else: back-edge or skip-level cross-edge — drop to keep Sankey
+            # layered and acyclic. The shorter path that already reached ``v``
+            # carries its contribution.
+
+    total_nodes_discovered = len(nodes)
+    truncated = total_nodes_discovered > max_nodes
+
+    if truncated:
+        # Best-first expansion from root: at each step, follow the highest-
+        # value outgoing edge into an unvisited node. Yields the subgraph
+        # that captures the largest impact-bearing chains, not the shallowest.
+        adj: dict[str, list[tuple[str, float]]] = {}
+        for (s, t), v in link_values.items():
+            adj.setdefault(s, []).append((t, v))
+
+        kept: set[str] = {root_id}
+        # Heap entries: (-value, target_id) — negate for max-heap via heapq.
+        heap: list[tuple[float, str]] = []
+        for t, v in adj.get(root_id, ()):
+            heapq.heappush(heap, (-v, t))
+
+        while heap and len(kept) < max_nodes:
+            neg_v, t = heapq.heappop(heap)
+            if t in kept:
+                continue
+            kept.add(t)
+            for tt, vv in adj.get(t, ()):
+                if tt not in kept:
+                    heapq.heappush(heap, (-vv, tt))
+
+        out_nodes = [nodes[n] for n in nodes if n in kept]
+        out_links = [
+            {"source": s, "target": t, "value": v}
+            for (s, t), v in link_values.items()
+            if s in kept and t in kept
+        ]
+    else:
+        out_nodes = list(nodes.values())
+        out_links = [
+            {"source": s, "target": t, "value": v}
+            for (s, t), v in link_values.items()
+        ]
+
+    return {
+        "nodes": out_nodes,
+        "links": out_links,
+        "total_nodes_discovered": total_nodes_discovered,
+        "truncated": truncated,
+    }

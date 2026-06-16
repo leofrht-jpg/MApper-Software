@@ -55,7 +55,7 @@ export function LCAPage({ onNavigateToExplorer }: LCAPageProps) {
       <div style={{ display: 'flex', borderBottom: '1px solid var(--border-subtle)', marginBottom: 'var(--space-4)', flexShrink: 0 }}>
         {tabBtn('manager', 'Manager', <Database size={14} />)}
         {tabBtn('archetypes', 'Archetypes', <FlaskConical size={14} />)}
-        {tabBtn('calculator', 'Calculator', <Calculator size={14} />)}
+        {tabBtn('calculator', 'Single-product LCA', <Calculator size={14} />)}
       </div>
       <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
         {tab === 'manager' && <LCAManager onOpenArchetype={handleOpenArchetype} />}

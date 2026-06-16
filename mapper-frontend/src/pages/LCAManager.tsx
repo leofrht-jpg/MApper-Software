@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
-  Download, Upload, FileSpreadsheet, FolderOpen, Search, Loader2, CheckCircle, AlertTriangle,
+  Download, Upload, Search, Loader2, CheckCircle, AlertTriangle,
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
+import { CollapsibleCard } from '../components/ui/CollapsibleCard'
+import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
 import { useBOMStore } from '../stores/bomStore'
 import {
   downloadBOMTemplate,
@@ -21,16 +23,28 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
   const { archetypes, folders, fetchArchetypes, importFromFile, isLoading } = useBOMStore()
   const fileRef = useRef<HTMLInputElement>(null)
   const [importing, setImporting] = useState(false)
+  const [importMode, setImportMode] = useState<'merge' | 'replace'>('merge')
   const [exporting, setExporting] = useState(false)
   const [exportFolder, setExportFolder] = useState<string>('')
   const [result, setResult] = useState<MultiImportResult | null>(null)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [summaryExpanded, setSummaryExpanded] = useState(false)
+  const [importExpanded, setImportExpanded] = useState(true)
+  const [exportExpanded, setExportExpanded] = useState(true)
 
   useEffect(() => { void fetchArchetypes() }, [fetchArchetypes])
 
-  const handleImportClick = () => fileRef.current?.click()
+  const handleImportClick = () => {
+    if (importMode === 'replace' && archetypes.length > 0) {
+      const ok = window.confirm(
+        `Replace all will delete the ${archetypes.length} existing archetype${archetypes.length === 1 ? '' : 's'} before importing. Continue?`,
+      )
+      if (!ok) return
+    }
+    fileRef.current?.click()
+  }
 
   const handleImportFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -39,7 +53,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
     setImporting(true)
     setResult(null)
     try {
-      const res = await importFromFile(file)
+      const res = await importFromFile(file, importMode)
       setResult(res)
     } catch (err) {
       alert(`Import failed: ${err instanceof Error ? err.message : err}`)
@@ -105,8 +119,13 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
         gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))',
         gap: 'var(--space-4)',
       }}>
-        {/* ── Card 1: Template & Bulk Import ─────────────────────────── */}
-        <Card title="Template & bulk import" icon={<FileSpreadsheet size={14} />}>
+        {/* ── Card 1: Template & Bulk Import (collapsible) ───────────── */}
+        <CollapsibleCard
+          expanded={importExpanded}
+          onToggle={() => setImportExpanded((v) => !v)}
+          title="Import"
+          summary={`Import .xlsx · Mode: ${importMode === 'merge' ? 'Merge' : 'Replace all'}`}
+        >
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: '0 0 var(--space-3) 0', lineHeight: 1.5 }}>
             Download the multi-archetype Excel template. Each workbook can declare several archetypes
             with folder paths on its <strong>Archetypes</strong> sheet, then list every BOM row on the
@@ -123,6 +142,37 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
             </Button>
             <input ref={fileRef} type="file" accept=".xlsx" style={{ display: 'none' }} onChange={handleImportFile} />
           </div>
+          <div style={{ display: 'flex', gap: 4, marginTop: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginRight: 4 }}>Mode:</span>
+            {(['merge', 'replace'] as const).map((m) => {
+              const active = importMode === m
+              return (
+                <button
+                  key={m}
+                  onClick={() => setImportMode(m)}
+                  disabled={importing}
+                  style={{
+                    height: 24,
+                    padding: '0 10px',
+                    fontSize: 'var(--text-xs)',
+                    fontWeight: active ? 600 : 400,
+                    backgroundColor: active ? 'var(--bg-elevated)' : 'transparent',
+                    border: `1px solid ${active ? 'var(--mod-lca)' : 'var(--border-subtle)'}`,
+                    borderRadius: 'var(--radius-sm)',
+                    color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                    cursor: importing ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {m === 'merge' ? 'Merge (add/update)' : 'Replace all'}
+                </button>
+              )
+            })}
+            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginLeft: 6 }}>
+              {importMode === 'merge'
+                ? 'Existing archetypes matched by name are updated; new ones added.'
+                : 'Deletes every existing archetype before importing.'}
+            </span>
+          </div>
           {result && (
             <div style={{
               marginTop: 'var(--space-3)',
@@ -135,8 +185,41 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success)', fontWeight: 600, marginBottom: 6 }}>
                 <CheckCircle size={12} /> {result.format === 'multi' ? 'Multi-archetype import' : 'Single-archetype import'}
+                {result.mode && (
+                  <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>
+                    · {result.mode === 'replace' ? 'replace all' : 'merge'}
+                  </span>
+                )}
               </div>
-              <div>Created <strong>{result.created}</strong> archetype{result.created === 1 ? '' : 's'} · <strong>{result.folders_created}</strong> new folder{result.folders_created === 1 ? '' : 's'}</div>
+              <div>
+                Created <strong>{result.created}</strong>
+                {typeof result.updated === 'number' && result.updated > 0 && (
+                  <> · Updated <strong>{result.updated}</strong></>
+                )}
+                {' · '}<strong>{result.folders_created}</strong> new folder{result.folders_created === 1 ? '' : 's'}
+              </div>
+              {(() => {
+                const totErr = result.archetypes.reduce((s, a) => s + (a.validation_error_rows ?? 0), 0)
+                const totWarn = result.archetypes.reduce((s, a) => s + (a.validation_warning_rows ?? 0), 0)
+                if (totErr === 0 && totWarn === 0) return null
+                return (
+                  <div style={{
+                    marginTop: 6,
+                    padding: '6px 10px',
+                    borderRadius: 'var(--radius-sm)',
+                    backgroundColor: totErr > 0 ? 'color-mix(in srgb, var(--danger) 8%, transparent)' : 'color-mix(in srgb, var(--warning) 8%, transparent)',
+                    border: `1px solid ${totErr > 0 ? 'var(--danger)' : 'var(--warning)'}`,
+                    color: totErr > 0 ? 'var(--danger)' : 'var(--warning)',
+                    display: 'flex', alignItems: 'center', gap: 6,
+                  }}>
+                    <AlertTriangle size={12} />
+                    <span>
+                      <strong>{totErr}</strong> error row{totErr === 1 ? '' : 's'} · <strong>{totWarn}</strong> warning row{totWarn === 1 ? '' : 's'} across imported archetypes.
+                      {totErr > 0 && ' LCA computation is blocked on archetypes with errors until fixed.'}
+                    </span>
+                  </div>
+                )
+              })()}
               {result.archetypes.length > 0 && (
                 <ul style={{ margin: '6px 0 0 0', paddingLeft: 18 }}>
                   {result.archetypes.slice(0, 8).map((a) => (
@@ -147,8 +230,32 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                       >
                         {a.name}
                       </button>
+                      {a.action && (
+                        <span style={{
+                          marginLeft: 6,
+                          padding: '0 6px',
+                          fontSize: 10,
+                          borderRadius: 3,
+                          color: a.action === 'updated' ? 'var(--warning)' : 'var(--success)',
+                          border: `1px solid ${a.action === 'updated' ? 'var(--warning)' : 'var(--success)'}`,
+                          textTransform: 'uppercase',
+                          letterSpacing: 'var(--tracking-wide)',
+                        }}>
+                          {a.action}
+                        </span>
+                      )}
                       {a.folder ? <span style={{ color: 'var(--text-tertiary)' }}> · {a.folder}</span> : null}
                       <span style={{ color: 'var(--text-tertiary)' }}> · {a.materials} materials ({a.unlinked} unlinked)</span>
+                      {(a.validation_error_rows ?? 0) > 0 && (
+                        <span style={{ color: 'var(--danger)', marginLeft: 4 }}>
+                          · {a.validation_error_rows} error{a.validation_error_rows === 1 ? '' : 's'}
+                        </span>
+                      )}
+                      {(a.validation_warning_rows ?? 0) > 0 && (
+                        <span style={{ color: 'var(--warning)', marginLeft: 4 }}>
+                          · {a.validation_warning_rows} warning{a.validation_warning_rows === 1 ? '' : 's'}
+                        </span>
+                      )}
                     </li>
                   ))}
                   {result.archetypes.length > 8 && (
@@ -156,6 +263,19 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                   )}
                 </ul>
               )}
+              {result.validation_reports && Object.entries(result.validation_reports).map(([arcName, vr]) => {
+                if (vr.error_rows === 0 && vr.warning_rows === 0) return null
+                const arc = result.archetypes.find((a) => a.name === arcName)
+                return (
+                  <ValidationReportPanel
+                    key={arcName}
+                    report={vr}
+                    archetypeName={arcName}
+                    onAccept={arc ? () => onOpenArchetype?.(arc.id) : undefined}
+                    onReupload={() => fileRef.current?.click()}
+                  />
+                )
+              })}
               {result.warnings.length > 0 && (
                 <div style={{ marginTop: 8, color: 'var(--warning)', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
                   <AlertTriangle size={12} style={{ marginTop: 2, flexShrink: 0 }} />
@@ -170,10 +290,15 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
               )}
             </div>
           )}
-        </Card>
+        </CollapsibleCard>
 
-        {/* ── Card 2: Export ──────────────────────────────────────────── */}
-        <Card title="Export" icon={<FolderOpen size={14} />}>
+        {/* ── Card 2: Export (collapsible) ────────────────────────────── */}
+        <CollapsibleCard
+          expanded={exportExpanded}
+          onToggle={() => setExportExpanded((v) => !v)}
+          title="Export"
+          summary={`Export all (${archetypes.length}) · ${archetypes.length} archetype${archetypes.length === 1 ? '' : 's'}`}
+        >
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: '0 0 var(--space-3) 0', lineHeight: 1.5 }}>
             Export all archetypes, or just the ones under a specific folder, into a single multi-archetype
             workbook you can re-import on another project.
@@ -207,13 +332,16 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
               No folders defined yet. Create folders on the Archetypes tab.
             </div>
           )}
-        </Card>
+        </CollapsibleCard>
       </div>
 
-      {/* ── Card 3: Archetype Summary ─────────────────────────────────── */}
-      <Card title="Archetype summary" icon={null}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
-          <div style={{ display: 'flex', gap: 'var(--space-4)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+      {/* ── Card 3: Archetype Summary (collapsible) ───────────────────── */}
+      <CollapsibleCard
+        expanded={summaryExpanded}
+        onToggle={() => setSummaryExpanded((v) => !v)}
+        title="Archetype summary"
+        summary={
+          <>
             <span><strong style={{ color: 'var(--text-primary)' }}>{totals.count}</strong> archetype{totals.count === 1 ? '' : 's'}</span>
             <span><strong style={{ color: 'var(--text-primary)' }}>{totals.mats}</strong> materials</span>
             {totals.unlinked > 0 && (
@@ -221,7 +349,10 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                 <strong>{totals.unlinked}</strong> unlinked
               </span>
             )}
-          </div>
+          </>
+        }
+      >
+        <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
           <div style={{ position: 'relative', width: 260 }}>
             <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
             <input
@@ -295,35 +426,10 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
             </tbody>
           </table>
         </div>
-      </Card>
+      </CollapsibleCard>
 
       <style>{`.spin { animation: spin 1s linear infinite } @keyframes spin { to { transform: rotate(360deg) } }`}</style>
     </div>
-  )
-}
-
-// ── Layout helpers ───────────────────────────────────────────────────────────
-
-function Card({ title, icon, children }: { title: string; icon: React.ReactNode; children: React.ReactNode }) {
-  return (
-    <section style={{
-      backgroundColor: 'var(--bg-surface)',
-      border: '1px solid var(--border-subtle)',
-      borderRadius: 'var(--radius-lg)',
-      padding: 'var(--space-4) var(--space-5)',
-    }}>
-      <h3 style={{
-        display: 'flex', alignItems: 'center', gap: 6,
-        fontSize: 'var(--text-sm)', fontWeight: 600,
-        color: 'var(--text-secondary)',
-        textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
-        marginBottom: 'var(--space-3)',
-      }}>
-        {icon && <span style={{ color: 'var(--mod-lca)', display: 'inline-flex' }}>{icon}</span>}
-        {title}
-      </h3>
-      {children}
-    </section>
   )
 }
 

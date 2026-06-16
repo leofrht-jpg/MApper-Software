@@ -1,9 +1,161 @@
 import { useMemo, useState } from 'react'
-import { ChevronRight, ChevronDown, Circle, Plus, Trash2, Link as LinkIcon, Pencil, TrendingDown, TrendingUp, Minus, RotateCcw } from 'lucide-react'
+import { ChevronRight, ChevronDown, Circle, Plus, Trash2, Link as LinkIcon, Pencil, TrendingDown, TrendingUp, Minus, RotateCcw, AlertCircle } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { NumberInput } from '../ui/NumberInput'
 import { EcoinventLinker } from './EcoinventLinker'
 import type { BOMNode, EcoinventLink, MaterialEvolution, QuantityMilestone } from '../../api/client'
+import { useParameterStore } from '../../stores/parameterStore'
+
+// An amount that starts with a letter or underscore (snake_case) is treated as
+// an expression, else as a plain number.
+function isExpressionInput(s: string): boolean {
+  const t = s.trim()
+  if (!t) return false
+  return /^[a-z_]/.test(t)
+}
+
+// Client-side expression resolver — mirrors backend ParameterEngine for the
+// common subset (identifiers, + - * / ** unary-minus, parentheses, numeric
+// literals, and the reserved functions min/max/abs/round/sum). Anything outside
+// this subset surfaces as an error rather than silently passing.
+const RESERVED_FNS: Record<string, (...args: number[]) => number> = {
+  min: Math.min,
+  max: Math.max,
+  abs: Math.abs,
+  round: (x: number, digits = 0) => {
+    const f = Math.pow(10, digits)
+    return Math.round(x * f) / f
+  },
+  sum: (...xs: number[]) => xs.reduce((a, b) => a + b, 0),
+}
+
+function resolveExpression(expr: string, params: Map<string, number>): { value: number | null; error: string | null } {
+  const src = expr.trim()
+  if (!src) return { value: null, error: 'empty' }
+  try {
+    // Fast path: plain number.
+    if (/^-?\d+(\.\d+)?$/.test(src)) return { value: Number(src), error: null }
+    // Replace identifiers with their values or function calls. Tokenize simply.
+    // Supports: name, number, + - * / ** ( ) , whitespace.
+    const tokens = tokenize(src)
+    let pos = 0
+    const peek = () => tokens[pos]
+    const eat = (t?: string) => {
+      const tok = tokens[pos]
+      if (t != null && tok !== t) throw new Error(`Expected '${t}'`)
+      pos++
+      return tok
+    }
+    // Recursive descent: expr → term (('+'|'-') term)*
+    //   term → factor (('*'|'/') factor)*
+    //   factor → unary ('**' factor)?
+    //   unary → '-' unary | primary
+    //   primary → number | name | name '(' args ')' | '(' expr ')'
+    const parseExpr = (): number => {
+      let v = parseTerm()
+      while (peek() === '+' || peek() === '-') {
+        const op = eat()
+        const r = parseTerm()
+        v = op === '+' ? v + r : v - r
+      }
+      return v
+    }
+    const parseTerm = (): number => {
+      let v = parseFactor()
+      while (peek() === '*' || peek() === '/') {
+        const op = eat()
+        const r = parseFactor()
+        if (op === '/') {
+          if (r === 0) throw new Error('Division by zero')
+          v = v / r
+        } else {
+          v = v * r
+        }
+      }
+      return v
+    }
+    const parseFactor = (): number => {
+      const v = parseUnary()
+      if (peek() === '**') { eat(); return Math.pow(v, parseFactor()) }
+      return v
+    }
+    const parseUnary = (): number => {
+      if (peek() === '-') { eat(); return -parseUnary() }
+      if (peek() === '+') { eat(); return parseUnary() }
+      return parsePrimary()
+    }
+    const parsePrimary = (): number => {
+      const tok = peek()
+      if (tok == null) throw new Error('Unexpected end of expression')
+      if (tok === '(') {
+        eat('(')
+        const v = parseExpr()
+        eat(')')
+        return v
+      }
+      if (/^-?\d+(\.\d+)?$/.test(tok)) { eat(); return Number(tok) }
+      if (/^[a-z_][a-z0-9_]*$/.test(tok)) {
+        eat()
+        if (peek() === '(') {
+          eat('(')
+          const args: number[] = []
+          if (peek() !== ')') {
+            args.push(parseExpr())
+            while (peek() === ',') { eat(','); args.push(parseExpr()) }
+          }
+          eat(')')
+          const fn = RESERVED_FNS[tok]
+          if (!fn) throw new Error(`Unknown function '${tok}'`)
+          return fn(...args)
+        }
+        if (!params.has(tok)) throw new Error(`Undefined parameter: '${tok}'`)
+        return params.get(tok)!
+      }
+      throw new Error(`Unexpected token '${tok}'`)
+    }
+    const v = parseExpr()
+    if (pos < tokens.length) throw new Error(`Unexpected token '${tokens[pos]}'`)
+    if (!Number.isFinite(v)) throw new Error('Non-finite result')
+    return { value: v, error: null }
+  } catch (e) {
+    return { value: null, error: e instanceof Error ? e.message : String(e) }
+  }
+}
+
+function tokenize(src: string): string[] {
+  const out: string[] = []
+  let i = 0
+  while (i < src.length) {
+    const c = src[i]
+    if (c === ' ' || c === '\t') { i++; continue }
+    if (c === '*' && src[i + 1] === '*') { out.push('**'); i += 2; continue }
+    if ('+-*/(),'.includes(c)) { out.push(c); i++; continue }
+    if (/[0-9.]/.test(c)) {
+      let j = i
+      while (j < src.length && /[0-9.]/.test(src[j])) j++
+      out.push(src.slice(i, j))
+      i = j
+      continue
+    }
+    if (/[a-z_]/.test(c)) {
+      let j = i
+      while (j < src.length && /[a-z0-9_]/.test(src[j])) j++
+      out.push(src.slice(i, j))
+      i = j
+      continue
+    }
+    throw new Error(`Unexpected character '${c}'`)
+  }
+  return out
+}
+
+// Pull the last identifier-like token from a partially typed expression, so we
+// can show autocomplete suggestions that prefix-match it.
+function extractCurrentToken(s: string): string {
+  const m = s.match(/[a-z_][a-z0-9_]*$/)
+  return m ? m[0] : ''
+}
 
 const UNIT_OPTIONS = ['kg', 'g', 't', 'piece', 'm', 'm2', 'm3', 'l', 'kWh', 'MJ']
 
@@ -11,7 +163,7 @@ interface BOMTreeProps {
   node: BOMNode
   depth?: number
   isRoot?: boolean
-  onPatch: (nodeId: string, patch: { name?: string; quantity?: number; unit?: string; is_annual?: boolean; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
+  onPatch: (nodeId: string, patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
   onAddChild: (parentId: string, child: BOMNode) => Promise<void>
   onDelete: (nodeId: string) => Promise<void>
 }
@@ -41,28 +193,98 @@ function evolutionSummary(ev: MaterialEvolution | null | undefined): string {
 export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, onDelete }: BOMTreeProps) {
   const [expanded, setExpanded] = useState(true)
   const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState({ name: node.name, quantity: node.quantity, unit: node.unit })
+  const initialAmount = node.quantity_expression ?? String(node.quantity)
+  const [draft, setDraft] = useState({
+    name: node.name,
+    amount: initialAmount,
+    unit: node.unit,
+  })
   const [linkerOpen, setLinkerOpen] = useState(false)
   const [hovered, setHovered] = useState(false)
   const [evolutionOpen, setEvolutionOpen] = useState(false)
+  const [showAutocomplete, setShowAutocomplete] = useState(false)
+
+  // Active parameter set — used to resolve expressions for preview + autocomplete.
+  const activeSet = useParameterStore((s) => s.activeSet)
+  const paramMap = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const p of activeSet?.parameters ?? []) if (p.value != null) m.set(p.name, p.value)
+    return m
+  }, [activeSet])
+  const paramNames = useMemo(() => Array.from(paramMap.keys()).sort(), [paramMap])
 
   const isComponent = node.node_type === 'component'
   const hasChildren = (node.children?.length ?? 0) > 0
   const linked = node.ecoinvent_activity
   const nodeId = node.id ?? ''
+  const hasExpression = !!node.quantity_expression
+
+  // Resolve the node's saved expression (for display) against active params.
+  const expressionResolve = useMemo(() => {
+    if (!node.quantity_expression) return null
+    return resolveExpression(node.quantity_expression, paramMap)
+  }, [node.quantity_expression, paramMap])
+
+  // Resolve the in-progress draft (for live preview while editing).
+  const draftResolve = useMemo(() => {
+    if (!editing) return null
+    if (!isExpressionInput(draft.amount)) return null
+    return resolveExpression(draft.amount, paramMap)
+  }, [editing, draft.amount, paramMap])
+
+  // Autocomplete suggestions — prefix match on current token.
+  const autocompleteMatches = useMemo(() => {
+    if (!editing || !showAutocomplete) return []
+    const token = extractCurrentToken(draft.amount)
+    if (!token) return []
+    return paramNames.filter((n) => n.startsWith(token) && n !== token).slice(0, 6)
+  }, [editing, showAutocomplete, draft.amount, paramNames])
 
   const beginEdit = () => {
-    setDraft({ name: node.name, quantity: node.quantity, unit: node.unit })
+    setDraft({
+      name: node.name,
+      amount: node.quantity_expression ?? String(node.quantity),
+      unit: node.unit,
+    })
     setEditing(true)
+    setShowAutocomplete(false)
+  }
+
+  const applyAutocomplete = (name: string) => {
+    const token = extractCurrentToken(draft.amount)
+    if (!token) return
+    const idx = draft.amount.lastIndexOf(token)
+    const next = draft.amount.slice(0, idx) + name + draft.amount.slice(idx + token.length)
+    setDraft({ ...draft, amount: next })
+    setShowAutocomplete(false)
   }
 
   const saveEdit = async () => {
-    const patch: { name?: string; quantity?: number; unit?: string } = {}
+    const patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string } = {}
     if (draft.name !== node.name) patch.name = draft.name
-    if (draft.quantity !== node.quantity) patch.quantity = Number(draft.quantity)
     if (draft.unit !== node.unit) patch.unit = draft.unit
+
+    const trimmed = draft.amount.trim()
+    if (isExpressionInput(trimmed)) {
+      const res = resolveExpression(trimmed, paramMap)
+      if (res.error) {
+        alert(`Expression error: ${res.error}`)
+        return
+      }
+      if (trimmed !== (node.quantity_expression ?? '')) patch.quantity_expression = trimmed
+      if (res.value != null && res.value !== node.quantity) patch.quantity = res.value
+    } else {
+      const num = Number(trimmed)
+      if (!Number.isFinite(num)) {
+        alert('Quantity must be a number or a parameter expression.')
+        return
+      }
+      if (node.quantity_expression) patch.quantity_expression = null
+      if (num !== node.quantity) patch.quantity = num
+    }
     if (Object.keys(patch).length > 0) await onPatch(nodeId, patch)
     setEditing(false)
+    setShowAutocomplete(false)
   }
 
   const cancelEdit = () => setEditing(false)
@@ -143,18 +365,64 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
                 color: 'var(--text-primary)', fontSize: 'var(--text-sm)', outline: 'none', minWidth: 120,
               }}
             />
-            <input
-              type="number"
-              value={draft.quantity}
-              onChange={(e) => setDraft({ ...draft, quantity: Number(e.target.value) })}
-              step="any"
-              min="0"
-              style={{
-                width: 80, height: 28, padding: '0 8px', backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
-                color: 'var(--text-primary)', fontSize: 'var(--text-sm)', fontFamily: 'var(--font-mono)', outline: 'none',
-              }}
-            />
+            <div style={{ position: 'relative' }}>
+              <input
+                type="text"
+                value={draft.amount}
+                placeholder="100 or mass_per_unit"
+                onChange={(e) => {
+                  setDraft({ ...draft, amount: e.target.value })
+                  setShowAutocomplete(isExpressionInput(e.target.value))
+                }}
+                onFocus={() => setShowAutocomplete(isExpressionInput(draft.amount))}
+                onBlur={() => setTimeout(() => setShowAutocomplete(false), 150)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
+                title={isExpressionInput(draft.amount) ? 'Expression — resolves against active parameter set' : 'Numeric quantity'}
+                style={{
+                  width: 160, height: 28, padding: '0 8px 0 24px', backgroundColor: 'var(--bg-elevated)',
+                  border: `1px solid ${draftResolve?.error ? 'var(--danger)' : 'var(--border-default)'}`,
+                  borderRadius: 'var(--radius-md)',
+                  color: isExpressionInput(draft.amount) ? 'var(--mod-plca)' : 'var(--text-primary)',
+                  fontSize: 'var(--text-sm)', fontFamily: 'var(--font-mono)', outline: 'none',
+                }}
+              />
+              {isExpressionInput(draft.amount) && (
+                <span style={{ position: 'absolute', left: 7, top: '50%', transform: 'translateY(-50%)', fontSize: 10, fontWeight: 700, fontStyle: 'italic', color: 'var(--mod-plca)', pointerEvents: 'none' }}>fx</span>
+              )}
+              {autocompleteMatches.length > 0 && (
+                <div style={{
+                  position: 'absolute', top: 30, left: 0, zIndex: 20,
+                  backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+                  borderRadius: 'var(--radius-md)', boxShadow: 'var(--shadow-md)',
+                  minWidth: 160, maxHeight: 180, overflow: 'auto',
+                }}>
+                  {autocompleteMatches.map((n) => (
+                    <div
+                      key={n}
+                      onMouseDown={(e) => { e.preventDefault(); applyAutocomplete(n) }}
+                      style={{
+                        padding: '4px 8px', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+                        color: 'var(--text-primary)', cursor: 'pointer',
+                      }}
+                      onMouseEnter={(e) => (e.currentTarget.style.backgroundColor = 'var(--bg-hover)')}
+                      onMouseLeave={(e) => (e.currentTarget.style.backgroundColor = 'transparent')}
+                    >
+                      {n} <span style={{ color: 'var(--text-tertiary)' }}>= {paramMap.get(n)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            {draftResolve && !draftResolve.error && draftResolve.value != null && (
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+                = {draftResolve.value.toLocaleString(undefined, { maximumFractionDigits: 4 })}
+              </span>
+            )}
+            {draftResolve?.error && (
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                <AlertCircle size={11} /> {draftResolve.error}
+              </span>
+            )}
             <select
               value={draft.unit}
               onChange={(e) => setDraft({ ...draft, unit: e.target.value })}
@@ -181,13 +449,72 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
             >
               {node.name}
             </span>
-            <span style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>
-              {node.quantity} {node.unit}
-            </span>
+            {hasExpression ? (
+              <span
+                onClick={beginEdit}
+                title={`Expression${expressionResolve?.error ? ` — ${expressionResolve.error}` : ''}`}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', cursor: 'pointer' }}
+              >
+                <span style={{ fontSize: 10, fontWeight: 700, fontStyle: 'italic', color: 'var(--mod-plca)' }}>fx</span>
+                <span style={{ color: expressionResolve?.error ? 'var(--danger)' : 'var(--mod-plca)' }}>
+                  {node.quantity_expression}
+                </span>
+                {expressionResolve && !expressionResolve.error && expressionResolve.value != null ? (
+                  <span style={{ color: 'var(--text-tertiary)' }}>
+                    = {expressionResolve.value.toLocaleString(undefined, { maximumFractionDigits: 4 })} {node.unit}
+                  </span>
+                ) : expressionResolve?.error ? (
+                  <span style={{ color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                    <AlertCircle size={11} /> {expressionResolve.error}
+                  </span>
+                ) : (
+                  <span style={{ color: 'var(--text-tertiary)' }}>{node.unit}</span>
+                )}
+              </span>
+            ) : (
+              <span onClick={beginEdit} style={{ fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)', cursor: 'pointer' }}>
+                {node.quantity} {node.unit}
+              </span>
+            )}
             {isComponent && (node.children?.length ?? 0) > 0 && (
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
                 · {node.children!.length} {node.children!.length === 1 ? 'component' : 'components'}
               </span>
+            )}
+
+            {/* Scope selector (root stage nodes only). Setting scope auto-
+                derives is_annual on the backend (scope=stock → annual). */}
+            {isRoot && isComponent && (
+              <select
+                value={node.scope ?? ''}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const next = v === '' ? null : (v as 'inflows' | 'stock' | 'outflows')
+                  onPatch(nodeId, { scope: next })
+                }}
+                title="DSM scope — inflows (manufacturing), stock (per-year use/maintenance), outflows (end of life). Empty falls back to keyword matching on the stage name."
+                style={{
+                  height: 22,
+                  padding: '0 6px',
+                  fontSize: 10,
+                  fontWeight: 600,
+                  textTransform: 'uppercase' as const,
+                  letterSpacing: '0.05em',
+                  backgroundColor: node.scope
+                    ? 'color-mix(in srgb, var(--mod-dsm) 12%, transparent)'
+                    : 'transparent',
+                  border: `1px solid ${node.scope ? 'var(--mod-dsm)' : 'var(--border-default)'}`,
+                  borderRadius: 'var(--radius-sm)',
+                  color: node.scope ? 'var(--mod-dsm)' : 'var(--text-tertiary)',
+                  cursor: 'pointer',
+                  outline: 'none',
+                }}
+              >
+                <option value="">auto (by name)</option>
+                <option value="inflows">inflows</option>
+                <option value="stock">stock</option>
+                <option value="outflows">outflows</option>
+              </select>
             )}
 
             {/* Annual toggle (root stage nodes only) */}
@@ -519,20 +846,20 @@ function EvolutionPanel({
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
           <label>
             Annual change (%)
-            <input
-              type="number"
-              value={(learningRate * 100).toFixed(2)}
-              onChange={(e) => setLearningRate(Number(e.target.value) / 100)}
-              step="0.1"
+            <NumberInput
+              value={Number((learningRate * 100).toFixed(4))}
+              onChange={(v) => setLearningRate(v / 100)}
+              allowNegative
               style={{ marginLeft: 6, width: 80, height: 24, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
             />
           </label>
           <label>
             Base year
-            <input
-              type="number"
+            <NumberInput
               value={baseYear}
-              onChange={(e) => setBaseYear(Math.round(Number(e.target.value)))}
+              onChange={setBaseYear}
+              integerOnly
+              emptyValue={2025}
               style={{ marginLeft: 6, width: 76, height: 24, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
             />
           </label>
@@ -547,21 +874,21 @@ function EvolutionPanel({
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
             <label>
               Rebound rate
-              <input
-                type="number"
-                value={(reboundRate * 100).toFixed(2)}
-                onChange={(e) => setReboundRate(Number(e.target.value) / 100)}
-                step="0.1"
+              <NumberInput
+                value={Number((reboundRate * 100).toFixed(4))}
+                onChange={(v) => setReboundRate(v / 100)}
+                allowNegative
                 style={{ marginLeft: 6, width: 80, height: 24, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
               />
               <span style={{ marginLeft: 4, color: 'var(--text-tertiary)' }}>% / year</span>
             </label>
             <label>
               Base year
-              <input
-                type="number"
+              <NumberInput
                 value={baseYear}
-                onChange={(e) => setBaseYear(Math.round(Number(e.target.value)))}
+                onChange={setBaseYear}
+                integerOnly
+                emptyValue={2025}
                 style={{ marginLeft: 6, width: 76, height: 24, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
               />
             </label>
@@ -570,7 +897,7 @@ function EvolutionPanel({
             </span>
           </div>
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-            Represents increased consumption from efficiency gains (rebound effect). Common on use-phase processes — vehicle use, appliance operation, lighting, heating.
+            Represents increased consumption from efficiency gains (rebound effect). Common on use-phase processes — appliance operation, lighting, heating, transport, etc.
           </span>
         </div>
       )}
@@ -579,17 +906,17 @@ function EvolutionPanel({
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {milestones.map((m, i) => (
             <div key={i} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--text-xs)' }}>
-              <input
-                type="number"
+              <NumberInput
                 value={m.year}
-                onChange={(e) => updateMilestone(i, { year: Math.round(Number(e.target.value)) })}
+                onChange={(v) => updateMilestone(i, { year: v })}
+                integerOnly
+                emptyValue={2025}
                 style={{ width: 72, height: 24, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
               />
-              <input
-                type="number"
-                step="any"
+              <NumberInput
                 value={m.quantity}
-                onChange={(e) => updateMilestone(i, { quantity: Number(e.target.value) })}
+                onChange={(v) => updateMilestone(i, { quantity: v })}
+                allowNegative
                 style={{ width: 96, height: 24, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontFamily: 'var(--font-mono)' }}
               />
               <span style={{ color: 'var(--text-tertiary)' }}>{node.unit}</span>

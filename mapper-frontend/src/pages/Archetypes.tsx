@@ -4,17 +4,25 @@ import {
   Download, Package, Wrench, Recycle, Battery,
   TrendingDown, TrendingUp, CalendarRange,
   ChevronRight, ChevronDown, Folder, FolderOpen, FolderPlus,
-  Search, MoreHorizontal, FolderInput, FilePlus2,
+  MoreHorizontal, FolderInput, FilePlus2,
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
+import { SearchInput } from '../components/ui/SearchInput'
 import { BOMTree } from '../components/bom/BOMTree'
 import { FlattenedBOM } from '../components/bom/FlattenedBOM'
 import { BulkLearningRateModal } from '../components/bom/BulkLearningRateModal'
 import { BulkReboundModal } from '../components/bom/BulkReboundModal'
 import { TimelinePreviewModal } from '../components/bom/TimelinePreviewModal'
+import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
+import { ParameterManagerPanel } from '../components/parameters/ParameterManagerPanel'
 import { useBOMStore } from '../stores/bomStore'
 import type { ArchetypeSummary } from '../api/client'
+import {
+  buildArchetypeTree,
+  collectFolderPaths,
+  type TreeNode,
+} from '../components/archetypes/folderTree'
 
 function stageIcon(name: string) {
   const n = name.toLowerCase()
@@ -25,10 +33,6 @@ function stageIcon(name: string) {
 }
 
 // ── Folder tree construction ─────────────────────────────────────────────────
-
-type TreeNode =
-  | { kind: 'folder'; path: string; name: string; children: TreeNode[] }
-  | { kind: 'arc'; arc: ArchetypeSummary }
 
 const FOLDER_SEGMENT_RE = /^[A-Za-z0-9 _-]+$/
 const MAX_FOLDER_DEPTH = 5
@@ -48,75 +52,6 @@ function validateFolderPath(path: string): string | null {
   return null
 }
 
-function buildTree(
-  archetypes: ArchetypeSummary[],
-  folders: string[],
-  search: string,
-): TreeNode[] {
-  // Collect every folder path referenced anywhere, plus ancestors.
-  const folderSet = new Set<string>(folders.filter(Boolean))
-  for (const a of archetypes) {
-    if (!a.folder) continue
-    folderSet.add(a.folder)
-    const parts = a.folder.split('/')
-    for (let i = 1; i < parts.length; i++) folderSet.add(parts.slice(0, i).join('/'))
-  }
-  const allFolders = [...folderSet]
-  const needle = search.trim().toLowerCase()
-  const arcMatches = (a: ArchetypeSummary) =>
-    !needle || a.name.toLowerCase().includes(needle) ||
-    (a.description ?? '').toLowerCase().includes(needle)
-
-  function childrenOf(parent: string | null): TreeNode[] {
-    const subs = allFolders.filter((f) => {
-      if (parent === null) return !f.includes('/')
-      if (!f.startsWith(parent + '/')) return false
-      return !f.slice(parent.length + 1).includes('/')
-    })
-    const arcs = archetypes
-      .filter((a) => (a.folder ?? null) === parent)
-      .filter(arcMatches)
-
-    const folderNodes: TreeNode[] = subs
-      .sort((a, b) => {
-        const an = a.split('/').pop() || a
-        const bn = b.split('/').pop() || b
-        return an.localeCompare(bn)
-      })
-      .map((f) => ({
-        kind: 'folder' as const,
-        path: f,
-        name: f.split('/').pop() || f,
-        children: childrenOf(f),
-      }))
-    // When searching, hide empty folders (no matching descendants).
-    const filteredFolders = needle
-      ? folderNodes.filter((n) => n.kind === 'folder' && subtreeHasArc(n))
-      : folderNodes
-
-    const arcNodes: TreeNode[] = arcs
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((a) => ({ kind: 'arc' as const, arc: a }))
-
-    return [...filteredFolders, ...arcNodes]
-  }
-  return childrenOf(null)
-}
-
-function subtreeHasArc(node: TreeNode): boolean {
-  if (node.kind === 'arc') return true
-  return node.children.some(subtreeHasArc)
-}
-
-function collectFolderPaths(nodes: TreeNode[], out: string[] = []): string[] {
-  for (const n of nodes) {
-    if (n.kind === 'folder') {
-      out.push(n.path)
-      collectFolderPaths(n.children, out)
-    }
-  }
-  return out
-}
 
 // ── Page component ───────────────────────────────────────────────────────────
 
@@ -134,6 +69,7 @@ export function Archetypes() {
   const [showBulkLR, setShowBulkLR] = useState(false)
   const [showBulkRebound, setShowBulkRebound] = useState(false)
   const [showTimeline, setShowTimeline] = useState(false)
+  const [showValidationReport, setShowValidationReport] = useState(false)
   const [editingName, setEditingName] = useState(false)
   const [editingDesc, setEditingDesc] = useState(false)
   const [nameDraft, setNameDraft] = useState('')
@@ -177,7 +113,12 @@ export function Archetypes() {
   useEffect(() => {
     if (!menu) return
     const close = () => setMenu(null)
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(null) }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      const t = e.target as HTMLElement | null
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
+      setMenu(null)
+    }
     window.addEventListener('click', close)
     window.addEventListener('keydown', onKey)
     return () => {
@@ -202,7 +143,7 @@ export function Archetypes() {
     }
   }, [menu])
 
-  const tree = useMemo(() => buildTree(archetypes, folders, search), [archetypes, folders, search])
+  const tree = useMemo(() => buildArchetypeTree(archetypes, folders, search), [archetypes, folders, search])
 
   // When searching, auto-expand all ancestors that contain a match.
   useEffect(() => {
@@ -331,7 +272,7 @@ export function Archetypes() {
   }
 
   const handleAddStage = async () => {
-    const name = prompt('Life cycle stage name (e.g. Body, Battery Pack, Maintenance, End of Life):', 'New stage')
+    const name = prompt('Life cycle stage name (e.g. Manufacturing, Use Phase, Maintenance, End of Life):', 'New stage')
     if (!name?.trim()) return
     await addRootStage(name.trim())
   }
@@ -488,7 +429,11 @@ export function Archetypes() {
         }}>
           {arc.name}
         </div>
-        {arc.unlinked_count > 0 && (
+        {(arc.validation_error_rows ?? 0) > 0 ? (
+          <span title={`${arc.validation_error_rows} validation error${arc.validation_error_rows === 1 ? '' : 's'}`} style={{ color: 'var(--danger)', display: 'inline-flex', alignItems: 'center' }}>
+            <AlertCircle size={11} />
+          </span>
+        ) : arc.unlinked_count > 0 && (
           <span title={`${arc.unlinked_count} unlinked`} style={{ color: 'var(--warning)', display: 'inline-flex', alignItems: 'center' }}>
             <AlertCircle size={11} />
           </span>
@@ -521,7 +466,11 @@ export function Archetypes() {
   }
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 'var(--space-5)', height: '100%', minHeight: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)', height: '100%', overflow: 'auto' }}>
+    <div style={{ flexShrink: 0 }}>
+      <ParameterManagerPanel />
+    </div>
+    <div style={{ display: 'grid', gridTemplateColumns: '360px 1fr', gap: 'var(--space-5)', flex: '1 0 auto', flexShrink: 0, minHeight: 560 }}>
       {/* ── Tree sidebar ─────────────────────────────────────────────── */}
       <div style={{
         backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
@@ -544,21 +493,12 @@ export function Archetypes() {
           </div>
         </div>
         <div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border-subtle)' }}>
-          <div style={{ position: 'relative' }}>
-            <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search archetypes…"
-              style={{
-                width: '100%', height: 28, padding: '0 8px 0 26px',
-                backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
-                fontSize: 'var(--text-xs)', outline: 'none',
-              }}
-            />
-          </div>
+          <SearchInput
+            value={search}
+            onChange={setSearch}
+            placeholder="Search archetypes…"
+            size="sm"
+          />
         </div>
         <div
           style={{
@@ -715,6 +655,51 @@ export function Archetypes() {
             {error && (
               <div style={{ padding: '8px var(--space-6)', color: 'var(--danger)', fontSize: 'var(--text-sm)', backgroundColor: 'var(--danger-muted)' }}>
                 {error}
+              </div>
+            )}
+
+            {active.validation_report && (active.validation_report.error_rows > 0 || active.validation_report.warning_rows > 0) && (
+              <div style={{
+                padding: '8px var(--space-6)',
+                backgroundColor: active.validation_report.error_rows > 0
+                  ? 'color-mix(in srgb, var(--danger) 8%, transparent)'
+                  : 'color-mix(in srgb, var(--warning) 8%, transparent)',
+                borderBottom: '1px solid var(--border-subtle)',
+              }}>
+                <div style={{
+                  display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
+                  fontSize: 'var(--text-sm)',
+                  color: active.validation_report.error_rows > 0 ? 'var(--danger)' : 'var(--warning)',
+                }}>
+                  <AlertCircle size={14} />
+                  <strong>
+                    {active.validation_report.error_rows > 0
+                      ? `This archetype has ${active.validation_report.error_rows} row${active.validation_report.error_rows === 1 ? '' : 's'} with unresolved ecoinvent links.`
+                      : `This archetype has ${active.validation_report.warning_rows} validation warning${active.validation_report.warning_rows === 1 ? '' : 's'}.`}
+                  </strong>
+                  {active.validation_report.error_rows > 0 && (
+                    <span style={{ color: 'var(--text-secondary)' }}>
+                      LCA computation is blocked until they are fixed.
+                    </span>
+                  )}
+                  <button
+                    onClick={() => setShowValidationReport((v) => !v)}
+                    style={{
+                      marginLeft: 'auto', height: 24, padding: '0 10px',
+                      fontSize: 'var(--text-xs)', backgroundColor: 'transparent',
+                      color: 'var(--text-primary)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-md)', cursor: 'pointer',
+                    }}
+                  >
+                    {showValidationReport ? 'Hide report' : 'View report'}
+                  </button>
+                </div>
+                {showValidationReport && (
+                  <div style={{ padding: '0 var(--space-2)' }}>
+                    <ValidationReportPanel report={active.validation_report} />
+                  </div>
+                )}
               </div>
             )}
 
@@ -877,6 +862,7 @@ export function Archetypes() {
           onClose={() => setShowTimeline(false)}
         />
       )}
+    </div>
     </div>
   )
 }

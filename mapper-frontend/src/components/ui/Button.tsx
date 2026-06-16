@@ -1,9 +1,18 @@
 import React from 'react'
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost'
+type ButtonSize = 'sm' | 'md'
 
-interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+// `size` is not a standard <button> attribute, so it must be an explicit prop
+// (and destructured out below so it never leaks onto the DOM node).
+interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'size'> {
   variant?: ButtonVariant
+  size?: ButtonSize
+}
+
+const sizeStyles: Record<ButtonSize, React.CSSProperties> = {
+  sm: { height: 28, padding: '0 10px', fontSize: 'var(--text-xs)' },
+  md: { height: 36, padding: '0 16px', fontSize: 'var(--text-sm)' },
 }
 
 const styles: Record<ButtonVariant, React.CSSProperties> = {
@@ -24,16 +33,14 @@ const styles: Record<ButtonVariant, React.CSSProperties> = {
   },
 }
 
-export function Button({ variant = 'primary', style, children, ...props }: ButtonProps) {
+export function Button({ variant = 'primary', size = 'md', style, children, ...props }: ButtonProps) {
   return (
     <button
       {...props}
       style={{
-        height: 36,
-        padding: '0 16px',
+        ...sizeStyles[size],
         borderRadius: 'var(--radius-md)',
         fontWeight: 500,
-        fontSize: 'var(--text-sm)',
         cursor: 'pointer',
         display: 'inline-flex',
         alignItems: 'center',

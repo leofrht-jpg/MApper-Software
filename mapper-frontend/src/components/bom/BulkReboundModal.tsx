@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { X, TrendingUp, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { NumberInput } from '../ui/NumberInput'
 import type { Archetype } from '../../api/client'
 
 interface BulkReboundModalProps {
@@ -114,7 +115,7 @@ export function BulkReboundModal({ archetype, onApply, onClose }: BulkReboundMod
 
         <div style={{ padding: 'var(--space-3) var(--space-6)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontStyle: 'italic', borderBottom: '1px solid var(--border-subtle)' }}>
           Rebound is common when efficiency improvements make a process cheaper or more convenient — users consume more.
-          Applicable to vehicle use, appliance operation, lighting, heating, etc.
+          Applicable to use-phase processes (appliance operation, lighting, heating, transport, etc.).
         </div>
 
         <div style={{ padding: 'var(--space-4) var(--space-6)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
@@ -130,21 +131,21 @@ export function BulkReboundModal({ archetype, onApply, onClose }: BulkReboundMod
           <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 'var(--text-sm)', opacity: mode === 'apply' ? 1 : 0.4 }}>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               Rebound rate (%)
-              <input
-                type="number"
-                value={(reboundRate * 100).toFixed(2)}
-                onChange={(e) => setReboundRate(Number(e.target.value) / 100)}
-                step="0.1"
+              <NumberInput
+                value={Number((reboundRate * 100).toFixed(4))}
+                onChange={(v) => setReboundRate(v / 100)}
+                allowNegative
                 disabled={mode !== 'apply'}
                 style={inputS}
               />
             </label>
             <label style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               Base year
-              <input
-                type="number"
+              <NumberInput
                 value={baseYear}
-                onChange={(e) => setBaseYear(Math.round(Number(e.target.value)))}
+                onChange={setBaseYear}
+                integerOnly
+                emptyValue={2025}
                 disabled={mode !== 'apply'}
                 style={inputS}
               />

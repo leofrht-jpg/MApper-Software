@@ -55,7 +55,7 @@ interface BOMStore {
 
   addNode: (parentId: string | null, node: BOMNode) => Promise<void>
   addRootStage: (name: string) => Promise<void>
-  patchNode: (nodeId: string, patch: { name?: string; quantity?: number; unit?: string; is_annual?: boolean; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
+  patchNode: (nodeId: string, patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
   removeNode: (nodeId: string) => Promise<void>
 
   flatten: (year?: number | null) => Promise<void>
@@ -68,7 +68,7 @@ interface BOMStore {
   setMilestones: (nodeId: string, milestones: QuantityMilestone[]) => Promise<void>
 
   exportActive: () => Promise<void>
-  importFromFile: (file: File) => Promise<MultiImportResult>
+  importFromFile: (file: File, mode?: 'merge' | 'replace') => Promise<MultiImportResult>
 
   createFolder: (path: string) => Promise<void>
   renameFolder: (oldPath: string, newPath: string) => Promise<void>
@@ -270,10 +270,10 @@ export const useBOMStore = create<BOMStore>((set, get) => ({
     await exportArchetype(active.id, active.name)
   },
 
-  importFromFile: async (file) => {
+  importFromFile: async (file, mode = 'merge') => {
     set({ isSaving: true, error: null })
     try {
-      const res = await importArchetype(file)
+      const res = await importArchetype(file, mode)
       const [list, folders] = await Promise.all([listArchetypes(), listFolders()])
       // Select the first imported archetype (if any) so the BOM editor opens with fresh content.
       const firstId = res.archetypes[0]?.id

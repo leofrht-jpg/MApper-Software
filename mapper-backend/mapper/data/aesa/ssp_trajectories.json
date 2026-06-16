@@ -1,9 +1,36 @@
 {
-  "_notice": "Global annual CO2 emissions (Gt CO2/yr) for SSP baseline scenarios, 2025-2100. Provisional order-of-magnitude values interpolated from published SSP anchor points (IIASA SSP database). Refine against IIASA extraction before publication.",
+  "_notice": "Global annual CO2 emissions, IIASA SSP marker scenarios, 2025-2100. Source: IIASA SSP Database v2.0 (2018 release, AR6 marker scenario convention) — https://tntcat.iiasa.ac.at/SspDb. Variable: 'Emissions|CO2' (total CO2, fossil + AFOLU), Gt CO2/yr. Stored as decadal anchor points (2025, 2030, 2040, ..., 2100), linearly interpolated to annual values at load time (mapper.core.aesa_engine._expand_ssp_anchors). Provisional: best-estimate attribution to AR6 marker IAMs per scenario; refine against dense annual IIASA extracts before publication.",
+  "iiasa_database": {
+    "name": "IIASA SSP Database",
+    "version": "v2.0",
+    "release_year": 2018,
+    "url": "https://tntcat.iiasa.ac.at/SspDb",
+    "convention": "AR6 WG1 marker scenarios",
+    "best_estimate": true
+  },
   "scenarios": [
+    {
+      "id": "SSP1-1.9",
+      "name": "SSP1-1.9 (sustainability, 1.5°C-aligned)",
+      "model": "IMAGE 3.0.1 (CD-LINKS marker, AR6 WG1)",
+      "source": "IIASA SSP database, anchor points interpolated",
+      "anchors_gt_co2": {
+        "2025": 30.0,
+        "2030": 22.0,
+        "2040": 10.0,
+        "2050": 3.0,
+        "2060": -2.0,
+        "2070": -5.0,
+        "2080": -7.0,
+        "2090": -8.0,
+        "2100": -8.0
+      },
+      "provisional": true
+    },
     {
       "id": "SSP1-2.6",
       "name": "SSP1-2.6 (sustainability, 2°C)",
+      "model": "IMAGE 3.0.1 (AR6 WG1 marker)",
       "source": "IIASA SSP database, anchor points interpolated",
       "anchors_gt_co2": {
         "2025": 37.0,
@@ -21,6 +48,7 @@
     {
       "id": "SSP2-4.5",
       "name": "SSP2-4.5 (middle of the road)",
+      "model": "MESSAGE-GLOBIOM 1.0 (AR6 WG1 marker)",
       "source": "IIASA SSP database, anchor points interpolated",
       "anchors_gt_co2": {
         "2025": 37.5,
@@ -38,6 +66,7 @@
     {
       "id": "SSP3-7.0",
       "name": "SSP3-7.0 (regional rivalry)",
+      "model": "AIM/CGE 2.0 (AR6 WG1 marker)",
       "source": "IIASA SSP database, anchor points interpolated",
       "anchors_gt_co2": {
         "2025": 38.0,
@@ -55,6 +84,7 @@
     {
       "id": "SSP5-8.5",
       "name": "SSP5-8.5 (fossil-fueled development)",
+      "model": "REMIND-MAgPIE 1.5 (AR6 WG1 marker)",
       "source": "IIASA SSP database, anchor points interpolated",
       "anchors_gt_co2": {
         "2025": 39.0,

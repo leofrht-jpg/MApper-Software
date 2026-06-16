@@ -18,39 +18,39 @@ from mapper.models.aesa_schemas import (
     AESAConfiguration,
     MethodPBMapping,
 )
-from mapper.models.bom_schemas import MFALCAResult, MFALCASummary, MFALCAYearResult
+from mapper.models.bom_schemas import DSMLCAResult, DSMLCASummary, DSMLCAYearResult
 
 
-def _fixture_impact_results() -> list[MFALCAResult]:
+def _fixture_impact_results() -> list[DSMLCAResult]:
     """Two methods × one year. Impact values are chosen to make the expected
     SRs easy to verify."""
-    climate = MFALCAResult(
+    climate = DSMLCAResult(
         mfa_system_id="test-system",
         method=["EF v3.1", "climate change", "global warming potential (GWP100)"],
         method_label="EF v3.1 › climate change › GWP100",
         scope="stock",
         unit="kg CO2 eq",
-        years=[MFALCAYearResult(
+        years=[DSMLCAYearResult(
             year=2025, total_impact=1.0e10, unit="kg CO2 eq",
             impact_by_cohort={"BEV-LFP": 6.0e9, "ICEV": 4.0e9},
             impact_by_material={"steel": 5.0e9},
             count_by_cohort={"BEV-LFP": 1e5, "ICEV": 2e5},
         )],
-        summary=MFALCASummary(total_impact=1.0e10, peak_year=2025, peak_impact=1.0e10),
+        summary=DSMLCASummary(total_impact=1.0e10, peak_year=2025, peak_impact=1.0e10),
     )
-    acid = MFALCAResult(
+    acid = DSMLCAResult(
         mfa_system_id="test-system",
         method=["EF v3.1", "acidification", "accumulated exceedance (AE)"],
         method_label="EF v3.1 › acidification › AE",
         scope="stock",
         unit="mol H+ eq",
-        years=[MFALCAYearResult(
+        years=[DSMLCAYearResult(
             year=2025, total_impact=1.0e8, unit="mol H+ eq",
             impact_by_cohort={"BEV-LFP": 4.0e7, "ICEV": 6.0e7},
             impact_by_material={},
             count_by_cohort={},
         )],
-        summary=MFALCASummary(total_impact=1.0e8, peak_year=2025, peak_impact=1.0e8),
+        summary=DSMLCASummary(total_impact=1.0e8, peak_year=2025, peak_impact=1.0e8),
     )
     return [climate, acid]
 

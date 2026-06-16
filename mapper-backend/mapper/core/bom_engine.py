@@ -5,7 +5,7 @@ quantities (multiplicative cascade through parent quantities), and aggregates
 per-cohort demand into LCA-ready vectors.
 
 No FastAPI, no brightway2 imports here — those live in api/bom.py and the
-MFA × LCA pipeline.
+DSM × LCA pipeline.
 """
 from __future__ import annotations
 
@@ -171,6 +171,15 @@ def unlinked_count_total(roots: list[BOMNode]) -> int:
     return sum(1 for m in iter_all_materials(roots) if m.ecoinvent_activity is None)
 
 
+def validation_error_count(roots: list[BOMNode]) -> int:
+    """Count materials marked as validation errors at upload time (Patch 2).
+
+    Read straight from each node's persisted ``validation_status`` — we do NOT
+    re-run the bw2 validator at compute time. See "Archetype validation
+    lifecycle" in CLAUDE.md for the rationale."""
+    return sum(1 for m in iter_all_materials(roots) if m.validation_status == "error")
+
+
 # ── Flatten ──────────────────────────────────────────────────────────────────
 
 
@@ -211,7 +220,7 @@ def flatten_roots(roots: list[BOMNode]) -> list[FlattenedMaterial]:
     return out
 
 
-# ── Stage → MFA scope mapping ────────────────────────────────────────────────
+# ── Stage → DSM scope mapping ────────────────────────────────────────────────
 # Each lifecycle stage (a root BOMNode) maps to exactly one scope:
 #   Manufacturing / assembly → inflows (produced at birth)
 #   Use Phase / operation    → stock   (consumed every year of life)
@@ -223,20 +232,24 @@ def flatten_roots(roots: list[BOMNode]) -> list[FlattenedMaterial]:
 
 
 _STAGE_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
-    (("manufactur", "production", "assembly"), "inflows"),
-    (("use phase", "use-phase", "operation", "driving"), "stock"),
+    (("manufactur", "production", "assembly", "fabricat"), "inflows"),
+    (("use phase", "use-phase", "operation", "driving", "usage"), "stock"),
     (("maintenance", "service", "repair"), "stock"),
-    (("end of life", "end-of-life", "eol", "disposal", "recycl", "scrap"), "outflows"),
+    (("end of life", "end-of-life", "eol", "disposal", "recycl", "scrap", "dismantle"), "outflows"),
 ]
 
+_VALID_SCOPES = frozenset({"inflows", "stock", "outflows"})
 
-def stage_to_scope(stage_name: str) -> str:
-    """Classify a stage name into ``"inflows" | "stock" | "outflows"``.
 
-    Unknown stages default to ``"inflows"`` (manufacturing assumption). Matching
-    is lowercase-substring, so ``"Body Manufacturing"``, ``"manufacturing"``,
-    and ``"MANUFACTURING"`` all map the same way.
+def stage_to_scope(stage_name: str, explicit_scope: str | None = None) -> str:
+    """Classify a stage into ``"inflows" | "stock" | "outflows"``.
+
+    When ``explicit_scope`` is set on the stage node, it takes priority and the
+    name is ignored. Otherwise the stage name is matched against a keyword
+    table; unknown stages default to ``"inflows"`` (manufacturing assumption).
     """
+    if explicit_scope and explicit_scope in _VALID_SCOPES:
+        return explicit_scope
     name = (stage_name or "").lower().strip()
     for keywords, scope in _STAGE_KEYWORDS:
         if any(kw in name for kw in keywords):
@@ -245,15 +258,17 @@ def stage_to_scope(stage_name: str) -> str:
 
 
 def filter_roots_by_scope(roots: list[BOMNode], scope: str) -> list[BOMNode]:
-    """Return the subset of roots whose stage name matches ``scope``.
+    """Return the subset of roots whose stage matches ``scope``.
 
+    Each root's explicit ``scope`` field wins over keyword matching. Roots
+    with no explicit scope fall back to the stage-name heuristic.
     ``scope="all"`` returns the roots unchanged. Unknown scope values raise.
     """
     if scope == "all":
         return list(roots)
-    if scope not in {"inflows", "stock", "outflows"}:
+    if scope not in _VALID_SCOPES:
         raise ValueError(f"Unknown scope: {scope!r}")
-    return [r for r in roots if stage_to_scope(r.name) == scope]
+    return [r for r in roots if stage_to_scope(r.name, r.scope) == scope]
 
 
 def stages_in_scope(roots: list[BOMNode], scope: str) -> list[str]:
@@ -493,7 +508,64 @@ def validate_roots(roots: list[BOMNode]) -> list[str]:
     return issues
 
 
+# ── Parameter expression resolution ─────────────────────────────────────────
+
+
+def iter_all_nodes(roots: list[BOMNode]) -> Iterable[BOMNode]:
+    """Yield every node in the tree (roots, components, materials)."""
+    for r in roots:
+        yield from _iter_node(r)
+
+
+def _iter_node(node: BOMNode) -> Iterable[BOMNode]:
+    yield node
+    if node.children:
+        for child in node.children:
+            yield from _iter_node(child)
+
+
+def collect_quantity_expressions(roots: list[BOMNode]) -> list[str]:
+    """Return every distinct ``quantity_expression`` string in the tree."""
+    out: set[str] = set()
+    for n in iter_all_nodes(roots):
+        if n.quantity_expression:
+            out.add(n.quantity_expression)
+    return sorted(out)
+
+
+def resolve_roots_with_engine(roots: list[BOMNode], engine) -> list[BOMNode]:
+    """Return a deep copy of ``roots`` where every ``quantity_expression`` is
+    resolved to a numeric ``quantity`` via ``engine``. Nodes without an
+    expression keep their pre-resolved ``quantity`` untouched.
+
+    Raises :class:`mapper.core.parameter_engine.ParameterError` on the first
+    expression that fails to resolve — the caller is expected to surface that
+    as a validation error before running the pipeline.
+    """
+    return [_resolve_node(r, engine) for r in roots]
+
+
+def _resolve_node(node: BOMNode, engine) -> BOMNode:
+    if node.quantity_expression:
+        new_qty = engine.resolve(node.quantity_expression)
+        updated = node.model_copy(update={"quantity": float(new_qty)})
+    else:
+        updated = node.model_copy()
+    if updated.children:
+        updated.children = [_resolve_node(c, engine) for c in updated.children]
+    return updated
+
+
+def resolve_archetype_with_engine(arc: Archetype, engine) -> Archetype:
+    """Return a copy of ``arc`` with every BOM ``quantity_expression`` resolved."""
+    return arc.model_copy(update={"bom": resolve_roots_with_engine(arc.bom, engine)})
+
+
 def summarize_archetype(arc: Archetype) -> dict:
+    err = warn = 0
+    if arc.validation_report is not None:
+        err = arc.validation_report.error_rows
+        warn = arc.validation_report.warning_rows
     return {
         "id": arc.id or "",
         "name": arc.name,
@@ -506,4 +578,6 @@ def summarize_archetype(arc: Archetype) -> dict:
         "stage_annual": {r.name: r.is_annual for r in arc.bom},
         "created_at": arc.created_at or "",
         "updated_at": arc.updated_at or arc.created_at or "",
+        "validation_error_rows": err,
+        "validation_warning_rows": warn,
     }

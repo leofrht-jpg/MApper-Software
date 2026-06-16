@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import {
+  type PLCAMode,
   type PLCAScenarios,
   type PLCAProgressMessage,
   type ProspectiveDB,
@@ -17,13 +18,16 @@ export interface GenerationJob {
   iam: string
   ssp: string
   years: number[]
+  mode: PLCAMode
   plannedNames: string[]
   stage: string
   pct: number
   done: boolean
   error: string | null
+  cancelled: boolean
   written: string[]
   startedAt: number
+  completedAt?: number | null
 }
 
 interface PLCAStore {
@@ -35,7 +39,7 @@ interface PLCAStore {
 
   fetchScenarios: () => Promise<void>
   fetchDatabases: () => Promise<void>
-  generate: (args: { baseDb: string; iam: string; ssp: string; years: number[] }) => Promise<void>
+  generate: (args: { baseDb: string; iam: string; ssp: string; years: number[]; mode?: PLCAMode }) => Promise<void>
   deleteDatabase: (name: string) => Promise<void>
   clearJob: () => void
   reset: () => void
@@ -75,21 +79,26 @@ export const usePLCAStore = create<PLCAStore>((set, get) => {
       }
     },
 
-    generate: async ({ baseDb, iam, ssp, years }) => {
+    generate: async ({ baseDb, iam, ssp, years, mode = 'superstructure' }) => {
       if (!years.length) throw new Error('Select at least one year')
+      if (mode === 'superstructure' && years.length < 2) {
+        throw new Error('Superstructure mode requires at least two target years')
+      }
       set({ error: null })
-      const res = await startPLCAGeneration({ base_db: baseDb, iam, ssp, years })
+      const res = await startPLCAGeneration({ base_db: baseDb, iam, ssp, years, mode })
       const job: GenerationJob = {
         taskId: res.task_id,
         baseDb,
         iam,
         ssp,
         years,
+        mode: res.mode,
         plannedNames: res.planned_names,
         stage: 'queued',
         pct: 0,
         done: false,
         error: null,
+        cancelled: false,
         written: [],
         startedAt: Date.now(),
       }
@@ -102,12 +111,15 @@ export const usePLCAStore = create<PLCAStore>((set, get) => {
         if (msg.type === 'progress') {
           set({ activeJob: { ...cur, stage: msg.stage ?? cur.stage, pct: msg.pct ?? cur.pct } })
         } else if (msg.type === 'done') {
-          set({ activeJob: { ...cur, done: true, pct: 1, stage: 'done', written: msg.written ?? [] } })
+          set({ activeJob: { ...cur, done: true, pct: 1, stage: 'done', written: msg.written ?? [], completedAt: Date.now() } })
           get().fetchDatabases().catch(() => undefined)
           useProjectStore.getState().fetchDatabases().catch(() => undefined)
           closeSocket()
         } else if (msg.type === 'error') {
-          set({ activeJob: { ...cur, done: true, error: msg.error ?? 'unknown error' } })
+          set({ activeJob: { ...cur, done: true, error: msg.error ?? 'unknown error', completedAt: Date.now() } })
+          closeSocket()
+        } else if (msg.type === 'cancelled') {
+          set({ activeJob: { ...cur, done: true, cancelled: true, stage: 'cancelled', completedAt: Date.now() } })
           closeSocket()
         }
       }, () => {

@@ -1,0 +1,16 @@
+# MApper
+> Desktop LCA + DSM + pLCA + AESA software for absolute sustainability assessment
+
+## Docs
+- Architecture: see CLAUDE.md in this repo
+- API: FastAPI auto-docs at /docs when running
+- Tests: pytest tests/ in mapper-backend/
+
+## Stack
+Frontend: React 19, TypeScript, Vite, Zustand, Recharts
+Backend: FastAPI, Python 3.11, Brightway2, UMFPACK
+Database: ecoinvent 3.10 (user-provided)
+
+## Contact
+Leonardo Ferhati — leo_frht@icloud.com
+Website: mapper.leonardoferhati.com

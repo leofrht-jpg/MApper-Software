@@ -2,9 +2,15 @@ import { useEffect, useMemo, useState } from 'react'
 import { Loader2, Sparkles, Trash2, Wand2 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { Badge } from '../components/ui/Badge'
+import { CollapsibleCard } from '../components/ui/CollapsibleCard'
+import { formatElapsed } from '../components/ui/ElapsedCounter'
+import { ComputeProgress } from '../components/ui/ComputeProgress'
+import { StopButton } from '../components/ui/StopButton'
 import { PremiseKeyManager } from '../components/PremiseKeyManager'
+import type { PLCAMode, ProspectiveDB } from '../api/client'
 import { usePLCAStore } from '../stores/plcaStore'
 import { useProjectStore } from '../stores/projectStore'
+import { useCancellableTask } from '../hooks/useCancellableTask'
 
 export function PLCADeveloper() {
   const { databases: projectDbs } = useProjectStore()
@@ -25,7 +31,9 @@ export function PLCADeveloper() {
   const [iam, setIam] = useState<string>('')
   const [ssp, setSsp] = useState<string>('')
   const [years, setYears] = useState<number[]>([])
+  const [mode, setMode] = useState<PLCAMode>('superstructure')
   const [submitError, setSubmitError] = useState<string | null>(null)
+  const [dbListExpanded, setDbListExpanded] = useState(false)
 
   // Candidate base databases = non-prospective ecoinvent-like dbs.
   const baseDbCandidates = useMemo(
@@ -36,11 +44,12 @@ export function PLCADeveloper() {
   useEffect(() => { fetchScenarios().catch(() => undefined) }, [fetchScenarios])
   useEffect(() => { fetchDatabases().catch(() => undefined) }, [fetchDatabases])
 
-  // SSP narrative labels
+  // SSP narrative labels. premise supports SSP1/SSP2/SSP5 only —
+  // SSP3 and SSP4 REMIND pathways are not shipped by premise (upstream
+  // constants.yaml: iam_variables_mapping/constants.yaml → SUPPORTED_PATHWAYS).
   const SSP_LABELS: Record<string, string> = {
     'SSP1-Base': 'SSP1-Base (Sustainability)',
     'SSP2-Base': 'SSP2-Base (Middle of the Road)',
-    'SSP3-Base': 'SSP3-Base (Regional Rivalry)',
     'SSP5-Base': 'SSP5-Base (Fossil-fueled Dev.)',
     'SSP1-NDC': 'SSP1-NDC (Nationally Determined)',
     'SSP1-NPi': 'SSP1-NPi (National Policies)',
@@ -98,12 +107,28 @@ export function PLCADeveloper() {
 
   const isGenerating = !!activeJob && !activeJob.done
   const keyConfigured = scenarios?.key_configured !== false
-  const canSubmit = !isGenerating && keyConfigured && !!baseDb && !!iam && !!ssp && years.length > 0
+  const minYears = mode === 'superstructure' ? 2 : 1
+  const canSubmit = !isGenerating && keyConfigured && !!baseDb && !!iam && !!ssp && years.length >= minYears
+
+  const cancel = useCancellableTask()
+
+  // Bind the hook's state machine to the store's activeJob so the StopButton
+  // mirrors the real WS-driven lifecycle. begin() flips on first sight of a
+  // running job; finish() flips back on done/error/cancelled. Guarded by
+  // task_id so a fast switch to a new generation doesn't blink the old state.
+  useEffect(() => {
+    if (!activeJob) return
+    if (!activeJob.done && !cancel.isCurrent(activeJob.taskId)) {
+      cancel.begin(activeJob.taskId)
+    } else if (activeJob.done && cancel.isCurrent(activeJob.taskId)) {
+      cancel.finish(activeJob.taskId)
+    }
+  }, [activeJob, cancel])
 
   const handleGenerate = async () => {
     setSubmitError(null)
     try {
-      await generate({ baseDb, iam, ssp, years })
+      await generate({ baseDb, iam, ssp, years, mode })
     } catch (e) {
       setSubmitError(e instanceof Error ? e.message : String(e))
     }
@@ -126,7 +151,9 @@ export function PLCADeveloper() {
       if (!map.has(k)) map.set(k, [])
       map.get(k)!.push(d)
     }
-    for (const arr of map.values()) arr.sort((a, b) => a.year - b.year)
+    const yearKey = (d: ProspectiveDB) =>
+      d.year ?? (d.years && d.years.length ? d.years[0] : 0)
+    for (const arr of map.values()) arr.sort((a, b) => yearKey(a) - yearKey(b))
     return Array.from(map.entries())
   }, [databases])
 
@@ -195,7 +222,43 @@ export function PLCADeveloper() {
 
         <div>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 6 }}>
-            Target years ({years.length} selected)
+            Database mode
+          </div>
+          <div style={{ display: 'flex', gap: 6 }}>
+            {(['superstructure', 'separate'] as PLCAMode[]).map((m) => {
+              const on = mode === m
+              return (
+                <button
+                  key={m}
+                  onClick={() => setMode(m)}
+                  disabled={isGenerating}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 'var(--radius-sm)',
+                    fontSize: 'var(--text-xs)',
+                    fontWeight: 500,
+                    border: `1px solid ${on ? 'var(--mod-plca)' : 'var(--border-default)'}`,
+                    backgroundColor: on ? 'var(--mod-plca)' : 'transparent',
+                    color: on ? '#fff' : 'var(--text-primary)',
+                    cursor: isGenerating ? 'not-allowed' : 'pointer',
+                    transition: 'all var(--duration-fast)',
+                  }}
+                >
+                  {m === 'superstructure' ? 'Superstructure (recommended)' : 'Separate databases'}
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 6 }}>
+            {mode === 'superstructure'
+              ? 'Writes one unified database + scenario-difference file. ~6× less storage, requires ≥2 target years.'
+              : 'Writes one full database per target year (legacy). Higher storage cost, independent BW2 databases.'}
+          </div>
+        </div>
+
+        <div>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 6 }}>
+            Target years ({years.length} selected{mode === 'superstructure' ? ', min 2' : ''})
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {(scenarios?.years ?? []).map((y) => {
@@ -228,10 +291,17 @@ export function PLCADeveloper() {
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
             Generated databases are written to the active bw2 project and share a single premise transformation pass.
           </div>
-          <Button onClick={handleGenerate} disabled={!canSubmit} style={{ backgroundColor: 'var(--mod-plca)' }}>
-            {isGenerating ? <Loader2 size={14} strokeWidth={1.5} className="plca-spin" /> : <Wand2 size={14} strokeWidth={1.5} />}
-            {isGenerating ? 'Generating…' : `Generate (${years.length} year${years.length === 1 ? '' : 's'})`}
-          </Button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
+            <StopButton taskId={cancel.taskId} state={cancel.state} onClick={cancel.requestStop} />
+            <Button onClick={handleGenerate} disabled={!canSubmit} style={{ backgroundColor: 'var(--mod-plca)' }}>
+              {isGenerating ? <Loader2 size={14} strokeWidth={1.5} className="plca-spin" /> : <Wand2 size={14} strokeWidth={1.5} />}
+              {isGenerating
+                ? 'Generating…'
+                : mode === 'superstructure'
+                  ? `Generate superstructure (${years.length} year${years.length === 1 ? '' : 's'})`
+                  : `Generate (${years.length} year${years.length === 1 ? '' : 's'})`}
+            </Button>
+          </div>
         </div>
 
         {activeJob && (
@@ -246,16 +316,16 @@ export function PLCADeveloper() {
       </section>
 
       {/* Registry */}
-      <section style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', flexShrink: 0 }}>
-          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-            Prospective databases
-          </div>
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            {databases.length} database{databases.length === 1 ? '' : 's'}
-          </div>
-        </div>
-
+      <CollapsibleCard
+        expanded={dbListExpanded}
+        onToggle={() => setDbListExpanded((v) => !v)}
+        title="Prospective databases"
+        summary={
+          <span>
+            <strong style={{ color: 'var(--text-primary)' }}>{databases.length}</strong> database{databases.length === 1 ? '' : 's'}
+          </span>
+        }
+      >
         {isLoading && databases.length === 0 ? (
           <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>
             Loading…
@@ -269,7 +339,7 @@ export function PLCADeveloper() {
             {grouped.map(([groupKey, items]) => (
               <div key={groupKey} style={{ backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)', overflow: 'hidden' }}>
                 <div style={{ padding: 'var(--space-2) var(--space-3)', backgroundColor: 'var(--bg-elevated)', borderBottom: '1px solid var(--border-subtle)', fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
-                  <Badge style={{ backgroundColor: 'var(--mod-plca)', color: '#fff' }}>pLCA</Badge>
+                  <Badge label="pLCA" variant="plca" />
                   {groupKey}
                 </div>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
@@ -282,25 +352,40 @@ export function PLCADeveloper() {
                     </tr>
                   </thead>
                   <tbody>
-                    {items.map((d) => (
-                      <tr key={d.name} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                        <td style={tdStyle}><strong>{d.year}</strong></td>
-                        <td style={{ ...tdStyle, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-secondary)' }}>{d.name}</td>
-                        <td style={{ ...tdStyle, color: 'var(--text-tertiary)' }}>{formatDate(d.created_at)}</td>
-                        <td style={{ ...tdStyle, textAlign: 'right' }}>
-                          <Button variant="ghost" onClick={() => handleDelete(d.name)} title="Delete">
-                            <Trash2 size={14} strokeWidth={1.5} />
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
+                    {items.map((d) => {
+                      const isSuper = d.mode === 'superstructure'
+                      const yearLabel = isSuper
+                        ? (d.years.length > 1 ? `${d.years[0]}–${d.years[d.years.length - 1]}` : String(d.years[0] ?? ''))
+                        : String(d.year ?? '')
+                      return (
+                        <tr key={d.name} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                          <td style={tdStyle}>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                              <strong>{yearLabel}</strong>
+                              {isSuper && (
+                                <span style={{ fontSize: 'var(--text-xs)', color: 'var(--mod-plca)', fontWeight: 500 }}>
+                                  Superstructure · {d.years.length} scenarios
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td style={{ ...tdStyle, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-secondary)' }}>{d.name}</td>
+                          <td style={{ ...tdStyle, color: 'var(--text-tertiary)' }}>{formatDate(d.created_at)}</td>
+                          <td style={{ ...tdStyle, textAlign: 'right' }}>
+                            <Button variant="ghost" onClick={() => handleDelete(d.name)} title="Delete">
+                              <Trash2 size={14} strokeWidth={1.5} />
+                            </Button>
+                          </td>
+                        </tr>
+                      )
+                    })}
                   </tbody>
                 </table>
               </div>
             ))}
           </div>
         )}
-      </section>
+      </CollapsibleCard>
 
       <style>{`@keyframes plca-spin { to { transform: rotate(360deg) } } .plca-spin { animation: plca-spin 1s linear infinite }`}</style>
     </div>
@@ -318,26 +403,56 @@ function LabeledField({ label, children }: { label: string; children: React.Reac
 
 function JobProgress({ job, onDismiss }: { job: import('../stores/plcaStore').GenerationJob; onDismiss: () => void }) {
   const pct = Math.round(job.pct * 100)
-  const elapsed = Math.floor((Date.now() - job.startedAt) / 1000)
-  const statusColor = job.error ? 'var(--danger)' : job.done ? 'var(--success)' : 'var(--mod-plca)'
+  const finalMs = job.done ? Math.max(0, (job.completedAt ?? Date.now()) - job.startedAt) : null
+  const statusColor = job.error
+    ? 'var(--danger)'
+    : job.cancelled
+      ? 'var(--text-tertiary)'
+      : job.done
+        ? 'var(--success)'
+        : 'var(--mod-plca)'
+  const stateLabel = job.error
+    ? `Error: ${job.error}`
+    : job.cancelled
+      ? 'Cancelled'
+      : job.stage
+  const tailLabel = job.done
+    ? job.cancelled
+      ? `cancelled after ${finalMs != null ? formatElapsed(finalMs) : '—'}`
+      : `completed in ${finalMs != null ? formatElapsed(finalMs) : '—'}`
+    : null
+  // Patch 5AL — while running, the canonical <ComputeProgress> card owns the
+  // live elapsed (M:SS via useElapsedSeconds) + determinate bar from job.pct.
+  // The terminal state (done / error / cancelled, with "completed in X" +
+  // Dismiss) is post-result metadata and stays here.
+  if (!job.done) {
+    return (
+      <ComputeProgress
+        active
+        label={stateLabel}
+        bar="determinate"
+        pct={job.pct}
+        statusColor={statusColor}
+        data-testid="plca-job-progress"
+      />
+    )
+  }
   return (
     <div style={{ padding: 'var(--space-3)', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', display: 'flex', flexDirection: 'column', gap: 6 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', fontSize: 'var(--text-xs)' }}>
         <span style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-          {job.error ? `Error: ${job.error}` : job.stage}
+          {stateLabel}
         </span>
-        <span style={{ color: 'var(--text-tertiary)' }}>
-          {job.done ? `completed in ${elapsed}s` : `${pct}% · ${elapsed}s elapsed`}
+        <span style={{ color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
+          {tailLabel}
         </span>
       </div>
       <div style={{ height: 4, backgroundColor: 'var(--border-subtle)', borderRadius: 2, overflow: 'hidden' }}>
         <div style={{ height: '100%', width: `${pct}%`, backgroundColor: statusColor, transition: 'width var(--duration-normal)' }} />
       </div>
-      {job.done && (
-        <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-          <Button variant="ghost" onClick={onDismiss}>Dismiss</Button>
-        </div>
-      )}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <Button variant="ghost" onClick={onDismiss}>Dismiss</Button>
+      </div>
     </div>
   )
 }

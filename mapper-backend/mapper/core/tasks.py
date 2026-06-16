@@ -8,7 +8,7 @@ from typing import Any, Callable
 @dataclass
 class Task:
     task_id: str
-    status: str = "pending"     # pending | running | done | error
+    status: str = "pending"     # pending | running | done | error | cancelled
     progress: float = 0.0
     step: str = ""
     message: str = ""
@@ -37,6 +37,15 @@ class Task:
             self.status = "error"
             self.step = "error"
             self.error = error
+        self._notify()
+
+    def mark_cancelled(self) -> None:
+        """Terminal state for tasks aborted via the cancellation registry.
+        Distinct from ``fail`` so the WS frontend can render Stopped vs.
+        Errored differently."""
+        with self._lock:
+            self.status = "cancelled"
+            self.step = "cancelled"
         self._notify()
 
     def subscribe(self, cb: Callable[[dict], None]) -> None:
@@ -85,14 +94,26 @@ def get_task(task_id: str) -> Task | None:
 
 
 def run_in_thread(task: Task, fn: Callable, *args, **kwargs) -> None:
-    """Run fn(*args, **kwargs) in a daemon thread, updating task on completion/error."""
+    """Run fn(*args, **kwargs) in a daemon thread, updating task on completion/error.
+
+    A ``CancelledOperation`` raised by ``fn`` (matched by class name to avoid a
+    core → api dependency) routes to ``task.mark_cancelled`` instead of
+    ``task.fail`` so cancellation is distinguishable from a real error on the
+    progress WS."""
     def _run():
         task.status = "running"
         try:
             result = fn(task, *args, **kwargs)
-            task.finish(result)
-        except Exception as e:
-            task.fail(str(e))
+            if task.status != "cancelled":
+                task.finish(result)
+        except BaseException as exc:  # noqa: BLE001
+            if type(exc).__name__ == "CancelledOperation":
+                task.mark_cancelled()
+                return
+            if isinstance(exc, Exception):
+                task.fail(str(exc))
+                return
+            raise
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()

@@ -25,7 +25,7 @@ export function DetailTable({ results }: Props) {
         case 'impact': av = a.impact; bv = b.impact; break
         case 'allocated_sos': av = a.allocated_sos; bv = b.allocated_sos; break
         case 'zone': av = a.zone; bv = b.zone; break
-        case 'principle': av = a.sharing_principle; bv = b.sharing_principle; break
+        case 'principle': av = a.sharing_principle ?? ''; bv = b.sharing_principle ?? ''; break
       }
       if (av === bv) return 0
       const cmp = av < bv ? -1 : 1

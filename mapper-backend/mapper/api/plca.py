@@ -5,12 +5,14 @@ import asyncio
 import threading
 import uuid
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 import bw2data
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
+from mapper.api import tasks as task_registry
+from mapper.api.tasks import CancelledOperation
 from mapper.core import plca_storage
 from mapper.core.bw2_wrapper import get_current_project
 from mapper.core.premise_engine import (
@@ -23,6 +25,7 @@ from mapper.core.premise_engine import (
     ProspectiveDBGenerator,
     premise_key_available,
     prospective_db_name,
+    superstructure_db_name,
 )
 
 
@@ -45,7 +48,12 @@ class ProspectiveDB(BaseModel):
     base_db: str
     iam: str
     ssp: str
-    year: int
+    # In separate mode this is the single target year; in superstructure mode it
+    # is None (see ``years``).
+    year: int | None = None
+    years: list[int] = []
+    mode: Literal["separate", "superstructure"] = "separate"
+    sdf_path: str | None = None
     created_at: str
 
 
@@ -56,11 +64,13 @@ class GenerateRequest(BaseModel):
     years: list[int]
     source_version: str = "3.10"
     system_model: str = "cutoff"
+    mode: Literal["separate", "superstructure"] = "superstructure"
 
 
 class GenerateResponse(BaseModel):
     task_id: str
     planned_names: list[str]
+    mode: Literal["separate", "superstructure"]
 
 
 class PremiseKeyRequest(BaseModel):
@@ -83,6 +93,9 @@ class _TaskState:
         self.error: str | None = None
         self.written: list[str] = []
         self.subscribers: list[asyncio.Queue] = []
+        self.fallback_warning: str | None = None
+        self.effective_mode: str | None = None
+        self.cancelled: bool = False
 
 
 _TASKS: dict[str, _TaskState] = {}
@@ -165,11 +178,18 @@ async def get_databases() -> list[ProspectiveDB]:
     for e in plca_storage.load_registry(project):
         if e.get("name") not in existing:
             continue
+        # Old (pre-superstructure) entries lack mode/years; infer them from year.
+        entry = dict(e)
+        if "mode" not in entry:
+            entry["mode"] = "separate"
+        if "years" not in entry:
+            y = entry.get("year")
+            entry["years"] = [int(y)] if y is not None else []
         try:
-            out.append(ProspectiveDB(**e))
+            out.append(ProspectiveDB(**entry))
         except Exception:
             continue
-    out.sort(key=lambda d: (d.base_db, d.iam, d.ssp, d.year))
+    out.sort(key=lambda d: (d.base_db, d.iam, d.ssp, (d.year if d.year is not None else (d.years[0] if d.years else 0))))
     return out
 
 
@@ -197,20 +217,32 @@ async def post_generate(body: GenerateRequest) -> GenerateResponse:
             years=body.years,
             source_version=body.source_version,
             system_model=body.system_model,
+            mode=body.mode,
         )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
-    planned = [prospective_db_name(body.base_db, body.iam, body.ssp, y) for y in sorted(set(body.years))]
+    sorted_years = sorted(set(body.years))
+    if body.mode == "superstructure":
+        planned = [superstructure_db_name(body.base_db, body.iam, body.ssp, sorted_years)]
+    else:
+        planned = [prospective_db_name(body.base_db, body.iam, body.ssp, y) for y in sorted_years]
 
     task_id = uuid.uuid4().hex
     task = _TaskState()
     with _TASK_LOCK:
         _TASKS[task_id] = task
+    task_registry.register(task_id)
 
     loop = asyncio.get_running_loop()
 
     def on_progress(stage: str, pct: float) -> None:
+        # Cancellation checkpoint: premise's _emit() re-raises
+        # CancelledOperation specifically (other callback errors stay
+        # swallowed). The granularity is whatever stages premise itself
+        # emits — best-effort within a 30-min run.
+        if task_registry.is_cancelled(task_id):
+            raise CancelledOperation(task_id)
         task.stage = stage
         task.pct = pct
         loop.call_soon_threadsafe(
@@ -221,23 +253,63 @@ async def post_generate(body: GenerateRequest) -> GenerateResponse:
 
     def _run() -> None:
         try:
-            written = generator.generate()
-            for name in written:
+            result = generator.generate()
+            now = datetime.now(timezone.utc).isoformat()
+            if result.mode == "superstructure":
+                # One registry entry covering every year in the superstructure.
                 plca_storage.register(
                     project,
                     {
-                        "name": name,
+                        "name": result.names[0],
                         "base_db": body.base_db,
                         "iam": body.iam.lower(),
                         "ssp": body.ssp,
-                        "year": int(name.rsplit("_", 1)[-1]),
-                        "created_at": datetime.now(timezone.utc).isoformat(),
+                        "mode": "superstructure",
+                        "years": sorted_years,
+                        "year": None,
+                        "sdf_path": result.sdf_path,
+                        "created_at": now,
                     },
                 )
-            task.written = written
+            else:
+                for name in result.names:
+                    plca_storage.register(
+                        project,
+                        {
+                            "name": name,
+                            "base_db": body.base_db,
+                            "iam": body.iam.lower(),
+                            "ssp": body.ssp,
+                            "mode": "separate",
+                            "year": int(name.rsplit("_", 1)[-1]),
+                            "years": [int(name.rsplit("_", 1)[-1])],
+                            "created_at": now,
+                        },
+                    )
+            task.written = list(result.names)
+            task.effective_mode = result.mode
+            task.fallback_warning = result.fallback_warning
             task.done = True
+            payload: dict[str, Any] = {
+                "type": "done",
+                "written": task.written,
+                "mode": result.mode,
+            }
+            if result.fallback_warning:
+                payload["warning"] = result.fallback_warning
+            loop.call_soon_threadsafe(_notify_all, task, payload)
+        except CancelledOperation:
+            # Cancellation skips the registry write — incomplete prospective
+            # databases must not appear in the UI. The bw2 db itself may
+            # have been partially committed by premise; a follow-up cleanup
+            # pass would need to reconcile bw2data.databases vs the
+            # registry, but for now the user can delete stragglers via the
+            # existing DELETE /databases/{name} endpoint.
+            task.cancelled = True
+            task.done = True
+            task.stage = "cancelled"
             loop.call_soon_threadsafe(
-                _notify_all, task, {"type": "done", "written": written}
+                _notify_all, task, {"type": "cancelled", "task_id": task_id}
             )
         except Exception as exc:
             task.error = str(exc)
@@ -245,9 +317,11 @@ async def post_generate(body: GenerateRequest) -> GenerateResponse:
             loop.call_soon_threadsafe(
                 _notify_all, task, {"type": "error", "error": str(exc)}
             )
+        finally:
+            task_registry.unregister(task_id)
 
     threading.Thread(target=_run, daemon=True).start()
-    return GenerateResponse(task_id=task_id, planned_names=planned)
+    return GenerateResponse(task_id=task_id, planned_names=planned, mode=body.mode)
 
 
 @router.delete("/databases/{name}")
@@ -278,10 +352,19 @@ async def ws_progress(websocket: WebSocket, task_id: str) -> None:
     # Send current snapshot immediately.
     await websocket.send_json({"type": "progress", "stage": task.stage, "pct": task.pct})
     if task.done:
-        if task.error:
+        if task.cancelled:
+            await websocket.send_json({"type": "cancelled", "task_id": task_id})
+        elif task.error:
             await websocket.send_json({"type": "error", "error": task.error})
         else:
-            await websocket.send_json({"type": "done", "written": task.written})
+            done_payload: dict[str, Any] = {
+                "type": "done",
+                "written": task.written,
+                "mode": task.effective_mode,
+            }
+            if task.fallback_warning:
+                done_payload["warning"] = task.fallback_warning
+            await websocket.send_json(done_payload)
         await websocket.close()
         return
 
@@ -289,7 +372,7 @@ async def ws_progress(websocket: WebSocket, task_id: str) -> None:
         while True:
             payload = await queue.get()
             await websocket.send_json(payload)
-            if payload.get("type") in ("done", "error"):
+            if payload.get("type") in ("done", "error", "cancelled"):
                 break
     except WebSocketDisconnect:
         pass
@@ -298,6 +381,11 @@ async def ws_progress(websocket: WebSocket, task_id: str) -> None:
             task.subscribers.remove(queue)
         except ValueError:
             pass
+        task_registry.maybe_cancel_on_last_subscriber_leave(
+            task_id,
+            remaining_subscribers=len(task.subscribers),
+            task_done=task.done,
+        )
         try:
             await websocket.close()
         except Exception:

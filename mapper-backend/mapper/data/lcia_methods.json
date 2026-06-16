@@ -1,0 +1,46 @@
+{
+  "methods": [
+    {
+      "id": "impact_world_plus_2_2_1",
+      "name": "IMPACT World+ 2.2.1",
+      "description": "Multi-regional LCIA — Bulle et al. (2019)",
+      "long_description": "Midpoint, expert and footprint versions. Covers ~18 midpoint categories with regionalized characterisation factors. CIRAIG.",
+      "source_url": "https://www.impactworldplus.org/",
+      "citation": "Bulle, C., et al. (2019). IMPACT World+: a globally regionalized life cycle impact assessment method. Int J Life Cycle Assess 24, 1653-1674.",
+      "installer": "bw2package",
+      "biosphere_version_aware": true,
+      "variants": {
+        "3.10": {
+          "url": "https://zenodo.org/records/18892673/files/impact_world_plus_221_brightway2_expert_version_ei310.fda66c33ca2b40ae74fe35cb93696115.bw2package?download=1",
+          "filename": "impact_world_plus_221_brightway2_expert_version_ei310.bw2package",
+          "file_size_mb": 0.43
+        },
+        "3.11": {
+          "url": "https://zenodo.org/records/18892673/files/impact_world_plus_221_brightway2_expert_version_ei311.6dad504c4ac65bf6f108601ac535f036.bw2package?download=1",
+          "filename": "impact_world_plus_221_brightway2_expert_version_ei311.bw2package",
+          "file_size_mb": 1.2
+        },
+        "3.12": {
+          "url": "https://zenodo.org/records/18892673/files/impact_world_plus_221_brightway2_expert_version_ei312.899f1d33366f73a33a26a985aa42fd84.bw2package?download=1",
+          "filename": "impact_world_plus_221_brightway2_expert_version_ei312.bw2package",
+          "file_size_mb": 1.2
+        }
+      }
+    },
+    {
+      "id": "lc_impact",
+      "name": "LC-IMPACT",
+      "description": "GLAM-aligned damage method — Verones et al. (2020)",
+      "long_description": "Global non-regionalized variant of LC-IMPACT. 22 methods across climate, land use, particulate matter, and water. Installed via the bw2_lcimpact package by Chris Mutel.",
+      "source_url": "https://github.com/cmutel/bw2-lcimpact",
+      "citation": "Verones, F., et al. (2020). LC-IMPACT: A regionalized life cycle damage assessment method. Journal of Industrial Ecology 24(6), 1201-1219.",
+      "installer": "pip",
+      "pip_spec": "bw2_lcimpact==0.4.2",
+      "pip_entry_module": "bw2_lcimpact",
+      "pip_entry_function": "import_global_lcimpact",
+      "pip_entry_kwargs": { "biosphere": "biosphere3" },
+      "file_size_mb": 1.0,
+      "notes": "Requires internet + pip at install time. First install downloads the Python package (~1 MB). Last released 2022-04 — biosphere flow remapping may be required for newer biosphere3 versions."
+    }
+  ]
+}

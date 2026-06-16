@@ -1534,6 +1534,25 @@ cases failed, confirming the test is load-bearing.
   drift. The panel-local `useEffect + setInterval` pattern is
   fine; just feed it the right boolean.
 
+### AESA export config may have `multi_d=None` (Patch 5AS/5AT)
+
+The config posted to `/aesa/export` (and any `AESAConfiguration`) frequently has
+**`multi_d=None`** — modern configs are sharing-preset based (the N-layer
+refactor made `multi_d` the legacy optional shape; the frontend's synthesized
+export config omits it entirely). `_build_aesa_workbook` had **unconditional
+`config.multi_d.*` dereferences** (Summary "Layer 2" row, the whole "Multi-D
+Configuration" sheet, Methodology rows) → `AttributeError` → 500 on every real
+export. **Guard EVERY `config.multi_d` dereference** (`if config.multi_d is not
+None:`); skip the legacy Multi-D rows/sheet cleanly when None. Everything else
+(impact / allocated SOS / SR / the 5AS allocation-chain columns / zone table /
+budget+SSP+horizon+sensitivity metadata) must emit for BOTH config shapes.
+
+**Export tests must cover the `multi_d=None` path, not only non-None.** The 5AS
+fixture set `multi_d` to a `MultiDConfig`, so it never hit the real export path
+and a latent 4T crash shipped. `tests/test_aesa_sr_export.py` now tests both
+shapes; the `multi_d=None` build-without-raising test is the load-bearing one
+(it's the path every real export takes).
+
 ### AESA saved sessions (Patch 4R)
 
 AESA carries two persistence surfaces with **different lifecycles**:

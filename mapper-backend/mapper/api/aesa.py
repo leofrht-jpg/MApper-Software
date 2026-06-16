@@ -588,7 +588,10 @@ def _build_aesa_workbook(
     ws.append(["Impact Mode", config.impact_mode])
     # Patch 5AS — metadata header so an exported workbook is self-describing.
     ws.append(["DSM scenario", config.dsm_scenario_id or "(active)"])
-    ws.append(["Layer 2 (sector share)", config.multi_d.layer2_sector_share])
+    # Patch 5AT — modern sharing-preset configs have multi_d=None; only emit
+    # the legacy Layer-2 row when the 2-layer Multi-D config is present.
+    if config.multi_d is not None:
+        ws.append(["Layer 2 (sector share)", config.multi_d.layer2_sector_share])
     if config.carbon_budget is not None:
         cb = config.carbon_budget
         ws.append(["Carbon budget", f"{cb.budget_source} — {cb.initial_budget_gt} Gt"])
@@ -682,18 +685,22 @@ def _build_aesa_workbook(
     _autosize(ws)
 
     # ── Multi-D Configuration ──
-    ws = wb.create_sheet("Multi-D Configuration")
-    ws.append(["PB ID", "Principle", "Justification", "System Value", "Global Value"])
-    _style_header(ws)
-    for pb_id, sp in config.multi_d.layer1.items():
-        ws.append([
-            pb_id, sp.principle, sp.justification,
-            sp.system_value, sp.global_value,
-        ])
-    ws.append([])
-    ws.append(["Layer 2 sector share", config.multi_d.layer2_sector_share])
-    ws.append(["Layer 2 source", config.multi_d.layer2_source])
-    _autosize(ws)
+    # Patch 5AT — legacy 2-layer Multi-D sheet; skipped entirely for modern
+    # sharing-preset configs (multi_d=None). The sharing chain is documented by
+    # the preset itself elsewhere; this sheet is for the legacy config shape.
+    if config.multi_d is not None:
+        ws = wb.create_sheet("Multi-D Configuration")
+        ws.append(["PB ID", "Principle", "Justification", "System Value", "Global Value"])
+        _style_header(ws)
+        for pb_id, sp in config.multi_d.layer1.items():
+            ws.append([
+                pb_id, sp.principle, sp.justification,
+                sp.system_value, sp.global_value,
+            ])
+        ws.append([])
+        ws.append(["Layer 2 sector share", config.multi_d.layer2_sector_share])
+        ws.append(["Layer 2 source", config.multi_d.layer2_source])
+        _autosize(ws)
 
     # ── Carbon Budget ──
     if config.carbon_budget is not None:
@@ -751,9 +758,12 @@ def _build_aesa_workbook(
     ws.append(["Configuration", config.name])
     ws.append(["Boundary set", config.boundary_set_id])
     ws.append(["Impact mode", config.impact_mode])
-    ws.append(["Layer 2 (grandfathering)", f"{config.multi_d.layer2_sector_share} — {config.multi_d.layer2_source}"])
-    principles = sorted({sp.principle for sp in config.multi_d.layer1.values()})
-    ws.append(["Layer 1 principles used", ", ".join(principles)])
+    # Patch 5AT — legacy Multi-D rows only when multi_d is present (None for
+    # sharing-preset configs).
+    if config.multi_d is not None:
+        ws.append(["Layer 2 (grandfathering)", f"{config.multi_d.layer2_sector_share} — {config.multi_d.layer2_source}"])
+        principles = sorted({sp.principle for sp in config.multi_d.layer1.values()})
+        ws.append(["Layer 1 principles used", ", ".join(principles)])
     if config.carbon_budget:
         ws.append(["Carbon budget", f"{config.carbon_budget.initial_budget_gt} Gt — {config.carbon_budget.budget_source}"])
         ws.append(["SSP scenario", config.carbon_budget.ssp_scenario])

@@ -120,3 +120,60 @@ def test_summary_metadata_header():
     assert "1150" in str(cells["Carbon budget"])
     assert cells["SSP scenario"] == "SSP2-4.5"
     assert cells["Budget horizon"] == "2025–2100"
+
+
+# ── Patch 5AT — the REAL export path: sharing-preset config has multi_d=None ──
+# The 5AS fixture above set multi_d to a MultiDConfig (legacy path), so it never
+# exercised the multi_d=None path that every modern sharing-preset export hits.
+# That gap let a latent AttributeError ship: _build_aesa_workbook dereferenced
+# config.multi_d.* unconditionally → 500 on every real export. Guard verified
+# here. This is the load-bearing test.
+
+def _sharing_preset_config():
+    """A modern config: sharing-preset based, multi_d=None (what the frontend
+    synthesizes for export)."""
+    return AESAConfiguration(
+        id="cfg-sp", name="Sharing-preset cfg", mfa_system_id="sys-1",
+        dsm_scenario_id="SSP2", sharing=None, multi_d=None,
+        carbon_budget=CarbonBudgetConfig(
+            initial_budget_gt=1150.0, budget_source="IPCC AR6 WG1 Table SPM.2",
+            start_year=2025, end_year=2100, projected_emissions={2025: 40.0, 2030: 38.0},
+            ssp_scenario="SSP2-4.5", provisional=True,
+        ),
+        created_at="2025-01-01T00:00:00Z",
+    )
+
+
+def test_export_builds_with_multi_d_none():
+    """multi_d=None (sharing-preset config) must build without raising — the
+    path that 500'd before Patch 5AT."""
+    _, result = _fixture()
+    config = _sharing_preset_config()
+    wb = _build_aesa_workbook(config, result, "Test System")  # must not raise
+    # Legacy Multi-D sheet is skipped cleanly (not crash, not empty placeholder).
+    assert "Multi-D Configuration" not in wb.sheetnames
+    # The Summary legacy "Layer 2 (sector share)" row is absent too.
+    summary = {row[0] for row in wb["Summary"].iter_rows(min_row=1, max_col=1, values_only=True) if row[0]}
+    assert "Layer 2 (sector share)" not in summary
+
+
+def test_multi_d_none_still_emits_sr_chain_and_values():
+    """The data the user actually wants (impact / allocated SOS / SR / 5AS chain
+    columns) must still emit for the multi_d=None shape."""
+    _, result = _fixture()
+    climate = next(r for r in result.results if r.pb_id == "climate_change")
+    config = _sharing_preset_config()
+    wb = _build_aesa_workbook(config, result, "Test System")
+    header, rows = _impacts_vs_sos_rows(wb)
+    for col in ("Impact", "Allocated SOS", "SR", "System Share",
+                "Remaining Budget (Gt)", "Global Allocation (Gt/yr)"):
+        assert col in header
+    row = next(r for r in rows if r["PB ID"] == "climate_change")
+    assert row["Impact"] == climate.impact
+    assert row["Allocated SOS"] == climate.allocated_sos
+    assert row["SR"] == climate.sr
+    assert row["Remaining Budget (Gt)"] == climate.remaining_budget_gt
+    assert row["Global Allocation (Gt/yr)"] == climate.global_allocation_gt
+    # Carbon-budget metadata still emits (independent of multi_d).
+    cells = {r[0]: r[1] for r in wb["Summary"].iter_rows(min_row=1, max_col=2, values_only=True) if r[0]}
+    assert cells["Budget horizon"] == "2025–2100"

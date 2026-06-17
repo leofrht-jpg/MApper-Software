@@ -242,12 +242,21 @@ class DownscalingChain(BaseModel):
 
 
 class SharingPreset(BaseModel):
-    """A complete sharing configuration: principles + assignments + chain.
+    """A reusable Carrying-Capacity template: the whole DENOMINATOR of SR.
 
-    Stored globally (not per-project). A built-in preset ships with MApper
+    Holds the sharing config (principles + assignments + chain) AND — as of
+    Patch 2a — the planetary-boundary set and carbon budget, so one saved
+    template captures the complete carrying capacity. (Class name + storage keys
+    are kept stable; the "Carrying Capacity template" label is a Phase-3 UI
+    concern.)
+
+    Stored globally (not per-project). A built-in template ships with MApper
     and is read-only; users duplicate to customize. ``AESAConfiguration``
-    references a preset by id and carries a snapshot inline so compute
-    remains reproducible even if the preset is later edited.
+    references a template by id (``sharing_preset_id``) and carries an inline
+    snapshot of the resolved values (``sharing`` + ``boundary_set_id`` +
+    ``carbon_budget``) so COMPUTE READS THE CONFIG SNAPSHOT, never the template —
+    the template's fields are creation-time defaults for new configs, never a
+    retroactive override (identical semantics to how ``sharing`` already works).
     """
     id: str
     name: str
@@ -256,6 +265,14 @@ class SharingPreset(BaseModel):
     principles: list[PrincipleDefinition] = Field(default_factory=list)
     category_assignments: list[CategoryAssignment] = Field(default_factory=list)
     chain: DownscalingChain
+    # Patch 2a — Carrying-Capacity additions. OPTIONAL with back-compat defaults
+    # so presets/templates saved before 2a load unchanged. `boundary_set_id`
+    # defaults to the built-in Sala 2020 PB-EF set; `carbon_budget = None` means
+    # "inherit the build_carbon_budget() default at apply time" (get_defaults
+    # serves that default separately for seeding). Compute never reads these
+    # off the template — they seed an AESAConfiguration's snapshot.
+    boundary_set_id: str = "Sala2020_EF"
+    carbon_budget: CarbonBudgetConfig | None = None
     created_at: str = ""
     updated_at: str = ""
 

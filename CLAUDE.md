@@ -1245,6 +1245,34 @@ never depletes, depletes-then-replenishes).
   the same math and any divergence would surface as a
   chart/data inconsistency.
 
+### SharingPreset is the Carrying-Capacity template (Patch 2a)
+
+`SharingPreset` (backend `aesa_schemas.py`, global `sharing_preset_storage`) now
+carries the **whole SR denominator**: in addition to principles + assignments +
+chain, it has `boundary_set_id` (default `"Sala2020_EF"`) and `carbon_budget`
+(`CarbonBudgetConfig | None`, default `None` = "inherit the
+`build_carbon_budget()` default at apply time"). It IS the "Carrying Capacity
+template" (the class name + storage keys are kept stable; the label is a
+Phase-3 UI concern).
+
+**Persistence-only — SR values are unchanged.** `POST /aesa/compute` reads
+`config.boundary_set_id` (→ `load_boundary_sets()`), `config.carbon_budget`, and
+`resolve_sharing(config)` (= `config.sharing` snapshot) — it **never reads the
+template's `boundary_set_id`/`carbon_budget`**. The template's new fields are
+**creation-time defaults** that seed an `AESAConfiguration`'s inline snapshot;
+they never retroactively override a saved config (identical semantics to how
+`sharing` already snapshots — `sharing_preset_id` is a bookmark). So a config
+whose own boundary set / budget differ from its referenced template's is **not a
+conflict**: the config snapshot is authoritative for compute, full stop.
+
+**Back-compat**: presets/configs/sessions saved before 2a (no new fields) load
+with the defaults (`Sala2020_EF`, `carbon_budget=None`). The built-in
+`ferhati_2026_multi_d` template stays present + read-only. Locked by
+`tests/test_aesa_carrying_capacity_template.py` (back-compat + round-trip +
+no-drift: mutating the sharing snapshot's new fields to garbage leaves every
+SR/SOS byte-identical). Do NOT make compute read these off the template — that
+would reintroduce drift and break the snapshot-authoritative model.
+
 ### AESA Compute Source cascade (Patch 4O)
 
 AESA is a **downstream consumer** — `POST /aesa/compute` takes an

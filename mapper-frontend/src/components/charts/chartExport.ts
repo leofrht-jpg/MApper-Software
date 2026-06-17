@@ -102,11 +102,17 @@ export function adaptInkForPrint(svgString: string): string {
 // (`--mod-plca` #f59e0b is in CHART_PALETTE), so they can't be safely remapped
 // by colour. Target them by Recharts' semantic class and darken to a
 // print-readable stroke. DOM pass on the clone, before serialization.
-function darkenReferenceLines(root: SVGElement): void {
+export function darkenReferenceLines(root: SVGElement): void {
   const refs = root.querySelectorAll<SVGElement>(
     '.recharts-reference-line-line, .recharts-reference-line line',
   )
   refs.forEach((el) => {
+    // `mapper-semantic-ref` reference lines (e.g. the AESA SR=1.0/2.0 zone
+    // boundaries) carry a SEMANTIC colour matched to their legend swatch —
+    // retain it in the export instead of darkening to ink.
+    if (el.closest('.recharts-reference-line')?.classList.contains('mapper-semantic-ref')) {
+      return
+    }
     el.style.setProperty('stroke', PRINT_REF, 'important')
     el.setAttribute('stroke', PRINT_REF)
   })

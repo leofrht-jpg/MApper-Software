@@ -2195,6 +2195,46 @@ speculatively.
   cross-database) — Stage 2's cache is correct because it's per-call. Sharing
   across calls would silently serve stale values when the database changes.
 
+## Chart axis-title room (rotated y-axis labels)
+
+A rotated (`angle: -90`) y-axis title placed in the left MARGIN
+(`position: 'left'`) clips at the SVG's left edge: its x depends on Recharts'
+left-margin math (`margin.left`, `<YAxis width>`, `offset`) and readily goes
+negative, cropped on-screen AND in the export (the export serializes the same
+SVG). **Don't reason about / tune those margins** — and **you can't measure the
+title coordinate in a test either: Recharts 3.x renders NOTHING in jsdom** (0
+`<svg>`/`<text>`/`.recharts-*` nodes even with `ResponsiveContainer` mocked), so
+there's no serialized SVG to read x/transform from. For a left clip the fix is
+an inside position (`position: 'insideLeft'`, structurally `x > 0`); for a wide,
+short inset a rotated title may not *fit vertically* at all (see below).
+
+**Durable export lesson — chart labels that must appear in exports have to be
+IN the `<svg>`.** `exportChart` serializes ONLY the chart `<svg>`
+(`findChartSvg` → `serializeSvgForExport`); HTML siblings of the chart (an HTML
+caption above/around it, a `<div>` title) are NOT captured. So a title rendered
+as an HTML caption looks fine on-screen but is **absent from the PNG/SVG/PDF
+export**. If a label must show in exports, render it inside the chart svg (a
+Recharts axis `<Label>`, or a `<Customized>` `<text>`), not as surrounding HTML.
+
+**AESA carbon-budget inset — intentionally UNTITLED (labelled externally).**
+That inset is short (120px, ~86px plot). A rotated full-text y-title (~144px)
+can't fit its plot height → top-clips on-screen AND export regardless of
+position/offset (a FIT problem, not export-bounds). Iterations: rotated
+`insideLeft` (5AV, still top-clipped) → HTML caption (on-screen only, dropped
+from export per the lesson above) → in-svg `<Customized>` horizontal `<text>` →
+**final: no chart title at all** (per Leo — the chart shows axes + data only;
+it's titled in the surrounding figure/report). The methodological note ("Based
+on projected global emissions…") stays as an HTML caption — it's a caveat, not a
+title. `margin.top: 12` keeps the top tick ("1,200.0") off the SVG top edge (it
+clipped at the original `2`). `tests/aesaCarbonBudgetTitleRoom.test.ts` now
+GUARDS the no-title state (no svg `<text>`/`<Customized>`/`angle:-90` title, no
+HTML caption title, note retained, `margin.top:12`) — source-level, since
+Recharts isn't observable in jsdom; the real check is **eyeballing a fresh
+export**.
+
+(5AU's "`margin.left − YAxis width ≥ offset + ~10px`" rule checked a proxy, not
+the outcome, and still clipped — superseded above.)
+
 ## Chart export discipline
 
 Every chart in the frontend must use `<ChartExportButton>` from
@@ -2282,6 +2322,33 @@ lines).
   methodologically defined by the Sala 2020 framework (zone
   transitions Safe → Uncertainty → High-Risk). Only label
   position is a UI concern; values are not.
+
+**SR-timeline reference lines + their legend swatches read from ONE shared
+zone-colour source.** The SR=1.0 (safe) and SR=2.0 (uncertainty) `<ReferenceLine>`
+strokes AND the legend swatch `<line>` strokes in `TimelineView.tsx` both read
+`ZONE_COLOR.safe` (`#1D9E75`) / `ZONE_COLOR.zone_of_uncertainty` (`#EF9F27`) from
+`components/aesa/zones.ts` — so they can't desync (lines must match their
+swatches). Locked by `tests/aesaTimelineReferenceLineColor.test.ts` (source-level:
+Recharts renders nothing in jsdom, so it pins the shared constant + both call
+sites deriving from it, not a rendered pixel). **Give the reference lines an
+explicit `strokeWidth`** (matching the swatch's `={2}`): Recharts 3.8's default
+ReferenceLine `strokeWidth` is `1`, which rendered the (correctly-coloured) zone
+line as a faint, near-invisible 1px dash on the dark theme while the 2px swatch
+read clearly — the "swatch coloured, line invisible" mismatch was render *weight*,
+not a colour-source desync or a black token. Don't hard-code a hex/black on these
+lines (use `ZONE_COLOR`), and don't drop the explicit `strokeWidth`.
+
+> **Export colour-retention (resolved).** The SR=1.0/2.0 lines are tagged
+> `className="mapper-semantic-ref"`, and `darkenReferenceLines` (`chartExport.ts`)
+> SKIPS any line whose `closest('.recharts-reference-line')` carries that class —
+> so their `ZONE_COLOR` green/orange survives export (the 5AJ print re-theme would
+> otherwise remap every reference line to `PRINT_REF` ink, which on a TRANSPARENT
+> export read as muted grey-on-dark). All other reference lines (the year-detail
+> cursor, etc.) still darken to ink exactly as before; `adaptInkForPrint` already
+> ignores `ZONE_COLOR`, and the background-fill logic is unchanged. The carbon-budget
+> `y=0` red floor is deliberately NOT tagged (it darkens as before — a separate
+> call). Locked by `tests/aesaTimelineReferenceLineColor.test.ts` (pure-DOM:
+> marked line retains `ZONE_COLOR`, plain line → `PRINT_REF`).
 
 **Exception — DSM stock counts**: `DependentStockCharts` defaults to Fixed
 because stocks are integer/near-integer (vehicles, units). Picker stays

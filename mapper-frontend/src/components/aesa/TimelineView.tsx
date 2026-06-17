@@ -228,14 +228,29 @@ export function TimelineView({ results, carbonBudget, sharing }: Props) {
               the legend, Patch 4AF). The dashed strokes themselves
               remain so the chart's safe / uncertainty boundaries
               are still visually anchored. */}
+          {/* SR=1.0 / SR=2.0 boundaries. stroke reads from the SAME
+              ZONE_COLOR source as the legend swatches above (lines must
+              match their swatches — single source of truth). strokeWidth
+              is explicit and matches the swatch's `strokeWidth={2}`:
+              Recharts' default ReferenceLine strokeWidth is 1, which
+              rendered as a faint/near-invisible dashed line on the dark
+              theme even though the (correct) zone colour was applied. */}
+          {/* `mapper-semantic-ref` exempts these from the export's
+              darkenReferenceLines pass — the Safe/Uncertainty zone colours
+              are semantic (matched to the legend swatches) and must survive
+              export, unlike ink annotation reference lines. */}
           <ReferenceLine
             y={1.0}
+            className="mapper-semantic-ref"
             stroke={ZONE_COLOR.safe}
+            strokeWidth={2}
             strokeDasharray="4 4"
           />
           <ReferenceLine
             y={2.0}
+            className="mapper-semantic-ref"
             stroke={ZONE_COLOR.zone_of_uncertainty}
+            strokeWidth={2}
             strokeDasharray="4 4"
           />
           {pbs.map((p, idx) => (
@@ -342,19 +357,24 @@ function CarbonBudgetInset({ budget, sharing }: { budget: CarbonBudgetConfig; sh
           <ChartExportButton chartRef={carbonRef} filename={`aesa_carbon_budget_${budget.ssp_scenario}`} />
         </div>
       </div>
+      {/* No chart title (per Leo) — the chart shows axes + data only. This
+          line is a methodological caveat (an HTML caption for the figure), NOT
+          a chart title; it stays. */}
       <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginBottom: 6, fontStyle: 'italic' }}>
         Based on projected global emissions under {budget.ssp_scenario}, not system emissions
       </div>
       <ChartExportContainer ref={carbonRef} style={{ width: '100%', height: 120 }}>
       <ResponsiveContainer width="100%" height={120}>
-        <LineChart data={series} margin={{ top: 2, right: 8, bottom: 2, left: 64 }}>
+        {/* margin.top 12 — headroom so the top tick ("1,200.0") clears the SVG
+            top edge (it clipped at the original 2). No chart title (per Leo). */}
+        <LineChart data={series} margin={{ top: 12, right: 8, bottom: 2, left: 8 }}>
           <CartesianGrid stroke="var(--border-subtle)" strokeDasharray="3 3" />
           <XAxis dataKey="year" stroke="var(--text-tertiary)" tick={{ fontSize: 10 }} />
           <YAxis
             stroke="var(--text-tertiary)"
+            width={48}
             tick={{ fontSize: 10 }}
             tickFormatter={(v: number) => cbFormat.format(v)}
-            label={{ value: 'Global remaining budget (Gt CO₂)', angle: -90, position: 'left', offset: 15, fontSize: 9, fill: 'var(--text-tertiary)', textAnchor: 'middle' }}
           />
           <ReferenceLine y={0} stroke="var(--danger)" strokeDasharray="3 3" />
           <Line

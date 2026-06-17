@@ -350,6 +350,19 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
                 "sustainability ratios against it."
             ),
         )
+    # Patch 2d — inert guard: a CO2e/GHG carbon-budget basis is opt-in and stays
+    # INERT until a sourced CO2→CO2e conversion is supplied. Reject rather than
+    # silently computing on the CO2 budget (wrong scope) or a fabricated factor.
+    cb = config.carbon_budget
+    if cb is not None and cb.budget_basis == "CO2e_GHG" and cb.co2e_ratio() is None:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "Carbon budget set to CO2e/GHG basis but no sourced CO2→CO2e "
+                "conversion supplied; supply a per-scenario conversion (ratio) "
+                "or use the CO2 basis."
+            ),
+        )
     if body.run_sensitivity:
         result = AESAEngine.compute_with_sensitivity(impact.results, config, bset)
     else:
@@ -655,11 +668,19 @@ def _build_aesa_workbook(
     # — the allocation chain (global remaining budget → per-year global
     # allocation → × system share = allocated SOS). All read from the
     # authoritative result row; nothing recomputed in the export.
+    # Patch 2d — relabel the carbon-budget chain columns as CO2e when the
+    # budget basis is CO2e/GHG (the values are CO2e-scaled by compute). CO2
+    # basis (default) keeps the original "(Gt)" / "(Gt/yr)" labels — no drift.
+    _co2e = (config.carbon_budget is not None
+             and config.carbon_budget.budget_basis == "CO2e_GHG"
+             and config.carbon_budget.co2e_ratio() is not None)
+    _rem_lbl = "Remaining Budget (Gt CO2e)" if _co2e else "Remaining Budget (Gt)"
+    _alloc_lbl = "Global Allocation (Gt CO2e/yr)" if _co2e else "Global Allocation (Gt/yr)"
     ws.append([
         "Year", "PB ID", "PB Name", "EF Indicator", "Method",
         "Impact", "Allocated SOS", "SR", "Zone",
         "Principle", "L1 Factor", "L2 Factor", "Boundary Type", "Unit",
-        "System Share", "Remaining Budget (Gt)", "Global Allocation (Gt/yr)",
+        "System Share", _rem_lbl, _alloc_lbl,
     ])
     _style_header(ws)
     for r in result.results:

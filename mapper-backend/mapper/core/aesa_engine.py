@@ -496,7 +496,12 @@ class AESAEngine:
                 remaining_budget_gt: float | None = None
                 global_allocation_gt: float | None = None
                 if pb.boundary_type == "cumulative" and config.carbon_budget is not None:
-                    cb = config.carbon_budget
+                    # Patch 2d — apply the CO2/CO2e basis BEFORE the cumulative
+                    # math. "CO2" (default) → with_basis_applied returns self
+                    # (byte-identical, no drift). "CO2e_GHG" + ratio → a copy
+                    # with budget + pathway scaled by the sourced factor, so the
+                    # depletion math below runs unchanged on the CO2e pair.
+                    cb = config.carbon_budget.with_basis_applied()
                     # Patch 5AS — capture the same intermediates
                     # `annual_system_allocation` derives, to surface on the row
                     # (pure deterministic functions → no drift vs `allocated`).

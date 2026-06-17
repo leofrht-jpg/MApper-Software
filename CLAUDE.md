@@ -1367,6 +1367,62 @@ method** that maps LCA results to these boundaries (the `ef_indicator` link).
   they need a PB-LCIA method, not the EF v3.1 method set. Mapping EF methods to
   Ryberg PBs would be methodologically wrong (the Sala set is the EF-linked one).
 
+### Carbon-budget CO2 vs CO2e/GHG basis (Patch 2d)
+
+The climate-SR numerator is EF v3.1 GWP100 = **CO2e** (all GHGs); the carbon
+budget (denominator) is IPCC **CO2-only** (~1150 Gt) on a **CO2-only** depletion
+pathway (`ssp_trajectories.json` stores `anchors_gt_co2`). Comparing a CO2e
+numerator to a CO2 denominator is a scope mismatch that **inflates** the climate
+SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis ∈
+{"CO2","CO2e_GHG"}` (default **"CO2"** = today, byte-identical, **no drift**).
+
+- **Numerator is unchanged** (EF GWP100 CO2e). Fix is denominator-only.
+- **CO2e_GHG is opt-in and INERT** until a sourced `co2e_conversion` is supplied.
+  Compute (`post_compute` guard, beside the Ryberg 2c guard) **rejects** a CO2e
+  basis with no usable conversion — *"Carbon budget set to CO2e/GHG basis but no
+  sourced CO2→CO2e conversion supplied …"* — never computes on the CO2 budget
+  (wrong scope) or a fabricated factor. Mirrors the Ryberg scaffold.
+- **Mechanism (b) "ratio" only** (`RatioCO2eConversion{kind:"ratio", factor,
+  source}`): `with_basis_applied()` scales BOTH `initial_budget_gt` and
+  `projected_emissions` by the per-scenario `factor` *before* the existing
+  cumulative math, so `remaining_budget` / `annual_global_allocation` /
+  `annual_system_allocation` run **unchanged** on the CO2e pair. Net effect: the
+  whole climate SR timeline scales by **1/factor** (CO2e budget larger → SR
+  lower). `(end_year − year)` is basis-independent; flow boundaries are
+  unaffected.
+- **Conversion is per-scenario and SOURCED separately** — defaults/data carry
+  **no** example ratio; tests use an obvious placeholder (1.3) marked as such.
+  The `factor` and `source` are user/data-supplied; a non-positive factor is
+  inert. The `CO2eConversion` union is designed so "linear" (mechanism a) and
+  "pathway" (mechanism c) can be added later as `kind`s — **their compute is NOT
+  implemented in 2d** (the inert guard rejects any non-ratio CO2e basis).
+- **Where it lives**: `CarbonBudgetConfig` rides on the 2a Carrying-Capacity
+  template + the `AESAConfiguration` snapshot; compute reads the config snapshot
+  (snapshot-authoritative). Export (5AS chain columns) relabels Remaining Budget
+  / Global Allocation as `Gt CO2e` when basis is CO2e (values are CO2e-scaled);
+  the chain identity `global·1e12·share == allocated_sos` holds under uniform
+  scaling. Locked by `tests/test_aesa_co2e_basis.py` (no-drift vs old-shape,
+  ratio scales SR ÷factor + chain identity, inert→graceful 400, export relabel,
+  round-trip).
+
+#### What NOT to do
+
+- **Don't invent a CO2→CO2e factor.** Default is None (inert); no bundled
+  example ratio. The real per-SSP, target-specific factor is sourced and dropped
+  in later. A missing/non-positive factor must stay inert (graceful reject),
+  never silently compute.
+- **Don't change the numerator.** This is denominator-only; the EF GWP100 CO2e
+  impact is untouched.
+- **Don't scale only the budget scalar without the pathway.** The "ratio"
+  mechanism scales `initial_budget_gt` AND `projected_emissions` by the same
+  factor so `remaining_budget(t)` stays internally consistent (SR ÷ factor
+  uniformly). (Mechanism (a) "linear" has a pathway wrinkle — its intercept is a
+  one-time cumulative offset, not per-year — which is why its compute is
+  deferred, not approximated.)
+- **Don't make CO2e the default basis.** CO2 stays default (no drift, opt-in
+  shift). The downward SR shift fires only on an explicit CO2e_GHG + sourced
+  ratio.
+
 ### AESA Compute Source cascade (Patch 4O)
 
 AESA is a **downstream consumer** — `POST /aesa/compute` takes an

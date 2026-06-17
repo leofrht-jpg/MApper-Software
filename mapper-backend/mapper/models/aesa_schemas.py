@@ -301,19 +301,81 @@ class SharingPreset(BaseModel):
 # ── Dynamic Carbon Budget ────────────────────────────────────────────────────
 
 
+class RatioCO2eConversion(BaseModel):
+    """Patch 2d — CO2→CO2e conversion, mechanism (b): a single per-scenario
+    ratio. ``budget_e = factor·budget`` and ``pe_e[y] = factor·pe[y]`` (the same
+    factor scales the budget AND the depletion pathway), so the whole climate SR
+    timeline scales by ``1/factor`` — internally consistent, no pathway wrinkle.
+
+    ``factor`` and ``source`` are SOURCED inputs (per-SSP, target-specific) —
+    NEVER a bundled default or a fabricated number. A non-positive factor is
+    treated as "no usable conversion" (inert)."""
+    kind: Literal["ratio"] = "ratio"
+    factor: float
+    source: str
+
+
+# Discriminated-union alias on ``kind``. Patch 2d implements ONLY "ratio";
+# the design's "linear" (mechanism a) and "pathway" (mechanism c) can be added
+# later as members — switch to
+# ``Annotated[RatioCO2eConversion | LinearCO2eConversion | PathwayCO2eConversion,
+# Field(discriminator="kind")]`` without touching call sites. Their COMPUTE is
+# intentionally not implemented now; the inert guard rejects any CO2e basis whose
+# conversion isn't a usable ratio.
+CO2eConversion = RatioCO2eConversion
+
+
 class CarbonBudgetConfig(BaseModel):
     """Dynamic carbon budget that depletes year-over-year.
 
     remaining_budget(t) = initial_budget_gt - sum(projected_emissions[t0..t-1])
     annual_global_allocation(t) = remaining_budget(t) / (end_year - t)
+
+    Patch 2d — ``budget_basis`` selects the GHG scope of the DENOMINATOR so it
+    matches the EF GWP100 (CO2e) numerator. ``"CO2"`` (default) is today's
+    behaviour, byte-identical (no drift). ``"CO2e_GHG"`` is opt-in and INERT
+    until a sourced ``co2e_conversion`` is supplied — compute rejects a CO2e
+    basis with no usable conversion rather than fabricating a factor. The fix is
+    denominator-only; the numerator (EF GWP100 CO2e) is unchanged.
     """
-    initial_budget_gt: float              # Gt CO2
+    initial_budget_gt: float              # Gt CO2 (or Gt CO2e once basis-applied)
     budget_source: str                    # "IPCC AR6 1.5C 67th pct"
     start_year: int
     end_year: int
     projected_emissions: dict[int, float] # Gt CO2/yr, year → global emissions
     ssp_scenario: str                     # e.g. "SSP2-4.5"
     provisional: bool = False
+    # Patch 2d — CO2 vs CO2e/GHG basis. Default "CO2" → no drift. Back-compat:
+    # configs saved before 2d lack these and default to CO2 / None (per the 2a
+    # snapshot model). The conversion is per-scenario and sourced separately.
+    budget_basis: Literal["CO2", "CO2e_GHG"] = "CO2"
+    co2e_conversion: CO2eConversion | None = None
+
+    def co2e_ratio(self) -> float | None:
+        """The usable CO2e ratio factor, or ``None`` (inert). Returns a factor
+        ONLY when ``budget_basis == "CO2e_GHG"`` AND ``co2e_conversion`` is a
+        positive "ratio". Never fabricates; "CO2" basis always returns None."""
+        if self.budget_basis != "CO2e_GHG":
+            return None
+        conv = self.co2e_conversion
+        if conv is not None and getattr(conv, "kind", None) == "ratio" and conv.factor > 0:
+            return conv.factor
+        return None
+
+    def with_basis_applied(self) -> "CarbonBudgetConfig":
+        """Denominator-only: return a CO2e-scaled copy when a usable ratio is
+        present, else ``self`` unchanged (CO2 basis → byte-identical, no drift).
+        Scales ``initial_budget_gt`` + ``projected_emissions`` by the sourced
+        ratio so ``remaining_budget`` / ``annual_global_allocation`` /
+        ``annual_system_allocation`` run UNCHANGED on the CO2e pair. (Mechanism
+        (b) ratio only; linear/pathway are not implemented here.)"""
+        f = self.co2e_ratio()
+        if f is None:
+            return self
+        return self.model_copy(update={
+            "initial_budget_gt": self.initial_budget_gt * f,
+            "projected_emissions": {y: v * f for y, v in self.projected_emissions.items()},
+        })
 
     def remaining_budget(self, year: int) -> float:
         consumed = sum(

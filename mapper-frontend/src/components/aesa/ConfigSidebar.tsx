@@ -571,6 +571,30 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               opacity: inSessionMode ? 0.7 : 1,
             }}
           >
+            {/* Whole-config name (Patch 4Y). `draft.name` → `saveConfig` names
+                the entire AESAConfiguration (the Configurations pill / header
+                Save) — NOT the Stage-2 sharing template (that's the PresetSelector
+                / `draft.sharing`). Kept GLOBAL, above the three stages; stays
+                inside the fieldset so it disables in session-loaded mode. */}
+            <Section title="Configuration template name">
+              <input
+                data-testid="aesa-config-template-name"
+                value={draft.name}
+                onChange={(e) => updateDraft({ name: e.target.value })}
+                placeholder="e.g. WP5 – SSP2 – Prospective"
+                style={inputStyle}
+              />
+              <div style={{
+                fontSize: 10, color: 'var(--text-tertiary)',
+                marginTop: 4, lineHeight: 1.4,
+              }}>
+                Names the reusable configuration (the pill in the top-right
+                Configurations dropdown). Sessions get their own timestamped
+                name at <strong>Save session</strong>.
+              </div>
+            </Section>
+
+            <StageGroup number={1} title="LCIA configuration">
             {/* Patch 4O — Compute Source cascade. Three orthogonal axes:
                 DSM model → Scenario → Background. The cascade picks
                 which UPSTREAM Impact Assessment result feeds AESA;
@@ -615,35 +639,9 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 </div>
               )}
             </Section>
+            </StageGroup>
 
-            {/* Configuration template name (Patch 4Y). Bound to
-                `draft.name`, which `saveConfig` writes onto the
-                persisted `AESAConfiguration` — it becomes the pill
-                text in the top-right Configurations dropdown.
-                DISTINCT from session naming: the page-header "Save
-                session" modal builds its own timestamped default and
-                takes user input at save time. The two tiers (Patch 4U
-                save model) have separate naming surfaces; renaming
-                this field makes the role unambiguous to users who
-                otherwise conflate them. */}
-            <Section title="Configuration template name">
-              <input
-                data-testid="aesa-config-template-name"
-                value={draft.name}
-                onChange={(e) => updateDraft({ name: e.target.value })}
-                placeholder="e.g. WP5 – SSP2 – Prospective"
-                style={inputStyle}
-              />
-              <div style={{
-                fontSize: 10, color: 'var(--text-tertiary)',
-                marginTop: 4, lineHeight: 1.4,
-              }}>
-                Names the reusable template (the pill in the top-right
-                Configurations dropdown). Sessions get their own
-                timestamped name at <strong>Save session</strong>.
-              </div>
-            </Section>
-
+            <StageGroup number={2} title="AESA configuration (carrying capacity)">
             {/* Boundary set */}
             <Section title="Planetary Boundary set">
               <select
@@ -657,6 +655,39 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               </select>
               <div style={hintText}>{boundarySet.source}</div>
             </Section>
+
+            {/* Method → PB mapping — moved directly under the PB set (Phase 3):
+                it maps the LCIA numerator methods onto this boundary set's PB
+                ids, so it belongs with the carrying-capacity definition. */}
+            <CollapsibleSection
+              title="Method → PB mapping"
+              openKey={collapsibleOpenKey}
+              summary={
+                activeImpact
+                  ? `${draft.method_mapping.length}/${activeImpact.results.length} mapped`
+                  : `${draft.method_mapping.length} mapped`
+              }
+            >
+              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                {draft.method_mapping.length} method{draft.method_mapping.length === 1 ? '' : 's'} mapped
+                {activeImpact && draft.method_mapping.length < activeImpact.results.length && (
+                  <span style={{ color: 'var(--warning)' }}>
+                    {' '}· {activeImpact.results.length - draft.method_mapping.length} unmapped
+                  </span>
+                )}
+              </div>
+              {activeImpact && (
+                <button
+                  onClick={() => {
+                    const methods = activeImpact.results.map((r) => [...r.method])
+                    void suggestMapping(methods)
+                  }}
+                  style={ghostBtnStyle}
+                >
+                  Re-suggest from impact methods
+                </button>
+              )}
+            </CollapsibleSection>
 
             {/* Sharing preset selector — collapsible. Once chosen,
                 rarely revisited per run; collapse by default and show
@@ -744,36 +775,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               )}
             </CollapsibleSection>
 
-            {/* Mapping status — collapsible. */}
-            <CollapsibleSection
-              title="Method → PB mapping"
-              openKey={collapsibleOpenKey}
-              summary={
-                activeImpact
-                  ? `${draft.method_mapping.length}/${activeImpact.results.length} mapped`
-                  : `${draft.method_mapping.length} mapped`
-              }
-            >
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                {draft.method_mapping.length} method{draft.method_mapping.length === 1 ? '' : 's'} mapped
-                {activeImpact && draft.method_mapping.length < activeImpact.results.length && (
-                  <span style={{ color: 'var(--warning)' }}>
-                    {' '}· {activeImpact.results.length - draft.method_mapping.length} unmapped
-                  </span>
-                )}
-              </div>
-              {activeImpact && (
-                <button
-                  onClick={() => {
-                    const methods = activeImpact.results.map((r) => [...r.method])
-                    void suggestMapping(methods)
-                  }}
-                  style={ghostBtnStyle}
-                >
-                  Re-suggest from impact methods
-                </button>
-              )}
-            </CollapsibleSection>
+            </StageGroup>
           </fieldset>
         )}
         {/* Saved sessions list rendered OUTSIDE the fieldset so it
@@ -783,9 +785,13 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
             disables only the configuration-editing controls
             (cascade, name, presets, mapping). */}
         {!showEmptyState && draft && defaults && (
-          <Section title="Saved sessions">
-            <SavedSessionsList />
-          </Section>
+          <StageGroup number={3} title="Saved sessions">
+            {/* No inner Section title — the StageGroup header already labels
+                this "Saved sessions". Keep Section's padding via a plain div. */}
+            <div style={{ padding: '10px 12px' }}>
+              <SavedSessionsList />
+            </div>
+          </StageGroup>
         )}
       </div>
 
@@ -1230,6 +1236,35 @@ function Section({ title, children, right }: { title: string; children: React.Re
       </div>
       {children}
     </section>
+  )
+}
+
+// Phase 3 — numbered stage grouping. PRESENTATIONAL ONLY: wraps the existing
+// <Section>/<CollapsibleSection>s under one of three clearly-labelled stages
+// (1. LCIA configuration / 2. AESA configuration / 3. Saved sessions). No state,
+// no logic, no store binding — pure layout reparenting. The inner sections keep
+// their own collapse + testids unchanged.
+function StageGroup({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+  return (
+    <div data-testid={`aesa-stage-${number}`} style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        padding: '8px 12px',
+        background: 'var(--bg-elevated)',
+        borderTop: '1px solid var(--border-default)',
+        borderBottom: '1px solid var(--border-default)',
+      }}>
+        <span style={{
+          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+          width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
+          background: 'var(--accent)', color: '#fff', fontSize: 11, fontWeight: 700,
+        }}>{number}</span>
+        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
+          {title}
+        </span>
+      </div>
+      {children}
+    </div>
   )
 }
 

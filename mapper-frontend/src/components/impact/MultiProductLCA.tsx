@@ -544,6 +544,7 @@ export function MultiProductLCA() {
             <MethodPicker
               onChange={setMethods}
               accent="var(--mod-lca)"
+              defaultAllSelected
             />
           </div>
         </div>

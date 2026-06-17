@@ -484,6 +484,10 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
           <div>
             <label style={topLabel}>Impact methods</label>
             <div style={{ marginTop: 6 }}>
+              {/* No defaultAllSelected on Projected: it inherits "all" from
+                  Static via the 4F live-mirror. A self-default would fire
+                  handleMethodsChange → setProjectedCustomized(true), freezing
+                  the mirror so later Static edits stop propagating. */}
               <MethodPicker
                 key={pickerSeed}
                 onChange={handleMethodsChange}

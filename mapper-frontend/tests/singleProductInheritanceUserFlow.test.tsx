@@ -95,76 +95,72 @@ beforeEach(() => {
 // MethodPicker renders each indicator as a <label> wrapping <input
 // type="checkbox"> + <span>{indicator}</span>.
 async function clickIndicator(container: HTMLElement, indicatorLabel: string) {
-  const span = await within(container).findByText(indicatorLabel, undefined, { timeout: 3000 })
-  const label = span.closest('label')
-  if (!label) throw new Error(`no <label> ancestor for "${indicatorLabel}"`)
-  const checkbox = label.querySelector('input[type="checkbox"]') as HTMLInputElement | null
-  if (!checkbox) throw new Error(`no checkbox under label for "${indicatorLabel}"`)
-  fireEvent.click(checkbox)
+  // The indicator text appears in two places once default-all pre-selects: the
+  // checklist row (a <label> wrapping <input type="checkbox">) AND the selected-
+  // indicator chips (no checkbox). Pick the checklist row — the one with a box.
+  const spans = await within(container).findAllByText(indicatorLabel, undefined, { timeout: 3000 })
+  for (const span of spans) {
+    const checkbox = span.closest('label')?.querySelector('input[type="checkbox"]') as HTMLInputElement | null
+    if (checkbox) {
+      fireEvent.click(checkbox)
+      return
+    }
+  }
+  throw new Error(`no checkbox-bearing label for "${indicatorLabel}"`)
 }
 
-describe('Static→Projected inheritance — user-click flow (Patch 4F)', () => {
-  it('mirrors multiple Static indicator clicks into Projected', async () => {
-    // Both panels mounted simultaneously for the same archetype. This
-    // matches the real wrapper (SingleProductImpact) which uses
-    // visibility-toggle on the per-tab panes — both Static and Projected
-    // are alive while the user is on Static.
+describe('Static→Projected inheritance — user-click flow (Patch 4F, default-all start)', () => {
+  // Default-all (Stage A): the Static picker starts with ALL of the method's
+  // categories selected, and Projected inherits them via the live-mirror. The
+  // 4F guard is unchanged — Static EDITS (now deselections) keep propagating to
+  // Projected until Projected is customized; only the starting selection flipped
+  // empty→full and the user operation flipped click-to-ADD → click-to-REMOVE.
+  const ALL4 = [GWP_TUPLE, ACID_TUPLE, LANDUSE_TUPLE, WATER_TUPLE]
+
+  it('mirrors multiple Static deselections into Projected', async () => {
     const { getAllByTestId } = render(
       <>
         <div data-testid="pane-static"><SingleProductStaticPanel archetypeId="arc-1" /></div>
         <div data-testid="pane-projected"><SingleProductProjectedPanel archetypeId="arc-1" /></div>
       </>,
     )
-
-    // Sanity: both panels rendered, no static/projected config yet.
-    expect(useSingleProductImpactStore.getState().staticConfigByArc['arc-1']).toBeUndefined()
-    expect(useSingleProductImpactStore.getState().projectedConfigByArc['arc-1']).toBeUndefined()
-
-    // The Static panel sits at index 0 of the matched panes; locate it via
-    // its testid wrapper to scope the indicator search.
     const [staticPaneRoot] = getAllByTestId('pane-static')
 
-    // Click GWP. setStaticConfigForArc fires (with selectedMethods = [GWP]).
-    // The Projected effect's slice selector returns the new ref; the
-    // effect runs and inherits.
-    await clickIndicator(staticPaneRoot, 'global warming potential (GWP100)')
+    // Default-all settles: Static = all 4, Projected inherits all 4.
     await waitFor(() => {
       expect(
         useSingleProductImpactStore.getState().staticConfigByArc['arc-1']?.selectedMethods,
-      ).toEqual([GWP_TUPLE])
+      ).toEqual(ALL4)
+    })
+    await waitFor(() => {
+      expect(
+        useSingleProductImpactStore.getState().projectedConfigByArc['arc-1']?.selectedMethods,
+      ).toEqual(ALL4)
     })
 
-    // Click acidification — STATIC now has [GWP, ACID]. Projected MUST
-    // also see both. Pre-Patch-4F the Patch-4E inheritedForArcRef guard
-    // froze Projected at [GWP] after the first inheritance and any
-    // subsequent Static edit was silently ignored.
-    await clickIndicator(staticPaneRoot, 'accumulated exceedance')
+    // Deselect WATER on Static → Static [GWP, ACID, LANDUSE]; Projected mirrors.
+    await clickIndicator(staticPaneRoot, 'user deprivation potential')
     await waitFor(() => {
       expect(
         useSingleProductImpactStore.getState().staticConfigByArc['arc-1']?.selectedMethods,
-      ).toEqual([GWP_TUPLE, ACID_TUPLE])
+      ).toEqual([GWP_TUPLE, ACID_TUPLE, LANDUSE_TUPLE])
     })
-    // The actual regression assertion: Projected mirrored both clicks.
+    await waitFor(() => {
+      expect(
+        useSingleProductImpactStore.getState().projectedConfigByArc['arc-1']?.selectedMethods,
+      ).toEqual([GWP_TUPLE, ACID_TUPLE, LANDUSE_TUPLE])
+    })
+
+    // Deselect LANDUSE too — a SECOND Static edit must also propagate (the
+    // don't-freeze guard: pre-Patch-4F the mirror froze after the first edit).
+    await clickIndicator(staticPaneRoot, 'soil quality index')
     await waitFor(() => {
       expect(
         useSingleProductImpactStore.getState().projectedConfigByArc['arc-1']?.selectedMethods,
       ).toEqual([GWP_TUPLE, ACID_TUPLE])
     })
 
-    // Add two more for a 4-indicator total — mimics the user's reported
-    // workflow ("configured Static Background with 4 indicators selected").
-    await clickIndicator(staticPaneRoot, 'soil quality index')
-    await clickIndicator(staticPaneRoot, 'user deprivation potential')
-    await waitFor(() => {
-      const projCfg = useSingleProductImpactStore.getState().projectedConfigByArc['arc-1']
-      expect(projCfg?.selectedMethods).toHaveLength(4)
-      expect(projCfg?.selectedMethods).toEqual(
-        expect.arrayContaining([GWP_TUPLE, ACID_TUPLE, LANDUSE_TUPLE, WATER_TUPLE]),
-      )
-    })
-
-    // Customized flag stays false because the user only edited Static —
-    // Projected never received a direct user-click on its own controls.
+    // Only Static was edited → Projected was never directly customized.
     expect(
       useSingleProductImpactStore.getState().projectedCustomizedByArc['arc-1'],
     ).toBeFalsy()
@@ -177,20 +173,17 @@ describe('Static→Projected inheritance — user-click flow (Patch 4F)', () => 
         <div data-testid="pane-projected"><SingleProductProjectedPanel archetypeId="arc-1" /></div>
       </>,
     )
-
     const [staticPaneRoot] = getAllByTestId('pane-static')
 
-    // Configure Static with two indicators — both should mirror to Projected.
-    await clickIndicator(staticPaneRoot, 'global warming potential (GWP100)')
-    await clickIndicator(staticPaneRoot, 'accumulated exceedance')
+    // Default-all settles: Projected inherits all 4.
     await waitFor(() => {
       expect(
         useSingleProductImpactStore.getState().projectedConfigByArc['arc-1']?.selectedMethods,
-      ).toEqual([GWP_TUPLE, ACID_TUPLE])
+      ).toEqual(ALL4)
     })
 
-    // User now customizes Projected directly — flips scope on the
-    // Projected panel. handleScopeClick sets projectedCustomized=true.
+    // User customizes Projected directly — flips scope. handleScopeClick sets
+    // projectedCustomized=true.
     act(() => {
       getByTestId('single-product-projected-scope-outflows').click()
     })
@@ -198,19 +191,17 @@ describe('Static→Projected inheritance — user-click flow (Patch 4F)', () => 
       useSingleProductImpactStore.getState().projectedCustomizedByArc['arc-1'],
     ).toBe(true)
 
-    // Now add a third indicator to Static. Pre-customization this would
-    // mirror; post-customization it must NOT — Projected has drifted.
-    await clickIndicator(staticPaneRoot, 'soil quality index')
+    // Now deselect an indicator on Static. Pre-customization this would mirror;
+    // post-customization it must NOT — Projected has drifted (frozen at the
+    // pre-customization snapshot: all 4 methods + the user's outflows scope).
+    await clickIndicator(staticPaneRoot, 'user deprivation potential')
     await waitFor(() => {
-      // Static reflects the new pick.
       expect(
         useSingleProductImpactStore.getState().staticConfigByArc['arc-1']?.selectedMethods,
       ).toHaveLength(3)
     })
-    // Projected is frozen at the pre-customization snapshot ([GWP, ACID]).
-    // Scope is the user's outflows pick; methods are the inherited two.
     const projCfg = useSingleProductImpactStore.getState().projectedConfigByArc['arc-1']
     expect(projCfg?.scope).toBe('outflows')
-    expect(projCfg?.selectedMethods).toEqual([GWP_TUPLE, ACID_TUPLE])
+    expect(projCfg?.selectedMethods).toEqual(ALL4)  // frozen — deselection did NOT propagate
   })
 })

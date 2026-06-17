@@ -1214,7 +1214,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
             <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 8 }}>
               LCIA Method
             </label>
-            <MethodPicker onChange={setSelectedMethods} />
+            <MethodPicker onChange={setSelectedMethods} defaultAllSelected />
           </div>
         </div>
 

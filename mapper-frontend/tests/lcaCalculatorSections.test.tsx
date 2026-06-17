@@ -90,12 +90,13 @@ describe('LCA Calculator — Configuration collapsible (Patch 5N)', () => {
     const { container } = await renderCalc()
     const section = sectionByTitle(container, 'Configuration')!
     fireEvent.click(within(section).getByRole('heading', { name: 'Configuration' }))
-    // Live-derived summary: the actually-selected database + (no method yet) +
-    // the live indicator count. Proves the summary reads current state, not a
-    // value snapshotted at collapse time.
+    // Live-derived summary: the actually-selected database + the default-all
+    // method/indicators (Stage A defaults the picker to all of the method's
+    // categories — here the mock's single EF v3.1 / GWP100). Proves the summary
+    // reads current state, not a value snapshotted at collapse time.
     expect(section.textContent).toContain('ei-3.10')
-    expect(section.textContent).toContain('No method')
-    expect(section.textContent).toContain('0 indicators')
+    expect(section.textContent).toContain('EF v3.1')
+    expect(section.textContent).toContain('1 indicator')
   })
 })
 
@@ -110,9 +111,9 @@ describe('LCA Calculator — Results collapsible + New Calculation button', () =
     await new Promise((r) => setTimeout(r, 500))
     await waitFor(() => expect(container.querySelector('[data-testid="multi-item-selector-result-act:ei-3.10|c1"]')).not.toBeNull())
     fireEvent.click(container.querySelector('[data-testid="multi-item-selector-result-act:ei-3.10|c1"]') as HTMLElement)
-    // Select the (single) method indicator checkbox.
-    await waitFor(() => expect(container.querySelector('input[type="checkbox"]')).not.toBeNull())
-    fireEvent.click(container.querySelector('input[type="checkbox"]') as HTMLElement)
+    // Method is already selected by default-all (Stage A) — no checkbox click
+    // needed (clicking the pre-selected indicator would DESELECT it and disable
+    // Calculate). Just wait for Calculate to enable.
     // Calculate.
     const calcBtn = Array.from(container.querySelectorAll('button')).find((b) => /Calculate/.test(b.textContent ?? ''))!
     await waitFor(() => expect((calcBtn as HTMLButtonElement).disabled).toBe(false))

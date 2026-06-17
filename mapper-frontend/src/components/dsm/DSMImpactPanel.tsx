@@ -116,7 +116,9 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
   // Reset per-tab pick when active system changes.
   useEffect(() => { setSelectedDsmScenarioIds([]) }, [activeSystem?.id])
   const [methods, setMethods] = useState<string[][]>([])
-  const methodSelection = useMethodSelection(setMethods)
+  // System-level: default to ALL indicators of the selected method (re-defaults
+  // on method change). Users can still deselect.
+  const methodSelection = useMethodSelection(setMethods, undefined, true)
   const [yearStart, setYearStart] = useState<number | null>(null)
   const [yearEnd, setYearEnd] = useState<number | null>(null)
   const [completedElapsed, setCompletedElapsed] = useState<number | null>(null)

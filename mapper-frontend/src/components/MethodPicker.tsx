@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckSquare, Square } from 'lucide-react'
 import { getMethods, type MethodFamily } from '../api/client'
 
@@ -28,9 +28,18 @@ export interface MethodSelection {
 export function useMethodSelection(
   onChange: (methods: string[][]) => void,
   initialSelected?: string[][],
+  // When true, the selection defaults to ALL of the current method's categories
+  // (and re-defaults to all when the method changes), instead of starting empty.
+  // Opt-in for the system-level panels (Leo wants the full category set by
+  // default for the AESA + standalone results); users can still deselect. Off
+  // for callers that seed via `initialSelected` (single-product inheritance).
+  defaultAllSelected = false,
 ): MethodSelection {
   const [methods, setMethods] = useState<MethodFamily[]>([])
   const [family, setFamilyState] = useState('')
+  // The family we've already auto-defaulted-to-all for. Prevents re-selecting
+  // after the user deliberately clears the selection (same family).
+  const defaultedFamilyRef = useRef<string | null>(null)
   // Patch 4D — when a parent passes `initialSelected` (single-product
   // inheritance from Static → Projected), seed the selected map from it on
   // mount. Re-seed by remounting via a `key` prop on the parent — useState
@@ -79,6 +88,22 @@ export function useMethodSelection(
     () => allCategories.reduce((s, c) => s + c.indicators.length, 0),
     [allCategories],
   )
+
+  // Default to ALL categories of the current method (opt-in). Re-defaults when
+  // the method changes (allCategories changes → new family → ref mismatch).
+  // Guarded by `defaultedFamilyRef` so a user who clears the selection for the
+  // current family isn't force-reselected.
+  useEffect(() => {
+    if (!defaultAllSelected) return
+    if (initialSelected && initialSelected.length > 0) return  // seeded path owns the selection
+    if (!family || allCategories.length === 0) return
+    if (defaultedFamilyRef.current === family) return
+    const next: Record<string, string[]> = {}
+    for (const cat of allCategories)
+      for (const ind of cat.indicators) next[indicatorKey(ind.tuple)] = ind.tuple
+    defaultedFamilyRef.current = family
+    setSelected(next)
+  }, [defaultAllSelected, initialSelected, family, allCategories])
 
   useEffect(() => {
     onChange(Object.values(selected))
@@ -239,10 +264,15 @@ interface MethodPickerProps {
   // first-visit inheritance from Static. To re-seed (e.g. archetype change),
   // bump a `key` prop on this component so React remounts it.
   initialSelected?: string[][]
+  // Default the selection to ALL of the current method's categories (and
+  // re-default on method change). The hook's seed-guard makes this fire only
+  // when there's no `initialSelected` seed, deferring to the seed/inheritance
+  // otherwise. Off by default.
+  defaultAllSelected?: boolean
 }
 
-export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelected }: MethodPickerProps) {
-  const selection = useMethodSelection(onChange, initialSelected)
+export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelected, defaultAllSelected }: MethodPickerProps) {
+  const selection = useMethodSelection(onChange, initialSelected, defaultAllSelected)
   const { selected, count } = selection
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>

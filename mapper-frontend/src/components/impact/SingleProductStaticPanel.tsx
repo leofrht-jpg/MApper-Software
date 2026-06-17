@@ -288,6 +288,7 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
                 onChange={handleMethodsChange}
                 accent="var(--mod-lca)"
                 initialSelected={selectedMethods}
+                defaultAllSelected
               />
             </div>
           </div>

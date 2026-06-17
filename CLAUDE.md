@@ -3186,6 +3186,12 @@ doesn't catch the lifecycle/effect-ordering shape that broke 4E.
   deps." Then ask "what's the off-switch?" — explicit user
   customization is usually the right answer; first-fire heuristics
   fail in incremental-edit workflows.
+- **Don't set `defaultAllSelected` (or any auto-default) on a panel whose
+  selection FEEDS a live-mirror — let it inherit.** Self-defaulting fires the
+  panel's `onChange` → trips its customize handler (`setProjectedCustomized(true)`)
+  on mount → freezes the mirror, so upstream (Static) edits stop propagating.
+  `SingleProductProjected` deliberately omits `defaultAllSelected`; it gets "all"
+  via the 4F mirror from Static. Default-all belongs on the SOURCE panel only.
 
 ### Hooks must be called unconditionally (Patch 4H)
 

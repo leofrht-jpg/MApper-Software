@@ -2775,6 +2775,11 @@ export interface ImpactAssessmentRequest {
    *  into the per-task body. Mutually exclusive with ``scenarios``,
    *  ``dsm_scenario_ids``, and multi-LCI ``lci_scenarios``. */
   paired_scenarios?: PairedDSMLCIRef[] | null
+  /** Projected-mode prospective-LCA temporal handling. ``'block'`` (default):
+   *  per-year nearest-earlier premise anchor db (step at anchors).
+   *  ``'interpolate'``: blend the two bracketing-anchor solves linearly
+   *  (smooth). Default ``'block'`` → no drift; interpolate is opt-in. */
+  temporal_mode?: 'block' | 'interpolate'
 }
 
 export interface ImpactAssessmentMeta {

@@ -52,6 +52,7 @@ from mapper.core.dsm_lca_engine import (
     ProjectedDSMLCAPipeline,
     aggregate_subsystem_results,
     build_subsystem_cohort_mapping,
+    resolve_bracket,
     resolve_database_for_year,
 )
 from mapper.core.subsystem_engine import compute_dependent_subsystem
@@ -164,6 +165,7 @@ def _year_to_database_map(
     prospective_dbs: list[tuple[str, int]],
     year_start: int | None,
     year_end: int | None,
+    temporal_mode: str = "block",
 ) -> dict[int, str]:
     out: dict[int, str] = {}
     for y in sim_years:
@@ -171,9 +173,21 @@ def _year_to_database_map(
             continue
         if year_end is not None and y > year_end:
             continue
-        match = resolve_database_for_year(y, prospective_dbs)
-        if match is not None:
-            out[y] = match[0]
+        if temporal_mode == "interpolate":
+            # Bracket years carry an "interpolated between …" label so the
+            # Year → Database panel shows the blend; exact/clamped years keep
+            # their single db (identical to block for those years).
+            br = resolve_bracket(y, prospective_dbs)
+            if br is None:
+                continue
+            out[y] = (
+                br.lower_db if br.upper_db is None
+                else f"interpolated between {br.lower_db} and {br.upper_db}"
+            )
+        else:
+            match = resolve_database_for_year(y, prospective_dbs)
+            if match is not None:
+                out[y] = match[0]
     return out
 
 
@@ -385,6 +399,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
             per_scenario_prospective[idx] = dbs
             per_scenario_year_to_db[idx] = _year_to_database_map(
                 sim_years, dbs, body.year_start, body.year_end,
+                temporal_mode=body.temporal_mode,
             )
         if not multi_lci_mode:
             prospective_dbs = per_scenario_prospective[0]
@@ -470,6 +485,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                             parameter_engine=param_engine,
                             prospective_dbs=prosp,
                             fallback_base_db=body.base_db,
+                            temporal_mode=body.temporal_mode,
                         )
                     return DSMLCAPipeline(
                         simulation_result=sim_result,

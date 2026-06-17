@@ -433,6 +433,17 @@ class ImpactAssessmentRequest(BaseModel):
     # mix incoherent combinations (e.g. SSP1 stock under SSP5 LCI) which
     # is rarely what users want.
     paired_scenarios: list[PairedDSMLCIRef] | None = None
+    # Projected mode only — prospective-LCA temporal handling:
+    #   "block" (default): each fleet year takes its nearest-earlier premise
+    #     anchor db, held constant within the 5-year block → STEP at each
+    #     anchor. Byte-identical to pre-interpolation behaviour.
+    #   "interpolate": for a non-anchor year bracketed by anchors a < Y < b,
+    #     solve the SAME year-Y demand against db_a AND db_b and linearly blend
+    #     the scalar scores per category (frac = (Y−a)/(b−a)) → smooth
+    #     piecewise-linear profile. Rigorous because the LCIA CFs are
+    #     year-invariant. Exact-anchor / clamped (before-first / after-last)
+    #     years do a SINGLE solve (no blend). Opt-in until validated.
+    temporal_mode: Literal["block", "interpolate"] = "block"
 
 
 class ImpactAssessmentMeta(BaseModel):

@@ -75,6 +75,10 @@ function ProjectedImpactPanelImpl() {
   const detailFormat = useNumberFormatter()
 
   const [scope, setScope] = useState<'inflows' | 'outflows' | 'stock' | 'all'>('all')
+  // Prospective-LCA temporal handling: 'block' (default, per-year nearest-earlier
+  // anchor db → step at 5-year boundaries) vs 'interpolate' (blend the two
+  // bracketing-anchor solves → smooth). Default block = no drift; opt-in.
+  const [temporalMode, setTemporalMode] = useState<'block' | 'interpolate'>('block')
   // Per-tab DSM scenario selection (independent of Static LCI tab and DSM
   // Architect's active flag). N=1 collapses to the legacy single-scenario
   // path (re-simulates on pick); N>1 routes the calculation through the
@@ -494,6 +498,7 @@ function ProjectedImpactPanelImpl() {
       scenario: scenarioRefs[0],
       lci_scenarios: scenarioRefs,
       parameter_set_id: null,
+      temporal_mode: temporalMode,
     }
     if (axisConflict) return
     // Paired branch first — when in paired mode it's the only valid axis.
@@ -842,6 +847,36 @@ function ProjectedImpactPanelImpl() {
               <select value={yearEnd ?? ''} onChange={(e) => setYearEnd(Number(e.target.value))} disabled={isRunning} style={selS}>
                 {availableYears.filter((y) => yearStart == null || y >= yearStart).map((y) => <option key={y} value={y}>{y}</option>)}
               </select>
+            </div>
+          </div>
+          {/* Temporal background — block (per-year nearest-earlier premise db,
+              step at 5-year anchors) vs interpolate (blend the two bracketing
+              anchor solves → smooth). Default block = no drift; opt-in. */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <label style={labelS}>Temporal background</label>
+            <div style={{ display: 'flex', gap: 4 }} data-testid="projected-temporal-mode">
+              {([
+                { value: 'block', label: 'Block', tip: 'Each year uses its nearest-earlier premise database, held constant within the 5-year block (step changes at 2030, 2035, …).' },
+                { value: 'interpolate', label: 'Interpolate', tip: 'Linearly blend the two bracketing premise databases per year → smooth profile (no steps). Rigorous because the LCIA factors are year-invariant.' },
+              ] as const).map((t) => (
+                <button
+                  key={t.value}
+                  type="button"
+                  title={t.tip}
+                  disabled={isRunning}
+                  data-testid={`temporal-mode-${t.value}`}
+                  onClick={() => setTemporalMode(t.value)}
+                  style={{
+                    padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    border: '1px solid ' + (temporalMode === t.value ? 'var(--mod-plca)' : 'var(--border-default)'),
+                    backgroundColor: temporalMode === t.value ? 'color-mix(in srgb, var(--mod-plca) 12%, transparent)' : 'var(--bg-elevated)',
+                    color: temporalMode === t.value ? 'var(--mod-plca)' : 'var(--text-primary)',
+                    fontSize: 'var(--text-xs)', fontWeight: temporalMode === t.value ? 600 : 500,
+                  }}
+                >
+                  {t.label}
+                </button>
+              ))}
             </div>
           </div>
         </div>

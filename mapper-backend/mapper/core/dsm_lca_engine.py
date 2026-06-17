@@ -18,7 +18,7 @@ matrix solves vs 380.
 from __future__ import annotations
 
 import logging
-from typing import Callable
+from typing import Callable, NamedTuple
 
 _log = logging.getLogger(__name__)
 
@@ -103,10 +103,11 @@ class DSMLCAPipeline:
         self._flat_cache: dict[tuple[str, str], list] = {}
 
     def _flatten(
-        self, archetype_id: str, year: int | None = None, scope: str = "all"
+        self, archetype_id: str, year: int | None = None, scope: str = "all",
+        db: str | None = None,
     ) -> list:
-        # ``year`` ignored here; the projected subclass overrides to honor
-        # MaterialEvolution per year.
+        # ``year``/``db`` ignored here; the projected subclass overrides to
+        # honor MaterialEvolution per year and an explicit background db.
         key = (archetype_id, scope)
         if key not in self._flat_cache:
             arc = self.archetypes[archetype_id]
@@ -216,6 +217,66 @@ class DSMLCAPipeline:
 
         return out
 
+    def _build_aggregated(self, yr, scope: str, counts, db: str | None = None):
+        """Build the count-weighted aggregated demand + share/material bundle
+        for one (year, scope), optionally rewriting every material to an
+        explicit background ``db`` (else the year-resolved db via ``_flatten``).
+        Returns a :class:`_YearAgg`, or ``None`` for an empty year."""
+        per_cohort_demand: dict[str, dict[tuple[str, str], dict]] = {}
+        per_cohort_material_qty: dict[str, dict[str, float]] = {}
+        for cohort_key, count in counts.items():
+            if count <= 0:
+                continue
+            mapping = self.mappings.get(cohort_key)
+            if not mapping:
+                continue
+            archetype_id, scaling_factor = mapping
+            if archetype_id not in self.archetypes:
+                continue
+            flat = self._flatten(archetype_id, yr.year, scope, db=db)
+            demand = compute_demand_vector(flat, count, scaling_factor)
+            if not demand:
+                continue
+            per_cohort_demand[cohort_key] = demand
+            mat_qty: dict[str, float] = {}
+            effective = count * scaling_factor
+            for mat in flat:
+                if mat.ecoinvent_activity is None:
+                    continue
+                mat_qty[mat.name] = mat_qty.get(mat.name, 0.0) + mat.quantity * effective
+            per_cohort_material_qty[cohort_key] = mat_qty
+
+        if not per_cohort_demand:
+            return None
+
+        aggregated: dict[tuple[str, str], float] = {}
+        for cohort_demand in per_cohort_demand.values():
+            for key, entry in cohort_demand.items():
+                aggregated[key] = aggregated.get(key, 0.0) + entry["amount"]
+
+        cohort_share: dict[str, float] = {}
+        total_mass = 0.0
+        for ck, demand in per_cohort_demand.items():
+            m_mass = sum(e["amount"] for e in demand.values())
+            cohort_share[ck] = m_mass
+            total_mass += m_mass
+        material_totals: dict[str, float] = {}
+        for mq in per_cohort_material_qty.values():
+            for name, qty in mq.items():
+                material_totals[name] = material_totals.get(name, 0.0) + qty
+        grand_mat_total = sum(material_totals.values())
+        return _YearAgg(aggregated, cohort_share, total_mass, material_totals, grand_mat_total)
+
+    def _compute_year_scores(self, yr, scope: str, counts):
+        """Per-year LCA: one technosphere solve on the year-resolved background.
+        Returns ``(scores_by_method, _YearAgg)`` or ``None`` for an empty year.
+        The projected subclass overrides this for temporal interpolation."""
+        agg = self._build_aggregated(yr, scope, counts, db=None)
+        if agg is None:
+            return None
+        scores_by_method = self.run_lca(agg.aggregated, self.methods)
+        return scores_by_method, agg
+
     def _calculate_single_scope(self, scope: str) -> list[DSMLCAResult]:
         # Accumulators — one entry per method.
         per_method_years: dict[tuple, list[DSMLCAYearResult]] = {m: [] for m in self.methods}
@@ -229,33 +290,13 @@ class DSMLCAPipeline:
                 continue
             counts = self._counts_for_year(yr, scope)
 
-            # 1. Per-cohort demand + per-material quantities.
-            per_cohort_demand: dict[str, dict[tuple[str, str], dict]] = {}
-            per_cohort_material_qty: dict[str, dict[str, float]] = {}
-            for cohort_key, count in counts.items():
-                if count <= 0:
-                    continue
-                mapping = self.mappings.get(cohort_key)
-                if not mapping:
-                    continue
-                archetype_id, scaling_factor = mapping
-                if archetype_id not in self.archetypes:
-                    continue
-                flat = self._flatten(archetype_id, yr.year, scope)
-                demand = compute_demand_vector(flat, count, scaling_factor)
-                if not demand:
-                    continue
-                per_cohort_demand[cohort_key] = demand
-                mat_qty: dict[str, float] = {}
-                effective = count * scaling_factor
-                for mat in flat:
-                    if mat.ecoinvent_activity is None:
-                        continue
-                    mat_qty[mat.name] = mat_qty.get(mat.name, 0.0) + mat.quantity * effective
-                per_cohort_material_qty[cohort_key] = mat_qty
+            # 1-4. Build the count-weighted demand + solve. The projected
+            # subclass overrides _compute_year_scores for temporal
+            # interpolation (block mode → identical single solve as before).
+            year_scores = self._compute_year_scores(yr, scope, counts)
 
             # Empty year — append zeros for every method.
-            if not per_cohort_demand:
+            if year_scores is None:
                 for m in self.methods:
                     per_method_years[m].append(
                         DSMLCAYearResult(
@@ -268,27 +309,11 @@ class DSMLCAPipeline:
                     )
                 continue
 
-            # 2. Aggregate demand across cohorts.
-            aggregated: dict[tuple[str, str], float] = {}
-            for cohort_demand in per_cohort_demand.values():
-                for key, entry in cohort_demand.items():
-                    aggregated[key] = aggregated.get(key, 0.0) + entry["amount"]
-
-            # 3. Compute share weights (same across all methods).
-            cohort_share: dict[str, float] = {}
-            total_mass = 0.0
-            for ck, demand in per_cohort_demand.items():
-                m_mass = sum(e["amount"] for e in demand.values())
-                cohort_share[ck] = m_mass
-                total_mass += m_mass
-            material_totals: dict[str, float] = {}
-            for mq in per_cohort_material_qty.values():
-                for name, qty in mq.items():
-                    material_totals[name] = material_totals.get(name, 0.0) + qty
-            grand_mat_total = sum(material_totals.values())
-
-            # 4. Multi-method LCA — one technosphere solve, many characterisations.
-            scores_by_method = self.run_lca(aggregated, self.methods)
+            scores_by_method, _agg = year_scores
+            cohort_share = _agg.cohort_share
+            total_mass = _agg.total_mass
+            material_totals = _agg.material_totals
+            grand_mat_total = _agg.grand_mat_total
 
             # 5. Attribute per method.
             for m in self.methods:
@@ -371,6 +396,66 @@ def resolve_database_for_year(
     return min(prospective_dbs, key=lambda p: p[1])
 
 
+class TemporalBracket(NamedTuple):
+    """Result of bracketing a fleet year against the premise anchor years.
+
+    ``upper_db is None`` → SINGLE db (no blend): exact-anchor year, or clamped
+    before the first / after the last anchor (no extrapolation). Otherwise a
+    proper bracket ``a < year < b`` with ``frac = (year − a) / (b − a)`` for the
+    linear blend ``(1−frac)·score_a + frac·score_b``.
+    """
+    lower_db: str
+    lower_year: int
+    upper_db: str | None
+    upper_year: int | None
+    frac: float
+
+
+def resolve_bracket(
+    year: int, prospective_dbs: list[tuple[str, int]]
+) -> TemporalBracket | None:
+    """Bracket ``year`` between premise anchors for temporal interpolation.
+
+    - EXACT (``year`` is an anchor) → single db, ``frac=0``.
+    - CLAMP (before first / after last anchor) → endpoint anchor, single db
+      (matches ``resolve_database_for_year``'s fallback — no extrapolation).
+    - BRACKET (``a < year < b``) → ``(db_a, a, db_b, b, frac)``. Handles missing
+      interior anchors by bracketing across the wider gap (e.g. anchors 2030,
+      2040 → year 2035 brackets 2030↔2040, frac 0.5).
+
+    Returns ``None`` only when the anchor list is empty.
+    """
+    if not prospective_dbs:
+        return None
+    dbs = sorted(prospective_dbs, key=lambda p: p[1])
+    years = [y for _, y in dbs]
+    for name, y in dbs:
+        if y == year:
+            return TemporalBracket(name, y, None, None, 0.0)
+    if year < years[0]:
+        name, y = dbs[0]
+        return TemporalBracket(name, y, None, None, 0.0)
+    if year > years[-1]:
+        name, y = dbs[-1]
+        return TemporalBracket(name, y, None, None, 0.0)
+    lower = max((p for p in dbs if p[1] < year), key=lambda p: p[1])
+    upper = min((p for p in dbs if p[1] > year), key=lambda p: p[1])
+    frac = (year - lower[1]) / (upper[1] - lower[1])
+    return TemporalBracket(lower[0], lower[1], upper[0], upper[1], frac)
+
+
+class _YearAgg(NamedTuple):
+    """Aggregated demand + share/material bundle for one (year, scope). The
+    share/material fields depend only on per-cohort AMOUNTS (not the background
+    db), so they're identical across two bracketing-db solves — built once and
+    reused for attribution under temporal interpolation."""
+    aggregated: dict
+    cohort_share: dict
+    total_mass: float
+    material_totals: dict
+    grand_mat_total: float
+
+
 class ProjectedDSMLCAPipeline(DSMLCAPipeline):
     """Year-aware pipeline.
 
@@ -389,31 +474,41 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         *args,
         prospective_dbs: list[tuple[str, int]] | None = None,
         fallback_base_db: str | None = None,
+        temporal_mode: str = "block",
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.prospective_dbs = list(prospective_dbs or [])
         self.fallback_base_db = fallback_base_db
-        # Cache keyed by (archetype_id, year, scope) since BOMs vary by year
-        # AND the stage filter depends on the current sub-scope.
-        self._flat_cache_year: dict[tuple[str, int, str], list] = {}
+        # Patch — "block" (default, per-year nearest-earlier anchor, step) vs
+        # "interpolate" (blend the two bracketing-anchor solves, smooth).
+        self.temporal_mode = temporal_mode
+        # Cache keyed by (archetype_id, year, scope, db) since BOMs vary by year,
+        # the stage filter depends on the sub-scope, AND interpolation rewrites
+        # the same year's flat to two different bracketing dbs.
+        self._flat_cache_year: dict[tuple[str, int, str, str | None], list] = {}
 
-    def _rewrite_db(self, flat: list, year: int) -> list:
-        if not self.prospective_dbs:
-            _log.debug("_rewrite_db(year=%d): no prospective_dbs, keeping base links", year)
-            return flat
-        match = resolve_database_for_year(year, self.prospective_dbs)
-        if match is None:
-            _log.warning(
-                "_rewrite_db(year=%d): resolve_database_for_year returned None "
-                "(prospective_dbs=%s)", year, self.prospective_dbs,
+    def _rewrite_db(self, flat: list, year: int, db: str | None = None) -> list:
+        if db is None:
+            # Block: resolve the nearest-earlier anchor db for this year.
+            if not self.prospective_dbs:
+                _log.debug("_rewrite_db(year=%d): no prospective_dbs, keeping base links", year)
+                return flat
+            match = resolve_database_for_year(year, self.prospective_dbs)
+            if match is None:
+                _log.warning(
+                    "_rewrite_db(year=%d): resolve_database_for_year returned None "
+                    "(prospective_dbs=%s)", year, self.prospective_dbs,
+                )
+                return flat
+            target_db, matched_year = match
+            _log.info(
+                "_rewrite_db(year=%d): matched → db=%r (year=%d) from %d candidates",
+                year, target_db, matched_year, len(self.prospective_dbs),
             )
-            return flat
-        target_db, matched_year = match
-        _log.info(
-            "_rewrite_db(year=%d): matched → db=%r (year=%d) from %d candidates",
-            year, target_db, matched_year, len(self.prospective_dbs),
-        )
+        else:
+            # Interpolation: caller pins an explicit bracketing-anchor db.
+            target_db = db
         rewritten = []
         for m in flat:
             if m.ecoinvent_activity is None:
@@ -424,10 +519,11 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         return rewritten
 
     def _flatten(
-        self, archetype_id: str, year: int | None = None, scope: str = "all"
+        self, archetype_id: str, year: int | None = None, scope: str = "all",
+        db: str | None = None,
     ) -> list:
         y = int(year) if year is not None else 0
-        key = (archetype_id, y, scope)
+        key = (archetype_id, y, scope, db)
         if key in self._flat_cache_year:
             return self._flat_cache_year[key]
         arc = self.archetypes[archetype_id]
@@ -436,9 +532,47 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
             if year is not None and has_evolution(arc.bom)
             else flatten_roots_for_scope(arc.bom, scope)
         )
-        flat = self._rewrite_db(flat, y) if year is not None else flat
+        flat = self._rewrite_db(flat, y, db=db) if year is not None else flat
         self._flat_cache_year[key] = flat
         return flat
+
+    def _compute_year_scores(self, yr, scope: str, counts):
+        """Temporal handling for the projected pipeline.
+
+        ``block`` (default): identical to the base — one solve on the
+        year-resolved (nearest-earlier anchor) background.
+
+        ``interpolate``: bracket the year between premise anchors. EXACT /
+        CLAMP → single solve on that anchor db (matches block for those years,
+        so anchor + clamped years never drift). BRACKET a<Y<b → solve the SAME
+        year-Y demand against db_a AND db_b and linearly blend the per-category
+        scalar scores by ``frac=(Y−a)/(b−a)``. Share/material attribution comes
+        from the db_a build (amounts are db-invariant → identical to db_b)."""
+        if self.temporal_mode != "interpolate" or not self.prospective_dbs:
+            return super()._compute_year_scores(yr, scope, counts)
+        bracket = resolve_bracket(yr.year, self.prospective_dbs)
+        if bracket is None:
+            return super()._compute_year_scores(yr, scope, counts)
+        if bracket.upper_db is None:
+            # Single solve (exact anchor or clamped) — no blend.
+            agg = self._build_aggregated(yr, scope, counts, db=bracket.lower_db)
+            if agg is None:
+                return None
+            return self.run_lca(agg.aggregated, self.methods), agg
+        # Bracket — two solves on the same year-Y demand, blend per category.
+        agg_a = self._build_aggregated(yr, scope, counts, db=bracket.lower_db)
+        if agg_a is None:
+            return None
+        agg_b = self._build_aggregated(yr, scope, counts, db=bracket.upper_db)
+        scores_a = self.run_lca(agg_a.aggregated, self.methods)
+        scores_b = self.run_lca(agg_b.aggregated, self.methods) if agg_b is not None else scores_a
+        frac = bracket.frac
+        blended: dict[tuple, tuple[float, str]] = {}
+        for m in self.methods:
+            sa, unit = scores_a.get(m, (0.0, ""))
+            sb, _ = scores_b.get(m, (sa, unit))
+            blended[m] = ((1.0 - frac) * sa + frac * sb, unit)
+        return blended, agg_a
 
 
 # ── Multi-subsystem aggregation ──────────────────────────────────────────────

@@ -102,6 +102,59 @@ Two tabs, two distinct LCI sources:
 
 The Static tab does **not** gain a database selector. If we ever want a "fixed prospective LCI" mode (one premise DB applied uniformly across years, not year-matched), it goes in as a third mode — see Future Features. Don't redefine Static semantics to support it.
 
+### Prospective temporal handling — block vs interpolate (Patch 6A)
+
+Prospective per-year impact has two temporal modes, set by
+`ImpactAssessmentRequest.temporal_mode ∈ {'block','interpolate'}`, **default
+`'block'`** (Prospective Background tab toggle, `temporal-mode-block|interpolate`):
+
+- **`block`** (default, today's behaviour): each fleet year takes its
+  nearest-earlier premise anchor db (`resolve_database_for_year`), held constant
+  within the 5-year block → **step discontinuities** at each anchor (2030, 2035, …).
+- **`interpolate`** (opt-in): for a non-anchor year bracketed by anchors a<Y<b,
+  solve the **SAME year-Y demand** against **both** db_a and db_b and **linearly
+  blend the per-category scalar scores** by `frac=(Y−a)/(b−a)` → smooth
+  piecewise-linear profile. Exact-anchor / clamped (before-first / after-last,
+  **no extrapolation**) years do a **single** solve. `resolve_bracket`
+  (`dsm_lca_engine.py`) returns the bracket; missing interior anchors bracket
+  across the wider gap.
+
+**Why this is rigorous, and the key gotcha:** the LCIA CFs are **year-invariant**
+(EF v3.1 etc., static), so interpolating the scalar score == characterising an
+interpolated inventory — a defensible piecewise-linear model. BUT the per-year
+impact is **aggregate-then-solve** (one solve on the count-weighted year-Y demand
+vs db(Y), attributed by mass share) — **NOT** per-unit. There is **no
+per-unit-per-anchor score** to interpolate, so the cheap "~6 anchor solves" shape
+does **not** apply; interpolation costs ~2 solves per bracket year (naive;
+anchor-runner reuse deferred). **Score interpolation ≠ matrix blending** — we
+blend two scalar solves, not a blended technosphere (the matrix inverse is
+nonlinear); that's intentional and is the proposed methodology.
+
+**Architecture:** the block path is unchanged and **byte-identical** — the
+`_build_aggregated` / `_compute_year_scores` extraction in `DSMLCAPipeline` is
+behaviour-preserving; `ProjectedDSMLCAPipeline._compute_year_scores` overrides only
+the interpolate branch. `_flatten`/`_rewrite_db` take an explicit `db` so the
+solve site can pin db_a / db_b. `meta.year_to_database`: block → year→single db
+(unchanged); interpolate → bracket years carry `"interpolated between {db_a} and
+{db_b}"` (the Year→Database panel renders the string as-is — no panel change). DSM
+flows untouched; AESA SR timeline + impact charts smooth as a downstream
+consequence. Contribution tree/sankey is a **separate** on-demand path
+(`/api/lca/contribution`), not the per-year profile — out of scope. Locked by
+`tests/test_prospective_temporal_interpolation.py` (bracket resolver; block step;
+blend math; anchor/clamp single-solve; block==interpolate at anchors/clamps).
+
+#### What NOT to do
+
+- **Don't assume a per-unit-per-anchor "~6 solves" shape.** The compute is
+  aggregate-then-solve; interpolation blends two scalar solves of the year-Y
+  demand. Don't refactor to per-unit (that's the deferred Option B).
+- **Don't extrapolate beyond the anchor range.** Before-first / after-last →
+  clamp to the endpoint anchor (single solve), matching `resolve_database_for_year`.
+- **Don't change the default to `interpolate`.** Block is the no-drift default;
+  interpolate is opt-in until validated. The block path must stay byte-identical.
+- **Don't interpolate the contribution tree/sankey** under this patch — it's a
+  separate endpoint; the profile scores are the target.
+
 DSM scenario is selectable from the Configuration chip on both Static Background and Prospective Background tabs (`DSMScenarioChip` in `components/dsm/DSMScenarioChip.tsx`). Click the chip's DSM scenario coordinate to switch. Selection is per-tab — Static and Projected can compute against different DSM scenarios independently if the user chooses. Picking a scenario calls `dsmStore.simulate(scenarioId)` (no `activateScenario`), so the server-side `active_scenario_id` flag stays put — DSM Architect's notion of "active" is unaffected. Caveat: there is one shared `simulationResult` slot per system, so re-picking on one tab refreshes the sim consumed by the other; per-tab independence is a UX promise about selection state, not about backend caching. Default Impact Method is **EF v3.1** (with graceful fallback to the first available family if EF v3.1 isn't installed); default Scope is **Full lifecycle**.
 
 ### Multi-LCI-scenario projected runs (Patch 2A)

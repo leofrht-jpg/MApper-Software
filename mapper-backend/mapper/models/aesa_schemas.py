@@ -41,25 +41,40 @@ BUILT_IN_PRINCIPLES: tuple[str, ...] = ("EpC", "IN", "AGR", "LA", "AR")
 
 
 class PlanetaryBoundary(BaseModel):
-    """Single planetary boundary, expressed in EF-compatible units (PB-EF)."""
+    """Single planetary boundary, expressed in EF-compatible units (PB-EF).
+
+    Patch 2c — ``pb_value`` (the SOS), ``ef_indicator`` (the LCA-method link),
+    ``zone_of_uncertainty`` and ``status_2023`` are OPTIONAL so a *structure-only*
+    boundary set (e.g. ``Ryberg2018_PBLCIA``) can be scaffolded WITHOUT fabricating
+    SOS / control-factor numbers or asserting an assessment status. A boundary
+    with ``pb_value is None`` (or its set marked ``computable=False``) is rejected
+    by compute with a clear message — never characterised against a null SOS.
+    ``Sala2020_EF`` supplies real values and is unaffected.
+    """
     id: str                                       # e.g. "climate_change"
     name: str                                     # "Climate change"
     control_variable: str                         # "CO2 concentration"
-    ef_indicator: str                             # matches method[1] in LCA results
-    pb_value: float                               # global absolute boundary
+    ef_indicator: str | None = None               # matches method[1]; null = no EF-method link yet
+    pb_value: float | None = None                 # global absolute boundary (SOS); null = not fabricated
     unit: str                                     # EF-indicator unit
-    zone_of_uncertainty: tuple[float, float]      # (lower, upper) multipliers or values
-    boundary_type: BOUNDARY_TYPE                  # "cumulative" | "flow"
-    status_2023: PB_STATUS_2023
+    zone_of_uncertainty: tuple[float, float] | None = None  # (lower, upper); null when SOS absent
+    boundary_type: BOUNDARY_TYPE                  # "cumulative" | "flow" (structural)
+    status_2023: PB_STATUS_2023 | None = None     # 2023 assessment status; null when not sourced
     provisional: bool = False
 
 
 class BoundarySet(BaseModel):
-    """Named collection of PB values. Built-in: 'Sala2020_EF'."""
+    """Named collection of PB values. Built-in: 'Sala2020_EF'.
+
+    Patch 2c — ``computable`` marks whether the set is ready for SR compute.
+    A scaffold set (null SOS / no PB-LCIA method) sets ``computable=False`` and
+    compute rejects it with a clear message. Defaults True (back-compat: Sala
+    and any pre-2c set load as computable)."""
     id: str
     name: str
     source: str
     boundaries: dict[str, PlanetaryBoundary]
+    computable: bool = True
 
 
 # ── Multi-D Sharing Principles ───────────────────────────────────────────────

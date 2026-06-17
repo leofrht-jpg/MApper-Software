@@ -84,6 +84,7 @@ def load_boundary_sets() -> dict[str, BoundarySet]:
         out[s["id"]] = BoundarySet(
             id=s["id"], name=s["name"], source=s["source"],
             boundaries=boundaries,
+            computable=s.get("computable", True),  # Patch 2c — default True (back-compat)
         )
     return out
 

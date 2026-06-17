@@ -1314,6 +1314,59 @@ no-mutation-of-original.
 - **Don't treat `data[P] == {}` as a zero factor.** Present-but-empty means "no
   per-principle override here" → fall back to `fixed_principle`.
 
+### Ryberg2018_PBLCIA is a structure-only scaffold (Patch 2c)
+
+A second boundary set — `Ryberg2018_PBLCIA` (Ryberg et al. 2018 PB-LCIA) — ships
+in `mapper/data/aesa/boundary_sets.json` as **STRUCTURE ONLY, not computable**:
+the 9 PB-framework boundaries (climate change, biosphere integrity, stratospheric
+ozone depletion, ocean acidification, biogeochemical flows [N+P], land-system
+change, freshwater use, atmospheric aerosol loading, novel entities) carry a
+`control_variable` + `unit` (the standard Steffen et al. 2015 labels, marked
+**provisional** for authoritative Ryberg fill), but `pb_value` (SOS) = null,
+`ef_indicator` = null (no PB-LCIA characterisation method maps to it yet),
+`zone_of_uncertainty` = null, `status_2023` = null. The set is marked
+`computable: false`. **Nothing is fabricated** — SOS values and a PB-LCIA method
+are the deferred dependency.
+
+Schema (Patch 2c): `PlanetaryBoundary.{ef_indicator, pb_value,
+zone_of_uncertainty, status_2023}` are now optional (`… | None = None`);
+`BoundarySet.computable: bool = True`. `Sala2020_EF` supplies real values and is
+unaffected (loads as computable, SR byte-identical).
+
+**Compute guard** (`post_compute` in `mapper/api/aesa.py`, right after the
+boundary-set-not-found check): if `not bset.computable` OR any boundary has
+`pb_value is None`, it raises a **400 with a clear human message** ("… scaffolded
+but not yet computable: it needs a PB-LCIA characterisation method and SOS
+values …") — never a 500/crash on a null `pb_value × factor` or a null
+`ef_indicator` in `suggest_method_mapping`. The generic PB picker surfaces Ryberg
+immediately, so this guard is load-bearing even before the Phase-3 UI. Locked by
+`tests/test_aesa_ryberg_scaffold.py` (loads-with-nulls, served in `get_defaults`,
+compute rejected gracefully — assert 400+message not crash, Sala unregressed,
+null-boundary round-trip).
+
+Before Ryberg can compute, two things must land (out of scope for 2c): the
+**SOS (`pb_value`) values** for each boundary, and a **PB-LCIA characterisation
+method** that maps LCA results to these boundaries (the `ef_indicator` link).
+
+#### What NOT to do
+
+- **Don't fabricate SOS, control factors, zones, or assessment statuses for
+  Ryberg.** Null is the honest scaffold state; fabricated numbers would ship as
+  if authoritative. Fill from the Ryberg 2018 paper (and verify the control
+  variables/units against it — the bundled labels are provisional PB-framework
+  placeholders).
+- **Don't remove the compute guard** or weaken it to a silent skip. Selecting a
+  not-computable set must fail loudly with the clear message, not return empty
+  results (which reads as "computed, nothing transgressed").
+- **Don't make `Sala2020_EF` (or any real set) rely on the optional-field
+  defaults.** Sala supplies real `pb_value`/`ef_indicator`; the optionality
+  exists for scaffolds only. A real set with a null `pb_value` is the guard's
+  trigger, not a valid state.
+- **Don't characterise EF methods against Ryberg.** Its boundaries have no
+  `ef_indicator` and represent the PB-LCIA framework's own control variables —
+  they need a PB-LCIA method, not the EF v3.1 method set. Mapping EF methods to
+  Ryberg PBs would be methodologically wrong (the Sala set is the EF-linked one).
+
 ### AESA Compute Source cascade (Patch 4O)
 
 AESA is a **downstream consumer** — `POST /aesa/compute` takes an

@@ -199,6 +199,123 @@
           "provisional": true
         }
       }
+    },
+    {
+      "id": "Ryberg2018_PBLCIA",
+      "name": "Ryberg et al. 2018 — PB-LCIA",
+      "source": "Ryberg, M.W., Owsianiak, M., Richardson, K., Hauschild, M.Z. (2018). Development of a life-cycle impact assessment methodology linked to the Planetary Boundaries framework. Ecological Indicators 88: 250-262. DOI 10.1016/j.ecolind.2017.12.065",
+      "computable": false,
+      "_notice": "Patch 2c SCAFFOLD — structure only, NOT computable. The 9 PB-framework control variables/units are the standard Steffen et al. 2015 labels and are PROVISIONAL: replace with the exact Ryberg 2018 PB-LCIA control variables/units before use. pb_value (SOS), ef_indicator (PB-LCIA characterisation-method link), zone_of_uncertainty and status_2023 are deliberately null — to be filled authoritatively. Compute rejects this set with a clear message until SOS values and a PB-LCIA method exist.",
+      "boundaries": {
+        "climate_change": {
+          "id": "climate_change",
+          "name": "Climate change",
+          "control_variable": "Atmospheric CO2 concentration",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "ppm CO2",
+          "zone_of_uncertainty": null,
+          "boundary_type": "cumulative",
+          "status_2023": null,
+          "provisional": true
+        },
+        "biosphere_integrity": {
+          "id": "biosphere_integrity",
+          "name": "Biosphere integrity",
+          "control_variable": "Genetic diversity (extinction rate)",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "E/MSY (extinctions per million species-years)",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        },
+        "stratospheric_ozone_depletion": {
+          "id": "stratospheric_ozone_depletion",
+          "name": "Stratospheric ozone depletion",
+          "control_variable": "Stratospheric O3 concentration",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "DU (Dobson units)",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        },
+        "ocean_acidification": {
+          "id": "ocean_acidification",
+          "name": "Ocean acidification",
+          "control_variable": "Aragonite saturation state of surface seawater",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "Omega_arag (dimensionless)",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        },
+        "biogeochemical_flows": {
+          "id": "biogeochemical_flows",
+          "name": "Biogeochemical flows (N and P)",
+          "control_variable": "Reactive N fixation and P flow to oceans",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "Tg N/yr; Tg P/yr",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        },
+        "land_system_change": {
+          "id": "land_system_change",
+          "name": "Land-system change",
+          "control_variable": "Area of forested land remaining",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "% of original forest cover",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        },
+        "freshwater_use": {
+          "id": "freshwater_use",
+          "name": "Freshwater use",
+          "control_variable": "Blue water consumption",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "km3/yr",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        },
+        "atmospheric_aerosol_loading": {
+          "id": "atmospheric_aerosol_loading",
+          "name": "Atmospheric aerosol loading",
+          "control_variable": "Aerosol optical depth",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "AOD (dimensionless)",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        },
+        "novel_entities": {
+          "id": "novel_entities",
+          "name": "Novel entities",
+          "control_variable": "Release of synthetic chemicals, heavy metals and radionuclides (no agreed control variable)",
+          "ef_indicator": null,
+          "pb_value": null,
+          "unit": "not yet defined",
+          "zone_of_uncertainty": null,
+          "boundary_type": "flow",
+          "status_2023": null,
+          "provisional": true
+        }
+      }
     }
   ]
 }

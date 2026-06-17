@@ -335,6 +335,21 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
             status_code=400,
             detail=f"Boundary set '{config.boundary_set_id}' not found",
         )
+    # Patch 2c — scaffold guard: a structure-only boundary set (e.g.
+    # Ryberg2018_PBLCIA) is marked not-computable and/or carries null SOS
+    # (pb_value). Reject with a clear message rather than crashing on a null
+    # pb_value × factor or a null ef_indicator in suggest_method_mapping.
+    if (not bset.computable
+            or any(pb.pb_value is None for pb in bset.boundaries.values())):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Boundary set '{bset.name}' is scaffolded but not yet "
+                "computable: it needs a PB-LCIA characterisation method and "
+                "SOS (planetary boundary) values before AESA can compute "
+                "sustainability ratios against it."
+            ),
+        )
     if body.run_sensitivity:
         result = AESAEngine.compute_with_sensitivity(impact.results, config, bset)
     else:

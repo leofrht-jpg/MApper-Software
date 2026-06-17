@@ -1273,6 +1273,47 @@ no-drift: mutating the sharing snapshot's new fields to garbage leaves every
 SR/SOS byte-identical). Do NOT make compute read these off the template — that
 would reintroduce drift and break the snapshot-authoritative model.
 
+### Per-principle downscaling in the σ sensitivity sweep (Patch 2b)
+
+`AESAEngine.compute_with_sensitivity` (`mapper/core/aesa_engine.py`) runs one
+variant per principle. It already flips every **category_specific** layer to the
+tested principle P (via `category_assignments`). Patch 2b (Option 1) extends this
+so a **fixed** layer ALSO resolves to P — but only when the layer carries data
+for P (**"has data" = `P in layer.data` AND `layer.data[P]` truthy**); otherwise
+it FALLS BACK to the layer's `fixed_principle`. A present-but-empty `data[P] ==
+{}` is treated as ABSENT → fallback (never a zero factor).
+
+**No SR drift on existing presets.** The built-in Multi-D shape has fixed layers
+that carry only their `fixed_principle`'s data, so every variant falls back to
+`fixed_principle` — byte-identical to the pre-patch sweep. The fix is confined to
+the per-variant chain copy (`ly.model_copy(update={"fixed_principle": P})` +
+`chain.model_copy(update={"layers": ...})`); it never mutates the stored preset,
+and the **primary (non-sensitivity) `compute()` and the schema are unchanged**
+(`DownscalingLayer.data` was already principle-keyed). Per-principle fixed-layer
+data is reachable via import until the Phase-4 editor ships.
+
+Locked by `tests/test_aesa_per_principle_sensitivity.py`: no-drift (patched built-in
+sweep == reproduced category-only sweep, per-principle byte-identical), primary
+unchanged, the new capability (a fixed layer with distinct EpC/AR data varies),
+absent-principle fallback, present-but-empty→fallback-not-zero, and
+no-mutation-of-original.
+
+#### What NOT to do
+
+- **Don't make fixed layers vary unconditionally in the sweep.** The fallback to
+  `fixed_principle` when `data[P]` is absent/empty is what keeps single-principle
+  fixed layers (the built-in) invariant → no drift. Removing it silently shifts
+  every existing preset's sensitivity SRs.
+- **Don't push the per-principle resolution into `compute()` /
+  `DownscalingLayer.resolve_principle`.** Those drive the PRIMARY compute, which
+  must stay byte-identical. The variation lives only in the per-variant chain
+  copy built inside `compute_with_sensitivity`.
+- **Don't mutate the stored chain/layers in place** when building a variant
+  (`model_copy` per layer + per chain). In-place mutation corrupts the config's
+  snapshot and the next variant.
+- **Don't treat `data[P] == {}` as a zero factor.** Present-but-empty means "no
+  per-principle override here" → fall back to `fixed_principle`.
+
 ### AESA Compute Source cascade (Patch 4O)
 
 AESA is a **downstream consumer** — `POST /aesa/compute` takes an

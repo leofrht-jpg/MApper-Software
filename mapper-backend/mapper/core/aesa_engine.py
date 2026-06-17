@@ -602,8 +602,24 @@ class AESAEngine:
                 )
                 for a in preset.category_assignments
             ]
+            # Patch 2b (Option 1) — also resolve FIXED layers to the tested
+            # principle P, but only when the layer carries data for P
+            # ("has data" = P present in layer.data AND non-empty); otherwise
+            # FALL BACK to the layer's fixed_principle. A single-principle fixed
+            # layer (the built-in Multi-D shape) therefore stays invariant across
+            # the sweep → no SR drift. This mutates only the per-variant chain
+            # copy; the primary compute path reads the original config untouched.
+            variant_layers = [
+                ly.model_copy(update={"fixed_principle": principle.id})
+                if (ly.principle_mode == "fixed"
+                    and principle.id in ly.data and ly.data[principle.id])
+                else ly
+                for ly in preset.chain.layers
+            ]
+            variant_chain = preset.chain.model_copy(update={"layers": variant_layers})
             variant_preset = preset.model_copy(update={
                 "category_assignments": variant_assignments,
+                "chain": variant_chain,
             })
             variant_cfg = config.model_copy(update={
                 "sharing": variant_preset,

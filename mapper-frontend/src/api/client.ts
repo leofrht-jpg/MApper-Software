@@ -1651,6 +1651,22 @@ export async function exportMFAResults(systemId: string): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
+// All-years cohort table export ("Cohorts in {year}" box, exports every year).
+// Mirrors exportMFAResults — the established DSM data-xlsx pattern (backend
+// builds the long-format workbook, frontend downloads the blob).
+export async function exportDSMCohorts(systemId: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/cohorts/export`)
+  if (!res.ok) throw new Error(await res.text())
+  const blob = await res.blob()
+  const filename = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'cohorts.xlsx'
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
 export interface ImportResult {
   years_imported: number
   cohorts_found: number

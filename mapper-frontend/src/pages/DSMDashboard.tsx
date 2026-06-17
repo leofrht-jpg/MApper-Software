@@ -48,7 +48,7 @@ import { EditSystemModal } from '../components/dsm/EditSystemModal'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
 import { YearSlider } from '../components/ui/YearSlider'
-import { BASE_SCENARIO } from '../api/client'
+import { BASE_SCENARIO, exportDSMCohorts } from '../api/client'
 import { multiResultKey, resolveSlot, useDSMStore } from '../stores/dsmStore'
 import type { ActiveResultView } from '../stores/dsmStore'
 import { useParameterStore } from '../stores/parameterStore'
@@ -1202,7 +1202,28 @@ export function DSMDashboard() {
           {/* Row 3 — Cohort breakdown (full width) */}
           {simulationResult && selectedYearResult && (
             <Card>
-              <CardHeader title={`Cohorts in ${selectedYear}`} />
+              <CardHeader
+                title={`Cohorts in ${selectedYear}`}
+                right={
+                  <Button
+                    variant="secondary"
+                    data-testid="cohort-export"
+                    title="Download all years (.xlsx)"
+                    aria-label="Download all years (.xlsx)"
+                    disabled={!activeSystem?.id || !simulationResult || simulationResult.years.length === 0}
+                    onClick={async () => {
+                      if (!activeSystem?.id) return
+                      try {
+                        await exportDSMCohorts(activeSystem.id)
+                      } catch (err) {
+                        console.error(err)
+                      }
+                    }}
+                  >
+                    <Download size={14} strokeWidth={1.5} /> Export Excel
+                  </Button>
+                }
+              />
               <div style={{ overflow: 'auto', maxHeight: 400 }}>
                 <CohortTable rows={cohortRows} dims={nonAgeDims} colorMap={colorMap} />
               </div>

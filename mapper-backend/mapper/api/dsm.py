@@ -2226,6 +2226,67 @@ async def export_results(system_id: str) -> Response:
     )
 
 
+def _cohort_export_rows(
+    sys_def: SystemDefinition, result: SimulationResult,
+) -> tuple[list[str], list[list[object]]]:
+    """Long-format flatten of a DSM result: ONE row per (year × cohort) across
+    ALL years and ALL cohorts. Columns: Year, <non-age dims, display name>,
+    Stock, Inflow, Outflow, Net. Within each year, cohorts are sorted by Stock
+    descending (mirrors the dashboard "Cohorts in {year}" table); years
+    ascending. Net = Inflow − Outflow. Pure (no I/O) → unit-testable."""
+    dims = non_age_dimensions(sys_def.dimensions)
+    headers = ["Year"] + [d.display_name or d.name for d in dims] + ["Stock", "Inflow", "Outflow", "Net"]
+    out: list[list[object]] = []
+    for yr in sorted(result.years, key=lambda y: y.year):
+        cks = set(yr.stock) | set(yr.inflow) | set(yr.outflow)
+        triples: list[tuple[float, list[object]]] = []
+        for ck in cks:
+            dvals = cohort_key_to_dict(ck, sys_def.dimensions)
+            stock = yr.stock.get(ck, 0.0)
+            inflow = yr.inflow.get(ck, 0.0)
+            outflow = yr.outflow.get(ck, 0.0)
+            row: list[object] = [yr.year] + [dvals.get(d.name, "") for d in dims]
+            row += [stock, inflow, outflow, inflow - outflow]
+            triples.append((stock, row))
+        triples.sort(key=lambda t: t[0], reverse=True)
+        out.extend(row for _, row in triples)
+    return headers, out
+
+
+@router.get("/systems/{system_id}/cohorts/export")
+async def export_cohorts(system_id: str) -> Response:
+    """Export the FULL per-year cohort data ("Cohorts in {year}" box, all years)
+    to xlsx — one long-format sheet, one row per (year × cohort), ALL cohorts ×
+    ALL years, columns: Year + per-dimension + Stock / Inflow / Outflow / Net.
+    Reads the active simulation result (run /simulate first)."""
+    sys_def = _get_system(system_id)
+    project = _current_project()
+    result = _proj_results(project).get(system_id)
+    if result is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No simulation results available. Run /simulate first.",
+        )
+    headers, rows = _cohort_export_rows(sys_def, result)
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Cohorts by Year"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in rows:
+        ws.append(row)
+    buf = io.BytesIO()
+    wb.save(buf)
+    years = [y.year for y in result.years]
+    span = f"{min(years)}-{max(years)}" if years else "all"
+    return Response(
+        content=buf.getvalue(),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="cohorts_{span}.xlsx"'},
+    )
+
+
 # ── Import from previously exported Excel ───────────────────────────────────
 
 

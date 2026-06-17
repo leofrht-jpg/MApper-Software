@@ -442,8 +442,12 @@ class ImpactAssessmentRequest(BaseModel):
     #     the scalar scores per category (frac = (Y−a)/(b−a)) → smooth
     #     piecewise-linear profile. Rigorous because the LCIA CFs are
     #     year-invariant. Exact-anchor / clamped (before-first / after-last)
-    #     years do a SINGLE solve (no blend). Opt-in until validated.
-    temporal_mode: Literal["block", "interpolate"] = "block"
+    #     years do a SINGLE solve (no blend).
+    #
+    # Default is "interpolate" (Stage 2) — smooth piecewise-linear profile is
+    # the methodologically-preferred prospective behaviour. The toggle retains
+    # "block" for reproducibility of pre-interpolation / stepped results.
+    temporal_mode: Literal["block", "interpolate"] = "interpolate"
 
 
 class ImpactAssessmentMeta(BaseModel):

@@ -31,6 +31,17 @@ DB_FACTOR = {
 PROSPECTIVE = [(f"db{y}", y) for y in (2025, 2030, 2035, 2040, 2045, 2050)]
 
 
+# ── schema default (Stage 2: interpolate is the default) ─────────────────────
+
+def test_request_default_temporal_mode_is_interpolate():
+    from mapper.models.bom_schemas import ImpactAssessmentRequest
+    req = ImpactAssessmentRequest(
+        mode="projected", mfa_system_id="sys-1", scope="all",
+        methods=[["EF v3.1", "climate change", "GWP100"]],
+    )
+    assert req.temporal_mode == "interpolate"  # block stays reachable via the toggle
+
+
 # ── resolve_bracket (pure) ───────────────────────────────────────────────────
 
 def test_bracket_exact_anchor_is_single():

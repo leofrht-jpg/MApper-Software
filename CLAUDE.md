@@ -106,12 +106,14 @@ The Static tab does **not** gain a database selector. If we ever want a "fixed p
 
 Prospective per-year impact has two temporal modes, set by
 `ImpactAssessmentRequest.temporal_mode ∈ {'block','interpolate'}`, **default
-`'block'`** (Prospective Background tab toggle, `temporal-mode-block|interpolate`):
+`'interpolate'`** (Stage 2; Prospective Background tab toggle,
+`temporal-mode-block|interpolate`, initial state Interpolate):
 
-- **`block`** (default, today's behaviour): each fleet year takes its
-  nearest-earlier premise anchor db (`resolve_database_for_year`), held constant
-  within the 5-year block → **step discontinuities** at each anchor (2030, 2035, …).
-- **`interpolate`** (opt-in): for a non-anchor year bracketed by anchors a<Y<b,
+- **`block`** (pre-interpolation behaviour, retained for reproducibility): each
+  fleet year takes its nearest-earlier premise anchor db
+  (`resolve_database_for_year`), held constant within the 5-year block → **step
+  discontinuities** at each anchor (2030, 2035, …).
+- **`interpolate`** (default): for a non-anchor year bracketed by anchors a<Y<b,
   solve the **SAME year-Y demand** against **both** db_a and db_b and **linearly
   blend the per-category scalar scores** by `frac=(Y−a)/(b−a)` → smooth
   piecewise-linear profile. Exact-anchor / clamped (before-first / after-last,
@@ -173,8 +175,11 @@ reuse==naive byte-identical + factorize-once-per-db).
   demand. Don't refactor to per-unit (that's the deferred Option B).
 - **Don't extrapolate beyond the anchor range.** Before-first / after-last →
   clamp to the endpoint anchor (single solve), matching `resolve_database_for_year`.
-- **Don't change the default to `interpolate`.** Block is the no-drift default;
-  interpolate is opt-in until validated. The block path must stay byte-identical.
+- **Interpolate is the default (Stage 2); block is retained via the toggle for
+  reproducibility.** The block path must stay byte-identical to pre-interpolation
+  behaviour — don't "tidy" it. When adding a test that COMPUTES a projected
+  result and expects stepped/block numbers, set `temporal_mode='block'`
+  explicitly (the default is now interpolate).
 - **Don't interpolate the contribution tree/sankey** under this patch — it's a
   separate endpoint; the profile scores are the target.
 

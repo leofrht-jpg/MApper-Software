@@ -75,10 +75,11 @@ function ProjectedImpactPanelImpl() {
   const detailFormat = useNumberFormatter()
 
   const [scope, setScope] = useState<'inflows' | 'outflows' | 'stock' | 'all'>('all')
-  // Prospective-LCA temporal handling: 'block' (default, per-year nearest-earlier
-  // anchor db → step at 5-year boundaries) vs 'interpolate' (blend the two
-  // bracketing-anchor solves → smooth). Default block = no drift; opt-in.
-  const [temporalMode, setTemporalMode] = useState<'block' | 'interpolate'>('block')
+  // Prospective-LCA temporal handling: 'interpolate' (default — blend the two
+  // bracketing-anchor solves → smooth piecewise-linear profile) vs 'block'
+  // (per-year nearest-earlier anchor db → step at 5-year boundaries; retained
+  // for reproducibility of stepped results).
+  const [temporalMode, setTemporalMode] = useState<'block' | 'interpolate'>('interpolate')
   // Per-tab DSM scenario selection (independent of Static LCI tab and DSM
   // Architect's active flag). N=1 collapses to the legacy single-scenario
   // path (re-simulates on pick); N>1 routes the calculation through the

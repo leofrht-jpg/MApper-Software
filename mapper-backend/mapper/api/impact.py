@@ -46,7 +46,11 @@ from mapper.api.dsm import _get_or_create_state, _get_system, simulate_for_scena
 from mapper.models.dsm_schemas import BASE_SCENARIO_ID, get_scenario
 from mapper.core import plca_storage
 from mapper.core.bom_engine import iter_all_materials, validation_error_count
-from mapper.core.bw2_wrapper import PersistentLCARunner, run_lca_multi_method
+from mapper.core.bw2_wrapper import (
+    MultiDBPersistentRunner,
+    PersistentLCARunner,
+    run_lca_multi_method,
+)
 from mapper.core.dsm_lca_engine import (
     DSMLCAPipeline,
     ProjectedDSMLCAPipeline,
@@ -448,9 +452,44 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
             ) -> tuple[ImpactAssessmentResult, dict[int, str]]:
                 if task_registry.is_cancelled(task_id):
                     raise CancelledOperation(task_id)
-                # Each scenario gets its own factorization (different
-                # technosphere matrix) — that's the cost of swapping LCI.
-                persistent_local = PersistentLCARunner()
+
+                # Per-scenario prospective DBs (already pre-resolved upstream).
+                if mode == "projected":
+                    sc_idx = lci_scenarios_list.index(scenario) if scenario else 0
+                    prosp = per_scenario_prospective[sc_idx]
+                    yr_to_db = per_scenario_year_to_db[sc_idx]
+                else:
+                    prosp = []
+                    yr_to_db = {}
+
+                interpolate = (mode == "projected"
+                               and body.temporal_mode == "interpolate"
+                               and bool(prosp))
+                # Interpolate alternates between two bracketing dbs year-to-year;
+                # a single PersistentLCARunner would re-factorize on every switch
+                # (thrashing). MultiDBPersistentRunner caches one factorization
+                # per db → ~one factorize per anchor, back-subs thereafter. Same
+                # scores. Block keeps the single runner (unchanged, no-drift).
+                persistent_local = (
+                    MultiDBPersistentRunner() if interpolate else PersistentLCARunner()
+                )
+
+                # Solve-count denominator for the progress bar. Block: one solve
+                # per (year × scope × subsystem). Interpolate: bracket years cost
+                # TWO solves (db_a + db_b), exact/clamped years one — so the bar
+                # never overruns and reaches 100% cleanly.
+                if interpolate:
+                    per_year_solves = sum(
+                        1 if resolve_bracket(y, prosp) is None
+                        or resolve_bracket(y, prosp).upper_db is None
+                        else 2
+                        for y in in_range_years
+                    )
+                    total_override = (
+                        per_year_solves * max(len(scope_labels), 1) * max(n_subs, 1)
+                    )
+                else:
+                    total_override = None
 
                 def _publish_slice(stage: str, pct: float) -> None:
                     scaled = pct_lo + (pct_hi - pct_lo) * max(0.0, min(1.0, pct))
@@ -461,16 +500,9 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                     _publish_slice, in_range_years, scope_labels, persistent_local,
                     subsystem_count=n_subs,
                     task_id=task_id,
+                    total_override=total_override,
+                    simple_label=interpolate,
                 )
-
-                # Per-scenario prospective DBs (already pre-resolved upstream).
-                if mode == "projected":
-                    sc_idx = lci_scenarios_list.index(scenario) if scenario else 0
-                    prosp = per_scenario_prospective[sc_idx]
-                    yr_to_db = per_scenario_year_to_db[sc_idx]
-                else:
-                    prosp = []
-                    yr_to_db = {}
 
                 def _make_pipeline_local(sim_result, cohort_map):
                     if mode == "projected":
@@ -665,42 +697,52 @@ def _progress_runner(
     persistent: PersistentLCARunner | None = None,
     subsystem_count: int = 1,
     task_id: str | None = None,
+    total_override: int | None = None,
+    simple_label: bool = False,
 ):
     """Wrap a ``PersistentLCARunner`` (or fall back to ``run_lca_multi_method``)
-    and emit a progress tick per (scope, year) pair.
+    and emit a progress tick per LCA SOLVE.
 
-    When *persistent* is provided, the runner reuses a single LU
-    factorization of the technosphere matrix across all years — turning
-    ~0.5 s per year into ~1 ms back-substitution.
+    The unit counted is the LCA solve (one ``lca_fn`` call). Block mode does one
+    solve per (scope, year, subsystem) — so the (scope, year) pair is derived
+    from the call counter, and ``total = years × scopes × subsystems``.
 
-    The pipeline iterates scopes sequentially (``_ATOMIC_SCOPES`` order:
-    inflows → stock → outflows), each looping over all in-range years,
-    so the (scope, year) pair can be derived from the call counter.
+    Interpolate mode does TWO solves on bracket years (db_a + db_b) and one on
+    exact/clamped years, so the per-year call count is non-uniform: the caller
+    passes the exact solve count via ``total_override`` (so the bar never
+    overruns) and sets ``simple_label`` (the year/scope can't be derived from a
+    uniform divisor, so the tick shows a plain ``solve n/total``).
     """
     lca_fn = persistent or run_lca_multi_method
     counter = {"n": 0}
     total_years = max(len(years), 1)
-    total = total_years * max(len(scope_labels), 1) * max(subsystem_count, 1)
+    total = total_override if total_override is not None else (
+        total_years * max(len(scope_labels), 1) * max(subsystem_count, 1)
+    )
+    total = max(total, 1)
 
     def runner(demand, method_tuples):
         if task_id is not None and task_registry.is_cancelled(task_id):
             raise CancelledOperation(task_id)
         counter["n"] += 1
-        n = counter["n"]
+        n = min(counter["n"], total)
         pct = 0.1 + 0.85 * min(1.0, n / total)
-        idx = n - 1
-        scope_idx = min(idx // total_years, len(scope_labels) - 1)
-        year_idx = idx % total_years
-        year = years[year_idx] if years else None
-        scope_label = scope_labels[scope_idx] if scope_labels else None
-        if year is not None and scope_label and len(scope_labels) > 1:
-            stage = f"{year} · {scope_label} ({n}/{total})"
-        elif year is not None and scope_label:
-            stage = f"year {year} · {scope_label} ({n}/{total})"
-        elif year is not None:
-            stage = f"year {year} ({n}/{total})"
+        if simple_label:
+            stage = f"solve {n}/{total}"
         else:
-            stage = f"{n}/{total}"
+            idx = n - 1
+            scope_idx = min(idx // total_years, len(scope_labels) - 1)
+            year_idx = idx % total_years
+            year = years[year_idx] if years else None
+            scope_label = scope_labels[scope_idx] if scope_labels else None
+            if year is not None and scope_label and len(scope_labels) > 1:
+                stage = f"{year} · {scope_label} ({n}/{total})"
+            elif year is not None and scope_label:
+                stage = f"year {year} · {scope_label} ({n}/{total})"
+            elif year is not None:
+                stage = f"year {year} ({n}/{total})"
+            else:
+                stage = f"{n}/{total}"
         publish(stage, pct)
         return lca_fn(demand, method_tuples)
 

@@ -125,10 +125,32 @@ interpolated inventory — a defensible piecewise-linear model. BUT the per-year
 impact is **aggregate-then-solve** (one solve on the count-weighted year-Y demand
 vs db(Y), attributed by mass share) — **NOT** per-unit. There is **no
 per-unit-per-anchor score** to interpolate, so the cheap "~6 anchor solves" shape
-does **not** apply; interpolation costs ~2 solves per bracket year (naive;
-anchor-runner reuse deferred). **Score interpolation ≠ matrix blending** — we
-blend two scalar solves, not a blended technosphere (the matrix inverse is
-nonlinear); that's intentional and is the proposed methodology.
+does **not** apply; interpolation issues ~2 solves per bracket year (db_a + db_b).
+**Score interpolation ≠ matrix blending** — we blend two scalar solves, not a
+blended technosphere (the matrix inverse is nonlinear); that's intentional and is
+the proposed methodology.
+
+**Anchor-runner reuse (Patch 6B) — the speed fix.** A single
+`PersistentLCARunner` caches ONE factorization; interpolation alternates db_a/db_b
+year-to-year, and the other db's activities aren't in the cached `product_dict`,
+so `redo_lci` raises and it **re-factorizes on every call** (thrashing → ~2
+factorizations per bracket year, ~138 over 26 yr × 3 scopes, minutes). Fix:
+`MultiDBPersistentRunner` (`bw2_wrapper.py`) routes each demand to a per-db
+`PersistentLCARunner` (keyed by the demand's db-set), so **each anchor db
+factorizes ONCE** and every later call to it is a back-substitution — interpolate
+lands at/under block speed. Used **only** when projected + interpolate; block
+keeps the single `PersistentLCARunner` (byte-identical, untouched). Scores are
+byte-identical to the naive single-runner path (same per-db factorization math;
+only the caching changes) — locked by the reuse==naive + factorize-once-per-db
+tests.
+
+**Progress counter (Patch 6B).** The unit counted is the **LCA solve**. Block:
+`total = years × scopes × subsystems` (one solve each). Interpolate: bracket years
+cost two solves, so the caller passes the exact solve count via
+`_progress_runner(total_override=…)` and `simple_label=True` (the year/scope can't
+be derived from a uniform divisor → the tick shows `solve n/total`). The counter
+clamps `n ≤ total`, so the bar never overruns (the old block-count denominator
+showed 98/78) and reaches 100% cleanly.
 
 **Architecture:** the block path is unchanged and **byte-identical** — the
 `_build_aggregated` / `_compute_year_scores` extraction in `DSMLCAPipeline` is
@@ -141,7 +163,8 @@ flows untouched; AESA SR timeline + impact charts smooth as a downstream
 consequence. Contribution tree/sankey is a **separate** on-demand path
 (`/api/lca/contribution`), not the per-year profile — out of scope. Locked by
 `tests/test_prospective_temporal_interpolation.py` (bracket resolver; block step;
-blend math; anchor/clamp single-solve; block==interpolate at anchors/clamps).
+blend math; anchor/clamp single-solve; block==interpolate at anchors/clamps;
+reuse==naive byte-identical + factorize-once-per-db).
 
 #### What NOT to do
 

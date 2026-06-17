@@ -780,6 +780,62 @@ class PersistentLCARunner:
         return out
 
 
+class MultiDBPersistentRunner:
+    """Route each demand to a per-database :class:`PersistentLCARunner` so that
+    each technosphere (e.g. each premise anchor db) is factorized ONCE and
+    reused across every call referencing it.
+
+    A single ``PersistentLCARunner`` caches ONE factorization; when prospective
+    temporal interpolation alternates between two bracketing dbs year-to-year
+    (db_a, db_b, db_a, …), the other db's activities aren't in the cached
+    ``product_dict`` → ``redo_lci`` raises → it re-factorizes on EVERY call
+    (thrashing, ~2 factorizations per bracket year). Keying a dedicated runner
+    by the demand's database set means each db is factorized once and every
+    later call to it is a cheap back-substitution.
+
+    Scores are byte-identical to a single ``PersistentLCARunner`` per db — same
+    matrices, same factorization math; only the caching changes, never the
+    numbers. Same ``__call__`` signature + diagnostics surface as
+    ``PersistentLCARunner``. Not thread-safe — one instance per task.
+    """
+
+    def __init__(self) -> None:
+        self._by_db: dict[frozenset, PersistentLCARunner] = {}
+
+    def _runner_for(self, demand: dict[tuple[str, str], float]) -> PersistentLCARunner:
+        # Demands in both block and interpolate are single-db per call; key by
+        # the exact db-set so a consistent demand always reuses its runner.
+        key = frozenset(k[0] for k in demand)
+        runner = self._by_db.get(key)
+        if runner is None:
+            runner = PersistentLCARunner()
+            self._by_db[key] = runner
+        return runner
+
+    def __call__(
+        self,
+        demand: dict[tuple[str, str], float],
+        method_tuples: list[tuple],
+    ) -> dict[tuple, tuple[float, str]]:
+        if not demand:
+            # No db to route on — delegate to a throwaway runner (returns zeros).
+            return PersistentLCARunner()(demand, method_tuples)
+        return self._runner_for(demand)(demand, method_tuples)
+
+    # Aggregate diagnostics (read-only), mirroring PersistentLCARunner.
+    @property
+    def factorizations(self) -> int:
+        return sum(r.factorizations for r in self._by_db.values())
+
+    @property
+    def redo_calls(self) -> int:
+        return sum(r.redo_calls for r in self._by_db.values())
+
+    @property
+    def method_switches(self) -> int:
+        return sum(r.method_switches for r in self._by_db.values())
+
+
 def run_archetype_lca(
     demand: dict[tuple[str, str], float], method_tuple: tuple
 ) -> dict[str, Any]:

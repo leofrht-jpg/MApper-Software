@@ -206,3 +206,80 @@ def test_block_and_interpolate_agree_at_anchors_and_clamps_differ_between():
     assert block[2027] == pytest.approx(10.0)             # held at db2025
     assert interp[2027] == pytest.approx(8.4)             # blended
     assert interp[2027] != pytest.approx(block[2027])
+
+
+# ── anchor-runner reuse: same scores as naive, fewer factorizations ──────────
+# MultiDBPersistentRunner is tested with a FAKE PersistentLCARunner (monkey-
+# patched) that scores by db and (re)factorizes on a db change — so we can prove
+# the reuse structure (one factorize per db, back-subs thereafter) and that the
+# per-call scores are byte-identical to a single thrashing runner, without bw2.
+
+class _FakePersistent:
+    """Stand-in for PersistentLCARunner: scores Σ amount × DB_FACTOR[db], counts
+    a (re)factorization whenever the demand's db changes from the last call."""
+    def __init__(self):
+        self._db = None
+        self.factorizations = 0
+        self.redo_calls = 0
+        self.method_switches = 0
+
+    def __call__(self, demand, method_tuples):
+        dbs = {k[0] for k in demand}
+        db = next(iter(dbs)) if dbs else None
+        if db != self._db:
+            self.factorizations += 1
+            self._db = db
+        else:
+            self.redo_calls += 1
+        score = sum(amount * DB_FACTOR[k[0]] for k, amount in demand.items())
+        return {tuple(m): (score, "u") for m in method_tuples}
+
+
+def _interp_call_sequence():
+    """The db demands an interpolate run issues over bracket years 2026-2029
+    (each brackets 2025↔2030): db_a, db_b alternating per year."""
+    seq = []
+    for _y in (2026, 2027, 2028, 2029):
+        seq.append({("db2025", "c1"): 1.0})  # db_a solve
+        seq.append({("db2030", "c1"): 1.0})  # db_b solve
+    return seq
+
+
+def test_reuse_scores_byte_identical_to_naive(monkeypatch):
+    import mapper.core.bw2_wrapper as bw
+    monkeypatch.setattr(bw, "PersistentLCARunner", _FakePersistent)
+    seq = _interp_call_sequence()
+
+    naive = _FakePersistent()  # single runner (today's thrashing path)
+    reuse = bw.MultiDBPersistentRunner()  # per-db runners
+
+    naive_scores = [naive(d, [METHOD])[METHOD][0] for d in seq]
+    reuse_scores = [reuse(d, [METHOD])[METHOD][0] for d in seq]
+    assert reuse_scores == naive_scores  # BYTE-IDENTICAL — only speed changes
+
+
+def test_reuse_factorizes_once_per_db_naive_thrashes(monkeypatch):
+    import mapper.core.bw2_wrapper as bw
+    monkeypatch.setattr(bw, "PersistentLCARunner", _FakePersistent)
+    seq = _interp_call_sequence()  # 8 calls alternating db_a/db_b
+
+    naive = _FakePersistent()
+    for d in seq:
+        naive(d, [METHOD])
+    # Single runner: every alternation re-factorizes → one per call (thrash).
+    assert naive.factorizations == len(seq)  # 8
+
+    reuse = bw.MultiDBPersistentRunner()
+    for d in seq:
+        reuse(d, [METHOD])
+    # Per-db runners: exactly one factorization per distinct db (db2025, db2030).
+    assert reuse.factorizations == 2
+    assert reuse.factorizations < naive.factorizations
+
+
+def test_reuse_empty_demand_is_safe(monkeypatch):
+    import mapper.core.bw2_wrapper as bw
+    monkeypatch.setattr(bw, "PersistentLCARunner", _FakePersistent)
+    reuse = bw.MultiDBPersistentRunner()
+    out = reuse({}, [METHOD])  # no db to route on → throwaway runner, no crash
+    assert out[METHOD][0] == 0.0

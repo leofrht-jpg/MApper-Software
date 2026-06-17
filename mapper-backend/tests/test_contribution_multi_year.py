@@ -411,11 +411,15 @@ def test_multi_year_runs_against_static_db_with_no_pattern():
     assert set(result.results) == {"2030", "2050"}
     # Both years used the same source DB → scores must match to numerical
     # precision. (Not bit-identical: the shared-runner optimization reuses a
-    # UMFPACK factorization across years, so year 2 is a back-sub instead of
-    # a fresh spsolve. Drift is at ~1e-13 relative — well below LCA precision.)
+    # UMFPACK factorization across years, so year 2 is a back-sub instead of a
+    # fresh spsolve.) The shared-factorisation back-substitution noise is ~5e-9
+    # relative — NOT a result error — so a rel=1e-9 tolerance flaked
+    # nondeterministically (failed in the full suite, passed isolated). rel=1e-7
+    # comfortably clears that noise while still catching any real divergence
+    # (>>1e-7 would mean the years genuinely diverged, e.g. wrong DB).
     s30 = result.results["2030"].score
     s50 = result.results["2050"].score
-    assert s30 == pytest.approx(s50, rel=1e-9)
+    assert s30 == pytest.approx(s50, rel=1e-7)
     # Trajectory ordered.
     assert [p.year for p in result.trajectory] == [2030, 2050]
 

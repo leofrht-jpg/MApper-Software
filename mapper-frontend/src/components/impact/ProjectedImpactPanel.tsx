@@ -79,7 +79,6 @@ function ProjectedImpactPanelImpl() {
   // bracketing-anchor solves → smooth piecewise-linear profile) vs 'block'
   // (per-year nearest-earlier anchor db → step at 5-year boundaries; retained
   // for reproducibility of stepped results).
-  const [temporalMode, setTemporalMode] = useState<'block' | 'interpolate'>('interpolate')
   // Per-tab DSM scenario selection (independent of Static LCI tab and DSM
   // Architect's active flag). N=1 collapses to the legacy single-scenario
   // path (re-simulates on pick); N>1 routes the calculation through the
@@ -136,6 +135,8 @@ function ProjectedImpactPanelImpl() {
   // collapsed so it doesn't eat vertical space. Visibility-toggle (state kept).
   const [yearDbExpanded, setYearDbExpanded] = useState(false)
   const [resultsExpanded, setResultsExpanded] = useState(true)
+  // Collapsible cohort-mappings info banner (default collapsed; per-session).
+  const [infoBannerExpanded, setInfoBannerExpanded] = useState(false)
 
   const paramTable = useParameterStore((s) => s.table)
   const selectedScenarios = useParameterStore((s) => s.selectedScenarios)
@@ -501,7 +502,8 @@ function ProjectedImpactPanelImpl() {
       scenario: scenarioRefs[0],
       lci_scenarios: scenarioRefs,
       parameter_set_id: null,
-      temporal_mode: temporalMode,
+      // Always interpolate from the UI (the block path stays API-reachable).
+      temporal_mode: 'interpolate',
     }
     if (axisConflict) return
     // Paired branch first — when in paired mode it's the only valid axis.
@@ -694,19 +696,42 @@ function ProjectedImpactPanelImpl() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
-      {/* Preflight */}
-      <div style={{
-        padding: '10px 14px',
-        backgroundColor: 'color-mix(in srgb, var(--mod-plca) 8%, transparent)',
-        border: '1px solid color-mix(in srgb, var(--mod-plca) 30%, transparent)',
-        borderRadius: 'var(--radius-md)',
-        fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
-        display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap',
-      }}>
-        <Info size={14} color="var(--mod-plca)" />
-        <span>
-          Cohort mappings ({mappedCount} mapped) are shared across Static and Prospective Background — one per DSM system. Each year is matched to a prospective database via premise (exact → nearest earlier → earliest available).
-        </span>
+      {/* Preflight — collapsible cohort-mappings info banner. */}
+      <div
+        data-testid="projected-info-banner"
+        style={{
+          padding: '10px 14px',
+          backgroundColor: 'color-mix(in srgb, var(--mod-plca) 8%, transparent)',
+          border: '1px solid color-mix(in srgb, var(--mod-plca) 30%, transparent)',
+          borderRadius: 'var(--radius-md)',
+          fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}
+      >
+        <button
+          type="button"
+          data-testid="projected-info-banner-toggle"
+          aria-expanded={infoBannerExpanded}
+          onClick={() => setInfoBannerExpanded((v) => !v)}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 10, width: '100%',
+            border: 'none', background: 'transparent', padding: 0, margin: 0,
+            cursor: 'pointer', color: 'inherit', font: 'inherit', textAlign: 'left',
+          }}
+        >
+          <Info size={14} color="var(--mod-plca)" />
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+            Cohort mappings ({mappedCount} mapped)
+          </span>
+          <span style={{ marginLeft: 'auto', display: 'inline-flex' }}>
+            {infoBannerExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+          </span>
+        </button>
+        {infoBannerExpanded && (
+          <span data-testid="projected-info-banner-body">
+            Cohort mappings are shared across Static and Prospective Background — one per DSM system. Each year is matched to a prospective database via premise (exact → nearest earlier → earliest available).
+          </span>
+        )}
       </div>
 
       {/* Controls */}
@@ -852,36 +877,9 @@ function ProjectedImpactPanelImpl() {
               </select>
             </div>
           </div>
-          {/* Temporal background — block (per-year nearest-earlier premise db,
-              step at 5-year anchors) vs interpolate (blend the two bracketing
-              anchor solves → smooth). Default block = no drift; opt-in. */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <label style={labelS}>Temporal background</label>
-            <div style={{ display: 'flex', gap: 4 }} data-testid="projected-temporal-mode">
-              {([
-                { value: 'block', label: 'Block', tip: 'Each year uses its nearest-earlier premise database, held constant within the 5-year block (step changes at 2030, 2035, …).' },
-                { value: 'interpolate', label: 'Interpolate', tip: 'Linearly blend the two bracketing premise databases per year → smooth profile (no steps). Rigorous because the LCIA factors are year-invariant.' },
-              ] as const).map((t) => (
-                <button
-                  key={t.value}
-                  type="button"
-                  title={t.tip}
-                  disabled={isRunning}
-                  data-testid={`temporal-mode-${t.value}`}
-                  onClick={() => setTemporalMode(t.value)}
-                  style={{
-                    padding: '6px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                    border: '1px solid ' + (temporalMode === t.value ? 'var(--mod-plca)' : 'var(--border-default)'),
-                    backgroundColor: temporalMode === t.value ? 'color-mix(in srgb, var(--mod-plca) 12%, transparent)' : 'var(--bg-elevated)',
-                    color: temporalMode === t.value ? 'var(--mod-plca)' : 'var(--text-primary)',
-                    fontSize: 'var(--text-xs)', fontWeight: temporalMode === t.value ? 600 : 500,
-                  }}
-                >
-                  {t.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          {/* Temporal background is always interpolate (smooth piecewise-linear
+              blend of the two bracketing premise anchors). The block path stays
+              API-reachable for reproducibility but is no longer a user choice. */}
         </div>
 
         {/* Second row: LCI Scenarios (multi-select chips, Projected LCI only).

@@ -5,7 +5,7 @@ import logging
 import threading
 import time
 import uuid
-from typing import Any
+from typing import Any, NamedTuple
 
 import bw2data
 
@@ -14,6 +14,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 
 from mapper.core.bw2_wrapper import (
+    MultiDBPersistentRunner,
     PersistentLCARunner,
     get_biosphere_contributions,
     get_contributions,
@@ -30,6 +31,11 @@ from mapper.core.bom_engine import (
     stage_to_scope,
     stages_in_scope,
 )
+from mapper.core.dsm_lca_engine import (
+    blend_method_scores,
+    resolve_bracket,
+    resolve_database_for_year,
+)
 from mapper.core.tasks import Task, create_task, get_task, run_in_thread
 from mapper.api import tasks as task_registry
 from mapper.api.tasks import CancelledOperation
@@ -44,6 +50,10 @@ from mapper.models.schemas import (
     ArchetypeLCACalculateResult,
     ArchetypeLCAExportRequest,
     ArchetypeLCAMethodResult,
+    ArchetypeTrajectoryMethodScore,
+    ArchetypeTrajectoryRequest,
+    ArchetypeTrajectoryResult,
+    ArchetypeTrajectoryYear,
     BiosphereContributionItem,
     ContributionAnalysisExportRequest,
     ContributionAnalysisRequest,
@@ -296,36 +306,60 @@ async def calculate_activity_lca(body: ActivityLCARequest) -> ActivityLCAResult:
 # ── Archetype LCA Calculator ────────────────────────────────────────────────
 
 
-@router.post("/lca/calculate-archetype", response_model=ArchetypeLCACalculateResult)
-async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> ArchetypeLCACalculateResult:
+class _ArchetypeDemand(NamedTuple):
+    """Source-DB demand bundle shared by the discrete + continuous-horizon
+    single-product paths."""
+    arc: Any
+    stages: list[str]
+    effective_amounts: dict[str, float]
+    linked: list
+    method_tuples: list[tuple]
+    total_demand: dict[tuple[str, str], float]
+
+
+def _build_archetype_source_demand(
+    *,
+    archetype_id: str,
+    scope: str,
+    amount: float,
+    stage_amounts: dict[str, float],
+    methods: list[list[str]],
+    parameter_scenario: str | None,
+) -> _ArchetypeDemand:
+    """Shared source-DB demand builder for the single-product archetype LCA
+    paths (discrete ``calculate_archetype_lca`` + the continuous-horizon
+    trajectory endpoint). Resolves the archetype (optionally through a parameter
+    scenario), filters by scope, applies per-stage amounts, flattens, and
+    aggregates the linked materials into a source-DB-keyed ``(db, code) →
+    amount`` demand. Behavior-preserving extraction — raises the same
+    HTTPExceptions as the inline code it replaced; the discrete path's numbers
+    stay byte-identical (guarded by the existing archetype-LCA tests)."""
     from mapper.api.bom import _get_archetype
     from mapper.api.parameters import _table_for
-    from mapper.core.bom_engine import resolve_archetype_with_engine
+    from mapper.core.bom_engine import flatten_bom, resolve_archetype_with_engine
     from mapper.core.parameter_engine import ParameterEngine, ParameterError
 
-    t0 = time.perf_counter()
+    arc = _get_archetype(archetype_id)  # raises 404 if not found
 
-    arc = _get_archetype(body.archetype_id)  # raises 404 if not found
-
-    if not body.methods or len(body.methods) == 0:
+    if not methods or len(methods) == 0:
         raise HTTPException(status_code=400, detail="At least one method is required")
 
-    if body.scope not in ("inflows", "stock", "outflows", "all"):
-        raise HTTPException(status_code=400, detail=f"Invalid scope: {body.scope}")
+    if scope not in ("inflows", "stock", "outflows", "all"):
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {scope}")
 
     # Resolve parameter expressions in the BOM if a scenario is requested.
     # Single-product mode in Impact Assessment uses this for parameter
     # sensitivity fan-out. Backward compat: scenario None → table's base
     # values, identical to pre-Patch behavior.
-    if body.parameter_scenario is not None:
+    if parameter_scenario is not None:
         table = _table_for()
-        if body.parameter_scenario not in (None, "Base") and body.parameter_scenario not in table.list_scenarios():
+        if parameter_scenario not in (None, "Base") and parameter_scenario not in table.list_scenarios():
             raise HTTPException(
                 status_code=400,
-                detail=f"Parameter scenario '{body.parameter_scenario}' not found in active table",
+                detail=f"Parameter scenario '{parameter_scenario}' not found in active table",
             )
         try:
-            engine = ParameterEngine(table, scenario=body.parameter_scenario)
+            engine = ParameterEngine(table, scenario=parameter_scenario)
             arc = resolve_archetype_with_engine(arc, engine)
         except ParameterError as e:
             raise HTTPException(
@@ -334,23 +368,21 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
             )
 
     # Filter roots by scope
-    scope_roots = filter_roots_by_scope(arc.bom, body.scope)
+    scope_roots = filter_roots_by_scope(arc.bom, scope)
     stages = [r.name for r in scope_roots]
 
     # Resolve per-stage amounts.  When stage_amounts is provided, each stage
     # gets its own multiplier (e.g. Manufacturing=1, Use Phase=15).
     # Falls back to the flat `amount` field for backward compatibility.
     effective_amounts: dict[str, float] = {}
-    if body.stage_amounts:
+    if stage_amounts:
         for r in scope_roots:
-            effective_amounts[r.name] = body.stage_amounts.get(r.name, 1.0)
+            effective_amounts[r.name] = stage_amounts.get(r.name, 1.0)
     else:
         for r in scope_roots:
-            effective_amounts[r.name] = body.amount
+            effective_amounts[r.name] = amount
 
     # Flatten each stage separately and apply its amount multiplier
-    from mapper.core.bom_engine import flatten_bom
-
     all_materials = []
     for root in scope_roots:
         flat = flatten_bom(root)
@@ -367,16 +399,38 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
             detail="No linked materials in this scope. Link ecoinvent activities to materials first.",
         )
 
-    method_tuples = [tuple(ml) for ml in body.methods]
+    method_tuples = [tuple(ml) for ml in methods]
 
     # Build total demand: (db, code) → amount, applying per-stage multipliers.
     # Keys are kept in source-DB form here; `_translate_demand_to_database`
-    # below re-keys to `compute_database` if requested.
+    # re-keys to a prospective DB at the call site if requested.
     total_demand: dict[tuple[str, str], float] = {}
     for m in linked:
         key = (m.ecoinvent_activity.database, m.ecoinvent_activity.code)  # type: ignore[union-attr]
         stage_amt = m._stage_amount  # type: ignore[attr-defined]
         total_demand[key] = total_demand.get(key, 0.0) + m.quantity * stage_amt
+
+    return _ArchetypeDemand(arc, stages, effective_amounts, linked, method_tuples, total_demand)
+
+
+@router.post("/lca/calculate-archetype", response_model=ArchetypeLCACalculateResult)
+async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> ArchetypeLCACalculateResult:
+    t0 = time.perf_counter()
+
+    bundle = _build_archetype_source_demand(
+        archetype_id=body.archetype_id,
+        scope=body.scope,
+        amount=body.amount,
+        stage_amounts=body.stage_amounts,
+        methods=body.methods,
+        parameter_scenario=body.parameter_scenario,
+    )
+    arc = bundle.arc
+    stages = bundle.stages
+    effective_amounts = bundle.effective_amounts
+    linked = bundle.linked
+    method_tuples = bundle.method_tuples
+    total_demand = bundle.total_demand
 
     # Build a source→translated key map. Each source (db, code) pair gets
     # mapped once via `_translate_demand_to_database`, which emits any
@@ -488,6 +542,167 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
         parameter_scenario=body.parameter_scenario,
         warnings=warnings,
         stage_breakdown=stage_breakdown,
+    )
+
+
+# ── Single-product continuous-horizon trajectory (Stage B.1) ─────────────────
+
+
+def _trajectory_year_scores(
+    *,
+    total_demand: dict[tuple[str, str], float],
+    method_tuples: list[tuple],
+    anchors: list[tuple[str, int]],
+    temporal_mode: str,
+    runner: Any,
+    year_start: int | None = None,
+    year_end: int | None = None,
+    translate=None,
+) -> tuple[list[tuple[int, dict[tuple, tuple[float, str]]]], list[str]]:
+    """Per-year TOTALS across a prospective trajectory's anchor span.
+
+    Steps annually over ``min..max`` anchor year (optionally narrowed to
+    ``[year_start, year_end]`` but never beyond the span — no extrapolation,
+    mirroring the system-level path). For each year:
+
+    - ``block``       → nearest-earlier anchor DB (``resolve_database_for_year``),
+      one solve.
+    - ``interpolate`` → ``resolve_bracket``: at an anchor (or clamped at a span
+      end) it's a single solve; strictly between anchors it blends the two
+      bracketing solves via ``blend_method_scores`` (the shared core helper, so
+      block == interpolate AT anchors, and the curve passes through the discrete
+      single-DB values).
+
+    ``runner`` is a ``MultiDBPersistentRunner`` (each anchor DB factorized once);
+    ``translate`` re-keys the source demand to an anchor DB. Both are injectable
+    so the logic is testable with a fake runner (no real bw2 solves). Returns
+    ``([(year, {method: (score, unit)}), ...], warnings)``."""
+    if translate is None:
+        translate = _translate_demand_to_database
+    if not anchors:
+        return [], []
+    years_sorted = sorted(y for _, y in anchors)
+    lo, hi = years_sorted[0], years_sorted[-1]
+    start = lo if year_start is None else max(lo, year_start)
+    end = hi if year_end is None else min(hi, year_end)
+
+    warnings: list[str] = []
+    seen_warn: set[str] = set()
+
+    def _solve_for_db(db_name: str) -> dict[tuple, tuple[float, str]]:
+        translated, warns = translate(total_demand, db_name)
+        for w in warns:
+            if w not in seen_warn:
+                seen_warn.add(w)
+                warnings.append(w)
+        return runner(translated, method_tuples)
+
+    out: list[tuple[int, dict[tuple, tuple[float, str]]]] = []
+    for year in range(start, end + 1):
+        if temporal_mode == "block":
+            picked = resolve_database_for_year(year, anchors)
+            scores = _solve_for_db(picked[0])
+        else:  # interpolate (default)
+            bracket = resolve_bracket(year, anchors)
+            if bracket.upper_db is None:
+                # EXACT anchor or CLAMP at a span end → single solve.
+                scores = _solve_for_db(bracket.lower_db)
+            else:
+                scores_a = _solve_for_db(bracket.lower_db)
+                scores_b = _solve_for_db(bracket.upper_db)
+                scores = blend_method_scores(
+                    scores_a, scores_b, bracket.frac, method_tuples
+                )
+        out.append((year, scores))
+    return out, warnings
+
+
+@router.post("/lca/calculate-archetype-trajectory", response_model=ArchetypeTrajectoryResult)
+async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> ArchetypeTrajectoryResult:
+    """Continuous-horizon single-product LCA: ONE archetype computed year-by-year
+    across a prospective trajectory's premise anchors (the single-product
+    analogue of system-level projected impact). TOTALS ONLY per year — for the
+    per-activity stage/material breakdown of any single year, call
+    ``/lca/calculate-archetype`` with that year's ``compute_database``. Reuses
+    the 6A/6B primitives (``resolve_bracket`` / ``blend_method_scores``) and one
+    ``MultiDBPersistentRunner`` per trajectory so each anchor DB factorizes once."""
+    from mapper.core import plca_storage
+
+    t0 = time.perf_counter()
+
+    bundle = _build_archetype_source_demand(
+        archetype_id=body.archetype_id,
+        scope=body.scope,
+        amount=body.amount,
+        stage_amounts=body.stage_amounts,
+        methods=body.methods,
+        parameter_scenario=body.parameter_scenario,
+    )
+
+    project = bw2data.projects.current
+    anchors = plca_storage.resolve_prospective_dbs(
+        project, body.base_db, body.iam, body.ssp,
+    )
+    anchor_years = sorted(y for _, y in anchors)
+
+    warnings: list[str] = []
+    # Degenerate guard: ≤1 anchor → no span to interpolate across. Don't crash;
+    # return what we can (a single point for 1 anchor, nothing for 0) plus a
+    # clear no-curve warning the frontend can surface.
+    if len(anchors) == 0:
+        warnings.append(
+            f"No prospective databases found for {body.base_db} · {body.iam} · "
+            f"{body.ssp}. Generate premise databases for this trajectory first."
+        )
+    elif len(anchors) == 1:
+        warnings.append(
+            "Only one prospective anchor available for this trajectory — showing "
+            "a single point (no curve). Generate more years to interpolate."
+        )
+
+    try:
+        runner = MultiDBPersistentRunner()
+        per_year, solve_warnings = _trajectory_year_scores(
+            total_demand=bundle.total_demand,
+            method_tuples=bundle.method_tuples,
+            anchors=anchors,
+            temporal_mode=body.temporal_mode,
+            runner=runner,
+            year_start=body.year_start,
+            year_end=body.year_end,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Trajectory LCA failed: {e}")
+    warnings.extend(solve_warnings)
+
+    # Assemble the TOTALS-only per-year envelope.
+    years: list[ArchetypeTrajectoryYear] = []
+    for year, scores in per_year:
+        method_scores: list[ArchetypeTrajectoryMethodScore] = []
+        for method_list, mt in zip(body.methods, bundle.method_tuples):
+            score, unit = scores.get(mt, (0.0, ""))
+            method_scores.append(ArchetypeTrajectoryMethodScore(
+                method=method_list,
+                method_label=method_list[-1] if method_list else "",
+                score=score,
+                unit=unit,
+            ))
+        years.append(ArchetypeTrajectoryYear(year=year, method_scores=method_scores))
+
+    elapsed = round(time.perf_counter() - t0, 2)
+    return ArchetypeTrajectoryResult(
+        archetype_id=body.archetype_id,
+        archetype_name=bundle.arc.name,
+        scope=body.scope,
+        base_db=body.base_db,
+        iam=body.iam,
+        ssp=body.ssp,
+        temporal_mode=body.temporal_mode,
+        parameter_scenario=body.parameter_scenario,
+        anchor_years=anchor_years,
+        years=years,
+        elapsed_seconds=elapsed,
+        warnings=warnings,
     )
 
 

@@ -168,6 +168,8 @@ consequence. Contribution tree/sankey is a **separate** on-demand path
 blend math; anchor/clamp single-solve; block==interpolate at anchors/clamps;
 reuse==naive byte-identical + factorize-once-per-db).
 
+**Shared prospective primitives — reuse, don't replicate (Stage B.1):** the interpolation blend is `blend_method_scores` (`mapper/core/dsm_lca_engine.py`), prospective-db resolution is `plca_storage.resolve_prospective_dbs(project, base_db, iam, ssp)`, and the single-product archetype source-demand build is `_build_archetype_source_demand` (`mapper/api/lca.py`) — both the system-level projected path and the single-product continuous-horizon trajectory endpoint (`POST /lca/calculate-archetype-trajectory`) call these same fns, so by construction the trajectory curve passes through the discrete single-db values at anchor years.
+
 #### What NOT to do
 
 - **Don't assume a per-unit-per-anchor "~6 solves" shape.** The compute is

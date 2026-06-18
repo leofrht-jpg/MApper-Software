@@ -122,46 +122,12 @@ def _notify_all(task: _TaskState, payload: dict[str, Any]) -> None:
 
 def _resolve_prospective_dbs(project: str, scenario) -> list[tuple[str, int]]:
     """Return [(db_name, year), ...] for every registered DB that matches the
-    given base/iam/ssp triple."""
-    log = logging.getLogger(__name__)
-    registry = plca_storage.load_registry(project)
-    iam = scenario.iam.lower()
-    existing = set(bw2data.databases)
-    log.info(
-        "pLCA resolve: project=%s, scenario={base_db=%r, iam=%r, ssp=%r}, "
-        "registry_entries=%d, bw2_databases=%d",
+    given base/iam/ssp triple. Thin wrapper over the shared core resolver
+    (``plca_storage.resolve_prospective_dbs``) — kept so existing call sites
+    pass a scenario ref; the single-product path calls the core fn directly."""
+    return plca_storage.resolve_prospective_dbs(
         project, scenario.base_db, scenario.iam, scenario.ssp,
-        len(registry), len(existing),
     )
-    log.debug("  bw2data.databases: %s", sorted(existing))
-    log.debug("  registry raw: %s", registry)
-
-    out: list[tuple[str, int]] = []
-    rejected: list[tuple[str, str]] = []  # (name, reason)
-    for entry in registry:
-        name = entry.get("name") or "?"
-        if entry.get("base_db") != scenario.base_db:
-            rejected.append((name, f"base_db={entry.get('base_db')!r} != {scenario.base_db!r}"))
-            continue
-        if (entry.get("iam") or "").lower() != iam:
-            rejected.append((name, f"iam={entry.get('iam')!r} != {iam!r}"))
-            continue
-        if entry.get("ssp") != scenario.ssp:
-            rejected.append((name, f"ssp={entry.get('ssp')!r} != {scenario.ssp!r}"))
-            continue
-        if not name or name not in existing:
-            rejected.append((name, "name not in bw2data.databases (was DB deleted?)"))
-            continue
-        try:
-            out.append((name, int(entry.get("year"))))
-        except (TypeError, ValueError):
-            rejected.append((name, f"bad year={entry.get('year')!r}"))
-            continue
-    out.sort(key=lambda p: p[1])
-    log.info("pLCA resolve: matched %d DB(s): %s", len(out), out)
-    if rejected:
-        log.info("pLCA resolve: rejected %d entries: %s", len(rejected), rejected)
-    return out
 
 
 def _year_to_database_map(

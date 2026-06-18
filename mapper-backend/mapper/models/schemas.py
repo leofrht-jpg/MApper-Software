@@ -348,6 +348,62 @@ class ArchetypeLCAExportRequest(BaseModel):
     results: list[ArchetypeLCACalculateResult]
 
 
+# ── Single-product continuous-horizon trajectory (Stage B.1) ───────────────────
+# Computes ONE archetype year-by-year across a prospective trajectory's anchor
+# span (the single-product analogue of the system-level ProjectedImpactPanel),
+# so the frontend can render a smooth full-horizon curve instead of only the
+# discrete premise-anchor vintages. TOTALS ONLY per year — per-activity stage /
+# material breakdown stays single-year (computed via calculate_archetype_lca).
+class ArchetypeTrajectoryRequest(BaseModel):
+    archetype_id: str
+    scope: Literal["inflows", "stock", "outflows", "all"] = "all"
+    amount: float = 1.0
+    stage_amounts: dict[str, float] = {}
+    methods: list[list[str]]
+    parameter_scenario: str | None = None
+    # Prospective trajectory: every premise DB matching this triple becomes an
+    # anchor; the per-year loop spans min..max anchor year (annual step).
+    base_db: str
+    iam: str
+    ssp: str
+    # block = nearest-earlier anchor DB (step); interpolate = linear blend of
+    # the two bracketing anchors' per-method scores (default).
+    temporal_mode: Literal["block", "interpolate"] = "interpolate"
+    # Optional narrowing of the rendered horizon to [year_start, year_end].
+    # Clamped to the anchor span — no extrapolation outside it.
+    year_start: int | None = None
+    year_end: int | None = None
+
+
+class ArchetypeTrajectoryMethodScore(BaseModel):
+    method: list[str]
+    method_label: str
+    score: float
+    unit: str
+
+
+class ArchetypeTrajectoryYear(BaseModel):
+    year: int
+    method_scores: list[ArchetypeTrajectoryMethodScore]
+
+
+class ArchetypeTrajectoryResult(BaseModel):
+    archetype_id: str
+    archetype_name: str
+    scope: str
+    base_db: str
+    iam: str
+    ssp: str
+    temporal_mode: str
+    parameter_scenario: str | None = None
+    # Premise-anchor years backing the trajectory (sorted). The curve passes
+    # through the discrete single-DB values at these years.
+    anchor_years: list[int]
+    years: list[ArchetypeTrajectoryYear]
+    elapsed_seconds: float = 0.0
+    warnings: list[str] = []
+
+
 # ── Multi-Product LCA Comparison (Patch 4AG.1) ─────────────────────────────────
 #
 # Computes N independent LCAs (mixed archetype + activity items) for

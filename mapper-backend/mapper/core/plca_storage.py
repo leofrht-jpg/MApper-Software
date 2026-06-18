@@ -72,3 +72,48 @@ def get_metadata(project: str, db_name: str) -> dict | None:
         if e.get("name") == db_name:
             return e
     return None
+
+
+def resolve_prospective_dbs(
+    project: str, base_db: str, iam: str, ssp: str
+) -> list[tuple[str, int]]:
+    """Return ``[(db_name, year), ...]`` (sorted by year) for every registered
+    prospective DB matching the ``(base_db, iam, ssp)`` triple AND present in
+    ``bw2data.databases``. Shared by Impact Assessment (system-level projected)
+    and the single-product continuous-horizon path — one source of truth for
+    trajectory → anchor resolution."""
+    import logging
+    import bw2data
+
+    log = logging.getLogger(__name__)
+    registry = load_registry(project)
+    iam_l = (iam or "").lower()
+    existing = set(bw2data.databases)
+
+    out: list[tuple[str, int]] = []
+    rejected: list[tuple[str, str]] = []
+    for entry in registry:
+        name = entry.get("name") or "?"
+        if entry.get("base_db") != base_db:
+            rejected.append((name, f"base_db={entry.get('base_db')!r} != {base_db!r}"))
+            continue
+        if (entry.get("iam") or "").lower() != iam_l:
+            rejected.append((name, f"iam={entry.get('iam')!r} != {iam!r}"))
+            continue
+        if entry.get("ssp") != ssp:
+            rejected.append((name, f"ssp={entry.get('ssp')!r} != {ssp!r}"))
+            continue
+        if not name or name not in existing:
+            rejected.append((name, "name not in bw2data.databases (was DB deleted?)"))
+            continue
+        try:
+            out.append((name, int(entry.get("year"))))
+        except (TypeError, ValueError):
+            rejected.append((name, f"bad year={entry.get('year')!r}"))
+            continue
+    out.sort(key=lambda p: p[1])
+    log.info("resolve_prospective_dbs: project=%s triple=(%r,%r,%r) → matched %d: %s",
+             project, base_db, iam, ssp, len(out), out)
+    if rejected:
+        log.info("resolve_prospective_dbs: rejected %d: %s", len(rejected), rejected)
+    return out

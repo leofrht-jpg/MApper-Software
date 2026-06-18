@@ -444,6 +444,26 @@ def resolve_bracket(
     return TemporalBracket(lower[0], lower[1], upper[0], upper[1], frac)
 
 
+def blend_method_scores(
+    scores_a: dict[tuple, tuple[float, str]],
+    scores_b: dict[tuple, tuple[float, str]],
+    frac: float,
+    methods: list[tuple],
+) -> dict[tuple, tuple[float, str]]:
+    """Linear per-method blend of two ``{method: (score, unit)}`` solves:
+    ``(1−frac)·a + frac·b`` per method. The single source of truth for
+    prospective temporal interpolation between two bracketing-anchor solves
+    (year-invariant LCIA CFs → scalar-score interpolation is rigorous). Reused
+    by the system-level pipeline (``_compute_year_scores``) and the
+    single-product continuous-horizon path."""
+    out: dict[tuple, tuple[float, str]] = {}
+    for m in methods:
+        sa, unit = scores_a.get(m, (0.0, ""))
+        sb, _ = scores_b.get(m, (sa, unit))
+        out[m] = ((1.0 - frac) * sa + frac * sb, unit)
+    return out
+
+
 class _YearAgg(NamedTuple):
     """Aggregated demand + share/material bundle for one (year, scope). The
     share/material fields depend only on per-cohort AMOUNTS (not the background
@@ -566,12 +586,7 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         agg_b = self._build_aggregated(yr, scope, counts, db=bracket.upper_db)
         scores_a = self.run_lca(agg_a.aggregated, self.methods)
         scores_b = self.run_lca(agg_b.aggregated, self.methods) if agg_b is not None else scores_a
-        frac = bracket.frac
-        blended: dict[tuple, tuple[float, str]] = {}
-        for m in self.methods:
-            sa, unit = scores_a.get(m, (0.0, ""))
-            sb, _ = scores_b.get(m, (sa, unit))
-            blended[m] = ((1.0 - frac) * sa + frac * sb, unit)
+        blended = blend_method_scores(scores_a, scores_b, bracket.frac, self.methods)
         return blended, agg_a
 
 

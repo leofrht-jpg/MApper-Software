@@ -223,9 +223,15 @@ CO₂-eq**, sets `budget_basis` and re-runs the compute under the new basis.
 ### Flags (carried from Phase 1)
 - `1.5C_67` f=**1.822** sits marginally above the ~1.45–1.80 sanity band — expected
   (smallest x25=200; the intercept dominates at low x). Not an error.
-- `1.5C_50` x20=**500 exceeds Bjørn's documented in-range [223,440]** — a mild
-  extrapolation. His SI's exact fitted-domain upper bound wasn't re-checked here;
-  flagged for verification. The 2°C analog's range [293,1568] covers all 2°C x.
+- **`1.5C_50` (x20=500) confirmed IN-DOMAIN.** Bjørn's quoted **[223,440]** is the
+  budget-*insertion* range, NOT the regression's fitted scenario domain.
+  Reproducing the fit's input set — cumulative CO₂ 2020→net-zero over the
+  **AR6 C1+C2 sub-1.5°C ensemble** (all models; same integration as the C3+C4
+  analog) — gives a fitted range of **[196.3, 1036.0] GtCO₂** (median 639.7, IQR
+  [534.9, 784.1]; N=227). **x20=500 is well inside** (209/227 scenarios exceed
+  440; 190/227 exceed 500 — high-overshoot 1.5°C runs push the domain past 440).
+  So applying Bjørn to `1.5C_50` is interpolation, not extrapolation. (The 2°C
+  analog's range [293,1568] covers all 2°C x.)
 
 **Provisional** — coefficients (Bjørn 2023, AR6-analog), C, and the budget data
 itself all remain provisional pending publication-time refresh.

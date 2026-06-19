@@ -191,28 +191,17 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
 
   const paramScenarios = useParameterStore((s) => s.sets)
   const paramTable = useParameterStore((s) => s.table)
-  const activeScenario = useParameterStore((s) => s.activeScenario)
   const fetchParamTable = useParameterStore((s) => s.fetchTable)
-  const selectedScenarios = useParameterStore((s) => s.selectedScenarios)
-  const toggleSelectedScenario = useParameterStore((s) => s.toggleSelectedScenario)
   useEffect(() => { if (paramScenarios.length === 0) { void fetchParamTable() } }, [paramScenarios.length, fetchParamTable])
   useEffect(() => { if (!paramTable) { void fetchParamTable() } }, [paramTable, fetchParamTable])
 
-  // Multi-select sensitivity cases. N=1 → legacy single-scenario DSM-LCA path
-  // (`useDSMStore.runDSMLCA`). N>1 → fan-out via `/impact/calculate-scenarios`
-  // (mode:'static') and route results through the impactStore static slot.
-  const availableScenarios = useMemo(
-    () => [BASE_SCENARIO, ...(paramTable?.scenarios ?? [])],
-    [paramTable],
-  )
-  const effectiveSelected = useMemo(
-    () => selectedScenarios.filter((s) => availableScenarios.includes(s)),
-    [selectedScenarios, availableScenarios],
-  )
-  // The legacy single-scenario path expects a parameter set id (string|null).
-  // Derive it from the multi-select: first effective selection wins, falling
-  // back to the parameter store's active scenario when nothing is checked.
-  const selectedParamSetId = effectiveSelected[0] ?? activeScenario ?? null
+  // Static = one base-ecoinvent run with no scenario variation → Base only.
+  // The sensitivity-cases selector is NOT exposed on Static (Change 2); the
+  // parameter axis is forced off here so the multi-param fan-out can't fire and
+  // the compute always resolves Base. (Sensitivity cases live on Prospective.)
+  // See CLAUDE.md "Sensitivity cases".
+  const effectiveSelected: string[] = []
+  const selectedParamSetId = BASE_SCENARIO
 
   // Static LCI runs against the active bw2 project's base (non-prospective)
   // database. Surface the actual name in the source chip so the user sees the
@@ -692,62 +681,10 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
           )}
         </div>
 
-        {/* Bottom: sensitivity multi-select + Calculate pinned right.
-            N=1 selection routes through the legacy DSM-LCA path; N>1 fans
-            out via /impact/calculate-scenarios (mode:'static'). */}
+        {/* Bottom: Calculate pinned right. Static is Base-only — the
+            sensitivity-cases multi-select was removed (Change 2); it lives on
+            the Prospective tab. */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 10 }}>
-          <div style={{
-            display: 'flex', flexDirection: 'column', gap: 4,
-            flexShrink: 0, minWidth: 200,
-          }}>
-            <span style={{
-              fontSize: 'var(--text-xs)', fontWeight: 600,
-              color: 'var(--text-secondary)',
-              textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>
-              <Layers size={11} /> Sensitivity cases
-              <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 2 }}>
-                · {effectiveSelected.length}/{availableScenarios.length}
-              </span>
-            </span>
-            <div style={{
-              display: 'flex', flexDirection: 'column', gap: 2,
-              padding: '6px 8px',
-              maxHeight: 140, overflowY: 'auto',
-              backgroundColor: 'var(--bg-elevated)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 'var(--radius-md)',
-            }}>
-              {availableScenarios.map((s) => {
-                const isBase = s === BASE_SCENARIO
-                const checked = effectiveSelected.includes(s)
-                return (
-                  <label
-                    key={s}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontSize: 'var(--text-xs)',
-                      color: isBase ? 'var(--text-secondary)' : 'var(--text-primary)',
-                      cursor: isBase ? 'not-allowed' : 'pointer',
-                      opacity: isBase ? 0.85 : 1,
-                    }}
-                    title={isBase ? 'Base is always included' : `Toggle "${s}"`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={isBase || isCalculatingLCA}
-                      onChange={(e) => toggleSelectedScenario(s, e.target.checked)}
-                    />
-                    <span style={{ fontFamily: isBase ? 'inherit' : 'var(--font-mono)' }}>
-                      {paramScenarios.find((p) => p.id === s)?.name ?? s}
-                    </span>
-                  </label>
-                )
-              })}
-            </div>
-          </div>
           <Button
             variant="primary"
             onClick={handleCalculate}

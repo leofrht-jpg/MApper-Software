@@ -1,12 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Layers, Loader2 } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Download, Loader2 } from 'lucide-react'
 import {
   calculateArchetypeLCA,
   exportSingleProductStatic,
   BASE_SCENARIO,
   type ArchetypeLCACalculateResult,
 } from '../../api/client'
-import { useParameterStore } from '../../stores/parameterStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { MethodPicker } from '../MethodPicker'
 import { useNumberFormatter } from '../charts/numberFormat'
@@ -58,17 +57,9 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
   // and skip the write so we don't pollute the new archetype's slot.
   const lastArchetypeIdRef = useRef<string | null>(null)
 
-  const selectedScenarios = useParameterStore((s) => s.selectedScenarios)
-  const toggleSelectedScenario = useParameterStore((s) => s.toggleSelectedScenario)
-  const paramTable = useParameterStore((s) => s.table)
-  const availableScenarios = useMemo(
-    () => [BASE_SCENARIO, ...(paramTable?.scenarios ?? [])],
-    [paramTable],
-  )
-  const effectiveSelected = useMemo(
-    () => selectedScenarios.filter((s) => availableScenarios.includes(s)),
-    [selectedScenarios, availableScenarios],
-  )
+  // Static = one base-ecoinvent run with no scenario variation, so it computes
+  // on Base only — the sensitivity-cases selector is not exposed here (it lives
+  // on the Prospective tab). See CLAUDE.md "Sensitivity cases".
 
   const [configExpanded, setConfigExpanded] = useState(true)
   const [resultsExpanded, setResultsExpanded] = useState(true)
@@ -144,7 +135,7 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
     setScenarioOrder([])
     setActiveScenario(null)
 
-    const scenariosToRun = effectiveSelected.length > 0 ? effectiveSelected : [BASE_SCENARIO]
+    const scenariosToRun = [BASE_SCENARIO]   // static = Base only (no sensitivity fan-out)
     setProgress({ done: 0, total: scenariosToRun.length })
     const acc: Record<string, ArchetypeLCACalculateResult> = {}
     try {
@@ -166,7 +157,7 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
       setIsCalculating(false)
       setProgress(null)
     }
-  }, [archetypeId, scope, selectedMethods, effectiveSelected, currentStageAmounts])
+  }, [archetypeId, scope, selectedMethods, currentStageAmounts])
 
   const isMulti = scenarioOrder.length > 1
   const activeResult = activeScenario ? resultsByScenario[activeScenario] : null
@@ -215,7 +206,7 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
     )
   }
 
-  const configSummary = `${SCOPE_OPTIONS.find((s) => s.value === scope)?.label ?? scope} · ${selectedMethods.length} indicators · ${effectiveSelected.length} sensitivity case${effectiveSelected.length === 1 ? '' : 's'}`
+  const configSummary = `${SCOPE_OPTIONS.find((s) => s.value === scope)?.label ?? scope} · ${selectedMethods.length} indicators`
 
   const calculateButton = (
     <Button
@@ -293,56 +284,7 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
             </div>
           </div>
 
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 4, minWidth: 200, maxWidth: 280 }}>
-            <span style={{
-              fontSize: 'var(--text-xs)', fontWeight: 600,
-              color: 'var(--text-secondary)',
-              textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>
-              <Layers size={11} /> Sensitivity cases
-              <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 2 }}>
-                · {effectiveSelected.length}/{availableScenarios.length}
-              </span>
-            </span>
-            <div
-              data-testid="single-product-sensitivity-list"
-              style={{
-                display: 'flex', flexDirection: 'column', gap: 2,
-                padding: '6px 8px',
-                maxHeight: 140, overflowY: 'auto',
-                backgroundColor: 'var(--bg-elevated)',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)',
-              }}
-            >
-              {availableScenarios.map((s) => {
-                const isBase = s === BASE_SCENARIO
-                const checked = effectiveSelected.includes(s)
-                return (
-                  <label
-                    key={s}
-                    style={{
-                      display: 'inline-flex', alignItems: 'center', gap: 6,
-                      fontSize: 'var(--text-xs)',
-                      color: isBase ? 'var(--text-secondary)' : 'var(--text-primary)',
-                      cursor: isBase ? 'not-allowed' : 'pointer',
-                      opacity: isBase ? 0.85 : 1,
-                    }}
-                    title={isBase ? 'Base is always included' : `Toggle "${s}"`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={checked}
-                      disabled={isBase || isCalculating}
-                      onChange={(e) => toggleSelectedScenario(s, e.target.checked)}
-                    />
-                    <span style={{ fontFamily: isBase ? 'inherit' : 'var(--font-mono)' }}>{s}</span>
-                  </label>
-                )
-              })}
-            </div>
-          </div>
+          {/* Sensitivity-cases box removed: Static is Base-only (Change 2). */}
 
           {error && (
             <div

@@ -359,6 +359,31 @@ correct.
   entries must be the `legendRef` children; put toggle-back (hidden) entries in
   a sibling outside the ref.
 
+### Sensitivity-cases selector — canonical label + Static is Base-only (Patch 5AW)
+
+Two conventions for the parameter-scenario (Base / Optimistic / Pessimistic …)
+selector, superseding the Patch-2C placement:
+
+- **Canonical display label is "Sensitivity cases" everywhere it renders.**
+  Never "Scenarios" — that string collides with the **LCI Scenarios** picker on
+  the Prospective tab and invites the misreading that a parameter case is an IAM
+  coordinate. The Prospective system-level box (`ProjectedImpactPanel.tsx`,
+  `projected-sensitivity-cases-label` testid) was relabelled "Scenarios" →
+  "Sensitivity cases". Leave **"LCI SCENARIOS"** untouched (different axis).
+- **The Static Background tabs do NOT expose the sensitivity-cases selector —
+  static = Base only.** Static computes one base-ecoinvent run with no scenario
+  variation, so the multi-select box was removed from the system-level Static
+  panel (`DSMImpactPanel.tsx`) and the single-product Static panel
+  (`SingleProductStaticPanel.tsx`). After removal, static compute still resolves
+  on Base: `selectedParamSetId = BASE_SCENARIO` and `effectiveSelected = []`
+  (no fan-out branch), byte-equivalent to the pre-removal N=1 default. The
+  parameter (sensitivity) axis lives on the **Prospective** tab only.
+- Locked by `tests/impactSensitivityCasesLabel.test.tsx` (Static renders no box;
+  Prospective label is "Sensitivity cases").
+
+The historical Patch-2C fan-out plumbing below is retained for the **Prospective**
+axis; only the Static placement + the label string changed.
+
 ### Multi-parameter sensitivity fan-out on Static Background (Patch 2C)
 
 The Static Background tab now mirrors Projected's multi-select pattern for the

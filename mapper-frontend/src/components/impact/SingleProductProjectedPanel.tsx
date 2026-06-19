@@ -487,7 +487,11 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
               {/* No defaultAllSelected on Projected: it inherits "all" from
                   Static via the 4F live-mirror. A self-default would fire
                   handleMethodsChange → setProjectedCustomized(true), freezing
-                  the mirror so later Static edits stop propagating. */}
+                  the mirror so later Static edits stop propagating. (Confirmed:
+                  adding defaultAllSelected here regresses
+                  singleProductStaticDefaultPublish (b) + the inheritance
+                  user-flow — the single-item Prospective default-all fix is
+                  PAUSED pending a non-freeze approach; see Change 1 report.) */}
               <MethodPicker
                 key={pickerSeed}
                 onChange={handleMethodsChange}

@@ -1025,35 +1025,41 @@ function ProjectedImpactPanelImpl() {
           )}
         </div>
 
-        {/* Preflight checklist + Calculate pinned right */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            {preflightIssues.length > 0 && (
-              <div style={{
-                padding: '8px 10px', backgroundColor: 'var(--warning-muted, color-mix(in srgb, var(--warning) 10%, transparent))',
-                border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
-                borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--warning)',
-                display: 'flex', flexDirection: 'column', gap: 4,
-              }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-                  <AlertCircle size={13} /> Cannot calculate yet — fix the following:
-                </div>
-                <ul style={{ margin: 0, paddingLeft: 22 }}>
-                  {preflightIssues.map((msg, i) => <li key={i}>{msg}</li>)}
-                </ul>
+        {/* Change 4: preflight stacks full-width above; the Sensitivity-cases
+            box + Calculate sit in a LEFT-aligned row (aligned with the LCI
+            scenarios column above) instead of right-floating. Layout only. */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+          {preflightIssues.length > 0 && (
+            <div style={{
+              padding: '8px 10px', backgroundColor: 'var(--warning-muted, color-mix(in srgb, var(--warning) 10%, transparent))',
+              border: '1px solid color-mix(in srgb, var(--warning) 40%, transparent)',
+              borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--warning)',
+              display: 'flex', flexDirection: 'column', gap: 4,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
+                <AlertCircle size={13} /> Cannot calculate yet — fix the following:
               </div>
-            )}
-          </div>
+              <ul style={{ margin: 0, paddingLeft: 22 }}>
+                {preflightIssues.map((msg, i) => <li key={i}>{msg}</li>)}
+              </ul>
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)' }}>
           <div style={{
             display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, minWidth: 200,
           }}>
-            <span style={{
-              fontSize: 'var(--text-xs)', fontWeight: 600,
-              color: 'var(--text-secondary)',
-              textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
-              display: 'inline-flex', alignItems: 'center', gap: 4,
-            }}>
-              <Layers size={11} /> Scenarios
+            <span
+              data-testid="projected-sensitivity-cases-label"
+              style={{
+                fontSize: 'var(--text-xs)', fontWeight: 600,
+                color: 'var(--text-secondary)',
+                textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
+                display: 'inline-flex', alignItems: 'center', gap: 4,
+              }}
+            >
+              {/* Canonical label "Sensitivity cases" (was "Scenarios") — never
+                  "Scenarios", which collides with the LCI Scenarios control. */}
+              <Layers size={11} /> Sensitivity cases
               <span style={{ fontWeight: 400, color: 'var(--text-tertiary)', marginLeft: 2 }}>
                 · {effectiveSelected.length}/{availableScenarios.length}
               </span>
@@ -1119,6 +1125,7 @@ function ProjectedImpactPanelImpl() {
               </>
             )}
           </Button>
+          </div>
         </div>
 
         <ComputeProgress

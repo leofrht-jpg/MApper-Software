@@ -266,20 +266,20 @@ def test_build_carbon_budget_smoke():
 
 
 def test_fresh_config_carbon_budget_defaults():
-    """Patch 5AO/5AR — a fresh AESA config defaults to IPCC AR6 2.0°C / 50th pct
-    (1150 Gt from 2025) × SSP2-4.5, allocated over the full century (end_year
-    2100). ``build_carbon_budget()`` (no args) is exactly what
-    ``GET /aesa/defaults`` serves as ``default_carbon_budget``, so this locks
-    the fresh-start defaults.
+    """A fresh AESA config defaults to IPCC AR6 1.5°C / 50th pct (300 Gt from
+    2025) × SSP2-4.5, allocated over the full century (end_year 2100).
+    ``build_carbon_budget()`` (no args) is exactly what ``GET /aesa/defaults``
+    serves as ``default_carbon_budget``, so this locks the fresh-start defaults.
+    (History: 5AO/5AR set this to 2.0°C/50th 1150 Gt; the single-LCA +
+    default-temperature change moved it to 1.5°C/50th.)
 
-    Patch 5AR — end_year is the BUDGET ALLOCATION horizon (remaining /
-    (end_year - t)), NOT the study/SR-timeline window (that's DSM-driven). It
-    must stay 2100; 5AO's 2050 compressed the budget and collapsed the
-    climate-change SR."""
+    end_year is the BUDGET ALLOCATION horizon (remaining / (end_year - t)), NOT
+    the study/SR-timeline window (that's DSM-driven). It must stay 2100; 5AO's
+    2050 compressed the budget and collapsed the climate-change SR."""
     from mapper.core.aesa_engine import build_carbon_budget
 
     cfg = build_carbon_budget()
-    assert cfg.initial_budget_gt == 1150.0
+    assert cfg.initial_budget_gt == 300.0
     assert cfg.ssp_scenario == "SSP2-4.5"
     assert cfg.start_year == 2025
     assert cfg.end_year == 2100
@@ -287,14 +287,14 @@ def test_fresh_config_carbon_budget_defaults():
 
 
 def test_get_defaults_surfaces_fresh_carbon_budget():
-    """The /aesa/defaults bundle's default_carbon_budget reflects the 5AO
-    fresh-config defaults (the only no-arg build_carbon_budget caller)."""
+    """The /aesa/defaults bundle's default_carbon_budget reflects the fresh-config
+    defaults (the only no-arg build_carbon_budget caller) — now 1.5°C/50th."""
     import asyncio
     from mapper.api.aesa import get_defaults
 
     bundle = asyncio.run(get_defaults())
     cb = bundle["default_carbon_budget"]
-    assert cb["initial_budget_gt"] == 1150.0
+    assert cb["initial_budget_gt"] == 300.0
     assert cb["ssp_scenario"] == "SSP2-4.5"
     assert cb["start_year"] == 2025
     assert cb["end_year"] == 2100

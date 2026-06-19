@@ -97,7 +97,7 @@ def test_build_carbon_budget_populates_conversion_per_option():
 
 
 def test_default_basis_is_co2_no_drift():
-    cb = build_carbon_budget()                     # default 2C/50
+    cb = build_carbon_budget()                     # default 1.5C/50
     assert cb.budget_basis == "CO2"                # populated factor stays inert
     assert cb.co2e_ratio() is None                 # because basis != CO2e_GHG
     applied = cb.with_basis_applied()
@@ -105,7 +105,7 @@ def test_default_basis_is_co2_no_drift():
 
 
 def test_with_basis_applied_scales_budget_and_pathway_by_f():
-    cb = build_carbon_budget().model_copy(update={"budget_basis": "CO2e_GHG"})
+    cb = build_carbon_budget(budget_option_id="IPCC_AR6_2C_50").model_copy(update={"budget_basis": "CO2e_GHG"})
     f = cb.co2e_ratio()
     assert f == pytest.approx(EXPECTED_F["IPCC_AR6_2C_50"], rel=1e-12)
     applied = cb.with_basis_applied()
@@ -136,7 +136,10 @@ def _impact_results() -> list[DSMLCAResult]:
 
 def _config(basis: str = "CO2") -> tuple[AESAConfiguration, object]:
     bset = load_boundary_sets()["Sala2020_EF"]
-    budget = build_carbon_budget().model_copy(update={"budget_basis": basis})
+    # Pin the 2°C/50 budget (1150 Gt): large enough that it doesn't deplete at
+    # the fixture's 2030/2040 years, so the ÷f relationship is testable (the
+    # default budget is now 1.5°C/50, which depletes by 2040 → SR None there).
+    budget = build_carbon_budget(budget_option_id="IPCC_AR6_2C_50").model_copy(update={"budget_basis": basis})
     cfg = AESAConfiguration(
         id="cfg-1", name="cfg", mfa_system_id="sys-1", impact_mode="static",
         boundary_set_id="Sala2020_EF", carbon_budget=budget,
@@ -159,7 +162,8 @@ def test_basis_scales_only_climate_sr():
     bset = load_boundary_sets()["Sala2020_EF"]
     base = AESAEngine.compute(_impact_results(), _config("CO2")[0], bset)
     e = AESAEngine.compute(_impact_results(), _config("CO2e_GHG")[0], bset)
-    f = build_carbon_budget().model_copy(update={"budget_basis": "CO2e_GHG"}).co2e_ratio()
+    # f must match the budget _config pins (2°C/50).
+    f = build_carbon_budget(budget_option_id="IPCC_AR6_2C_50").model_copy(update={"budget_basis": "CO2e_GHG"}).co2e_ratio()
 
     clim_base = {r.year: r for r in base.results if r.pb_id == "climate_change"}
     clim_e = {r.year: r for r in e.results if r.pb_id == "climate_change"}

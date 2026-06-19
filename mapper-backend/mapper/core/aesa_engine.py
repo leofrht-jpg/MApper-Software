@@ -38,7 +38,14 @@ from mapper.models.aesa_schemas import (
     SharingPrincipleConfig,
     SustainabilityRatioResult,
 )
-from mapper.models.bom_schemas import DSMLCAResult
+from mapper.models.bom_schemas import (
+    DSMLCAResult,
+    DSMLCASummary,
+    DSMLCAYearResult,
+    ImpactAssessmentMeta,
+    ImpactAssessmentResult,
+)
+from mapper.models.schemas import ArchetypeLCACalculateResult
 
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "aesa"
@@ -205,8 +212,9 @@ def build_default_multi_d_config(sharing: dict | None = None) -> MultiDConfig:
 
 
 def build_carbon_budget(
-    # Patch 5AO/5AR — fresh-config defaults: IPCC AR6 2.0°C 50th-pct (1150 Gt
-    # from 2025) × SSP2-4.5. (Was 1.5°C/67th 200 Gt.)
+    # Fresh-config default: IPCC AR6 1.5°C 50th-pct (300 Gt from 2025) × SSP2-4.5.
+    # (History: 5AO/5AR set this to 2.0°C/50th 1150 Gt; now 1.5°C/50th per the
+    # single-LCA + default-temperature change — its wired CO2e factor is 1.6019.)
     # `end_year` is the BUDGET ALLOCATION horizon only —
     # annual_global_allocation(t) = remaining_budget(t) / (end_year - t) — NOT
     # the study/SR-timeline window (that comes from the DSM fleet trajectory's
@@ -214,7 +222,7 @@ def build_carbon_budget(
     # over the full century, so allocate to 2100; truncating to the 2050 study
     # window (5AO) compressed a ~75-yr budget into ~25 yrs, inflating the
     # per-year safe allocation and collapsing the climate-change SR (5AR fix).
-    budget_option_id: str = "IPCC_AR6_2C_50",
+    budget_option_id: str = "IPCC_AR6_1p5C_50",
     ssp_id: str = "SSP2-4.5",
     start_year: int = 2025,
     end_year: int = 2100,
@@ -490,6 +498,70 @@ def suggest_method_mapping(
         if pb_id is not None:
             out.append(MethodPBMapping(method_tuple=list(m), pb_id=pb_id))
     return out
+
+
+# ─── Single-LCA → impact adapter ─────────────────────────────────────────────
+
+
+def single_product_to_impact_result(
+    result: ArchetypeLCACalculateResult,
+    *,
+    reference_year: int = 2025,
+    system_id: str | None = None,
+) -> ImpactAssessmentResult:
+    """Adapt a STATIC single-product LCA result (scalar score per method) into
+    the per-year ``ImpactAssessmentResult`` the AESA engine consumes, so a
+    non-fleet single product can be assessed against the planetary boundaries.
+
+    Each method becomes a one-year ``DSMLCAResult`` at ``reference_year`` with
+    its scalar ``score`` as that year's ``total_impact`` and EMPTY cohort/material
+    dicts (there is no fleet). The engine then emits one SR row per (boundary,
+    reference_year).
+
+    **FU / temporal-basis assumption (explicit, not silent):** the LCA's
+    functional unit is treated as a SINGLE-YEAR flow placed at ``reference_year``
+    — one functional unit's worth of impact assessed against that year's
+    per-product Safe-Operating-Space share. ``reference_year`` only sets the
+    climate (cumulative-budget) annual-allowance year; flow boundaries are
+    year-independent. Prospective single-product sources (per-(iam,ssp,year))
+    will extend this adapter with multiple ``DSMLCAResult.years`` later — the
+    per-method, cohort-empty shape is forward-compatible.
+    """
+    sid = system_id or "single-product"
+    dsm_results = [
+        DSMLCAResult(
+            mfa_system_id=sid,
+            method=list(m.method),
+            method_label=m.method_label,
+            scope=result.scope,
+            unit=m.unit,
+            years=[
+                DSMLCAYearResult(
+                    year=reference_year,
+                    total_impact=m.score,
+                    impact_by_cohort={},
+                    impact_by_material={},
+                    count_by_cohort={},
+                    unit=m.unit,
+                )
+            ],
+            summary=DSMLCASummary(
+                total_impact=m.score, peak_year=reference_year, peak_impact=m.score
+            ),
+        )
+        for m in result.results
+    ]
+    return ImpactAssessmentResult(
+        task_id="single-product",
+        meta=ImpactAssessmentMeta(
+            mode="static",
+            mfa_system_id=system_id,   # None for a non-fleet source
+            scope=result.scope,
+            year_start=reference_year,
+            year_end=reference_year,
+        ),
+        results=dsm_results,
+    )
 
 
 # ─── Engine ──────────────────────────────────────────────────────────────────

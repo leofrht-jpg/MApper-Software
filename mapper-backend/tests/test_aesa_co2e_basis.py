@@ -80,7 +80,10 @@ def _impact_envelope() -> ImpactAssessmentResult:
 
 def _config(*, basis: str = "CO2", conversion: RatioCO2eConversion | None = None) -> tuple[AESAConfiguration, object]:
     bset = load_boundary_sets()["Sala2020_EF"]
-    budget = build_carbon_budget().model_copy(update={
+    # Pin the 2°C/50 budget (1150 Gt) — large enough not to deplete at the
+    # fixture's 2030/2040 years (the default budget is now 1.5°C/50, which
+    # depletes by 2040 → climate SR None there).
+    budget = build_carbon_budget(budget_option_id="IPCC_AR6_2C_50").model_copy(update={
         "budget_basis": basis,
         "co2e_conversion": conversion,
     })

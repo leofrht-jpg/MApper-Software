@@ -24,6 +24,7 @@ from pydantic import BaseModel, Field, model_validator
 from mapper.core.compute_metrics import ComputeMetrics
 
 from mapper.models.bom_schemas import ImpactAssessmentResult
+from mapper.models.schemas import ArchetypeLCACalculateResult
 
 
 SHARING_PRINCIPLE = Literal["EpC", "IN", "AGR", "LA", "AR"]
@@ -465,7 +466,10 @@ class MethodPBMapping(BaseModel):
 class AESAConfiguration(BaseModel):
     id: str
     name: str
-    mfa_system_id: str
+    # Optional — None for a single-LCA (non-fleet) AESA config. The fleet path
+    # always sets it; the compute match-check only fires when BOTH the config
+    # and the impact carry a system id.
+    mfa_system_id: str | None = None
     # Patch 4O — explicit DSM scenario id for the compute source cascade.
     # ``None`` keeps the legacy "use whatever's active when this config
     # is loaded" semantic. Saved configs from before Patch 4O default
@@ -500,7 +504,7 @@ class SharingPresetCreate(BaseModel):
 
 class AESAConfigurationCreate(BaseModel):
     name: str
-    mfa_system_id: str
+    mfa_system_id: str | None = None   # None for single-LCA (non-fleet) configs
     dsm_scenario_id: str | None = None
     impact_mode: Literal["static", "projected"] = "static"
     boundary_set_id: str = "Sala2020_EF"
@@ -521,6 +525,14 @@ class AESAComputeRequest(BaseModel):
     config: AESAConfiguration | None = None
     impact_task_id: str | None = None
     impact_result: ImpactAssessmentResult | None = None
+    # Single-LCA (non-fleet) source: a STATIC single-product LCA result, adapted
+    # into the per-year ImpactAssessmentResult the engine consumes. Takes
+    # precedence over impact_task_id / impact_result when set. `reference_year`
+    # sets the climate-budget annual-allowance year (the LCA's functional unit is
+    # assessed as a single-year flow at that year). Prospective single-product
+    # sources extend the same adapter later (out of scope this build).
+    single_product_result: ArchetypeLCACalculateResult | None = None
+    reference_year: int = 2025
     run_sensitivity: bool = False  # if True, also run 5 uniform-principle configs
 
 

@@ -30,6 +30,7 @@ from mapper.core.aesa_engine import (
     build_default_sharing_preset,
     co2e_conversion_for_budget,
     load_boundary_sets,
+    single_product_to_impact_result,
     load_carbon_budget_options,
     load_sharing_data,
     load_ssp_trajectories,
@@ -329,8 +330,22 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
     from mapper.core.compute_metrics import measure_compute
     meter = measure_compute()
     config = _resolve_config(body)
-    impact = _resolve_impact(body.impact_task_id, body.impact_result)
-    if impact.meta.mfa_system_id != config.mfa_system_id:
+    if body.single_product_result is not None:
+        # Single-LCA (non-fleet) source: adapt the static single-product result
+        # into the per-year impact the engine consumes (reference_year sets the
+        # climate annual-allowance year). Takes precedence over task/inline.
+        impact = single_product_to_impact_result(
+            body.single_product_result,
+            reference_year=body.reference_year,
+            system_id=config.mfa_system_id,
+        )
+    else:
+        impact = _resolve_impact(body.impact_task_id, body.impact_result)
+    # The system-match check fires only when BOTH the impact and the config
+    # carry a system id (fleet path, unchanged). A single-LCA source has no DSM
+    # system (meta.mfa_system_id is None) → the check is skipped.
+    if (impact.meta.mfa_system_id and config.mfa_system_id
+            and impact.meta.mfa_system_id != config.mfa_system_id):
         raise HTTPException(
             status_code=400,
             detail="Impact result is for a different DSM system than the AESA config.",

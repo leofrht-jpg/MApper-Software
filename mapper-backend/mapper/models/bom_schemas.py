@@ -452,7 +452,9 @@ class ImpactAssessmentRequest(BaseModel):
 
 class ImpactAssessmentMeta(BaseModel):
     mode: str
-    mfa_system_id: str
+    # Optional — None for a non-fleet single-LCA source adapted into AESA
+    # (no DSM system). The fleet pipeline always sets it (back-compat).
+    mfa_system_id: str | None = None
     scope: str
     year_start: int | None = None
     year_end: int | None = None

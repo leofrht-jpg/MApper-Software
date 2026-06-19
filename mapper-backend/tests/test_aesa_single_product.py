@@ -144,10 +144,13 @@ def test_fleet_matching_system_computes():
     assert any(r.pb_id == "climate_change" for r in result.results)
 
 
-# ── Part B — default budget temperature ──────────────────────────────────────
+# ── Default budget temperature + pathway ─────────────────────────────────────
 
-def test_default_budget_is_1p5c_50():
+def test_default_budget_is_2c_50_with_consistent_pathway():
     cb = build_carbon_budget()
-    assert cb.initial_budget_gt == 300.0                     # 1.5°C / 50th from 2025
+    assert cb.initial_budget_gt == 1150.0                    # 2.0°C / 50th from 2025
+    assert cb.ssp_scenario == "SSP1-2.6"                     # temperature-consistent ~2°C
     assert cb.co2e_conversion is not None
-    assert cb.co2e_conversion.factor == pytest.approx(1.6019, abs=1e-4)
+    assert cb.co2e_conversion.factor == pytest.approx(1.4846, abs=1e-4)
+    # Non-depleting within horizon → preserves the comparative SR gradient.
+    assert all(cb.remaining_budget(y) > 0 for y in range(2025, 2101))

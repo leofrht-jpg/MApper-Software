@@ -1123,17 +1123,33 @@ Forster 2023 1150, and AR6 1150 vs. Forster 950, for the two
 2°C cases) — this is the link future maintainers should
 consult when verifying values without re-reading the IPCC PDF.
 
-**Patch 5AO/5AR — fresh-config defaults.** A NEW AESA config defaults its
-carbon budget to **IPCC AR6 2.0°C / 50th percentile (`IPCC_AR6_2C_50`, 1150 Gt
-from 2025) × SSP2-4.5, allocated over 2025–2100** (was 1.5°C/67th
-`IPCC_AR6_1p5C_67` 200 Gt). These are the default parameters of
-`build_carbon_budget()` in `mapper/core/aesa_engine.py`, surfaced by
-`GET /aesa/defaults` (`get_defaults()`, the sole no-arg caller) as
-`default_carbon_budget` and copied verbatim into a fresh draft by the frontend
-`aesaStore.draftFromDefaults`. **Defaults only** — they seed a fresh/reset
-config and never clobber a loaded/saved config or user edits. Locked by
-`test_aesa_data_provenance.py::{test_fresh_config_carbon_budget_defaults,
+**Fresh-config defaults (current).** A NEW AESA config defaults its carbon
+budget to **IPCC AR6 2.0°C / 50th percentile (`IPCC_AR6_2C_50`, 1150 Gt from
+2025) × `SSP1-2.6` (a temperature-CONSISTENT ~2°C depletion pathway), allocated
+over 2025–2100, with `budget_basis = "CO2e_GHG"`** (the frontend toggle's
+default; wired per-budget CO₂e factor 1.4846). History: 5AO/5AR set this to 2°C/50
+× SSP2-4.5 (was 1.5°C/67th 200 Gt); the budget+pathway+basis triple is now
+coherent. These are the default parameters of `build_carbon_budget()` in
+`mapper/core/aesa_engine.py`, surfaced by `GET /aesa/defaults` (`get_defaults()`,
+the sole no-arg caller) as `default_carbon_budget` and copied into a fresh draft
+by `aesaStore.draftFromDefaults` (which flips the basis to `CO2e_GHG`). **Defaults
+only** — they seed a fresh/reset config and never clobber a loaded/saved config
+or user edits. Locked by `test_aesa_data_provenance.py::{test_fresh_config_carbon_budget_defaults,
 test_get_defaults_surfaces_fresh_carbon_budget}`.
+
+**Why this temperature/pathway default (UX, not methodology lock-in).** The
+temperature default is a UX choice to preserve the **comparative SR gradient
+across 2025–2050**: the 1.5°C budget (`IPCC_AR6_1p5C_50`, 300 Gt) is only ~6–7 yr
+of current emissions, so it **saturates inherently by ~2033–2040 under ANY
+pathway** (≈2040 even under the matched 1.5°C SSP1-1.9; the magnitude, not a
+pathway mismatch, is the cause). A fresh config opening on a saturated climate
+SR reads as broken; 2°C/50 × SSP1-2.6 stays non-depleting through 2100 and shows
+a gradient. **Budget and pathway are independently selectable** — the strict
+1.5°C view is one click away, and deliberate mismatching (e.g. a 1.5°C budget ×
+SSP2-4.5) for **mitigation-gap analysis** stays available. The default pairs the
+2°C budget with a **temperature-consistent** ~2°C pathway (SSP1-2.6, not the
+~2.7°C SSP2-4.5) to avoid a mitigation-gap *default* — see Patch X2's warning
+against pairing a budget with an off-temperature pathway in published claims.
 
 **`end_year` is the budget ALLOCATION horizon, not the study/SR-timeline
 window (Patch 5AR).** `annual_global_allocation(t) = remaining_budget(t) /

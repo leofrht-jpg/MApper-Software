@@ -212,9 +212,14 @@ def build_default_multi_d_config(sharing: dict | None = None) -> MultiDConfig:
 
 
 def build_carbon_budget(
-    # Fresh-config default: IPCC AR6 1.5°C 50th-pct (300 Gt from 2025) × SSP2-4.5.
-    # (History: 5AO/5AR set this to 2.0°C/50th 1150 Gt; now 1.5°C/50th per the
-    # single-LCA + default-temperature change — its wired CO2e factor is 1.6019.)
+    # Fresh-config default: IPCC AR6 2.0°C 50th-pct (1150 Gt from 2025) ×
+    # SSP1-2.6 (a temperature-CONSISTENT ~2°C pathway), CO2e_GHG basis (wired
+    # factor 1.4846). The temperature default is a UX choice: 2°C/50 × a ~2°C
+    # pathway preserves the comparative SR gradient across 2025–2050, whereas the
+    # 1.5°C budget (300 Gt) saturates inherently by ~2033–2040 under ANY pathway.
+    # The strict 1.5°C view is one click away (budget + pathway are independently
+    # selectable). SSP1-2.6 (not SSP2-4.5) avoids a mitigation-gap default pairing
+    # (see CLAUDE.md Patch X2).
     # `end_year` is the BUDGET ALLOCATION horizon only —
     # annual_global_allocation(t) = remaining_budget(t) / (end_year - t) — NOT
     # the study/SR-timeline window (that comes from the DSM fleet trajectory's
@@ -222,8 +227,8 @@ def build_carbon_budget(
     # over the full century, so allocate to 2100; truncating to the 2050 study
     # window (5AO) compressed a ~75-yr budget into ~25 yrs, inflating the
     # per-year safe allocation and collapsing the climate-change SR (5AR fix).
-    budget_option_id: str = "IPCC_AR6_1p5C_50",
-    ssp_id: str = "SSP2-4.5",
+    budget_option_id: str = "IPCC_AR6_2C_50",
+    ssp_id: str = "SSP1-2.6",
     start_year: int = 2025,
     end_year: int = 2100,
 ) -> CarbonBudgetConfig:

@@ -16,7 +16,7 @@
 //     show irrelevant filter chips in a mode where they make no
 //     sense.
 
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, Search, X } from 'lucide-react'
 import type { ActivitySummary, ArchetypeSummary } from '../../api/client'
 import { NumberInput } from '../ui/NumberInput'
@@ -108,19 +108,50 @@ export interface MultiItemSelectorProps {
    *  and the compute payload are untouched. The empty-state is still owned by
    *  the selector. */
   renderSelectedItems?: React.ReactNode
+  /** Identity of the data source the value-filters belong to (e.g. the
+   *  selected activity database). When it changes, the DB-specific value
+   *  filters (folders / locations / units) are reset — they were keyed to the
+   *  old source's distinct-value universe and would otherwise filter the new
+   *  source's rows to nothing. The SEARCH TEXT is deliberately preserved
+   *  (DB-independent user intent — switching DB is often done to re-find the
+   *  same term). Omit when the source never changes (filters then persist). */
+  sourceKey?: string | null
 }
 
 export function MultiItemSelector({
   mode, selectedItems, onAddItem, onRemoveItem, onClearAll,
   maxItems, availableArchetypes = [], availableActivities = [],
   onSearchChange, chipAmountField = false, onItemAmountChange,
-  onFiltersChange, filterOptions, renderSelectedItems,
+  onFiltersChange, filterOptions, renderSelectedItems, sourceKey,
 }: MultiItemSelectorProps) {
   const [search, setSearch] = useState('')
   const [sortBy, setSortBy] = useState<SortKey>('name-asc')
   const [foldersFilter, setFoldersFilter] = useState<string[]>([])
   const [locationsFilter, setLocationsFilter] = useState<string[]>([])
   const [unitsFilter, setUnitsFilter] = useState<string[]>([])
+
+  // Reset the DB-specific value filters whenever the data source changes
+  // (e.g. the activity database switches). These filters were keyed to the old
+  // source's distinct-value universe; left stale, they filter the new source's
+  // rows to zero client-side (the "no matches after switching DB" bug). The
+  // search text is intentionally NOT cleared — it's DB-independent user intent.
+  // Re-emit the cleared filters so the parent store stays in parity. Skip the
+  // very first run (mount): a mount-time onFiltersChange could clobber an
+  // intentionally pre-set filter, and there's nothing stale to clear yet.
+  const sourceKeyMountedRef = useRef(false)
+  useEffect(() => {
+    if (!sourceKeyMountedRef.current) {
+      sourceKeyMountedRef.current = true
+      return
+    }
+    setFoldersFilter([])
+    setLocationsFilter([])
+    setUnitsFilter([])
+    onFiltersChange?.({ locations: [], units: [] })
+    // Deliberately keyed on sourceKey only; onFiltersChange identity must not
+    // re-trigger a filter wipe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sourceKey])
   // Mixed mode: which types appear in the results list. Default
   // both on; turning off filters one type from the results.
   const [mixedShowArchetypes, setMixedShowArchetypes] = useState(true)

@@ -218,15 +218,29 @@ export function MultiProductLCA() {
     if (archetypes.length === 0) fetchArchetypes()
   }, [archetypes.length, fetchArchetypes])
 
+  // The activity-SOURCE picker offers only ORIGINAL/base databases (the
+  // user-uploaded ecoinvent + biosphere), NEVER the premise-derived
+  // prospective/superstructure DBs. The prospective DBs are the YEAR VINTAGES
+  // the user picks AFTER choosing a base-DB activity, and they live solely in
+  // the LCI scenarios picker (`<ActivityVintagePicker databases={plcaDatabases}>`).
+  // Classification source of truth: `usePLCAStore.databases` (the frontend
+  // mirror of plca_storage's registry) — a DB is prospective iff its name is in
+  // that set.
+  const baseDatabases = useMemo(() => {
+    const prospectiveNames = new Set(plcaDatabases.map((d) => d.name))
+    return databases.filter((d) => !prospectiveNames.has(d.name))
+  }, [databases, plcaDatabases])
+
   // Initial database for activity search. The selector reads
   // `useActivityStore.activities` (the loaded result list); a
-  // database must be selected for the store's loader to populate
-  // it. Pick the first available DB on mount.
+  // database must be selected for the store's loader to populate it. Pick the
+  // first BASE DB on mount, and re-pick if the current selection isn't a base
+  // DB (so it can never land on a prospective DB, e.g. one persisted earlier).
   useEffect(() => {
-    if (!selectedDatabase && databases.length > 0) {
-      setDatabase(databases[0].name)
-    }
-  }, [selectedDatabase, databases, setDatabase])
+    if (baseDatabases.length === 0) return
+    const isBase = selectedDatabase != null && baseDatabases.some((d) => d.name === selectedDatabase)
+    if (!isBase) setDatabase(baseDatabases[0].name)
+  }, [selectedDatabase, baseDatabases, setDatabase])
 
   // Load the pLCA registry once so the activity-mode vintage picker can offer
   // installed SSP×year vintages.
@@ -336,7 +350,7 @@ export function MultiProductLCA() {
         // the payload), so the dropdown is meaningless in Archetypes mode and is
         // omitted there. selectedDatabase is store-backed (useActivityStore), so
         // the Activities selection survives the mode switch.
-        actions={compareMode === 'activity' && selectedDatabase && databases.length > 1 ? (
+        actions={compareMode === 'activity' && selectedDatabase && baseDatabases.length > 1 ? (
           <select
             data-testid="multi-product-database-select"
             value={selectedDatabase}
@@ -355,7 +369,7 @@ export function MultiProductLCA() {
               color: 'var(--text-primary)',
             }}
           >
-            {databases.map((d) => (
+            {baseDatabases.map((d) => (
               <option key={d.name} value={d.name}>{d.name}</option>
             ))}
           </select>
@@ -373,6 +387,9 @@ export function MultiProductLCA() {
             onSearchChange={handleActivitySearch}
             onFiltersChange={handleActivityFiltersChange}
             filterOptions={{ locations: distinctValues.locations, units: distinctValues.units }}
+            // Reset stale value-filters when the activity DB switches (the
+            // filters were keyed to the previous DB's distinctValues).
+            sourceKey={selectedDatabase}
             // Activity mode: group vintages of one activity under a single
             // header (display-only). Archetype mode keeps the default chips.
             renderSelectedItems={

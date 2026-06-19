@@ -1137,7 +1137,13 @@ function CarbonBudgetEditor({
         onChange={(e) => {
           const opt = options.find((o) => o.id === e.target.value)
           if (!opt) return
-          onPatch({ initial_budget_gt: opt.remaining_gt_from_2025, budget_source: opt.source })
+          onPatch({
+            initial_budget_gt: opt.remaining_gt_from_2025,
+            budget_source: opt.source,
+            // Carry the budget's per-temperature CO2→CO2e factor so the CO2e
+            // basis stays correct after switching options.
+            co2e_conversion: opt.co2e_conversion ?? undefined,
+          })
         }}
         style={inputStyle}
       >

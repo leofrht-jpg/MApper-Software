@@ -1,0 +1,12 @@
+{
+  "slope": 1.2935,
+  "intercept": 218.41,
+  "R": 0.9444,
+  "N": 343,
+  "x_min_gt": 292.9,
+  "x_max_gt": 1568.2,
+  "x1150_in_range": true,
+  "implied_co2e_at_1150_gt": 1705.9,
+  "implied_ratio_at_1150": 1.4834,
+  "note": "x,y = cumulative World Emissions|CO2 / Kyoto Gases (Gt), 2020 -> net-zero CO2 year; AR6 C3+C4 ensemble, all models"
+}

@@ -3538,6 +3538,12 @@ export interface SharingPresetCreate {
   chain: DownscalingChain
 }
 
+export interface RatioCO2eConversion {
+  kind: 'ratio'
+  factor: number
+  source: string
+}
+
 export interface CarbonBudgetConfig {
   initial_budget_gt: number
   budget_source: string
@@ -3546,6 +3552,11 @@ export interface CarbonBudgetConfig {
   projected_emissions: Record<number, number>
   ssp_scenario: string
   provisional?: boolean
+  // CO2 vs CO2e/GHG budget basis. Backend default "CO2"; fresh frontend drafts
+  // default to "CO2e_GHG". `co2e_conversion` carries the per-budget CO2→CO2e
+  // factor so the CO2e basis is selectable for every budget.
+  budget_basis?: 'CO2' | 'CO2e_GHG'
+  co2e_conversion?: RatioCO2eConversion | null
 }
 
 export interface MethodPBMapping {
@@ -3670,6 +3681,9 @@ export interface CarbonBudgetOption {
   remaining_gt_from_2025: number
   source: string
   provisional?: boolean
+  // Per-budget CO2→CO2e conversion (get_defaults attaches it) so switching the
+  // budget option can patch the right factor onto the config.
+  co2e_conversion?: RatioCO2eConversion | null
 }
 
 export interface AESADefaultsBundle {

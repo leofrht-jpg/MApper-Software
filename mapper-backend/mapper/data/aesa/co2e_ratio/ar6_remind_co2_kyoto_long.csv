@@ -1,0 +1,289 @@
+model,scenario,region,variable,unit,year,value
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2025,34727.7942
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2030,31686.3434
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2035,26219.024
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2040,20176.6294
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2045,15333.3662
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2050,11521.3827
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2055,8508.1999
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2060,6081.3472
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2070,3001.2196
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2080,1514.8906
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2090,655.5869
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2100,-251.4948
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,47386.9655
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,43551.7629
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,37274.7273
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,30451.9168
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,24888.2178
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,20488.6002
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,17467.7799
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,14986.1818
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,11800.5777
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,9960.376
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,8617.8573
+REMIND 2.1,R2p1_SSP2-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,7414.7916
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2025,35000.3045
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2030,34334.9378
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2035,29940.0846
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2040,23204.3461
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2045,16859.5906
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2050,10879.9356
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2055,6836.6521
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2060,4109.1449
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2070,1581.8864
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2080,525.6597
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2090,-470.6887
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2100,-2008.0134
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,46774.1402
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,45066.3322
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,39974.8733
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,32619.0747
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,25769.4681
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,19359.3278
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,15342.0645
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,12557.8502
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,9675.4936
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,8024.4463
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,6319.7536
+REMIND 2.1,R2p1_SSP5-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,4268.2578
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2025,34081.4393
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2030,31352.6503
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2035,26950.5801
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2040,20427.1985
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2045,15523.4704
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2050,12123.5503
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2055,9732.6285
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2060,7290.5991
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2070,3122.5554
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2080,-97.8598
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2090,-2206.0119
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|CO2,Mt CO2/yr,2100,-3641.8541
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,46572.9186
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,43032.1205
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,37672.8779
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,29791.6424
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,24014.2442
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,19619.4316
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,16753.8975
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,13983.0001
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,8953.3075
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,4916.3102
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,2124.4357
+REMIND 2.1,R2p1_SSP1-PkBudg1300,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,87.3822
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2025,33388.9401
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2030,29112.4235
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2035,22712.7842
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2040,16232.6783
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2045,11597.1484
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2050,7302.9061
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2055,4335.0495
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2060,2168.8936
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2070,-679.8688
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2080,-1699.0066
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2090,-2154.9588
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2100,-3160.1734
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,45790.6613
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,40366.6935
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,33113.5444
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,25894.4308
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,20817.3818
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,16137.5317
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,13237.3038
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,11055.8383
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,8104.1147
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,6714.7161
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,5773.0491
+REMIND 2.1,R2p1_SSP2-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,4491.9748
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2025,30778.1916
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2030,25472.5698
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2035,18593.6531
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2040,10155.3018
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2045,3367.7258
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2050,-2191.763
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2055,-4937.8246
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2060,-6392.2034
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2070,-8329.9168
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2080,-9550.6077
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2090,-10825.4149
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2100,-12099.1076
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,41926.956
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,35362.0626
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,27988.9088
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,19331.5342
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,12273.7982
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,6398.4586
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,3714.2378
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,2194.9488
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,-88.64
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,-1897.6865
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,-3853.7451
+REMIND 2.1,R2p1_SSP5-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,-5651.7453
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2025,32285.6385
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2030,28102.1628
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2035,22165.1549
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2040,15976.6133
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2045,11733.0558
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2050,8115.5897
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2055,5471.6006
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2060,2940.7169
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2070,-1066.4139
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2080,-3401.2092
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2090,-4744.4151
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2100,-5507.6364
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,44372.599
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,38997.0821
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,31885.0747
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,24494.5049
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,19582.0874
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,15279.8983
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,12379.1945
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,9545.8522
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,4712.3874
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,1583.3455
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,-428.0504
+REMIND 2.1,R2p1_SSP1-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,-1777.2779
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2025,30816.8918
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2030,23810.687
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2035,16374.0556
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2040,9962.1294
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2045,5343.8868
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2050,1244.3395
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2055,-1126.5905
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2060,-2557.7523
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2070,-3943.4994
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2080,-4607.0791
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2090,-5732.8087
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2100,-7770.322
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,42710.9634
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,34304.7031
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,26076.925
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,19264.8636
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,14482.0672
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,10161.034
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,7883.2135
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,6447.879
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,4919.2943
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,3871.8902
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,2280.4116
+REMIND 2.1,R2p1_SSP2-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,-5.7434
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2025,29616.4184
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2030,22961.8455
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2035,16262.7006
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2040,10561.4748
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2045,6081.3259
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2050,2040.7376
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2055,-667.1244
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2060,-2853.8013
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2070,-5284.114
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2080,-6513.416
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2090,-7625.2091
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|CO2,Mt CO2/yr,2100,-8840.4517
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,41203.9724
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,33153.084
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,25270.5533
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,18685.4697
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,13762.9399
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,9136.2214
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,6221.7702
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,3740.9913
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,518.7474
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,-1495.4063
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,-3259.3318
+REMIND 2.1,R2p1_SSP1-PkBudg900,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,-5035.8989
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2005,33702.0617
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2010,37208.8436
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2015,38909.644
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2020,39302.4665
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2025,33471.9302
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2030,30732.6608
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2035,25412.1729
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2040,18045.938
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2045,11650.8724
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2050,5464.8787
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2055,2170.2118
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2060,189.0863
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2070,-592.316
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2080,-890.4959
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2090,-1800.2005
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|CO2,Mt CO2/yr,2100,-3491.4066
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2005,46144.6604
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2010,50781.0
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2015,53822.6196
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2020,54302.341
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2025,45023.9273
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2030,41163.9666
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2035,35145.3454
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2040,27304.0893
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2045,20489.6688
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2050,13918.1419
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2055,10656.9256
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2060,8605.9397
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2070,7473.3048
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2080,6596.6843
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2090,4998.8468
+REMIND 2.1,R2p1_SSP5-PkBudg1100,World,Emissions|Kyoto Gases,Mt CO2-equiv/yr,2100,2809.7551

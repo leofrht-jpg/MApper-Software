@@ -33,6 +33,7 @@ from mapper.models.aesa_schemas import (
     MultiDConfig,
     PlanetaryBoundary,
     PrincipleDefinition,
+    RatioCO2eConversion,
     SharingPreset,
     SharingPrincipleConfig,
     SustainabilityRatioResult,
@@ -96,6 +97,58 @@ def load_sharing_data() -> dict:
 def load_carbon_budget_options() -> list[dict]:
     raw = _read_json("carbon_budgets.json")
     return raw.get("options", [])
+
+
+# ── CO2 → CO2e (Kyoto-gases, GWP100) budget-basis conversion (sourced) ───────
+# Two affine fits map a CUMULATIVE-FROM-2020 CO2 budget x (GtCO2) to the
+# cumulative-from-2020 CO2e budget y (GtCO2e), branched by the budget's
+# temperature target:
+#   1.5C → Bjorn et al. 2023, "Standardised carbon-budget-based ...", Environ.
+#          Sci. Technol.:                 y = 1.1614·x + 157.27   (fitted x∈[223,440])
+#   2C   → AR6 C3+C4 ("(likely) below 2C") ensemble analog, regressed in-repo
+#          over 343 AR6 scenarios (all models): y = 1.2935·x + 218.41
+#          (mapper/data/aesa/co2e_ratio/ar6_2c_analog_fit.json; R=0.944, x∈[293,1568]).
+# C re-baselines y from the from-2020 framing to AESA's from-2025 framing by
+# subtracting cumulative CO2e over the SAME 2020-2024 block as the budgets'
+# -200 GtCO2 deduction: the median Kyoto-Gases of the same AR6 C3+C4 ensemble
+# (257.4 GtCO2e; its CO2 companion median 193 Gt agrees with the -200). See
+# mapper/data/aesa/co2e_ratio/README.md. NOT per-SSP — an ensemble regression.
+BJORN_2023_1P5C = (1.1614, 157.27)
+AR6_C3C4_2C = (1.2935, 218.41)
+CO2E_2020_2024_GT = 257.4
+
+
+def co2e_factor_for_budget(option: dict) -> float:
+    """Per-budget CO2→CO2e scaling factor ``f = y25 / x25`` recomputed from the
+    stored affine coefficients + C (no magic number; a test re-derives this).
+
+    ``x20`` = from-2020 CO2 budget; ``x25`` = from-2025 CO2 budget; the
+    temperature target (1.5C vs 2C, read from the option id) selects the formula.
+    ``y20 = m·x20 + b``; ``y25 = y20 − C``; ``f = y25 / x25``."""
+    x20 = float(option["original_gt_from_2020"])
+    x25 = float(option["remaining_gt_from_2025"])
+    m, b = BJORN_2023_1P5C if "1p5C" in option.get("id", "") else AR6_C3C4_2C
+    return ((m * x20 + b) - CO2E_2020_2024_GT) / x25
+
+
+def co2e_conversion_for_budget(option: dict) -> RatioCO2eConversion:
+    """Build the sourced ``RatioCO2eConversion`` (ratio kind) for a budget option.
+    The intercept of the affine is absorbed into the per-budget scalar f by
+    construction, so ``with_basis_applied`` can reuse the uniform-scaling ratio
+    path (budget×f, pathway×f → climate SR ÷f)."""
+    f = co2e_factor_for_budget(option)
+    is_15 = "1p5C" in option.get("id", "")
+    formula = "Bjorn et al. 2023 (1.5C)" if is_15 else "AR6 C3+C4 2C-analog"
+    return RatioCO2eConversion(
+        factor=f,
+        source=(
+            f"CO2→CO2e GWP100 budget factor f={f:.4f} = (formula(x20)−C)/x25; "
+            f"formula={formula}; x20={option.get('original_gt_from_2020')} GtCO2, "
+            f"x25={option.get('remaining_gt_from_2025')} GtCO2, "
+            f"C={CO2E_2020_2024_GT} GtCO2e (AR6 C3+C4 2020-2024 median). "
+            f"See mapper/data/aesa/co2e_ratio/README.md"
+        ),
+    )
 
 
 def load_ssp_trajectories() -> list[dict]:
@@ -182,6 +235,11 @@ def build_carbon_budget(
         projected_emissions={int(y): float(v) for y, v in ssp["projected_emissions"].items()},
         ssp_scenario=ssp_id,
         provisional=bool(budget.get("provisional", True) or ssp.get("provisional", True)),
+        # Populate the per-budget CO2→CO2e factor so the CO2e_GHG basis is
+        # selectable for every budget (no 400). budget_basis stays "CO2" by
+        # default → co2e_ratio() is None → with_basis_applied is identity → no
+        # SR drift until the basis is flipped to CO2e_GHG (the frontend toggle).
+        co2e_conversion=co2e_conversion_for_budget(budget),
     )
 
 

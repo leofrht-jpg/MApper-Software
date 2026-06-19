@@ -204,6 +204,15 @@ interface AESAStore {
   lastRunAt: string | null
   running: boolean
   error: string | null
+  // Last compute() inputs, remembered so the budget-basis toggle can re-run
+  // the same compute against the new basis (the basis lives on the draft's
+  // carbon_budget, which compute() reads fresh). Null until the first compute.
+  lastComputeArgs: {
+    mfaSystemId: string
+    impactTaskId?: string | null
+    impactInline?: ImpactAssessmentResult | null
+    runSensitivity?: boolean
+  } | null
 
   // Patch 5AM — mount-time config-panel load failures live in their OWN slot
   // (separate from the general `error`, which carries compute/save errors) so
@@ -253,6 +262,11 @@ interface AESAStore {
     runSensitivity?: boolean
   }) => Promise<void>
   clearResult: () => void
+  // Set the carbon-budget basis ("CO2" budget vs "CO2e_GHG" budget) on the
+  // draft and, if a result is already on screen, re-run the last compute so the
+  // climate SR reflects the new basis. Only the climate-change SR responds; the
+  // numerator (EF v3.1 GWP100) is always all-GHG.
+  setBudgetBasis: (basis: 'CO2' | 'CO2e_GHG') => void
   reset: () => void
 
   // Patch 4T — display filter actions. ``set`` replaces the slot
@@ -313,7 +327,14 @@ function draftFromDefaults(
     boundary_set_id: defaults.boundary_sets[0]?.id ?? 'Sala2020_EF',
     sharing: fallback,
     sharing_preset_id: builtIn?.id ?? null,
-    carbon_budget: defaults.default_carbon_budget,
+    // Phase 3 — fresh configs default to the CO₂-eq budget basis (the backend
+    // default budget carries the per-budget co2e_conversion factor; we flip the
+    // basis so the climate SR is measured against the all-GHG budget by default,
+    // matching the always-all-GHG GWP100 numerator). Loaded/saved configs keep
+    // their stored basis (draftFromConfig), preserving back-compat.
+    carbon_budget: defaults.default_carbon_budget
+      ? { ...defaults.default_carbon_budget, budget_basis: 'CO2e_GHG' }
+      : defaults.default_carbon_budget,
     method_mapping: [],
     impact_mode: 'static',
     dsm_scenario_id: null,
@@ -346,6 +367,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   lastRunAt: null,
   running: false,
   error: null,
+  lastComputeArgs: null,
   configLoadError: null,
   displayedIndicators: null,
 
@@ -519,7 +541,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       set({ error: 'No configuration loaded' })
       return
     }
-    set({ running: true, error: null })
+    set({ running: true, error: null, lastComputeArgs: { mfaSystemId, impactTaskId, impactInline, runSensitivity } })
     try {
       const inlineConfig: AESAConfiguration = {
         id: get().activeConfigId ?? 'draft',
@@ -555,6 +577,21 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   },
 
   clearResult: () => set({ result: null, lastRunAt: null, displayedIndicators: null }),
+
+  setBudgetBasis: (basis) => {
+    const { draft } = get()
+    if (!draft?.carbon_budget || draft.carbon_budget.budget_basis === basis) return
+    set({
+      draft: {
+        ...draft,
+        carbon_budget: { ...draft.carbon_budget, budget_basis: basis },
+      },
+    })
+    // If a result is on screen, re-run the same compute so the climate SR is
+    // re-derived against the new basis (the basis is read off the draft).
+    const { result, lastComputeArgs, running } = get()
+    if (result && lastComputeArgs && !running) void get().compute(lastComputeArgs)
+  },
 
   // ── Display filter (Patch 4T) ─────────────────────────────────────────────
 

@@ -28,6 +28,7 @@ from mapper.core.aesa_engine import (
     build_carbon_budget,
     build_default_multi_d_config,
     build_default_sharing_preset,
+    co2e_conversion_for_budget,
     load_boundary_sets,
     load_carbon_budget_options,
     load_sharing_data,
@@ -125,7 +126,13 @@ async def get_defaults() -> dict:
         ],
         "sharing_data": load_sharing_data(),
         "ssp_trajectories": load_ssp_trajectories(),
-        "carbon_budget_options": load_carbon_budget_options(),
+        # Attach each option's per-budget CO2→CO2e conversion so the frontend can
+        # patch `co2e_conversion` when the user switches the budget option
+        # (the factor is temperature/x-dependent, recomputed per option).
+        "carbon_budget_options": [
+            {**o, "co2e_conversion": co2e_conversion_for_budget(o).model_dump()}
+            for o in load_carbon_budget_options()
+        ],
         "default_multi_d": build_default_multi_d_config().model_dump(),
         "default_carbon_budget": build_carbon_budget().model_dump(),
     }

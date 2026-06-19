@@ -39,6 +39,7 @@ export function AESADashboard() {
     clearActiveSession,
     displayedIndicators, toggleDisplayedIndicator,
     selectAllDisplayedIndicators, clearDisplayedIndicators,
+    setBudgetBasis, running,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
   const { staticResult, projectedResult } = useImpactStore()
@@ -453,6 +454,55 @@ export function AESADashboard() {
                   </span>
                 )}
               </div>
+
+              {/* Carbon-budget basis toggle (climate SR only). Live mode only —
+                  a loaded session is an immutable snapshot, so re-running the
+                  compute under a different basis would break it. */}
+              {!inSessionMode && draft?.carbon_budget && (
+                <div
+                  data-testid="aesa-budget-basis-toggle"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}
+                >
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
+                    Budget basis
+                  </span>
+                  <div style={{ display: 'flex', gap: 4 }}>
+                    {([
+                      { value: 'CO2', label: 'CO₂ budget' },
+                      { value: 'CO2e_GHG', label: 'CO₂-eq budget' },
+                    ] as const).map((b) => {
+                      const active = (draft.carbon_budget?.budget_basis ?? 'CO2') === b.value
+                      return (
+                        <button
+                          key={b.value}
+                          type="button"
+                          data-testid={`aesa-budget-basis-${b.value}`}
+                          disabled={running}
+                          aria-pressed={active}
+                          onClick={() => setBudgetBasis(b.value)}
+                          style={{
+                            padding: '5px 10px', borderRadius: 'var(--radius-sm)',
+                            cursor: running ? 'wait' : 'pointer',
+                            border: '1px solid ' + (active ? 'var(--mod-aesa)' : 'var(--border-default)'),
+                            background: active ? 'color-mix(in srgb, var(--mod-aesa) 14%, transparent)' : 'var(--bg-elevated)',
+                            color: active ? 'var(--mod-aesa)' : 'var(--text-primary)',
+                            fontSize: 12, fontWeight: active ? 600 : 500,
+                          }}
+                        >
+                          {b.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+                  <span
+                    data-testid="aesa-budget-basis-note"
+                    title="The impact (numerator) is always all-GHG (EF v3.1 GWP100). This toggle only changes which budget it's measured against — CO₂-only vs all-GHG (CO₂-eq). Only the climate-change SR responds."
+                    style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'help' }}
+                  >
+                    Impact is always all-GHG; this sets the budget it's measured against (climate SR only).
+                  </span>
+                </div>
+              )}
 
               {/* View selector */}
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>

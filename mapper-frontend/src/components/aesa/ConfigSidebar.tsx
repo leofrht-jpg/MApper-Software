@@ -785,6 +785,12 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
             disables only the configuration-editing controls
             (cascade, name, presets, mapping). */}
         {!showEmptyState && draft && defaults && (
+          // Group 3 is a sibling of the fieldset (so it stays interactive in
+          // session-loaded mode), and `bodyStyle` is not a flex container — so
+          // it gets no inter-group gap for free. Match the fieldset's
+          // `gap: var(--space-3)` (the 1→2 spacing) with an explicit top margin
+          // so all three groups are evenly spaced.
+          <div style={{ marginTop: 'var(--space-3)' }}>
           <StageGroup number={3} title="Saved sessions">
             {/* No inner Section title — the StageGroup header already labels
                 this "Saved sessions". Keep Section's padding via a plain div. */}
@@ -792,6 +798,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               <SavedSessionsList />
             </div>
           </StageGroup>
+          </div>
         )}
       </div>
 

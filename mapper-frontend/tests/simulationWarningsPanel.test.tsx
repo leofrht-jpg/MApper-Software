@@ -21,41 +21,47 @@ describe('SimulationWarningsPanel collapse/expand', () => {
     expect(toggle.textContent).toContain(`Simulation warnings (${WARNINGS.length})`)
   })
 
-  it('defaults to expanded (body visible)', () => {
+  it('defaults to collapsed (body hidden, count in header)', () => {
     const { getByTestId } = render(<SimulationWarningsPanel warnings={WARNINGS} />)
-    const body = getByTestId('simulation-warnings-body')
-    expect(body.style.display).not.toBe('none')
-    expect(getByTestId('simulation-warnings-toggle').getAttribute('aria-expanded')).toBe('true')
-  })
-
-  it('collapsing hides the body but keeps header + count visible', () => {
-    const { getByTestId } = render(<SimulationWarningsPanel warnings={WARNINGS} />)
-    fireEvent.click(getByTestId('simulation-warnings-toggle'))
     const body = getByTestId('simulation-warnings-body')
     expect(body.style.display).toBe('none')
-    // Header + count remain.
     const toggle = getByTestId('simulation-warnings-toggle')
-    expect(toggle.textContent).toContain(`Simulation warnings (${WARNINGS.length})`)
     expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    // Count text remains visible in the collapsed header.
+    expect(toggle.textContent).toContain(`Simulation warnings (${WARNINGS.length})`)
   })
 
-  it('re-expanding shows the body again (visibility-toggle, not remount)', () => {
+  it('expands on click (body visible) and re-collapses on a second click', () => {
+    const { getByTestId } = render(<SimulationWarningsPanel warnings={WARNINGS} />)
+    const toggle = getByTestId('simulation-warnings-toggle')
+    fireEvent.click(toggle) // expand
+    const body = getByTestId('simulation-warnings-body')
+    expect(body.style.display).not.toBe('none')
+    expect(toggle.getAttribute('aria-expanded')).toBe('true')
+
+    fireEvent.click(toggle) // re-collapse
+    expect(body.style.display).toBe('none')
+    expect(toggle.getAttribute('aria-expanded')).toBe('false')
+    // Header + count remain through the round-trip.
+    expect(toggle.textContent).toContain(`Simulation warnings (${WARNINGS.length})`)
+  })
+
+  it('re-expanding reuses the same body node (visibility-toggle, not remount)', () => {
     const { getByTestId } = render(<SimulationWarningsPanel warnings={WARNINGS} />)
     const toggle = getByTestId('simulation-warnings-toggle')
     const bodyBefore = getByTestId('simulation-warnings-body')
-    fireEvent.click(toggle) // collapse
     fireEvent.click(toggle) // expand
     const bodyAfter = getByTestId('simulation-warnings-body')
-    // Same DOM node persists across the round-trip — body was hidden, not unmounted.
+    // Same DOM node persists — body was hidden, not unmounted.
     expect(bodyAfter).toBe(bodyBefore)
     expect(bodyAfter.style.display).not.toBe('none')
   })
 
-  it('keeps every warning row mounted even while collapsed', () => {
+  it('keeps every warning row mounted while collapsed (default)', () => {
     const { getByTestId } = render(<SimulationWarningsPanel warnings={WARNINGS} />)
-    fireEvent.click(getByTestId('simulation-warnings-toggle'))
     const body = getByTestId('simulation-warnings-body')
-    // Rows still in the DOM (hidden via the parent's display:none), not removed.
+    // Default-collapsed: rows still in the DOM (hidden via display:none), not removed.
+    expect(body.style.display).toBe('none')
     expect(body.children.length).toBe(WARNINGS.length)
   })
 

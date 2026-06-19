@@ -32,13 +32,14 @@ export function isPerCohortWarning(msg: string): boolean {
  * collapse toggle and the persistent count so the body can be tucked away
  * without losing the signal that warnings exist.
  *
- * Default state is expanded — warnings flag real data issues the user
- * shouldn't miss; collapsing is a manual action once they've read them.
+ * Default state is collapsed — the long repetitive per-cohort lines otherwise
+ * push the results/charts far down the page; the persistent count in the
+ * header keeps the signal that warnings exist, and one click reveals them.
  * Collapse uses the visibility-toggle convention (display:none, not unmount)
- * so re-expanding is instant and scroll position is preserved.
+ * so expanding is instant and scroll position is preserved.
  */
 export function SimulationWarningsPanel({ warnings }: SimulationWarningsPanelProps) {
-  const [collapsed, setCollapsed] = useState(false)
+  const [collapsed, setCollapsed] = useState(true)
 
   if (warnings.length === 0) return null
 

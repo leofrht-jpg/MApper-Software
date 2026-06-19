@@ -1192,6 +1192,14 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                     onFiltersChange={handleActivityFiltersChange}
                     filterOptions={{ locations: dbLocations, units: dbUnits }}
                     chipAmountField={true}
+                    // Reset stale value-filters when the source DB switches (the
+                    // filters were keyed to the previous DB's distinctValues).
+                    // The re-emitted onFiltersChange also clears the page-level
+                    // actLocationFilter/actUnitFilter and re-runs the backend
+                    // search for the new DB with the preserved query. The DB
+                    // list itself is NOT filtered — LCA Architect intentionally
+                    // offers prospective DBs as a compute target (#3 excluded).
+                    sourceKey={selectedDb}
                   />
                   {actError && (
                     <div style={{

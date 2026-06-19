@@ -5512,6 +5512,29 @@ when `activeSessionId ?? activeConfigId` changes. The reset uses
 the `useEffect([openKey])` pattern in `<CollapsibleSection>` —
 loading session A then B doesn't carry A's expansion state into B.
 
+**Numbered stage groups are collapsible too (Patch 5AX).** The two numbered
+configuration groups — `1 LCIA configuration` and `2 AESA configuration
+(carrying capacity)` (plus `3 Saved sessions`, same primitive) — are collapsible
+via `<StageGroup>` using the SAME visibility-toggle convention: the numbered
+header (badge + chevron, `aesa-stage-{n}-toggle`) toggles `open`; the body
+(`aesa-stage-{n}-body`) hides with `display:none` and **stays mounted**. Default
+**expanded** (these wrap the primary workflow; collapse is opt-in), each
+independent (local `useState`). Do NOT conditional-unmount the body — that is
+the same failure class as a control "vanishing" because an ancestor stopped
+rendering it; every config control (the carbon-budget basis toggle included)
+must remain in the DOM when its group is collapsed. Locked by
+`tests/aesaStageGroupCollapse.test.tsx`.
+
+> **The CO₂/CO₂-eq budget-basis toggle (`aesa-config-budget-basis`) lives inside
+> the default-collapsed "Carbon budget" `CollapsibleSection`** — present in the
+> DOM, reachable by expanding (deliberate, per the default-closed convention
+> above; NOT a regression). `tests/aesaConfigBudgetBasis.test.tsx` guards its
+> DOM presence under the live default budget (2°C/50, 1150 Gt, SSP1-2.6, CO₂-eq)
+> on a fresh load with no compute, so it can't silently be removed from source.
+> A `queryByTestId`/visibility-toggle gotcha: that guard asserts DOM presence,
+> not on-screen visibility (a `display:none` collapsed ancestor still satisfies
+> `queryByTestId`).
+
 **Configurations move from inline pills to a top-right dropdown.**
 Pre-Patch-4U the saved AESA configurations rendered as a row of
 pills directly under the page header. As the user accumulated

@@ -1290,16 +1290,30 @@ function Section({ title, children, right }: { title: string; children: React.Re
 // (1. LCIA configuration / 2. AESA configuration / 3. Saved sessions). No state,
 // no logic, no store binding — pure layout reparenting. The inner sections keep
 // their own collapse + testids unchanged.
+// Numbered configuration group. Collapsible via the standard
+// visibility-toggle convention: the numbered header (badge + chevron) toggles
+// `open`; the body hides via `display: none` and STAYS MOUNTED — never
+// conditional-unmount (would destroy child-local state and re-trigger the
+// Issue-2 class of "control disappeared because its ancestor stopped rendering
+// it"). Defaults expanded; each group collapses independently (local state).
 function StageGroup({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(true)
   return (
     <div data-testid={`aesa-stage-${number}`} style={{ display: 'flex', flexDirection: 'column' }}>
-      <div style={{
-        display: 'flex', alignItems: 'center', gap: 8,
-        padding: '8px 12px',
-        background: 'var(--bg-elevated)',
-        borderTop: '1px solid var(--border-default)',
-        borderBottom: '1px solid var(--border-default)',
-      }}>
+      <button
+        type="button"
+        data-testid={`aesa-stage-${number}-toggle`}
+        onClick={() => setOpen((x) => !x)}
+        aria-expanded={open}
+        style={{
+          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+          padding: '8px 12px',
+          background: 'var(--bg-elevated)',
+          borderTop: '1px solid var(--border-default)',
+          borderBottom: '1px solid var(--border-default)',
+          cursor: 'pointer', textAlign: 'left',
+        }}
+      >
         <span style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
@@ -1308,8 +1322,18 @@ function StageGroup({ number, title, children }: { number: number; title: string
         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
           {title}
         </span>
+        <ChevronRight
+          size={13}
+          style={{
+            marginLeft: 'auto', color: 'var(--text-tertiary)',
+            transition: 'transform 120ms ease',
+            transform: open ? 'rotate(90deg)' : 'rotate(0deg)',
+          }}
+        />
+      </button>
+      <div data-testid={`aesa-stage-${number}-body`} style={{ display: open ? 'block' : 'none' }}>
+        {children}
       </div>
-      {children}
     </div>
   )
 }

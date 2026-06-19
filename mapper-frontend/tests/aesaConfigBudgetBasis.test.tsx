@@ -73,4 +73,23 @@ describe('Budget-basis toggle in the carbon-budget config', () => {
     // Still no compute triggered from the config toggle (pre-compute setting).
     expect(useAESAStore.getState().result).toBeNull()
   })
+
+  // Issue 2 regression guard — the toggle must exist in the carbon-budget
+  // config under the LIVE default budget shape (2.0°C/50, 1150 Gt, SSP1-2.6,
+  // CO₂-eq) on a fresh load with no compute. DEFAULTS above mirror that live
+  // default (default_carbon_budget). The toggle lives inside the "Carbon
+  // budget" CollapsibleSection, which defaults collapsed (Patch 4U) — it's
+  // present in the DOM and reachable by expanding, the chosen behaviour. This
+  // locks DOM presence so the control cannot silently be removed from source
+  // again, independent of the section's collapse state.
+  it('renders under the live default budget (2C/50, 1150 Gt, SSP1-2.6) with no compute', async () => {
+    expect(DEFAULTS.default_carbon_budget.initial_budget_gt).toBe(1150)
+    expect(DEFAULTS.default_carbon_budget.ssp_scenario).toBe('SSP1-2.6')
+    const { queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    await waitFor(() => expect(queryByTestId('aesa-config-budget-basis')).not.toBeNull())
+    expect(useAESAStore.getState().result).toBeNull()
+    // Fresh draft inherits the live default → CO₂-eq active.
+    expect(useAESAStore.getState().draft?.carbon_budget?.budget_basis).toBe('CO2e_GHG')
+    expect(queryByTestId('aesa-config-budget-basis-CO2e_GHG')?.getAttribute('aria-pressed')).toBe('true')
+  })
 })

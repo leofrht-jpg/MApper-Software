@@ -741,7 +741,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               openKey={collapsibleOpenKey}
               summary={
                 draft.carbon_budget
-                  ? `${draft.carbon_budget.initial_budget_gt} Gt · ${draft.carbon_budget.ssp_scenario}`
+                  ? `${draft.carbon_budget.initial_budget_gt} Gt · ${draft.carbon_budget.ssp_scenario} · ${(draft.carbon_budget.budget_basis ?? 'CO2') === 'CO2e_GHG' ? 'CO₂-eq' : 'CO₂'} budget`
                   : 'disabled'
               }
             >
@@ -1129,8 +1129,48 @@ function CarbonBudgetEditor({
 
   const selectedSsp = ssps.find((s) => s.id === budget.ssp_scenario) ?? ssps[0]
 
+  const basis = budget.budget_basis ?? 'CO2'
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+      {/* Budget basis — CO₂ vs CO₂-eq. Pre-compute setting: it sets
+          budget_basis on the draft and is applied on the next Compute (no
+          re-run from here). Default CO₂-eq. Visible upfront, no results
+          required. The SR-view toggle stays in sync (same draft field). */}
+      <label style={labelStyle}>Budget basis</label>
+      <div style={{ display: 'flex', gap: 4 }} data-testid="aesa-config-budget-basis">
+        {([
+          { value: 'CO2', label: 'CO₂ budget' },
+          { value: 'CO2e_GHG', label: 'CO₂-eq budget' },
+        ] as const).map((b) => {
+          const active = basis === b.value
+          return (
+            <button
+              key={b.value}
+              type="button"
+              data-testid={`aesa-config-budget-basis-${b.value}`}
+              aria-pressed={active}
+              onClick={() => onPatch({ budget_basis: b.value })}
+              style={{
+                padding: '5px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                border: '1px solid ' + (active ? 'var(--mod-aesa)' : 'var(--border-default)'),
+                background: active ? 'color-mix(in srgb, var(--mod-aesa) 14%, transparent)' : 'var(--bg-elevated)',
+                color: active ? 'var(--mod-aesa)' : 'var(--text-primary)',
+                fontSize: 12, fontWeight: active ? 600 : 500,
+              }}
+            >
+              {b.label}
+            </button>
+          )
+        })}
+      </div>
+      <div
+        data-testid="aesa-config-budget-basis-note"
+        title="The impact (numerator) is always all-GHG (EF v3.1 GWP100). This toggle only changes which budget it's measured against — CO₂-only vs all-GHG (CO₂-eq). Only the climate-change SR responds; applied on the next Compute."
+        style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'help', lineHeight: 1.4 }}
+      >
+        Impact is always all-GHG; this sets the budget it's measured against (climate SR only).
+      </div>
+
       <label style={labelStyle}>IPCC AR6 budget</label>
       <select
         value={selectedOption}

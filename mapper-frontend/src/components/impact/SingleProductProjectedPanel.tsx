@@ -3,6 +3,7 @@ import { Download, Layers, Loader2 } from 'lucide-react'
 import {
   calculateArchetypeLCA,
   exportSingleProductProspective,
+  getMethods,
   type ProspectiveDB,
 } from '../../api/client'
 import { usePLCAStore } from '../../stores/plcaStore'
@@ -102,6 +103,28 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
   const currentStageAmounts = archetypeId ? stageAmountsByArc[archetypeId]?.amounts ?? null : null
   const [chartMethodKey, setChartMethodKey] = useState<string | null>(null)
 
+  // Patch 5AY — the full default indicator set (all-N), fetched directly so
+  // Prospective can seed it on a COLD load (opened without visiting Static, so
+  // the Static→Projected mirror has no source yet). Mirrors MethodPicker's
+  // cold default: EF v3.1 if present, else the first family. This is the
+  // mirror SOURCE seeded to all-N — Prospective inherits the full set
+  // regardless of visit order, WITHOUT a customizing change (the seed flows
+  // through the same single-echo + skip-ref path the mirror uses).
+  const [allMethods, setAllMethods] = useState<string[][]>([])
+  useEffect(() => {
+    let cancelled = false
+    getMethods().then((fams) => {
+      if (cancelled) return
+      const fam = fams.find((f) => f.family.startsWith('EF v3.1'))?.family ?? fams[0]?.family
+      const target = fams.find((f) => f.family === fam)
+      if (!target) return
+      const all: string[][] = []
+      for (const cat of target.categories) for (const ind of cat.indicators) all.push(ind.tuple)
+      setAllMethods(all)
+    }).catch(() => { /* surfaces nowhere; cold-seed simply won't fire */ })
+    return () => { cancelled = true }
+  }, [])
+
   // Publish runs to the cross-panel store so Comparison can read them.
   useEffect(() => {
     setStoreProjectedRuns(runs)
@@ -197,6 +220,30 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
     }
     lastArchetypeIdRef.current = archetypeId
   }, [archetypeId, staticCfgForArc, setProjectedConfigForArc])
+
+  // Patch 5AY — cold-load default seed. When the panel is truly cold for this
+  // arc (no Static source published yet, no prior Projected config, not
+  // customized, nothing selected) and the full method list has loaded, seed
+  // all-N as a NON-customizing default so a Prospective-FIRST visit lands on
+  // the full indicator set (image-1's 0/N fix) instead of empty. Uses the
+  // SAME single-echo + skip-ref mechanism the mirror uses — so
+  // projectedCustomized stays false, and a later Static publish still mirrors
+  // over this default (the staticCfg guard yields to the mirror once Static
+  // publishes). Distinct from the naive `defaultAllSelected` (rejected): that
+  // fires an ASYNC second onChange the single-use skip can't cover, which the
+  // mirror reads as a user edit and freezes the mirror. Seeding via
+  // initialSelected fires exactly one echo, which the skip absorbs.
+  useEffect(() => {
+    if (!archetypeId || allMethods.length === 0) return
+    if (staticCfgForArc && staticCfgForArc.selectedMethods.length > 0) return // mirror owns it
+    const state = useSingleProductImpactStore.getState()
+    if (state.projectedConfigByArc[archetypeId]) return
+    if (state.projectedCustomizedByArc[archetypeId]) return
+    if (selectedMethods.length > 0) return // already seeded / inherited
+    skipNextMethodsChangeRef.current = true
+    setSelectedMethods(allMethods)
+    setPickerSeed((s) => s + 1)
+  }, [archetypeId, allMethods, staticCfgForArc, selectedMethods])
 
   // Auto-dismiss banner ~6s after it appears. User can also dismiss it
   // manually via the × button.
@@ -484,14 +531,13 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
           <div>
             <label style={topLabel}>Impact methods</label>
             <div style={{ marginTop: 6 }}>
-              {/* No defaultAllSelected on Projected: it inherits "all" from
-                  Static via the 4F live-mirror. A self-default would fire
-                  handleMethodsChange → setProjectedCustomized(true), freezing
-                  the mirror so later Static edits stop propagating. (Confirmed:
-                  adding defaultAllSelected here regresses
-                  singleProductStaticDefaultPublish (b) + the inheritance
-                  user-flow — the single-item Prospective default-all fix is
-                  PAUSED pending a non-freeze approach; see Change 1 report.) */}
+              {/* No defaultAllSelected on Projected (it fires an async second
+                  onChange the single-use skip can't cover → reads as a user
+                  edit → freezes the mirror). Instead: it inherits "all" from
+                  Static via the 4F live-mirror, AND on a COLD load (Prospective
+                  first, no Static source yet) the Patch-5AY cold-seed effect
+                  seeds all-N via initialSelected (one echo, absorbed by the
+                  skip ref) — non-customizing, mirror stays live. */}
               <MethodPicker
                 key={pickerSeed}
                 onChange={handleMethodsChange}

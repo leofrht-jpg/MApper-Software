@@ -3241,6 +3241,33 @@ banner shows only once per arc per session
 that calls `setProjectedCustomized(arc, true)`, the mirror stops and
 Path 1 takes over (restore-only-on-archetype-change).
 
+**Patch 5AY — cold-load default seed (closes the parked single-item Prospective
+watch-item / image-1's 0/N).** The mirror has no SOURCE until Static publishes
+to `staticConfigByArc[arc]`; opening Prospective FIRST (Static not effectively
+published yet) left it at 0/N. Fix: `SingleProductProjectedPanel` fetches the
+full indicator set (all-N, EF v3.1 else first family — matching MethodPicker's
+cold default) and a dedicated **cold-seed effect** seeds it via `initialSelected`
+(+ picker remount) ONLY when truly cold: no `staticCfgForArc` methods, no
+`projectedConfigByArc[arc]`, not customized, and `selectedMethods` empty. The
+seed flows through the SAME single-echo + `skipNextMethodsChangeRef` path the
+mirror uses → `projectedCustomized` stays **false**, so a later Static publish
+still mirrors over the default (the cold-seed's `staticCfgForArc` guard yields),
+and a genuine user edit still flips customized true and freezes the mirror.
+
+**Why NOT `defaultAllSelected` on the Projected MethodPicker (the rejected
+naive fix).** `defaultAllSelected` fires its all-N onChange ASYNCHRONOUSLY
+(after `getMethods` resolves), so it arrives as a SECOND onChange the single-use
+skip ref can't cover — `handleMethodsChange` reads it as a user edit →
+`setProjectedCustomized(true)` → freezes the mirror, regressing
+`singleProductStaticDefaultPublish (b)` + `singleProductInheritanceUserFlow`.
+Seeding all-N via `initialSelected` instead fires exactly ONE mount echo, which
+the skip absorbs — no async double-onChange, no false customization. The
+mirror source being seeded to the full default regardless of visit order is the
+convention; `projectedCustomized` is set only by genuine user changes, never by
+the default seed. Locked by `tests/singleProductProjectedColdLoad.test.tsx`
+(cold → all-N + not customized; later Static change still mirrors; real user
+edit customizes + freezes).
+
 **Lock in by user-click test, not store-mutation test.** The 4E test
 suite stubbed `setStaticConfigForArc` directly via the store, which
 bypasses the actual `MethodPicker.onChange → handleMethodsChange →

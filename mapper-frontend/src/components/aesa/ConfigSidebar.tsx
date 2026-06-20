@@ -7,14 +7,79 @@ import { NumberInput } from '../ui/NumberInput'
 import { useAESAStore, type AESAConfigLoadKind } from '../../stores/aesaStore'
 import { useDSMStore } from '../../stores/dsmStore'
 import { useImpactStore } from '../../stores/impactStore'
+import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { PresetSelector } from './PresetSelector'
 import { CategoryAssignmentsTable } from './CategoryAssignmentsTable'
 import { DownscalingChainEditor } from './DownscalingChainEditor'
 import { PrinciplesEditor } from './PrinciplesEditor'
 import type {
+  ArchetypeLCACalculateResult,
   CarbonBudgetOption,
+  ImpactAssessmentResult,
   SSPTrajectory,
 } from '../../api/client'
+
+// ── Part C1 — source-agnostic compute helpers (pure, exported for tests) ──────
+
+export type AESASource = 'fleet' | 'single_product'
+
+// Gate predicate for the AESA Compute button. Fleet needs an active DSM system
+// + a cached impact result; single-product needs only a static single-product
+// result (the mfa_system_id-null backend path). Fleet gate is unchanged.
+export function canComputeAESA(args: {
+  source: AESASource
+  hasDraft: boolean
+  running: boolean
+  hasActiveSystem: boolean
+  hasImpact: boolean
+  hasSingleProduct: boolean
+}): boolean {
+  if (!args.hasDraft || args.running) return false
+  return args.source === 'single_product'
+    ? args.hasSingleProduct
+    : args.hasActiveSystem && args.hasImpact
+}
+
+// Build the args for `useAESAStore.compute()` for the active source. Returns
+// null when the gate isn't satisfiable (caller no-ops). Single-product sends
+// `singleProductResult` + `referenceYear` with an empty mfaSystemId (the
+// backend adapts the result and skips the DSM system-match check); fleet keeps
+// the existing task-id / inline-mirror behaviour.
+export function buildAESAComputeArgs(args: {
+  source: AESASource
+  activeSystemId: string | null
+  activeImpact: ImpactAssessmentResult | null
+  isMirror: boolean
+  isMultiLci: boolean
+  singleProductResult: ArchetypeLCACalculateResult | null
+  referenceYear: number
+  runSensitivity: boolean
+}): {
+  mfaSystemId: string
+  impactTaskId?: string | null
+  impactInline?: ImpactAssessmentResult | null
+  singleProductResult?: ArchetypeLCACalculateResult | null
+  referenceYear?: number
+  runSensitivity: boolean
+} | null {
+  if (args.source === 'single_product') {
+    if (!args.singleProductResult) return null
+    return {
+      mfaSystemId: '',
+      singleProductResult: args.singleProductResult,
+      referenceYear: args.referenceYear,
+      runSensitivity: args.runSensitivity,
+    }
+  }
+  if (!args.activeSystemId || !args.activeImpact) return null
+  const passInline = args.isMirror || args.isMultiLci
+  return {
+    mfaSystemId: args.activeSystemId,
+    impactTaskId: passInline ? null : args.activeImpact.task_id,
+    impactInline: passInline ? args.activeImpact : null,
+    runSensitivity: args.runSensitivity,
+  }
+}
 
 interface Props {
   collapsed: boolean
@@ -37,6 +102,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
     configurations, activeConfigId, creatingNewConfig, startNewConfig,
     activeSessionId, clearActiveSession,
     configLoadError, dismissConfigLoadError,
+    source, setSource, referenceYear, setReferenceYear,
   } = useAESAStore()
 
   // Patch 5AM — re-run just the config load that failed (the network-level
@@ -194,7 +260,17 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
     ? (chosenLciResult ?? projectedResult)
     : staticResult
   const hasImpact = !!activeImpact
-  const canCompute = !!draft && !!activeSystem && hasImpact && !running
+
+  // Part C1 — AESA compute source. Fleet (default) keeps the current behaviour;
+  // single-product reads the static single-product LCA result.
+  const spStaticResult = useSingleProductImpactStore((s) => s.staticResult)
+  const hasSingleProduct = !!spStaticResult
+  const isSingleProduct = source === 'single_product'
+
+  const canCompute = canComputeAESA({
+    source, hasDraft: !!draft, running,
+    hasActiveSystem: !!activeSystem, hasImpact, hasSingleProduct,
+  })
 
   // Auto-prefer Projected LCI on first load if it's available and the draft is still untouched
   useEffect(() => {
@@ -204,28 +280,37 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
     }
   }, [projectedResult, draft, updateDraft])
 
-  // Auto-suggest mapping when impact result lands and mapping is empty
+  // Auto-suggest mapping when an impact result lands and mapping is empty.
+  // Part C1 — the method universe comes from the active source: fleet uses
+  // activeImpact.results; single-product uses the static result's methods
+  // (same `method` tuple shape), so the method → PB mapping is suggested
+  // without the user needing a DSM run.
   useEffect(() => {
-    if (!draft || !activeImpact) return
-    if (draft.method_mapping.length > 0) return
-    const methods = activeImpact.results.map((r) => [...r.method])
+    if (!draft || draft.method_mapping.length > 0) return
+    const sourceResults = isSingleProduct ? spStaticResult?.results : activeImpact?.results
+    if (!sourceResults) return
+    const methods = sourceResults.map((r) => [...r.method])
     if (methods.length) void suggestMapping(methods)
-  }, [draft, activeImpact, suggestMapping])
+  }, [draft, activeImpact, spStaticResult, isSingleProduct, suggestMapping])
 
   const handleCompute = async () => {
-    if (!activeSystem?.id || !draft || !activeImpact) return
-    const taskId = activeImpact.task_id
-    const isMirror = taskId.startsWith('dsm-mirror-')
-    // Patch 5AQ — for multi-LCI, the single shared task_id only resolves
-    // scenario 1, so pass the CHOSEN scenario's result inline (AESA accepts a
-    // single ImpactAssessmentResult inline, same as the mirror path).
-    const passInline = isMirror || isMultiLci
-    await compute({
-      mfaSystemId: activeSystem.id,
-      impactTaskId: passInline ? null : taskId,
-      impactInline: passInline ? activeImpact : null,
+    if (!draft) return
+    // Part C1 — source-agnostic dispatch. Single-product sends
+    // single_product_result + reference_year (no DSM system); fleet keeps the
+    // task-id / inline-mirror behaviour (Patch 5AQ: multi-LCI passes the chosen
+    // scenario's result inline because the shared task_id only resolves #1).
+    const args = buildAESAComputeArgs({
+      source,
+      activeSystemId: activeSystem?.id ?? null,
+      activeImpact,
+      isMirror: !!activeImpact && activeImpact.task_id.startsWith('dsm-mirror-'),
+      isMultiLci,
+      singleProductResult: spStaticResult,
+      referenceYear,
       runSensitivity,
     })
+    if (!args) return
+    await compute(args)
   }
 
   const staticSubtitle = staticResult ? describeStatic(staticResult, dsmScenarioName) : '(not yet computed)'
@@ -357,7 +442,9 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 disabled={!canCompute}
                 data-testid="aesa-sidebar-compute"
                 title={
-                  !activeSystem ? 'Select a DSM system first'
+                  isSingleProduct
+                    ? (!hasSingleProduct ? 'Compute a single-product static result first' : running ? 'Computing…' : 'Compute')
+                    : !activeSystem ? 'Select a DSM system first'
                     : !hasImpact ? `Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first`
                     : running ? 'Computing…'
                     : 'Compute'
@@ -439,7 +526,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
           Errors render here too — same row, danger color. Hidden in
           session mode (cascade is read-only there) and in empty
           state (the empty-state UI explains itself). */}
-      {!showEmptyState && !inSessionMode && (error || !activeSystem || !hasImpact) && (
+      {!showEmptyState && !inSessionMode && (error || !canCompute) && (
         <div
           data-testid="aesa-sidebar-hint"
           style={{
@@ -455,11 +542,15 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
         >
           {error
             ? error
-            : !activeSystem
-              ? 'Select a DSM system to enable Compute.'
-              : !hasImpact
-                ? `Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first.`
-                : ''}
+            : isSingleProduct
+              ? (!hasSingleProduct
+                  ? 'Compute a single-product static result on the Impact Assessment page first.'
+                  : '')
+              : !activeSystem
+                ? 'Select a DSM system to enable Compute.'
+                : !hasImpact
+                  ? `Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first.`
+                  : ''}
         </div>
       )}
 
@@ -614,6 +705,13 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 staticSubtitle={staticSubtitle}
                 projectedSubtitle={projectedSubtitle}
                 inSessionMode={inSessionMode}
+                source={source}
+                onSourceChange={setSource}
+                singleProductResult={spStaticResult}
+                referenceYear={referenceYear}
+                onReferenceYearChange={setReferenceYear}
+                budgetStartYear={draft.carbon_budget?.start_year ?? null}
+                budgetEndYear={draft.carbon_budget?.end_year ?? null}
               />
               {isMultiLci && (
                 <div style={{
@@ -834,6 +932,10 @@ function ComputeSourceCascade({
   staticAvailable, projectedAvailable,
   staticSubtitle, projectedSubtitle,
   inSessionMode = false,
+  source, onSourceChange,
+  singleProductResult,
+  referenceYear, onReferenceYearChange,
+  budgetStartYear, budgetEndYear,
 }: {
   draft: import('../../stores/aesaStore').AESAConfigDraft
   updateDraft: (patch: Partial<import('../../stores/aesaStore').AESAConfigDraft>) => void
@@ -842,6 +944,14 @@ function ComputeSourceCascade({
   projectedAvailable: boolean
   staticSubtitle: string
   projectedSubtitle: string
+  // Part C1 — compute-source toggle + single-product controls.
+  source: AESASource
+  onSourceChange: (s: AESASource) => void
+  singleProductResult: ArchetypeLCACalculateResult | null
+  referenceYear: number
+  onReferenceYearChange: (y: number) => void
+  budgetStartYear: number | null
+  budgetEndYear: number | null
   // When viewing a saved session, the cascade reflects the SESSION's
   // frozen state — the live `staticDsmScenarioRuns` /
   // `projectedDsmScenarioRuns` maps are NOT populated by session
@@ -914,6 +1024,53 @@ function ComputeSourceCascade({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+      {/* Part C1 — source toggle. Fleet (DSM) is the default so existing
+          behaviour is unchanged; Single product (LCA) drives the
+          mfa_system_id-null backend path. Mode-specific controls below are
+          visibility-toggled (kept mounted), not unmounted. */}
+      <div
+        data-testid="aesa-source-toggle"
+        role="radiogroup"
+        aria-label="AESA compute source"
+        style={{
+          display: 'inline-flex', gap: 4, padding: 3, alignSelf: 'stretch',
+          backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)',
+        }}
+      >
+        {([
+          { key: 'fleet' as const, label: 'Fleet (DSM)' },
+          { key: 'single_product' as const, label: 'Single product (LCA)' },
+        ]).map((o) => {
+          const isActive = source === o.key
+          return (
+            <button
+              key={o.key}
+              type="button"
+              role="radio"
+              aria-checked={isActive}
+              data-testid={`aesa-source-${o.key === 'single_product' ? 'single' : 'fleet'}`}
+              onClick={() => onSourceChange(o.key)}
+              style={{
+                flex: 1, border: 'none',
+                background: isActive ? 'var(--bg-surface)' : 'transparent',
+                color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                padding: '5px 8px', borderRadius: 'var(--radius-sm)',
+                boxShadow: isActive ? 'var(--shadow-xs)' : 'none',
+                cursor: 'pointer', fontSize: 11, fontWeight: isActive ? 600 : 500,
+              }}
+            >
+              {o.label}
+            </button>
+          )
+        })}
+      </div>
+
+      {/* Fleet cascade — visibility-toggled (kept mounted). */}
+      <div
+        data-testid="aesa-source-fleet-controls"
+        style={{ display: source === 'fleet' ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--space-2)' }}
+      >
       {/* Level 1 — DSM model */}
       <CascadeRow label="DSM model">
         <select
@@ -1016,6 +1173,69 @@ function ComputeSourceCascade({
           selected scenario first, then return to AESA.
         </div>
       )}
+      </div>
+
+      {/* Single-product (LCA) source — visibility-toggled (kept mounted). */}
+      <div
+        data-testid="aesa-source-single-controls"
+        style={{ display: source === 'single_product' ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--space-2)' }}
+      >
+        <CascadeRow label="Single-product result">
+          {singleProductResult ? (
+            <div
+              data-testid="aesa-single-product-picker"
+              style={{
+                padding: 'var(--space-2)', background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-xs)', color: 'var(--text-primary)', lineHeight: 1.4,
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>{singleProductResult.archetype_name}</div>
+              <div style={{ color: 'var(--text-tertiary)', marginTop: 2 }}>
+                Static · {singleProductResult.scope} · {singleProductResult.results.length} indicator{singleProductResult.results.length === 1 ? '' : 's'}
+                {singleProductResult.compute_database ? ` · ${singleProductResult.compute_database}` : ''}
+              </div>
+            </div>
+          ) : (
+            <div
+              data-testid="aesa-single-product-empty"
+              style={{
+                padding: 'var(--space-2)',
+                background: 'color-mix(in srgb, var(--status-warning) 8%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--status-warning) 25%, transparent)',
+                borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)',
+                color: 'var(--text-secondary)', lineHeight: 1.4,
+              }}
+            >
+              No single-product static result yet. Compute a Static single-product
+              LCA on the Impact Assessment page (Single-product → Static), then
+              return to AESA.
+            </div>
+          )}
+        </CascadeRow>
+
+        <CascadeRow label="Reference year">
+          <NumberInput
+            value={referenceYear}
+            onChange={(v) => onReferenceYearChange(Math.round(v))}
+            data-testid="aesa-reference-year"
+            style={cascadeSelectStyle}
+          />
+          {budgetStartYear != null && budgetEndYear != null
+            && (referenceYear < budgetStartYear || referenceYear > budgetEndYear) && (
+            <div
+              data-testid="aesa-reference-year-warning"
+              style={{
+                marginTop: 4, fontSize: 10, lineHeight: 1.4,
+                color: 'var(--status-warning, var(--text-tertiary))',
+              }}
+            >
+              Reference year is outside the carbon-budget horizon ({budgetStartYear}–{budgetEndYear}).
+              The climate allowance is computed at this year.
+            </div>
+          )}
+        </CascadeRow>
+      </div>
     </div>
   )
 }

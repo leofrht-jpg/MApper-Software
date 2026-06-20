@@ -14,6 +14,7 @@ import { ZONE_COLOR, ZONE_LABEL } from '../components/aesa/zones'
 import { useAESAStore } from '../stores/aesaStore'
 import { useDSMStore } from '../stores/dsmStore'
 import { useImpactStore } from '../stores/impactStore'
+import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
 import { buildIndicatorColorMap } from '../utils/aesaIndicatorColors'
 import {
   exportAESA,
@@ -39,10 +40,11 @@ export function AESADashboard() {
     clearActiveSession,
     displayedIndicators, toggleDisplayedIndicator,
     selectAllDisplayedIndicators, clearDisplayedIndicators,
-    setBudgetBasis, running,
+    setBudgetBasis, running, source,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
   const { staticResult, projectedResult } = useImpactStore()
+  const spStaticResult = useSingleProductImpactStore((s) => s.staticResult)
   const activeImpact = draft?.impact_mode === 'projected' ? projectedResult : staticResult
 
   // Patch 4O — Compute Source summary line on the result header.
@@ -354,25 +356,46 @@ export function AESADashboard() {
         <ConfigSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {!activeSystem && (
-            <EmptyState
-              title="Select an DSM system"
-              body="AESA is computed against the results of a Material Flow Analysis. Pick an active system on the DSM page first."
-            />
-          )}
+          {/* Part C1 — source-aware empty states. Single-product (LCA) source
+              has no DSM system; it needs a static single-product result. */}
+          {source === 'single_product' ? (
+            <>
+              {!spStaticResult && (
+                <EmptyState
+                  title="Compute a single-product static result first"
+                  body="Single-product AESA assesses one product's static LCA. Go to Impact Assessment → Single-product → Static, compute a result, then return here."
+                />
+              )}
+              {spStaticResult && !result && (
+                <EmptyState
+                  title="Configure and compute"
+                  body="Set the reference year, Multi-D allocation, and carbon budget in the sidebar, then press Compute. Defaults work for a first run."
+                />
+              )}
+            </>
+          ) : (
+            <>
+              {!activeSystem && (
+                <EmptyState
+                  title="Select an DSM system"
+                  body="AESA is computed against the results of a Material Flow Analysis. Pick an active system on the DSM page first — or switch the source to Single product (LCA) in the sidebar."
+                />
+              )}
 
-          {activeSystem && !activeImpact && (
-            <EmptyState
-              title={`Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first`}
-              body="AESA needs LCIA results per EF v3.1 method. Go to Impact Assessment, run the selected LCI source, then return here. You can switch source in the sidebar."
-            />
-          )}
+              {activeSystem && !activeImpact && (
+                <EmptyState
+                  title={`Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first`}
+                  body="AESA needs LCIA results per EF v3.1 method. Go to Impact Assessment, run the selected LCI source, then return here. You can switch source in the sidebar."
+                />
+              )}
 
-          {activeSystem && activeImpact && !result && (
-            <EmptyState
-              title="Configure and compute"
-              body="Adjust the Multi-D allocation and carbon budget in the sidebar, then press Compute. Defaults work for a first run."
-            />
+              {activeSystem && activeImpact && !result && (
+                <EmptyState
+                  title="Configure and compute"
+                  body="Adjust the Multi-D allocation and carbon budget in the sidebar, then press Compute. Defaults work for a first run."
+                />
+              )}
+            </>
           )}
 
           {result && filteredResult && yearSummary && (

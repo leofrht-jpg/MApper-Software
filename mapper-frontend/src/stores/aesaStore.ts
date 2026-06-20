@@ -5,6 +5,7 @@ import {
   type AESAConfigurationCreate,
   type AESADefaultsBundle,
   type AESASession,
+  type ArchetypeLCACalculateResult,
   type CarbonBudgetConfig,
   type DownscalingLayer,
   type ImpactAssessmentResult,
@@ -199,6 +200,14 @@ interface AESAStore {
   // to null returns to the live cascade view.
   activeSessionId: string | null
 
+  // Part C1 — AESA compute source. 'fleet' = DSM × archetypes × pLCA pipeline
+  // (the existing path, default). 'single_product' = one static single-product
+  // LCA result (useSingleProductImpactStore.staticResult) adapted to a
+  // single-reference-year impact. `referenceYear` is the climate
+  // annual-allowance year for the single-product path (default 2025).
+  source: 'fleet' | 'single_product'
+  referenceYear: number
+
   // Compute state
   result: AESAComputeResult | null
   lastRunAt: string | null
@@ -212,6 +221,8 @@ interface AESAStore {
     impactTaskId?: string | null
     impactInline?: ImpactAssessmentResult | null
     runSensitivity?: boolean
+    singleProductResult?: ArchetypeLCACalculateResult | null
+    referenceYear?: number
   } | null
 
   // Patch 5AM — mount-time config-panel load failures live in their OWN slot
@@ -255,11 +266,15 @@ interface AESAStore {
    * `result`, restores the user's last-loaded configuration draft. */
   clearActiveSession: () => void
   deleteConfig: (id: string) => Promise<void>
+  setSource: (source: 'fleet' | 'single_product') => void
+  setReferenceYear: (year: number) => void
   compute: (args: {
     mfaSystemId: string
     impactTaskId?: string | null
     impactInline?: ImpactAssessmentResult | null
     runSensitivity?: boolean
+    singleProductResult?: ArchetypeLCACalculateResult | null
+    referenceYear?: number
   }) => Promise<void>
   clearResult: () => void
   // Set the carbon-budget basis ("CO2" budget vs "CO2e_GHG" budget) on the
@@ -363,6 +378,8 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   sessions: [],
   sessionsLoading: false,
   activeSessionId: null,
+  source: 'fleet',
+  referenceYear: 2025,
   result: null,
   lastRunAt: null,
   running: false,
@@ -535,13 +552,16 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     }
   },
 
-  compute: async ({ mfaSystemId, impactTaskId, impactInline, runSensitivity }) => {
+  setSource: (source) => set({ source }),
+  setReferenceYear: (referenceYear) => set({ referenceYear }),
+
+  compute: async ({ mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear }) => {
     const { draft } = get()
     if (!draft) {
       set({ error: 'No configuration loaded' })
       return
     }
-    set({ running: true, error: null, lastComputeArgs: { mfaSystemId, impactTaskId, impactInline, runSensitivity } })
+    set({ running: true, error: null, lastComputeArgs: { mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear } })
     try {
       const inlineConfig: AESAConfiguration = {
         id: get().activeConfigId ?? 'draft',
@@ -556,10 +576,15 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
         method_mapping: draft.method_mapping,
         created_at: new Date().toISOString(),
       }
+      // Part C1 — single-LCA source takes precedence (the backend adapts the
+      // static result to a single-reference-year impact and skips the DSM
+      // system-match check). Otherwise the fleet path (task id / inline result).
       const result = await computeAESA({
         config: inlineConfig,
-        impact_task_id: impactTaskId ?? null,
-        impact_result: impactInline ?? null,
+        impact_task_id: singleProductResult ? null : (impactTaskId ?? null),
+        impact_result: singleProductResult ? null : (impactInline ?? null),
+        single_product_result: singleProductResult ?? null,
+        reference_year: referenceYear,
         run_sensitivity: !!runSensitivity,
       })
       // Patch 4T — fresh result clears the display filter. Carrying a
@@ -768,6 +793,8 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     sessions: [],
     sessionsLoading: false,
     activeSessionId: null,
+    source: 'fleet',
+    referenceYear: 2025,
     result: null,
     lastRunAt: null,
     running: false,

@@ -3811,6 +3811,12 @@ export interface AESAComputeBody {
   impact_task_id?: string | null
   impact_result?: ImpactAssessmentResult | null
   run_sensitivity?: boolean
+  // Part C1 — single-LCA (non-fleet) source. When set, the backend adapts this
+  // static single-product result into the per-year impact the engine consumes
+  // (reference_year sets the climate annual-allowance year). Takes precedence
+  // over impact_task_id / impact_result; mfa_system_id may be empty.
+  single_product_result?: ArchetypeLCACalculateResult | null
+  reference_year?: number
 }
 
 export async function computeAESA(body: AESAComputeBody): Promise<AESAComputeResult> {

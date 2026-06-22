@@ -1,3 +1,12 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * © Copyright 2026 Technical University of Denmark
+ * Lead developer: Leonardo Ferhati
+ */
+
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, waitFor, cleanup, fireEvent } from '@testing-library/react'
@@ -5,6 +14,7 @@ import {
   ConfigSidebar,
   canComputeAESA,
   buildAESAComputeArgs,
+  selectProspectivePoints,
 } from '../src/components/aesa/ConfigSidebar'
 import { useAESAStore } from '../src/stores/aesaStore'
 import { useDSMStore } from '../src/stores/dsmStore'
@@ -51,6 +61,41 @@ describe('Part C1 — pure gate predicate (canComputeAESA)', () => {
     expect(canComputeAESA({ source: 'single_product', hasDraft: false, running: false, hasActiveSystem: false, hasImpact: false, hasSingleProduct: true })).toBe(false)
     expect(canComputeAESA({ source: 'single_product', hasDraft: true, running: true, hasActiveSystem: false, hasImpact: false, hasSingleProduct: true })).toBe(false)
   })
+  it('single-product PROSPECTIVE: gated on a prospective trajectory (not the static result)', () => {
+    // prospective basis ignores hasSingleProduct; needs hasProspective.
+    expect(canComputeAESA({
+      source: 'single_product', singleProductBasis: 'prospective',
+      hasDraft: true, running: false, hasActiveSystem: false,
+      hasImpact: false, hasSingleProduct: true, hasProspective: false,
+    })).toBe(false)
+    expect(canComputeAESA({
+      source: 'single_product', singleProductBasis: 'prospective',
+      hasDraft: true, running: false, hasActiveSystem: false,
+      hasImpact: false, hasSingleProduct: false, hasProspective: true,
+    })).toBe(true)
+  })
+})
+
+const PROSP_POINTS: any = [
+  { year: 2030, result: { ...SP_RESULT, compute_database: 'p-2030' } },
+  { year: 2040, result: { ...SP_RESULT, compute_database: 'p-2040' } },
+]
+
+describe('Part C2 — selectProspectivePoints (single-trajectory reduction)', () => {
+  it('picks the FIRST trajectory, sorted by year, skipping null-year runs', () => {
+    const runs: any = [
+      { dbName: 'b', year: 2040, iam: 'remind', ssp: 'SSP1-2.6', result: SP_RESULT },
+      { dbName: 'a', year: 2030, iam: 'remind', ssp: 'SSP1-2.6', result: SP_RESULT },
+      { dbName: 'c', year: 2035, iam: 'image', ssp: 'SSP2-4.5', result: SP_RESULT }, // 2nd trajectory
+      { dbName: 'd', year: null, iam: 'remind', ssp: 'SSP1-2.6', result: SP_RESULT }, // superstructure
+    ]
+    const pts = selectProspectivePoints(runs)
+    expect(pts.map((p) => p.year)).toEqual([2030, 2040]) // first trajectory only, sorted
+  })
+  it('returns [] when no dated runs', () => {
+    expect(selectProspectivePoints([])).toEqual([])
+    expect(selectProspectivePoints([{ dbName: 'x', year: null, iam: 'r', ssp: 's', result: SP_RESULT } as any])).toEqual([])
+  })
 })
 
 describe('Part C1 — pure payload builder (buildAESAComputeArgs)', () => {
@@ -91,6 +136,28 @@ describe('Part C1 — pure payload builder (buildAESAComputeArgs)', () => {
     })
     expect(args!.impactTaskId).toBeNull()
     expect(args!.impactInline).toBe(impact)
+  })
+  it('single-product PROSPECTIVE: emits prospectiveSingleProduct, no static result / referenceYear', () => {
+    const args = buildAESAComputeArgs({
+      source: 'single_product', singleProductBasis: 'prospective',
+      activeSystemId: null, activeImpact: null, isMirror: false, isMultiLci: false,
+      singleProductResult: SP_RESULT, // present but must be ignored in prospective basis
+      referenceYear: 2025, runSensitivity: false,
+      prospectiveSingleProduct: PROSP_POINTS,
+    })
+    expect(args).not.toBeNull()
+    expect(args!.prospectiveSingleProduct).toBe(PROSP_POINTS)
+    expect(args!.mfaSystemId).toBe('')
+    expect(args!.singleProductResult).toBeUndefined()
+    expect(args!.referenceYear).toBeUndefined()
+  })
+  it('single-product PROSPECTIVE: returns null when no trajectory points', () => {
+    expect(buildAESAComputeArgs({
+      source: 'single_product', singleProductBasis: 'prospective',
+      activeSystemId: null, activeImpact: null, isMirror: false, isMultiLci: false,
+      singleProductResult: SP_RESULT, referenceYear: 2025, runSensitivity: false,
+      prospectiveSingleProduct: [],
+    })).toBeNull()
   })
 })
 
@@ -139,15 +206,27 @@ beforeEach(() => {
 
 afterEach(cleanup)
 
-describe('Part C1 — source toggle + visibility-toggle', () => {
-  it('defaults to Fleet; fleet controls shown, single controls hidden (both mounted)', async () => {
+describe('Part C1/C2 — source toggle + visibility-toggle', () => {
+  it('defaults to Fleet/System-level (key unchanged); fleet controls shown, single hidden (both mounted)', async () => {
     const { queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
     await waitFor(() => expect(queryByTestId('aesa-source-toggle')).not.toBeNull())
+    // Default-selected source is still 'fleet' (key unchanged) despite the reorder.
     expect(queryByTestId('aesa-source-fleet')?.getAttribute('aria-checked')).toBe('true')
     expect(queryByTestId('aesa-source-single')?.getAttribute('aria-checked')).toBe('false')
     // Both mode blocks mounted; fleet visible, single hidden.
     expect(display(queryByTestId('aesa-source-fleet-controls'))).toBe('flex')
     expect(display(queryByTestId('aesa-source-single-controls'))).toBe('none')
+  })
+
+  it('toggle is relabelled + reordered: "Single product (LCA)" then "System-level (DSM)"', async () => {
+    const { getByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    await waitFor(() => expect(getByTestId('aesa-source-toggle')).toBeTruthy())
+    const toggle = getByTestId('aesa-source-toggle')
+    const labels = Array.from(toggle.querySelectorAll('button')).map((b) => b.textContent)
+    expect(labels).toEqual(['Single product (LCA)', 'System-level (DSM)'])
+    // Keys (testids) unchanged.
+    expect(getByTestId('aesa-source-single').textContent).toBe('Single product (LCA)')
+    expect(getByTestId('aesa-source-fleet').textContent).toBe('System-level (DSM)')
   })
 
   it('switching to Single product reveals picker + reference-year, hides fleet (bodies stay mounted)', async () => {
@@ -181,5 +260,51 @@ describe('Part C1 — relaxed gate (render)', () => {
     const { getByTestId, queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
     await waitFor(() => expect(queryByTestId('aesa-source-toggle')).not.toBeNull())
     expect(getByTestId('aesa-sidebar-compute').hasAttribute('disabled')).toBe(true)
+  })
+})
+
+describe('Part C2 — Static/Prospective basis sub-toggle', () => {
+  it('defaults to Static; static body shown with Reference Year, prospective body hidden', async () => {
+    useAESAStore.setState({ source: 'single_product' } as any)
+    const { queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    await waitFor(() => expect(queryByTestId('aesa-sp-basis-toggle')).not.toBeNull())
+    expect(queryByTestId('aesa-sp-basis-static')?.getAttribute('aria-checked')).toBe('true')
+    expect(queryByTestId('aesa-sp-basis-prospective')?.getAttribute('aria-checked')).toBe('false')
+    // Static body visible (with Reference Year); prospective body hidden — both mounted.
+    expect(display(queryByTestId('aesa-sp-static-controls'))).toBe('flex')
+    expect(display(queryByTestId('aesa-sp-prospective-controls'))).toBe('none')
+    expect(queryByTestId('aesa-reference-year')).not.toBeNull()
+  })
+
+  it('switching to Prospective hides Reference Year (visibility-toggle) and shows prospective empty state', async () => {
+    useAESAStore.setState({ source: 'single_product' } as any)
+    useSingleProductImpactStore.setState({ projectedRuns: [] } as any)
+    const { getByTestId, queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    await waitFor(() => expect(queryByTestId('aesa-sp-basis-prospective')).not.toBeNull())
+    fireEvent.click(getByTestId('aesa-sp-basis-prospective'))
+    expect(useAESAStore.getState().singleProductBasis).toBe('prospective')
+    // Prospective body visible, static hidden (both mounted).
+    expect(display(queryByTestId('aesa-sp-prospective-controls'))).toBe('flex')
+    expect(display(queryByTestId('aesa-sp-static-controls'))).toBe('none')
+    // Reference Year is in the (now-hidden) static body → not visible.
+    expect(display(queryByTestId('aesa-sp-static-controls'))).toBe('none')
+    // No prospective result yet → prospective empty state, not the picker.
+    expect(queryByTestId('aesa-prospective-empty')).not.toBeNull()
+    expect(queryByTestId('aesa-prospective-picker')).toBeNull()
+  })
+
+  it('Prospective with a trajectory: picker shown + Compute enabled (no active system)', async () => {
+    useAESAStore.setState({ source: 'single_product', singleProductBasis: 'prospective' } as any)
+    useSingleProductImpactStore.setState({
+      projectedRuns: [
+        { dbName: 'p-2030', year: 2030, iam: 'remind', ssp: 'SSP1-2.6', result: SP_RESULT },
+        { dbName: 'p-2040', year: 2040, iam: 'remind', ssp: 'SSP1-2.6', result: SP_RESULT },
+      ],
+    } as any)
+    const { getByTestId, queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    await waitFor(() => expect(queryByTestId('aesa-prospective-picker')).not.toBeNull())
+    expect(getByTestId('aesa-prospective-picker').textContent).toMatch(/Wind turbine 3MW/)
+    expect(getByTestId('aesa-prospective-picker').textContent).toMatch(/2030–2040/)
+    expect(getByTestId('aesa-sidebar-compute').hasAttribute('disabled')).toBe(false)
   })
 })

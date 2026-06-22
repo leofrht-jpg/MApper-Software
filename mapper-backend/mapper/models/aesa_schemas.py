@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# © Copyright 2026 Technical University of Denmark
+# Lead developer: Leonardo Ferhati
+
 """Pydantic schemas for Absolute Environmental Sustainability Assessment (AESA).
 
 Implements an N-layer downscaling chain (generalization of the Multi-D model,
@@ -518,6 +526,15 @@ class AESAConfigurationCreate(BaseModel):
 # ── Compute / export bodies ──────────────────────────────────────────────────
 
 
+class ProspectiveSingleProductPoint(BaseModel):
+    """One year-point of a PROSPECTIVE single-product LCA trajectory: the LCA
+    result computed against a year-matched premise database. The background
+    already evolved with the SSP, so the per-method scores are year-resolved —
+    no flat adapter; ``year`` is the trajectory year this result belongs to."""
+    year: int
+    result: ArchetypeLCACalculateResult
+
+
 class AESAComputeRequest(BaseModel):
     """Either ``config_id`` (loads stored config) OR ``config`` (inline).
     Either ``impact_task_id`` (backend task) OR ``impact_result`` (inline)."""
@@ -525,14 +542,25 @@ class AESAComputeRequest(BaseModel):
     config: AESAConfiguration | None = None
     impact_task_id: str | None = None
     impact_result: ImpactAssessmentResult | None = None
-    # Single-LCA (non-fleet) source: a STATIC single-product LCA result, adapted
-    # into the per-year ImpactAssessmentResult the engine consumes. Takes
-    # precedence over impact_task_id / impact_result when set. `reference_year`
-    # sets the climate-budget annual-allowance year (the LCA's functional unit is
-    # assessed as a single-year flow at that year). Prospective single-product
-    # sources extend the same adapter later (out of scope this build).
+    # ── Single-LCA (non-fleet) sources ──────────────────────────────────────
+    # Explicit discriminator (NOT overloading one field): which single-product
+    # basis the request carries. "static" → flat-adapt `single_product_result`
+    # at `reference_year` (Part A/B, byte-for-byte). "prospective" → use the
+    # year-resolved `prospective_single_product` series directly. Fleet requests
+    # leave both single-product fields None and ignore this discriminator.
+    single_product_basis: Literal["static", "prospective"] = "static"
+    # STATIC basis: a single scalar-per-method LCA result, flat-adapted into the
+    # per-year ImpactAssessmentResult the engine consumes. Takes precedence over
+    # impact_task_id / impact_result when set. `reference_year` sets the
+    # climate-budget annual-allowance year (the functional unit is assessed as a
+    # single-year flow at that year).
     single_product_result: ArchetypeLCACalculateResult | None = None
     reference_year: int = 2025
+    # PROSPECTIVE basis: the year-resolved trajectory (one point per year). Fed
+    # directly to the engine (no flat adapter); the SR year axis is these years
+    # intersected with SOS/budget coverage. Takes precedence over the static
+    # field + impact_task_id / impact_result when non-empty.
+    prospective_single_product: list[ProspectiveSingleProductPoint] | None = None
     run_sensitivity: bool = False  # if True, also run 5 uniform-principle configs
 
 

@@ -1,3 +1,12 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * © Copyright 2026 Technical University of Denmark
+ * Lead developer: Leonardo Ferhati
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, ChevronDown, Download, Save, Activity, BarChart3, List, Radar as RadarIcon } from 'lucide-react'
@@ -40,11 +49,14 @@ export function AESADashboard() {
     clearActiveSession,
     displayedIndicators, toggleDisplayedIndicator,
     selectAllDisplayedIndicators, clearDisplayedIndicators,
-    setBudgetBasis, running, source,
+    setBudgetBasis, running, source, singleProductBasis,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
   const { staticResult, projectedResult } = useImpactStore()
   const spStaticResult = useSingleProductImpactStore((s) => s.staticResult)
+  const spHasProspective = useSingleProductImpactStore((s) => s.projectedRuns.some((r) => r.year != null))
+  const spIsProspective = singleProductBasis === 'prospective'
+  const spHasInput = spIsProspective ? spHasProspective : !!spStaticResult
   const activeImpact = draft?.impact_mode === 'projected' ? projectedResult : staticResult
 
   // Patch 4O — Compute Source summary line on the result header.
@@ -360,16 +372,20 @@ export function AESADashboard() {
               has no DSM system; it needs a static single-product result. */}
           {source === 'single_product' ? (
             <>
-              {!spStaticResult && (
+              {!spHasInput && (
                 <EmptyState
-                  title="Compute a single-product static result first"
-                  body="Single-product AESA assesses one product's static LCA. Go to Impact Assessment → Single-product → Static, compute a result, then return here."
+                  title={spIsProspective ? 'Compute a prospective single-product result first' : 'Compute a single-product static result first'}
+                  body={spIsProspective
+                    ? "Single-product AESA (prospective) assesses one product's year-resolved trajectory. Go to Impact Assessment → Single-product → Prospective, compute a result, then return here."
+                    : "Single-product AESA assesses one product's static LCA. Go to Impact Assessment → Single-product → Static, compute a result, then return here."}
                 />
               )}
-              {spStaticResult && !result && (
+              {spHasInput && !result && (
                 <EmptyState
                   title="Configure and compute"
-                  body="Set the reference year, Multi-D allocation, and carbon budget in the sidebar, then press Compute. Defaults work for a first run."
+                  body={spIsProspective
+                    ? 'Set the Multi-D allocation and carbon budget in the sidebar, then press Compute. The year axis comes from the trajectory.'
+                    : 'Set the reference year, Multi-D allocation, and carbon budget in the sidebar, then press Compute. Defaults work for a first run.'}
                 />
               )}
             </>

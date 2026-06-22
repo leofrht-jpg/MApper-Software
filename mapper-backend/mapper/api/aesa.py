@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# © Copyright 2026 Technical University of Denmark
+# Lead developer: Leonardo Ferhati
+
 """AESA API: Multi-D allocation model endpoints.
 
 Reference data (boundary sets, Multi-D defaults, SSP trajectories, carbon
@@ -31,6 +39,7 @@ from mapper.core.aesa_engine import (
     co2e_conversion_for_budget,
     load_boundary_sets,
     single_product_to_impact_result,
+    prospective_single_product_to_impact_result,
     load_carbon_budget_options,
     load_sharing_data,
     load_ssp_trajectories,
@@ -330,10 +339,19 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
     from mapper.core.compute_metrics import measure_compute
     meter = measure_compute()
     config = _resolve_config(body)
-    if body.single_product_result is not None:
-        # Single-LCA (non-fleet) source: adapt the static single-product result
-        # into the per-year impact the engine consumes (reference_year sets the
-        # climate annual-allowance year). Takes precedence over task/inline.
+    if body.prospective_single_product:
+        # Prospective single-LCA source: the trajectory is already year-resolved
+        # (background evolved with the SSP) → feed the per-year series directly,
+        # NO flat adapter. SR year axis = the trajectory's years. Highest
+        # precedence among the single-product / task / inline inputs.
+        impact = prospective_single_product_to_impact_result(
+            [(p.year, p.result) for p in body.prospective_single_product],
+            system_id=config.mfa_system_id,
+        )
+    elif body.single_product_result is not None:
+        # Static single-LCA (non-fleet) source: adapt the scalar result into the
+        # per-year impact the engine consumes (reference_year sets the climate
+        # annual-allowance year). Takes precedence over task/inline.
         impact = single_product_to_impact_result(
             body.single_product_result,
             reference_year=body.reference_year,

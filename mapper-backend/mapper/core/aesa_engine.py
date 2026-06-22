@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# © Copyright 2026 Technical University of Denmark
+# Lead developer: Leonardo Ferhati
+
 """AESA engine: N-layer downscaling chain (generalization of Multi-D,
 Ferhati et al., SETAC 36th).
 
@@ -564,6 +572,96 @@ def single_product_to_impact_result(
             scope=result.scope,
             year_start=reference_year,
             year_end=reference_year,
+        ),
+        results=dsm_results,
+    )
+
+
+def prospective_single_product_to_impact_result(
+    points: list[tuple[int, ArchetypeLCACalculateResult]],
+    *,
+    system_id: str | None = None,
+) -> ImpactAssessmentResult:
+    """Adapt a PROSPECTIVE single-product LCA trajectory (one LCA result per
+    year, each computed against that year's premise database) into the
+    multi-year ``ImpactAssessmentResult`` the AESA engine consumes.
+
+    Unlike the static adapter (one functional unit held FLAT at a single
+    reference year), here the background already evolved with the SSP, so each
+    year carries its own year-resolved per-method scores. Each method becomes a
+    ``DSMLCAResult`` with one ``DSMLCAYearResult`` per year — the engine then
+    emits one SR row per (boundary, year), and the SR year axis is exactly the
+    trajectory's years (intersected with SOS/budget coverage downstream, where
+    a year outside the budget horizon yields a non-positive allocation → SR
+    None, the engine's existing behaviour). No ``reference_year``: the years
+    come from the trajectory.
+
+    ``points`` are ``(year, result)`` tuples. Cohort/material dicts are empty
+    (no fleet), mirroring the static adapter's per-method, cohort-empty shape.
+    Duplicate years for a method (e.g. if several trajectories were passed) keep
+    the FIRST occurrence — the caller is expected to pass a single coherent
+    trajectory; this is a deterministic guard, not a merge.
+    """
+    sid = system_id or "single-product"
+    # method tuple (joined) → accumulator preserving first-seen metadata + a
+    # year→YearResult map (first occurrence wins per year).
+    by_method: dict[str, dict] = {}
+    order: list[str] = []
+    for year, result in sorted(points, key=lambda p: p[0]):
+        for m in result.results:
+            key = "|".join(m.method)
+            acc = by_method.get(key)
+            if acc is None:
+                acc = {
+                    "method": list(m.method),
+                    "method_label": m.method_label,
+                    "scope": result.scope,
+                    "unit": m.unit,
+                    "years": {},  # year -> DSMLCAYearResult
+                }
+                by_method[key] = acc
+                order.append(key)
+            if year in acc["years"]:
+                continue  # first trajectory wins for this year
+            acc["years"][year] = DSMLCAYearResult(
+                year=year,
+                total_impact=m.score,
+                impact_by_cohort={},
+                impact_by_material={},
+                count_by_cohort={},
+                unit=m.unit,
+            )
+
+    dsm_results: list[DSMLCAResult] = []
+    all_years: list[int] = []
+    for key in order:
+        acc = by_method[key]
+        years = [acc["years"][y] for y in sorted(acc["years"])]
+        all_years.extend(y.year for y in years)
+        peak = max(years, key=lambda yr: yr.total_impact)
+        dsm_results.append(DSMLCAResult(
+            mfa_system_id=sid,
+            method=acc["method"],
+            method_label=acc["method_label"],
+            scope=acc["scope"],
+            unit=acc["unit"],
+            years=years,
+            summary=DSMLCASummary(
+                total_impact=sum(yr.total_impact for yr in years),
+                peak_year=peak.year,
+                peak_impact=peak.total_impact,
+            ),
+        ))
+
+    scope = dsm_results[0].scope if dsm_results else "all"
+    return ImpactAssessmentResult(
+        task_id="single-product",
+        meta=ImpactAssessmentMeta(
+            mode="projected",
+            mfa_system_id=system_id,   # None for a non-fleet source
+            scope=scope,
+            year_start=min(all_years) if all_years else None,
+            year_end=max(all_years) if all_years else None,
         ),
         results=dsm_results,
     )

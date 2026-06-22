@@ -1,3 +1,12 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * © Copyright 2026 Technical University of Denmark
+ * Lead developer: Leonardo Ferhati
+ */
+
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, Loader2, Pencil, Play, Plus, Save, RotateCcw, Trash2, X } from 'lucide-react'
@@ -16,16 +25,39 @@ import type {
   ArchetypeLCACalculateResult,
   CarbonBudgetOption,
   ImpactAssessmentResult,
+  ProspectiveSingleProductPoint,
   SSPTrajectory,
 } from '../../api/client'
+import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
 // ── Part C1 — source-agnostic compute helpers (pure, exported for tests) ──────
 
 export type AESASource = 'fleet' | 'single_product'
+// Single-product basis. 'static' (default) reads the static single-product
+// result + reference year; 'prospective' reads the year-resolved trajectory.
+export type SingleProductBasis = 'static' | 'prospective'
+
+// Reduce the single-product Projected runs (one per selected db, possibly
+// across several (iam,ssp) trajectories) to ONE coherent year-resolved series:
+// the FIRST trajectory by appearance order, its year-points sorted ascending.
+// Runs with a null year (superstructure DBs) are skipped — prospective
+// single-product computes against per-year separate-mode DBs. Pure + exported
+// so the selection rule is unit-testable and stable.
+export function selectProspectivePoints(runs: ProjectedRun[]): ProspectiveSingleProductPoint[] {
+  const dated = runs.filter((r) => r.year != null)
+  if (dated.length === 0) return []
+  const firstKey = `${dated[0].iam}|${dated[0].ssp}`
+  return dated
+    .filter((r) => `${r.iam}|${r.ssp}` === firstKey)
+    .slice()
+    .sort((a, b) => (a.year as number) - (b.year as number))
+    .map((r) => ({ year: r.year as number, result: r.result }))
+}
 
 // Gate predicate for the AESA Compute button. Fleet needs an active DSM system
-// + a cached impact result; single-product needs only a static single-product
-// result (the mfa_system_id-null backend path). Fleet gate is unchanged.
+// + a cached impact result. Single-product (static) needs a static result;
+// single-product (prospective) needs a prospective trajectory. Fleet + static
+// gates are unchanged.
 export function canComputeAESA(args: {
   source: AESASource
   hasDraft: boolean
@@ -33,18 +65,24 @@ export function canComputeAESA(args: {
   hasActiveSystem: boolean
   hasImpact: boolean
   hasSingleProduct: boolean
+  singleProductBasis?: SingleProductBasis
+  hasProspective?: boolean
 }): boolean {
   if (!args.hasDraft || args.running) return false
-  return args.source === 'single_product'
-    ? args.hasSingleProduct
-    : args.hasActiveSystem && args.hasImpact
+  if (args.source === 'single_product') {
+    return (args.singleProductBasis ?? 'static') === 'prospective'
+      ? !!args.hasProspective
+      : args.hasSingleProduct
+  }
+  return args.hasActiveSystem && args.hasImpact
 }
 
 // Build the args for `useAESAStore.compute()` for the active source. Returns
 // null when the gate isn't satisfiable (caller no-ops). Single-product sends
-// `singleProductResult` + `referenceYear` with an empty mfaSystemId (the
-// backend adapts the result and skips the DSM system-match check); fleet keeps
-// the existing task-id / inline-mirror behaviour.
+// an empty mfaSystemId (the backend adapts the result and skips the DSM
+// system-match check): static → `singleProductResult` + `referenceYear`;
+// prospective → `prospectiveSingleProduct` (year-resolved series, no
+// referenceYear). Fleet keeps the existing task-id / inline-mirror behaviour.
 export function buildAESAComputeArgs(args: {
   source: AESASource
   activeSystemId: string | null
@@ -54,15 +92,27 @@ export function buildAESAComputeArgs(args: {
   singleProductResult: ArchetypeLCACalculateResult | null
   referenceYear: number
   runSensitivity: boolean
+  singleProductBasis?: SingleProductBasis
+  prospectiveSingleProduct?: ProspectiveSingleProductPoint[] | null
 }): {
   mfaSystemId: string
   impactTaskId?: string | null
   impactInline?: ImpactAssessmentResult | null
   singleProductResult?: ArchetypeLCACalculateResult | null
   referenceYear?: number
+  prospectiveSingleProduct?: ProspectiveSingleProductPoint[] | null
   runSensitivity: boolean
 } | null {
   if (args.source === 'single_product') {
+    if ((args.singleProductBasis ?? 'static') === 'prospective') {
+      const pts = args.prospectiveSingleProduct
+      if (!pts || pts.length === 0) return null
+      return {
+        mfaSystemId: '',
+        prospectiveSingleProduct: pts,
+        runSensitivity: args.runSensitivity,
+      }
+    }
     if (!args.singleProductResult) return null
     return {
       mfaSystemId: '',
@@ -103,6 +153,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
     activeSessionId, clearActiveSession,
     configLoadError, dismissConfigLoadError,
     source, setSource, referenceYear, setReferenceYear,
+    singleProductBasis, setSingleProductBasis,
   } = useAESAStore()
 
   // Patch 5AM — re-run just the config load that failed (the network-level
@@ -261,15 +312,21 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
     : staticResult
   const hasImpact = !!activeImpact
 
-  // Part C1 — AESA compute source. Fleet (default) keeps the current behaviour;
-  // single-product reads the static single-product LCA result.
+  // Part C1/C2 — AESA compute source. Fleet (default) keeps the current
+  // behaviour; single-product reads either the static result or the
+  // year-resolved prospective trajectory, per `singleProductBasis`.
   const spStaticResult = useSingleProductImpactStore((s) => s.staticResult)
+  const spProjectedRuns = useSingleProductImpactStore((s) => s.projectedRuns)
+  const prospectivePoints = useMemo(() => selectProspectivePoints(spProjectedRuns), [spProjectedRuns])
   const hasSingleProduct = !!spStaticResult
+  const hasProspective = prospectivePoints.length > 0
   const isSingleProduct = source === 'single_product'
+  const isProspectiveSP = isSingleProduct && singleProductBasis === 'prospective'
 
   const canCompute = canComputeAESA({
     source, hasDraft: !!draft, running,
     hasActiveSystem: !!activeSystem, hasImpact, hasSingleProduct,
+    singleProductBasis, hasProspective,
   })
 
   // Auto-prefer Projected LCI on first load if it's available and the draft is still untouched
@@ -287,11 +344,16 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
   // without the user needing a DSM run.
   useEffect(() => {
     if (!draft || draft.method_mapping.length > 0) return
-    const sourceResults = isSingleProduct ? spStaticResult?.results : activeImpact?.results
+    // Method universe per active source/basis: fleet → activeImpact; static
+    // single-product → the static result; prospective single-product → the
+    // first trajectory point's methods (same `method` tuple shape).
+    const sourceResults = isSingleProduct
+      ? (isProspectiveSP ? prospectivePoints[0]?.result.results : spStaticResult?.results)
+      : activeImpact?.results
     if (!sourceResults) return
     const methods = sourceResults.map((r) => [...r.method])
     if (methods.length) void suggestMapping(methods)
-  }, [draft, activeImpact, spStaticResult, isSingleProduct, suggestMapping])
+  }, [draft, activeImpact, spStaticResult, isSingleProduct, isProspectiveSP, prospectivePoints, suggestMapping])
 
   const handleCompute = async () => {
     if (!draft) return
@@ -308,6 +370,8 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
       singleProductResult: spStaticResult,
       referenceYear,
       runSensitivity,
+      singleProductBasis,
+      prospectiveSingleProduct: prospectivePoints,
     })
     if (!args) return
     await compute(args)
@@ -443,7 +507,9 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 data-testid="aesa-sidebar-compute"
                 title={
                   isSingleProduct
-                    ? (!hasSingleProduct ? 'Compute a single-product static result first' : running ? 'Computing…' : 'Compute')
+                    ? (isProspectiveSP
+                        ? (!hasProspective ? 'Compute a prospective single-product result first' : running ? 'Computing…' : 'Compute')
+                        : (!hasSingleProduct ? 'Compute a single-product static result first' : running ? 'Computing…' : 'Compute'))
                     : !activeSystem ? 'Select a DSM system first'
                     : !hasImpact ? `Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first`
                     : running ? 'Computing…'
@@ -543,9 +609,13 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
           {error
             ? error
             : isSingleProduct
-              ? (!hasSingleProduct
-                  ? 'Compute a single-product static result on the Impact Assessment page first.'
-                  : '')
+              ? (isProspectiveSP
+                  ? (!hasProspective
+                      ? 'Compute a Prospective single-product LCA on the Impact Assessment page first.'
+                      : '')
+                  : (!hasSingleProduct
+                      ? 'Compute a single-product static result on the Impact Assessment page first.'
+                      : ''))
               : !activeSystem
                 ? 'Select a DSM system to enable Compute.'
                 : !hasImpact
@@ -712,6 +782,9 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 onReferenceYearChange={setReferenceYear}
                 budgetStartYear={draft.carbon_budget?.start_year ?? null}
                 budgetEndYear={draft.carbon_budget?.end_year ?? null}
+                singleProductBasis={singleProductBasis}
+                onBasisChange={setSingleProductBasis}
+                prospectivePoints={prospectivePoints}
               />
               {isMultiLci && (
                 <div style={{
@@ -936,6 +1009,7 @@ function ComputeSourceCascade({
   singleProductResult,
   referenceYear, onReferenceYearChange,
   budgetStartYear, budgetEndYear,
+  singleProductBasis, onBasisChange, prospectivePoints,
 }: {
   draft: import('../../stores/aesaStore').AESAConfigDraft
   updateDraft: (patch: Partial<import('../../stores/aesaStore').AESAConfigDraft>) => void
@@ -944,7 +1018,7 @@ function ComputeSourceCascade({
   projectedAvailable: boolean
   staticSubtitle: string
   projectedSubtitle: string
-  // Part C1 — compute-source toggle + single-product controls.
+  // Part C1/C2 — compute-source toggle + single-product controls.
   source: AESASource
   onSourceChange: (s: AESASource) => void
   singleProductResult: ArchetypeLCACalculateResult | null
@@ -952,6 +1026,10 @@ function ComputeSourceCascade({
   onReferenceYearChange: (y: number) => void
   budgetStartYear: number | null
   budgetEndYear: number | null
+  // Single-product basis sub-toggle + the resolved prospective trajectory.
+  singleProductBasis: SingleProductBasis
+  onBasisChange: (b: SingleProductBasis) => void
+  prospectivePoints: ProspectiveSingleProductPoint[]
   // When viewing a saved session, the cascade reflects the SESSION's
   // frozen state — the live `staticDsmScenarioRuns` /
   // `projectedDsmScenarioRuns` maps are NOT populated by session
@@ -1024,9 +1102,9 @@ function ComputeSourceCascade({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-      {/* Part C1 — source toggle. Fleet (DSM) is the default so existing
-          behaviour is unchanged; Single product (LCA) drives the
-          mfa_system_id-null backend path. Mode-specific controls below are
+      {/* Source toggle. Default source stays 'fleet' (store default) — the
+          VISUAL order below (single-product first) is independent of which is
+          selected by default. Mode-specific controls below are
           visibility-toggled (kept mounted), not unmounted. */}
       <div
         data-testid="aesa-source-toggle"
@@ -1039,8 +1117,8 @@ function ComputeSourceCascade({
         }}
       >
         {([
-          { key: 'fleet' as const, label: 'Fleet (DSM)' },
           { key: 'single_product' as const, label: 'Single product (LCA)' },
+          { key: 'fleet' as const, label: 'System-level (DSM)' },
         ]).map((o) => {
           const isActive = source === o.key
           return (
@@ -1180,6 +1258,51 @@ function ComputeSourceCascade({
         data-testid="aesa-source-single-controls"
         style={{ display: source === 'single_product' ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--space-2)' }}
       >
+        {/* Static | Prospective basis sub-toggle — same visual style as the
+            source toggle. Default Static (preserves current behaviour). */}
+        <div
+          data-testid="aesa-sp-basis-toggle"
+          role="radiogroup"
+          aria-label="Single-product basis"
+          style={{
+            display: 'inline-flex', gap: 4, padding: 3, alignSelf: 'stretch',
+            backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)',
+            borderRadius: 'var(--radius-md)',
+          }}
+        >
+          {([
+            { key: 'static' as const, label: 'Static' },
+            { key: 'prospective' as const, label: 'Prospective' },
+          ]).map((o) => {
+            const isActive = singleProductBasis === o.key
+            return (
+              <button
+                key={o.key}
+                type="button"
+                role="radio"
+                aria-checked={isActive}
+                data-testid={`aesa-sp-basis-${o.key}`}
+                onClick={() => onBasisChange(o.key)}
+                style={{
+                  flex: 1, border: 'none',
+                  background: isActive ? 'var(--bg-surface)' : 'transparent',
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  padding: '5px 8px', borderRadius: 'var(--radius-sm)',
+                  boxShadow: isActive ? 'var(--shadow-xs)' : 'none',
+                  cursor: 'pointer', fontSize: 11, fontWeight: isActive ? 600 : 500,
+                }}
+              >
+                {o.label}
+              </button>
+            )
+          })}
+        </div>
+
+        {/* Static basis body — visibility-toggled (kept mounted). */}
+        <div
+          data-testid="aesa-sp-static-controls"
+          style={{ display: singleProductBasis === 'static' ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--space-2)' }}
+        >
         <CascadeRow label="Single-product result">
           {singleProductResult ? (
             <div
@@ -1235,6 +1358,49 @@ function ComputeSourceCascade({
             </div>
           )}
         </CascadeRow>
+        </div>
+
+        {/* Prospective basis body — visibility-toggled (kept mounted). No
+            reference year: the year axis comes from the trajectory. */}
+        <div
+          data-testid="aesa-sp-prospective-controls"
+          style={{ display: singleProductBasis === 'prospective' ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--space-2)' }}
+        >
+        <CascadeRow label="Prospective single-product result">
+          {prospectivePoints.length > 0 ? (
+            <div
+              data-testid="aesa-prospective-picker"
+              style={{
+                padding: 'var(--space-2)', background: 'var(--bg-elevated)',
+                border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+                fontSize: 'var(--text-xs)', color: 'var(--text-primary)', lineHeight: 1.4,
+              }}
+            >
+              <div style={{ fontWeight: 600 }}>{prospectivePoints[0].result.archetype_name}</div>
+              <div style={{ color: 'var(--text-tertiary)', marginTop: 2 }}>
+                Prospective · {prospectivePoints.length} year{prospectivePoints.length === 1 ? '' : 's'}
+                {' '}({prospectivePoints[0].year}–{prospectivePoints[prospectivePoints.length - 1].year})
+                {' · '}{prospectivePoints[0].result.results.length} indicator{prospectivePoints[0].result.results.length === 1 ? '' : 's'}
+              </div>
+            </div>
+          ) : (
+            <div
+              data-testid="aesa-prospective-empty"
+              style={{
+                padding: 'var(--space-2)',
+                background: 'color-mix(in srgb, var(--status-warning) 8%, transparent)',
+                border: '1px solid color-mix(in srgb, var(--status-warning) 25%, transparent)',
+                borderRadius: 'var(--radius-sm)', fontSize: 'var(--text-xs)',
+                color: 'var(--text-secondary)', lineHeight: 1.4,
+              }}
+            >
+              No prospective single-product result yet. Compute a Prospective
+              single-product LCA on Impact Assessment → Single-product →
+              Prospective, then return here.
+            </div>
+          )}
+        </CascadeRow>
+        </div>
       </div>
     </div>
   )

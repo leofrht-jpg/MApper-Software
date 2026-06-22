@@ -1,3 +1,12 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * © Copyright 2026 Technical University of Denmark
+ * Lead developer: Leonardo Ferhati
+ */
+
 import { recordComputation } from '../stores/carbonStore'
 
 const API_BASE = 'http://localhost:8000/api'
@@ -3805,18 +3814,31 @@ export async function deleteAESASession(id: string): Promise<void> {
   if (!res.ok) throw new Error(`DELETE /aesa/sessions failed: ${res.status}`)
 }
 
+// One year-point of a prospective single-product trajectory: the LCA result
+// computed against that year's premise database (year-resolved background).
+export interface ProspectiveSingleProductPoint {
+  year: number
+  result: ArchetypeLCACalculateResult
+}
+
 export interface AESAComputeBody {
   config_id?: string | null
   config?: AESAConfiguration | null
   impact_task_id?: string | null
   impact_result?: ImpactAssessmentResult | null
   run_sensitivity?: boolean
-  // Part C1 — single-LCA (non-fleet) source. When set, the backend adapts this
-  // static single-product result into the per-year impact the engine consumes
-  // (reference_year sets the climate annual-allowance year). Takes precedence
-  // over impact_task_id / impact_result; mfa_system_id may be empty.
+  // Part C1 / C2 — single-LCA (non-fleet) source. `single_product_basis`
+  // discriminates the two single-product bases (defaults to 'static').
+  //   static     → backend flat-adapts `single_product_result` at
+  //                `reference_year` (impact held flat; SR moves via SOS/budget).
+  //   prospective→ backend uses `prospective_single_product` (year-resolved
+  //                trajectory) directly; SR year axis = the trajectory's years.
+  // Single-product fields take precedence over impact_task_id / impact_result;
+  // mfa_system_id may be empty (no DSM system).
+  single_product_basis?: 'static' | 'prospective'
   single_product_result?: ArchetypeLCACalculateResult | null
   reference_year?: number
+  prospective_single_product?: ProspectiveSingleProductPoint[] | null
 }
 
 export async function computeAESA(body: AESAComputeBody): Promise<AESAComputeResult> {

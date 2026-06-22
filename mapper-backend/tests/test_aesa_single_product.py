@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# © Copyright 2026 Technical University of Denmark
+# Lead developer: Leonardo Ferhati
+
 """AESA on a single (non-fleet) LCA result — static single-product source.
 
 Part A: an ArchetypeLCACalculateResult (scalar score per method) is adapted into
@@ -19,10 +27,13 @@ from mapper.core.aesa_engine import (
     build_carbon_budget,
     build_default_sharing_preset,
     load_boundary_sets,
+    prospective_single_product_to_impact_result,
     single_product_to_impact_result,
     suggest_method_mapping,
 )
-from mapper.models.aesa_schemas import AESAComputeRequest, AESAConfiguration
+from mapper.models.aesa_schemas import (
+    AESAComputeRequest, AESAConfiguration, ProspectiveSingleProductPoint,
+)
 from mapper.models.bom_schemas import (
     DSMLCAResult, DSMLCASummary, DSMLCAYearResult,
     ImpactAssessmentMeta, ImpactAssessmentResult,
@@ -142,6 +153,82 @@ def test_fleet_matching_system_computes():
     cfg = _sp_config(system_id="sys-A")
     result = asyncio.run(post_compute(AESAComputeRequest(config=cfg, impact_result=_fleet_impact("sys-A"))))
     assert any(r.pb_id == "climate_change" for r in result.results)
+
+
+# ── Prospective single-product source (Part C2) ──────────────────────────────
+
+def _prospective_point(year: int, climate_score: float, acid_score: float) -> ProspectiveSingleProductPoint:
+    res = ArchetypeLCACalculateResult(
+        archetype_id="arc-bev", archetype_name="BEV-LFP", scope="all", amount=1.0,
+        stage_amounts={}, stages_included=["Manufacturing"], elapsed_seconds=0.1,
+        compute_database=f"premise-remind-SSP1-2.6-{year}",
+        results=[
+            ArchetypeLCAMethodResult(method=CLIMATE, method_label="GWP100",
+                                     score=climate_score, unit="kg CO2 eq", contributions=[]),
+            ArchetypeLCAMethodResult(method=ACID, method_label="AE",
+                                     score=acid_score, unit="mol H+ eq", contributions=[]),
+        ],
+    )
+    return ProspectiveSingleProductPoint(year=year, result=res)
+
+
+def test_prospective_adapter_builds_multi_year_series():
+    pts = [(2030, _prospective_point(2030, 8e3, 50).result),
+           (2040, _prospective_point(2040, 6e3, 40).result),
+           (2050, _prospective_point(2050, 4e3, 30).result)]
+    imp = prospective_single_product_to_impact_result(pts)
+    assert imp.meta.mfa_system_id is None
+    assert imp.meta.year_start == 2030 and imp.meta.year_end == 2050
+    clim = next(r for r in imp.results if r.method == CLIMATE)
+    assert [y.year for y in clim.years] == [2030, 2040, 2050]
+    assert [y.total_impact for y in clim.years] == [8e3, 6e3, 4e3]  # year-resolved, NOT flat
+
+
+def test_prospective_adapter_dedups_year_first_wins():
+    # Two trajectories accidentally sharing a year → first occurrence kept.
+    pts = [(2030, _prospective_point(2030, 8e3, 50).result),
+           (2030, _prospective_point(2030, 999, 999).result)]
+    imp = prospective_single_product_to_impact_result(pts)
+    clim = next(r for r in imp.results if r.method == CLIMATE)
+    assert len(clim.years) == 1 and clim.years[0].total_impact == 8e3
+
+
+def test_prospective_single_product_yields_sr_per_trajectory_year():
+    cfg = _sp_config()  # mfa_system_id=None
+    points = [_prospective_point(2030, 8e3, 50),
+              _prospective_point(2040, 6e3, 40),
+              _prospective_point(2050, 4e3, 30)]
+    req = AESAComputeRequest(config=cfg, single_product_basis="prospective",
+                             prospective_single_product=points)
+    result = asyncio.run(post_compute(req))
+    # One SR row per (mapped boundary, trajectory year).
+    clim_years = sorted(r.year for r in result.results if r.pb_id == "climate_change")
+    assert clim_years == [2030, 2040, 2050]
+    # Year-resolved impact flows through: the climate impact declines across years.
+    clim = {r.year: r.impact for r in result.results if r.pb_id == "climate_change"}
+    assert clim[2030] > clim[2040] > clim[2050]
+    assert "acidification" in {r.pb_id for r in result.results}
+
+
+def test_prospective_takes_precedence_over_static_and_inline():
+    cfg = _sp_config()
+    req = AESAComputeRequest(
+        config=cfg, single_product_basis="prospective",
+        prospective_single_product=[_prospective_point(2035, 7e3, 45)],
+        single_product_result=_single_product(),          # should be ignored
+        impact_result=ImpactAssessmentResult(task_id="x",  # should be ignored
+            meta=ImpactAssessmentMeta(mode="static", scope="all"), results=[]),
+    )
+    result = asyncio.run(post_compute(req))
+    assert all(r.year == 2035 for r in result.results)     # only the prospective year
+
+
+def test_static_path_unchanged_when_basis_static_default():
+    # Default basis is static; prospective field empty → existing flat behaviour.
+    cfg = _sp_config()
+    req = AESAComputeRequest(config=cfg, single_product_result=_single_product(), reference_year=2025)
+    result = asyncio.run(post_compute(req))
+    assert all(r.year == 2025 for r in result.results)
 
 
 # ── Default budget temperature + pathway ─────────────────────────────────────

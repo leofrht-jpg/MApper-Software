@@ -1,3 +1,12 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * © Copyright 2026 Technical University of Denmark
+ * Lead developer: Leonardo Ferhati
+ */
+
 import { create } from 'zustand'
 import {
   type AESAComputeResult,
@@ -12,6 +21,7 @@ import {
   type MethodPBMapping,
   type MultiDConfig,
   type PrincipleDefinition,
+  type ProspectiveSingleProductPoint,
   type SharingPreset,
   type SharingPresetCreate,
   computeAESA,
@@ -207,6 +217,10 @@ interface AESAStore {
   // annual-allowance year for the single-product path (default 2025).
   source: 'fleet' | 'single_product'
   referenceYear: number
+  // Single-product basis (only meaningful when source === 'single_product').
+  // 'static' (default) reads the static single-product result + referenceYear;
+  // 'prospective' reads the year-resolved trajectory (no referenceYear).
+  singleProductBasis: 'static' | 'prospective'
 
   // Compute state
   result: AESAComputeResult | null
@@ -223,6 +237,7 @@ interface AESAStore {
     runSensitivity?: boolean
     singleProductResult?: ArchetypeLCACalculateResult | null
     referenceYear?: number
+    prospectiveSingleProduct?: ProspectiveSingleProductPoint[] | null
   } | null
 
   // Patch 5AM — mount-time config-panel load failures live in their OWN slot
@@ -268,6 +283,7 @@ interface AESAStore {
   deleteConfig: (id: string) => Promise<void>
   setSource: (source: 'fleet' | 'single_product') => void
   setReferenceYear: (year: number) => void
+  setSingleProductBasis: (basis: 'static' | 'prospective') => void
   compute: (args: {
     mfaSystemId: string
     impactTaskId?: string | null
@@ -275,6 +291,7 @@ interface AESAStore {
     runSensitivity?: boolean
     singleProductResult?: ArchetypeLCACalculateResult | null
     referenceYear?: number
+    prospectiveSingleProduct?: ProspectiveSingleProductPoint[] | null
   }) => Promise<void>
   clearResult: () => void
   // Set the carbon-budget basis ("CO2" budget vs "CO2e_GHG" budget) on the
@@ -380,6 +397,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   activeSessionId: null,
   source: 'fleet',
   referenceYear: 2025,
+  singleProductBasis: 'static',
   result: null,
   lastRunAt: null,
   running: false,
@@ -554,14 +572,15 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
 
   setSource: (source) => set({ source }),
   setReferenceYear: (referenceYear) => set({ referenceYear }),
+  setSingleProductBasis: (singleProductBasis) => set({ singleProductBasis }),
 
-  compute: async ({ mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear }) => {
+  compute: async ({ mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear, prospectiveSingleProduct }) => {
     const { draft } = get()
     if (!draft) {
       set({ error: 'No configuration loaded' })
       return
     }
-    set({ running: true, error: null, lastComputeArgs: { mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear } })
+    set({ running: true, error: null, lastComputeArgs: { mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear, prospectiveSingleProduct } })
     try {
       const inlineConfig: AESAConfiguration = {
         id: get().activeConfigId ?? 'draft',
@@ -576,15 +595,21 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
         method_mapping: draft.method_mapping,
         created_at: new Date().toISOString(),
       }
-      // Part C1 — single-LCA source takes precedence (the backend adapts the
-      // static result to a single-reference-year impact and skips the DSM
-      // system-match check). Otherwise the fleet path (task id / inline result).
+      // Part C1/C2 — single-LCA sources take precedence over the fleet path
+      // (the backend adapts them and skips the DSM system-match check).
+      //   prospective → year-resolved series, used directly (no referenceYear).
+      //   static      → scalar result flat-adapted at referenceYear.
+      // Otherwise the fleet path (task id / inline result).
+      const isProspectiveSP = !!prospectiveSingleProduct && prospectiveSingleProduct.length > 0
+      const isSingleProduct = isProspectiveSP || !!singleProductResult
       const result = await computeAESA({
         config: inlineConfig,
-        impact_task_id: singleProductResult ? null : (impactTaskId ?? null),
-        impact_result: singleProductResult ? null : (impactInline ?? null),
-        single_product_result: singleProductResult ?? null,
+        impact_task_id: isSingleProduct ? null : (impactTaskId ?? null),
+        impact_result: isSingleProduct ? null : (impactInline ?? null),
+        single_product_basis: isProspectiveSP ? 'prospective' : 'static',
+        single_product_result: isProspectiveSP ? null : (singleProductResult ?? null),
         reference_year: referenceYear,
+        prospective_single_product: isProspectiveSP ? prospectiveSingleProduct : null,
         run_sensitivity: !!runSensitivity,
       })
       // Patch 4T — fresh result clears the display filter. Carrying a
@@ -795,6 +820,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     activeSessionId: null,
     source: 'fleet',
     referenceYear: 2025,
+    singleProductBasis: 'static',
     result: null,
     lastRunAt: null,
     running: false,

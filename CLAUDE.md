@@ -1597,6 +1597,75 @@ SOS-share form (C2) and the prospective single-product source (v2).
   code for single-product.** It already operates on the adapted result; the
   source toggle only changes what feeds the compute.
 
+### Single-product AESA: Static | Prospective basis + source relabel (Part C2)
+
+**Source-toggle relabel + reorder (labels/order only — keys + default
+unchanged).** The source toggle now reads `[ Single product (LCA) ]
+[ System-level (DSM) ]` (single-product first/left); "Fleet (DSM)" → "System-level
+(DSM)". The underlying enum is **still** `'fleet' | 'single_product'` and the
+default-selected source is **still** `'fleet'` (store default) — the visual array
+order is independent of which is selected. Testids unchanged
+(`aesa-source-fleet` / `aesa-source-single`).
+
+**Single-product gains a Static | Prospective sub-toggle** (`aesa-sp-basis-toggle`,
+`aesa-sp-basis-{static,prospective}`), same visual style as the source toggle,
+**default Static** (preserves Part C1 behaviour). Basis state lives on
+`useAESAStore.singleProductBasis` (reset to `'static'`). The two basis bodies
+(`aesa-sp-static-controls` / `aesa-sp-prospective-controls`) are
+**visibility-toggled (kept mounted)**, never unmounted.
+
+- **Static** (unchanged from C1) — reads `useSingleProductImpactStore.staticResult`,
+  keeps the **Reference Year** input; backend flat-adapts at `reference_year`
+  (`single_product_to_impact_result`), impact held FLAT across the SR horizon,
+  SR moves only via SOS/budget depletion.
+- **Prospective** — reads the year-resolved trajectory from
+  `useSingleProductImpactStore.projectedRuns` (`ProjectedRun[]`, per-(db,year)).
+  `selectProspectivePoints(runs)` (pure, exported) reduces them to ONE coherent
+  series: the **first (iam,ssp) trajectory** by appearance order, year-points
+  sorted, null-year (superstructure) runs dropped. Sent as
+  `prospective_single_product: [{year, result}]`; **Reference Year is hidden**
+  (the year axis comes from the trajectory). Backend
+  `prospective_single_product_to_impact_result` builds one `DSMLCAResult.years`
+  entry per year (NO flat adapter) → the engine emits one SR row per (boundary,
+  trajectory year); years outside the budget horizon yield a non-positive
+  allocation → SR None (existing engine behaviour = the "intersected with
+  SOS/budget coverage" semantics).
+
+**Explicit request discriminator (not field-overloading):**
+`AESAComputeRequest.single_product_basis: Literal['static','prospective'] =
+'static'`. Precedence in `post_compute`: `prospective_single_product` (non-empty)
+→ `single_product_result` → task/inline. Fleet + static single-product paths are
+**byte-for-byte unchanged**. The pure helpers fold the third basis in:
+`canComputeAESA` gates prospective on `hasProspective`; `buildAESAComputeArgs`
+emits `prospectiveSingleProduct` (empty `mfaSystemId`, no `referenceYear`).
+
+**Sensitivity cases**: single-product Projected does not expose the parameter
+(sensitivity) axis, so prospective runs are all "Base" — consume them as-is
+(no multi-case overlay). If a future build adds per-case projected runs, pick the
+Base case the same way the rest of the app does.
+
+Locked by `tests/aesaSingleProductSource.test.tsx` (helpers across all three
+bases + selectProspectivePoints + label/order + basis sub-toggle render) and
+`tests/test_aesa_single_product.py` (prospective adapter multi-year series +
+per-trajectory-year SRs + precedence + static-path-unchanged).
+
+#### What NOT to do (Part C2)
+
+- **Don't flip the default-selected source when reordering the toggle.** The
+  array order is visual only; `source` defaults to `'fleet'`. Keep the enum
+  keys/values and testids stable — only labels + order changed.
+- **Don't flat-adapt the prospective basis.** Its impacts are already
+  year-resolved (background evolved with the SSP); feed them straight to the
+  engine via `prospective_single_product_to_impact_result`. No `reference_year`
+  in the prospective branch.
+- **Don't merge multiple (iam,ssp) trajectories into one SR series.**
+  `selectProspectivePoints` takes the first trajectory; the backend also dedups
+  by year (first wins) as a guard. A multi-trajectory overlay is a separate
+  feature, not this build.
+- **Don't conditional-unmount the basis bodies or hide Reference Year by
+  unmounting.** Reference Year lives inside the `display:none` static body in
+  prospective mode (kept mounted).
+
 ### AESA Compute Source cascade (Patch 4O)
 
 AESA is a **downstream consumer** — `POST /aesa/compute` takes an

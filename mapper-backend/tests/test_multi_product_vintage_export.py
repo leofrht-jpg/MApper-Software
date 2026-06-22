@@ -1,3 +1,11 @@
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# © Copyright 2026 Technical University of Denmark
+# Lead developer: Leonardo Ferhati
+
 """Per-item-vintage activity export — the multi-product workbook records each
 activity item's vintage (database / SSP / year) on a "Vintages" sheet, so a
 run comparing an activity across ecoinvent + premise SSP×year is reproducible

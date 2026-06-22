@@ -1,3 +1,12 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * © Copyright 2026 Technical University of Denmark
+ * Lead developer: Leonardo Ferhati
+ */
+
 // Patch 5S — common-prefix label shortening for the multi-item comparison
 // chart. When all series share a leading activity string (e.g. "electricity,
 // low voltage [SSP1 2040]" × N vintages), strip the shared part so the chart

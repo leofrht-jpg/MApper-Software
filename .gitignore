@@ -10,9 +10,10 @@ __pycache__/
 .venv/
 venv/
 
-# Environment
+# Environment (all .env variants — never commit secrets)
 .env
-.env.local
+.env.*
+*.env
 
 # Build outputs
 dist/
@@ -36,6 +37,9 @@ waitlist.json
 
 # Reference codebases (not part of MApper)
 _reference/
+
+# Private context notes — never publish (also kept outside the repo tree)
+C4MApper/
 
 # Claude Code local config
 .claude/

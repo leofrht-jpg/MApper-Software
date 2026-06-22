@@ -1,0 +1,44 @@
+MApper — Copyright and intellectual property
+================================================================================
+
+© Copyright 2026 Technical University of Denmark
+
+Copyright holder
+----------------
+The Technical University of Denmark (DTU) holds the copyright to MApper,
+including all original source code, documentation, and assets in this
+repository, except where a different copyright is explicitly stated in an
+individual file or in THIRD_PARTY_LICENSES.md.
+
+Lead developer
+--------------
+Leonardo Ferhati — lead developer.
+
+License
+-------
+MApper is released under the Mozilla Public License, v. 2.0 (MPL-2.0). The full
+license text is in the LICENSE file at the root of this repository and at
+https://mozilla.org/MPL/2.0/.
+
+Under MPL-2.0, MApper is free to use, modify, and distribute — including for
+commercial purposes — subject to the terms of the license. Modifications to
+MPL-licensed source files must be made available under the same license; the
+MPL operates at the level of individual files (file-level copyleft).
+
+Contributions
+-------------
+Contributions are accepted under MPL-2.0 with DTU as the copyright holder. See
+CONTRIBUTING.md for the contribution and Contributor License Agreement (CLA)
+process.
+
+Third-party components
+----------------------
+This repository depends on third-party open-source software, each under its own
+license. See NOTICE and THIRD_PARTY_LICENSES.md for the full inventory and
+attributions. Third-party data (e.g. the ecoinvent database) is separately
+licensed and is not distributed with MApper.
+
+Contact
+-------
+General and commercial inquiries: leo_frht@icloud.com
+Website: https://mapper.leonardoferhati.com

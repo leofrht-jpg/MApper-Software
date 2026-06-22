@@ -59,5 +59,5 @@ To generate prospective databases, you need an encryption key:
 
 ## Contact
 
-Leonardo Ferhati — leofe@dtu.dk
+Leonardo Ferhati — leo_frht@icloud.com
 mapper.leonardoferhati.com

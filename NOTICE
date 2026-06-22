@@ -1,0 +1,52 @@
+MApper — Unified LCA · DSM/MFA · pLCA · AESA for environmental sustainability
+================================================================================
+
+© Copyright 2026 Technical University of Denmark
+
+Lead developer: Leonardo Ferhati
+
+This product is developed at the Technical University of Denmark (DTU). The
+Technical University of Denmark is the copyright holder of MApper.
+
+MApper is licensed under the Mozilla Public License, v. 2.0. A copy of the
+license is distributed with this software in the file LICENSE, and is also
+available at https://mozilla.org/MPL/2.0/.
+
+--------------------------------------------------------------------------------
+Third-party software
+--------------------------------------------------------------------------------
+
+MApper incorporates and builds on third-party open-source software. Each such
+component remains under its own license. A full inventory of dependencies and
+their licenses is provided in THIRD_PARTY_LICENSES.md.
+
+Notable acknowledgements:
+
+- Brightway2 (BSD 3-Clause) — Chris Mutel and ETH Zürich. MApper's life cycle
+  assessment engine is built on the Brightway2 framework (brightway2, bw2data,
+  bw2io, bw2calc, bw2analyzer).
+- premise (BSD 3-Clause) — Romain Sacchi et al., Paul Scherrer Institut.
+  MApper's prospective LCA functionality is built on premise.
+
+--------------------------------------------------------------------------------
+Third-party data
+--------------------------------------------------------------------------------
+
+- ecoinvent — The ecoinvent life cycle inventory database is separately licensed
+  by the ecoinvent Association (https://ecoinvent.org) and is NOT bundled with,
+  or distributed by, MApper. Users must obtain their own valid ecoinvent license
+  and supply the database file themselves. MApper neither grants nor implies any
+  right to use ecoinvent data; compliance with the ecoinvent license is the sole
+  responsibility of the user.
+
+- Integrated Assessment Model (IAM) scenario data used by premise (REMIND,
+  IMAGE, MESSAGE, GCAM, TIAM-UCL and related) is licensed by its respective
+  providers and accessed under premise's terms. Use of premise's prospective
+  databases requires a premise encryption key obtained from the premise authors.
+
+--------------------------------------------------------------------------------
+
+MApper is free to use for any purpose, including commercial use, under the terms
+of the Mozilla Public License, v. 2.0.
+
+General inquiries: leo_frht@icloud.com

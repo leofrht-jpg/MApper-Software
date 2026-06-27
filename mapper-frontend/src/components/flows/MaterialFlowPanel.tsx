@@ -14,6 +14,7 @@ import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { StackedTotalTooltip } from '../charts/StackedTotalTooltip'
 import { tightStackedDomain } from '../charts/yAxisDomain'
+import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 import { Download, Loader2, TrendingDown, TrendingUp, BarChart3 } from 'lucide-react'
 import {
   Area,
@@ -964,7 +965,9 @@ export function MaterialFlowPanel({ scopeSubsystemId, scopeSubsystemName }: Mate
                     />
                     <YAxis type="category" dataKey="name" stroke="var(--text-tertiary)" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} width={140} />
                     <Tooltip
-                      contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', fontSize: 12 }}
+                      contentStyle={TOOLTIP_CONTENT_STYLE}
+                      itemStyle={TOOLTIP_ITEM_STYLE}
+                      labelStyle={TOOLTIP_LABEL_STYLE}
                       formatter={(v, _name, ctx) => {
                         const unit = (ctx?.payload as { unit?: string } | undefined)?.unit ?? ''
                         const units = (ctx?.payload as { units?: number | null } | undefined)?.units

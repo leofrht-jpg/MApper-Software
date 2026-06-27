@@ -35,6 +35,7 @@ import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
+import { TOOLTIP_CONTENT_STYLE } from '../charts/tooltipStyle'
 
 export interface VintageCoord {
   label: string
@@ -178,7 +179,7 @@ export function MultiProductLineChart({
     if (!active || !payload || payload.length === 0) return null
     const sorted = [...payload].filter((p) => p.value != null).sort((a, b) => (b.value as number) - (a.value as number))
     return (
-      <div style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', fontSize: 11, padding: '6px 8px' }}>
+      <div style={{ ...TOOLTIP_CONTENT_STYLE, padding: '6px 8px' }}>
         <div style={{ fontWeight: 600, marginBottom: 2 }}>{label}</div>
         {sorted.map((p) => (
           <div key={String(p.dataKey)} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>

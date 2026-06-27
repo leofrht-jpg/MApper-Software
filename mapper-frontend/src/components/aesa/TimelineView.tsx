@@ -20,6 +20,7 @@ import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { colorForIndicator } from '../../utils/aesaIndicatorColors'
+import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 
 interface Props {
   results: SustainabilityRatioResult[]
@@ -106,12 +107,9 @@ export function TimelineView({ results, carbonBudget, sharing }: Props) {
             label={{ value: 'SR', angle: -90, position: 'left', offset: 15, fontSize: 11, fill: 'var(--text-tertiary)', textAnchor: 'middle' }}
           />
           <Tooltip
-            contentStyle={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 'var(--text-xs)',
-            }}
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            itemStyle={TOOLTIP_ITEM_STYLE}
+            labelStyle={TOOLTIP_LABEL_STYLE}
             formatter={(v, name) => {
               const p = pbs.find((x) => x.id === name)
               return [srFormat.format(Number(v)), p?.name ?? name]
@@ -407,12 +405,9 @@ function CarbonBudgetInset({ budget, sharing }: { budget: CarbonBudgetConfig; sh
           )}
           <Legend wrapperStyle={{ fontSize: 10 }} />
           <Tooltip
-            contentStyle={{
-              backgroundColor: 'var(--bg-surface)',
-              border: '1px solid var(--border-default)',
-              borderRadius: 'var(--radius-md)',
-              fontSize: 'var(--text-xs)',
-            }}
+            contentStyle={TOOLTIP_CONTENT_STYLE}
+            itemStyle={TOOLTIP_ITEM_STYLE}
+            labelStyle={TOOLTIP_LABEL_STYLE}
             formatter={(v, name) => {
               if (name === 'fleet_allocated' || name === 'System allocated share') {
                 return [`${cbFormat.format(Number(v))} Gt`, 'System allocated share']

@@ -33,6 +33,7 @@ import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
+import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 import { ContributionAnalysisPanel } from './ContributionAnalysisPanel'
 
 type View = 'trajectory' | 'evolution' | 'snapshot'
@@ -283,12 +284,9 @@ export function MultiYearTrajectoryPanel({ result, loadingPhase: _loadingPhase, 
                   }}
                 />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: 'var(--text-xs)',
-                  }}
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  itemStyle={TOOLTIP_ITEM_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE}
                   formatter={(v) => [trajFormat.format(Number(v)), result.method_unit]}
                 />
                 <Line
@@ -349,12 +347,9 @@ export function MultiYearTrajectoryPanel({ result, loadingPhase: _loadingPhase, 
                   }}
                 />
                 <Tooltip
-                  contentStyle={{
-                    backgroundColor: 'var(--bg-elevated)',
-                    border: '1px solid var(--border-default)',
-                    borderRadius: 'var(--radius-sm)',
-                    fontSize: 'var(--text-xs)',
-                  }}
+                  contentStyle={TOOLTIP_CONTENT_STYLE}
+                  itemStyle={TOOLTIP_ITEM_STYLE}
+                  labelStyle={TOOLTIP_LABEL_STYLE}
                   formatter={(v) => evoFormat.format(Number(v))}
                 />
                 <Legend wrapperStyle={{ fontSize: 11 }} />

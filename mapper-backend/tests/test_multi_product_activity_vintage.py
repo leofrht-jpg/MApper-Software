@@ -129,8 +129,10 @@ def test_vintage_label_is_composed_into_item_label(monkeypatch):
     )
     res = asyncio.run(lca_mod.calculate_multi_product_lca(body))
     labels = [it.label for it in res.items]
-    assert "electricity, low voltage [SSP1 2040]" in labels
-    assert "electricity, low voltage [SSP5 2040]" in labels
+    # Issue 1 — the label now LEADS with the activity (process) name; the
+    # reference product is omitted as redundant (it is contained in the name).
+    assert "market for electricity, low voltage [SSP1 2040]" in labels
+    assert "market for electricity, low voltage [SSP5 2040]" in labels
     # item_ids are unique per vintage (DB name is part of the key).
     assert len({it.item_id for it in res.items}) == 2
 
@@ -144,7 +146,8 @@ def test_no_vintage_label_falls_back_to_plain_label(monkeypatch):
         methods=[METHOD],
     )
     res = asyncio.run(lca_mod.calculate_multi_product_lca(body))
-    assert res.items[0].label == "electricity, low voltage"
+    # Issue 1 — activity-name-led label (product omitted as redundant).
+    assert res.items[0].label == "market for electricity, low voltage"
 
 
 def test_missing_activity_in_vintage_is_isolated_error(monkeypatch):

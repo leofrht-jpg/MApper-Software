@@ -384,3 +384,87 @@ def test_per_item_overrides_threaded_correctly(monkeypatch: pytest.MonkeyPatch) 
     assert seen[0] == ("Optimistic", None)
     assert seen[1] == (None, {"Manufacturing": 1.0, "Use Phase": 15.0})
     assert seen[2] == (None, None)
+
+
+# ── Fix 2 — look-alike label disambiguation (pure helper) ────────────────────
+
+from mapper.api.lca import disambiguate_item_labels  # noqa: E402
+
+
+def test_disambiguate_leaves_unique_labels_untouched():
+    rows = [("ei|c1", "electricity, low voltage", "DK"), ("ei|c2", "steel", "RER")]
+    out = disambiguate_item_labels(rows)
+    assert out == {"ei|c1": "electricity, low voltage", "ei|c2": "steel"}
+
+
+def test_disambiguate_appends_location_when_names_collide():
+    # Same reference product, different geography → location disambiguates.
+    rows = [
+        ("ei|cDK", "electricity, low voltage", "DK"),
+        ("ei|cFR", "electricity, low voltage", "FR"),
+    ]
+    out = disambiguate_item_labels(rows)
+    assert out["ei|cDK"] == "electricity, low voltage {DK}"
+    assert out["ei|cFR"] == "electricity, low voltage {FR}"
+    assert out["ei|cDK"] != out["ei|cFR"]
+
+
+def test_disambiguate_falls_back_to_short_code_when_location_does_not_distinguish():
+    # Same product AND same location, different code/database → location alone
+    # can't tell them apart, so the short code (from item_id) is appended.
+    rows = [
+        ("ei310|abcdef1234", "market for electricity", "GLO"),
+        ("ei311|zzzzzz9999", "market for electricity", "GLO"),
+    ]
+    out = disambiguate_item_labels(rows)
+    assert out["ei310|abcdef1234"].startswith("market for electricity {GLO} [")
+    assert "abcdef12" in out["ei310|abcdef1234"]
+    assert "zzzzzz99" in out["ei311|zzzzzz9999"]
+    assert out["ei310|abcdef1234"] != out["ei311|zzzzzz9999"]
+
+
+def test_disambiguate_missing_location_uses_code():
+    rows = [("ei|c1", "thing", None), ("ei|c2", "thing", None)]
+    out = disambiguate_item_labels(rows)
+    assert out["ei|c1"].startswith("thing [")
+    assert out["ei|c1"] != out["ei|c2"]
+
+
+# ── Issue 1 — activity-name label composition (+ disambiguation compose) ─────
+
+from mapper.api.lca import compose_activity_label  # noqa: E402
+
+
+def test_compose_leads_with_activity_name():
+    # Distinct process name + product → "name — product".
+    assert compose_activity_label("treatment of spent battery", "lithium") \
+        == "treatment of spent battery — lithium"
+
+
+def test_compose_omits_redundant_product():
+    # ecoinvent: activity name contains the reference product verbatim → no
+    # double "electricity, low voltage".
+    assert compose_activity_label(
+        "market for electricity, low voltage", "electricity, low voltage"
+    ) == "market for electricity, low voltage"
+
+
+def test_compose_handles_missing_parts():
+    assert compose_activity_label("market for steel", "") == "market for steel"
+    assert compose_activity_label("", "electricity") == "electricity"
+    assert compose_activity_label("only name", None) == "only name"
+
+
+def test_compose_then_disambiguate_keeps_activity_name_and_geography():
+    # Two look-alike market activities differing only by geography: the activity
+    # name leads, the location disambiguates — both compose, neither lost.
+    base = compose_activity_label("market for electricity, low voltage", "electricity, low voltage")
+    out = disambiguate_item_labels([
+        ("ei|cDK", base, "DK"),
+        ("ei|cFR", base, "FR"),
+    ])
+    assert out["ei|cDK"] == "market for electricity, low voltage {DK}"
+    assert out["ei|cFR"] == "market for electricity, low voltage {FR}"
+    # Activity name present, geography present, no redundant product repetition.
+    assert "market for electricity, low voltage" in out["ei|cDK"]
+    assert out["ei|cDK"].count("electricity, low voltage") == 1

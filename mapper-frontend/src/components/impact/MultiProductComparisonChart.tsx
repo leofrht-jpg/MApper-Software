@@ -39,6 +39,7 @@ import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
+import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 
 const ACTIVITY_TOTAL_KEY = '__activity_total__'
 const ACTIVITY_TOTAL_COLOR = '#9ca3af'  // neutral grey to distinguish from stage colors
@@ -222,12 +223,9 @@ export function MultiProductComparisonChart({
               }}
             />
             <Tooltip
-              contentStyle={{
-                backgroundColor: 'var(--bg-surface)',
-                border: '1px solid var(--border-default)',
-                borderRadius: 'var(--radius-md)',
-                fontSize: 'var(--text-xs)',
-              }}
+              contentStyle={TOOLTIP_CONTENT_STYLE}
+              itemStyle={TOOLTIP_ITEM_STYLE}
+              labelStyle={TOOLTIP_LABEL_STYLE}
               formatter={(v, name) => {
                 const label = name === ACTIVITY_TOTAL_KEY ? 'Total (activity)'
                   : name === 'Total' ? 'Total'

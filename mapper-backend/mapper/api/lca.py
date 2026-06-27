@@ -1912,17 +1912,94 @@ async def export_archetype_lca(body: ArchetypeLCAExportRequest) -> Response:
 # ── Multi-product LCA comparison (Patch 4AG.1) ─────────────────────────────────
 
 
-def _activity_label(database: str, code: str) -> str:
-    """Best-effort human-readable label for an activity. Falls back to
-    the bare code when bw2data lookup fails (e.g. activity missing in
-    the active project). Used to populate the per-item label in the
-    multi-product response so charts and tables can render a name
-    even when the underlying compute fails."""
+def compose_activity_label(name: str, product: str | None) -> str:
+    """Compose the human-readable label for an activity from its process
+    ``name`` and reference ``product``.
+
+    The PROCESS NAME leads — it's what identifies the activity (e.g. "market
+    for electricity, low voltage"); the reference product alone (e.g.
+    "electricity, low voltage") doesn't tell the user which process produced
+    it. The product is appended ONLY when it adds information: ecoinvent
+    activity names usually contain the reference product verbatim, so appending
+    it would read redundantly ("market for electricity, low voltage — electricity,
+    low voltage"). Format when both differ: ``"{name} — {product}"``.
+
+    Pure → directly unit-testable. Feeds ``_activity_label_parts`` (and thus the
+    multi-product item label that the table, chart, line view, and exports all
+    read), so the activity name appears everywhere a label does.
+    """
+    name = (name or "").strip()
+    product = (product or "").strip()
+    if not name:
+        return product
+    if not product or product.lower() in name.lower():
+        return name
+    return f"{name} — {product}"
+
+
+def _activity_label_parts(database: str, code: str) -> tuple[str, str | None]:
+    """Best-effort (display label, location) for an activity. The display label
+    is the process name plus the reference product when it adds information
+    (see ``compose_activity_label``). Falls back to the bare code (and no
+    location) when bw2data lookup fails (e.g. activity missing in the active
+    project). The location disambiguates look-alike activities that share a
+    label but sit in different geographies (see ``disambiguate_item_labels``)."""
     try:
         act = bw2data.get_activity((database, code))
-        return act.get("reference product", act.get("name", "")) or code
+        label = compose_activity_label(
+            act.get("name", "") or "",
+            act.get("reference product", "") or "",
+        ) or code
+        location = act.get("location") or None
+        return label, location
     except Exception:
-        return code
+        return code, None
+
+
+def _activity_label(database: str, code: str) -> str:
+    """Best-effort human-readable label for an activity (reference product,
+    falling back to the bare code). Used to populate the per-item label in the
+    multi-product response so charts and tables can render a name even when the
+    underlying compute fails."""
+    return _activity_label_parts(database, code)[0]
+
+
+def disambiguate_item_labels(
+    rows: list[tuple[str, str, str | None]],
+) -> dict[str, str]:
+    """Make multi-product item labels unique for display.
+
+    ``rows`` are ``(item_id, base_label, location)`` triples. ecoinvent
+    activities frequently share a reference-product name while differing only
+    by geography or database/code (e.g. two "market for electricity, low
+    voltage" rows). Name alone is NOT a unique key, so when ≥2 items share a
+    base label this appends a disambiguator — the location when it tells the
+    group apart, otherwise the short code (from the ``{database}|{code}``
+    item_id, always unique). Items with a unique base label are returned
+    unchanged. Pure → directly unit-testable; the single source of truth fed to
+    the table, chart, line view, and Excel/SVG export (all read ``label``).
+    """
+    groups: dict[str, list[tuple[str, str | None]]] = {}
+    for item_id, label, location in rows:
+        groups.setdefault(label, []).append((item_id, location))
+    out: dict[str, str] = {}
+    for label, members in groups.items():
+        if len(members) == 1:
+            out[members[0][0]] = label
+            continue
+        locs = [loc for _, loc in members]
+        if all(locs) and len(set(locs)) == len(members):
+            # Location alone distinguishes the group.
+            for item_id, loc in members:
+                out[item_id] = f"{label} {{{loc}}}"
+        else:
+            # Location is absent or non-distinguishing → append the short code
+            # (guaranteed unique because item_id is unique per item).
+            for item_id, loc in members:
+                code = item_id.split("|", 1)[1] if "|" in item_id else item_id
+                suffix = f" {{{loc}}}" if loc else ""
+                out[item_id] = f"{label}{suffix} [{code[:8]}]"
+    return out
 
 
 @router.post("/lca/calculate-multi-product", response_model=MultiProductLCAResult)
@@ -1952,6 +2029,9 @@ async def calculate_multi_product_lca(body: MultiProductLCARequest) -> MultiProd
     results: list[MultiProductItemResult] = []
     success_count = 0
     error_count = 0
+    # Per-item geography, captured for the look-alike-label disambiguation
+    # post-pass below (keyed by item_id; activities only — archetypes have none).
+    item_locations: dict[str, str | None] = {}
 
     for item in body.items:
         # Discriminated dispatch — Pydantic 2 narrows the union by
@@ -2003,7 +2083,8 @@ async def calculate_multi_product_lca(body: MultiProductLCARequest) -> MultiProd
             # activity get distinct ids/colors. The label is vintage-aware
             # so they don't collide on a chart axis.
             item_id = f"{item.database}|{item.code}"
-            act_label = _activity_label(item.database, item.code)
+            act_label, act_location = _activity_label_parts(item.database, item.code)
+            item_locations[item_id] = act_location
             if item.vintage_label:
                 act_label = f"{act_label} [{item.vintage_label}]"
             try:
@@ -2044,6 +2125,16 @@ async def calculate_multi_product_lca(body: MultiProductLCARequest) -> MultiProd
                     error_message=f"{type(e).__name__}: {e}",
                 ))
                 error_count += 1
+
+    # Disambiguate look-alike labels (e.g. two activities sharing a reference
+    # product but in different geographies/databases) so every column/series in
+    # the comparison is identifiable. Single source of truth — table, chart,
+    # line view, and Excel/SVG export all read `label`.
+    label_map = disambiguate_item_labels(
+        [(it.item_id, it.label, item_locations.get(it.item_id)) for it in results]
+    )
+    for it in results:
+        it.label = label_map.get(it.item_id, it.label)
 
     elapsed = round(time.perf_counter() - t0, 2)
     return MultiProductLCAResult(

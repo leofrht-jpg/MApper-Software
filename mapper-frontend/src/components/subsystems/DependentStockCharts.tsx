@@ -19,6 +19,7 @@ import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { StackedTotalTooltip } from '../charts/StackedTotalTooltip'
 import { tightStackedDomain } from '../charts/yAxisDomain'
+import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 
 // Stock counts default to fixed notation — they're integer/near-integer
 // quantities (vehicles, units), so scientific is rarely useful.
@@ -109,7 +110,9 @@ export function DependentStockCharts({ result, unitName }: DependentStockChartsP
               <XAxis dataKey="year" stroke="var(--text-tertiary)" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} />
               <YAxis stroke="var(--text-tertiary)" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickFormatter={(v) => flowFormat.format(v as number)} />
               <Tooltip
-                contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', fontSize: 12 }}
+                contentStyle={TOOLTIP_CONTENT_STYLE}
+                itemStyle={TOOLTIP_ITEM_STYLE}
+                labelStyle={TOOLTIP_LABEL_STYLE}
                 formatter={(v) => (typeof v === 'number' ? flowFormat.format(Math.abs(v)) : String(v))}
               />
               <Bar dataKey="inflow" fill="var(--success)" fillOpacity={0.85} isAnimationActive={false} />

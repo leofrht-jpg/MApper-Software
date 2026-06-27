@@ -12,6 +12,7 @@ import { Treemap, ResponsiveContainer, Tooltip } from 'recharts'
 import { type ContributionItem } from '../../api/client'
 import { ChartExportButton } from './ChartExportButton'
 import { ChartExportContainer } from './ChartExportContainer'
+import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from './tooltipStyle'
 
 const CHART_COLORS = [
   'var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)',
@@ -72,7 +73,9 @@ export function ContributionTreemap({ items, restAmount, restPercentage, unit, e
             content={<CustomTreemapContent />}
           >
             <Tooltip
-              contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 8, fontSize: 12 }}
+              contentStyle={TOOLTIP_CONTENT_STYLE}
+              itemStyle={TOOLTIP_ITEM_STYLE}
+              labelStyle={TOOLTIP_LABEL_STYLE}
               formatter={(value, _name, entry: { payload?: { amount?: number; unit?: string } }) => [
                 `${((entry.payload?.amount) ?? 0).toExponential(3)} ${entry.payload?.unit ?? ''}`,
                 `${Number(value).toFixed(1)}%`,

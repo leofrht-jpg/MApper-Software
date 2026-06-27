@@ -25,6 +25,22 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import { useOptionSearch } from '../../hooks/useOptionSearch'
 
+// Pure helper — split the (already search-filtered, already-sorted) visible
+// options into a SELECTED-first group and the rest, preserving the incoming
+// order WITHIN each group. So selected-first takes priority over whatever sort
+// the consumer applied (Name A→Z, etc.), and that sort still holds inside each
+// group. Exported for direct unit testing.
+export function partitionSelectedFirst(
+  visible: string[],
+  selected: string[],
+): { selectedGroup: string[]; restGroup: string[] } {
+  const sel = new Set(selected)
+  const selectedGroup: string[] = []
+  const restGroup: string[] = []
+  for (const o of visible) (sel.has(o) ? selectedGroup : restGroup).push(o)
+  return { selectedGroup, restGroup }
+}
+
 export interface FilterDropdownProps {
   label: string
   /** Full in-memory option set (the search filters these client-side). */
@@ -48,6 +64,7 @@ export function FilterDropdown({
 }: FilterDropdownProps) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
   // Client-side option search via the shared hook (view-only; threshold-gated).
   const { query: search, setQuery: setSearch, searchRef, showSearch, visibleOptions } =
     useOptionSearch(options, open)
@@ -75,9 +92,17 @@ export function FilterDropdown({
 
   const toggle = (v: string) => {
     onChange(selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v])
+    // The list re-groups (toggled item jumps between the Selected group and the
+    // rest) on the next render. Reset the scroll so the reflow doesn't leave the
+    // listbox mid-jump — the toggled item is always findable from the top.
+    if (listRef.current) listRef.current.scrollTop = 0
   }
   const allSelected = options.length > 0 && selected.length === options.length
   const noneSelected = selected.length === 0
+  // Selected-first grouping (live: re-derived every render from the `selected`
+  // prop, so checking/unchecking re-sorts without closing the dropdown).
+  const { selectedGroup, restGroup } = partitionSelectedFirst(visibleOptions, selected)
+  const showGroupDivider = selectedGroup.length > 0 && restGroup.length > 0
 
   const tinted = selected.length > 0
   return (
@@ -137,7 +162,7 @@ export function FilterDropdown({
               />
             </div>
           )}
-          <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+          <div ref={listRef} data-testid={testId ? `${testId}-list` : undefined} style={{ maxHeight: 240, overflowY: 'auto' }}>
             {visibleOptions.length === 0 ? (
               <div
                 data-testid={testId ? `${testId}-no-matches` : undefined}
@@ -146,24 +171,30 @@ export function FilterDropdown({
                 No matches
               </div>
             ) : (
-              visibleOptions.map((opt) => {
-                const checked = selected.includes(opt)
-                return (
-                  <label
-                    key={opt}
-                    data-testid={testId ? `${testId}-option-${opt}` : undefined}
+              <>
+                {/* Selected items float to the top, in their own labelled group,
+                    above the existing sort. Live-updates on toggle. */}
+                {selectedGroup.length > 0 && (
+                  <div
+                    data-testid={testId ? `${testId}-selected-label` : undefined}
                     style={{
-                      display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', cursor: 'pointer',
-                      fontSize: 11, color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)',
+                      padding: '3px 8px 2px', fontSize: 9, fontWeight: 600,
+                      textTransform: 'uppercase', letterSpacing: '0.04em',
+                      color: 'var(--text-tertiary)',
                     }}
-                    onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-base)' }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
                   >
-                    <input type="checkbox" checked={checked} onChange={() => toggle(opt)} style={{ margin: 0 }} />
-                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
-                  </label>
-                )
-              })
+                    Selected ({selectedGroup.length})
+                  </div>
+                )}
+                {selectedGroup.map((opt) => renderOption(opt, true, testId, toggle))}
+                {showGroupDivider && (
+                  <div
+                    data-testid={testId ? `${testId}-group-divider` : undefined}
+                    style={{ borderTop: '1px solid var(--border-subtle)', margin: '4px 6px' }}
+                  />
+                )}
+                {restGroup.map((opt) => renderOption(opt, false, testId, toggle))}
+              </>
             )}
           </div>
           {/* Select all / Clear — canonical on every filter (Patch 5AB).
@@ -192,6 +223,29 @@ export function FilterDropdown({
         </div>
       )}
     </div>
+  )
+}
+
+function renderOption(
+  opt: string,
+  checked: boolean,
+  testId: string | undefined,
+  toggle: (v: string) => void,
+) {
+  return (
+    <label
+      key={opt}
+      data-testid={testId ? `${testId}-option-${opt}` : undefined}
+      style={{
+        display: 'flex', alignItems: 'center', gap: 6, padding: '4px 8px', cursor: 'pointer',
+        fontSize: 11, color: 'var(--text-primary)', borderRadius: 'var(--radius-sm)',
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = 'var(--bg-base)' }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent' }}
+    >
+      <input type="checkbox" checked={checked} onChange={() => toggle(opt)} style={{ margin: 0 }} />
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{opt}</span>
+    </label>
   )
 }
 

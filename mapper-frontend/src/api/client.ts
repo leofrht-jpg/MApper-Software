@@ -9,8 +9,13 @@
 
 import { recordComputation } from '../stores/carbonStore'
 
-const API_BASE = 'http://localhost:8000/api'
-const WS_BASE = 'ws://localhost:8000/api'
+// Backend origin. Standalone web dev defaults to localhost:8000 (unchanged —
+// `npm run dev` sets no env). The packaged desktop (Tauri) build sets
+// VITE_API_BASE to the sidecar origin (http://127.0.0.1:8765) at build time, so
+// the same code drives both. WS base is derived by swapping the scheme.
+const API_ORIGIN = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
+const API_BASE = `${API_ORIGIN}/api`
+const WS_BASE = `${API_ORIGIN.replace(/^http/, 'ws')}/api`
 
 // ── Phase 0 ──────────────────────────────────────────────────────────────────
 

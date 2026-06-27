@@ -40,10 +40,13 @@ JS_HEADER = (
     + "".join(f" * {line}".rstrip() + "\n" for line in _BODY)
     + " */\n"
 )
+# Rust (and other ``//``-comment langs): line comments, SPDX first.
+RS_HEADER = "\n".join([f"// {SPDX}"] + [f"// {line}".rstrip() for line in _BODY]) + "\n"
 
 PY_EXT = {".py"}
 JS_EXT = {".ts", ".tsx", ".js", ".jsx"}
-SOURCE_EXT = PY_EXT | JS_EXT
+RS_EXT = {".rs"}
+SOURCE_EXT = PY_EXT | JS_EXT | RS_EXT
 
 # Directory names skipped anywhere in the path (build outputs, deps, vendored,
 # private notes, generated). C4MApper lives outside this repo but is listed
@@ -101,12 +104,22 @@ def _inject_js(text: str) -> str:
     return body + text
 
 
+def _inject_rust(text: str) -> str:
+    body = RS_HEADER + ("\n" if text and not text.startswith("\n") else "")
+    return body + text
+
+
 def inject(path: Path) -> bool:
     """Return True if the file was modified."""
     text = path.read_text(encoding="utf-8")
     if has_header(text):
         return False
-    new = _inject_python(text) if path.suffix in PY_EXT else _inject_js(text)
+    if path.suffix in PY_EXT:
+        new = _inject_python(text)
+    elif path.suffix in RS_EXT:
+        new = _inject_rust(text)
+    else:
+        new = _inject_js(text)
     path.write_text(new, encoding="utf-8")
     return True
 

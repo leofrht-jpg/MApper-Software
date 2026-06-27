@@ -35,7 +35,16 @@ async def _hydrate() -> None:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # Standalone web dev (Vite) + the Tauri desktop webview origins. In the
+    # packaged app the frontend is served by the webview from a custom protocol
+    # (``tauri://localhost`` on macOS, ``http://tauri.localhost`` on Windows) and
+    # calls this backend on 127.0.0.1; those origins must be allowed. Additive —
+    # the existing localhost:5173 web workflow is unchanged.
+    allow_origins=[
+        "http://localhost:5173",
+        "tauri://localhost",
+        "http://tauri.localhost",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,6 +53,14 @@ app.add_middleware(
 # REST + WebSocket routes all live under /api
 # WebSocket routes defined in ecoinvent.py and lca.py are included via the router
 app.include_router(router, prefix="/api")
+
+
+@app.get("/api/health", include_in_schema=False)
+async def health() -> dict[str, str]:
+    """Lightweight readiness probe — the desktop (Tauri) shell polls this after
+    spawning the backend sidecar before showing the webview. Does NOT touch
+    Brightway2/ecoinvent, so it answers even before any LCA project exists."""
+    return {"status": "ok"}
 
 
 @app.exception_handler(Exception)

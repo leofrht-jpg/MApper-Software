@@ -53,3 +53,8 @@ Thumbs.db
 .vscode/
 *.swp
 *.swo
+
+# Tauri sidecar binary (huge PyInstaller freeze — never commit)
+mapper-tauri/binaries/
+mapper-tauri/target/
+mapper-tauri/gen/

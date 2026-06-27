@@ -6,18 +6,27 @@
   "build": {
     "frontendDist": "../mapper-frontend/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "cd ../mapper-frontend && npm run dev",
-    "beforeBuildCommand": "cd ../mapper-frontend && npm run build"
+    "beforeDevCommand": "{ cd mapper-frontend 2>/dev/null || cd ../mapper-frontend; } && VITE_API_BASE=http://localhost:8765 npm run dev",
+    "beforeBuildCommand": "{ cd mapper-frontend 2>/dev/null || cd ../mapper-frontend; } && VITE_API_BASE=http://localhost:8765 npm run build"
   },
   "app": {
     "windows": [
-      { "title": "MApper", "width": 1440, "height": 900, "minWidth": 1024, "minHeight": 700 }
+      {
+        "label": "main",
+        "title": "MApper",
+        "width": 1440,
+        "height": 900,
+        "minWidth": 1024,
+        "minHeight": 700,
+        "visible": false
+      }
     ],
     "security": { "csp": null }
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg"],
+    "externalBin": ["binaries/mapper-backend"],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

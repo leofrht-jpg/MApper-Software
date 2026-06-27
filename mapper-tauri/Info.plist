@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into the generated Info.plist by Tauri at bundle time.
+
+  Why this exists: once the backend is healthy the Tauri shell navigates the
+  webview to the backend-served UI at http://localhost:8765/index.html (so the
+  page is same-origin with the API — see DESKTOP.md / mapper-tauri/src/main.rs).
+  That is a CLEARTEXT http main-frame load, which macOS App Transport Security
+  blocks by default. This key permits it. (It is NOT sufficient on its own to let
+  a secure tauri:// page call a cleartext backend — that is mixed content, which
+  ATS exceptions don't lift; the same-origin navigation is what fixes that.)
+
+  `NSAllowsLocalNetworking` is the SURGICAL exemption: it permits cleartext
+  connections to loopback (127.0.0.0/8), link-local, RFC-1918, and `.local`
+  destinations only — it does NOT disable ATS for real external HTTPS traffic
+  (that would be `NSAllowsArbitraryLoads`, which we deliberately avoid).
+-->
+<plist version="1.0">
+<dict>
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+</dict>
+</plist>

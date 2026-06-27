@@ -1,0 +1,10 @@
+title = "MApper"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Benign ecoinvent LCI database identifiers (sourceKey values), not credentials"
+regexes = [
+  '''ecoinvent-\d+\.\d+(\.\d+)?-\w+''',
+]

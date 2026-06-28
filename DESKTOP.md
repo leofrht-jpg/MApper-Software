@@ -97,18 +97,41 @@ cleartext `http://localhost` *main-frame* load itself.)
 
 ## Build (on this machine)
 
+**The Tauri CLI here is the standalone `tauri` binary (Homebrew: `tauri-cli`,
+`/opt/homebrew/bin/tauri`) — invoked as `tauri build`, NOT `cargo tauri build`.**
+`cargo-tauri` is not installed, so `cargo tauri …` fails with
+`no such command: tauri`; and `npm run tauri …` fails because `mapper-tauri/` is
+Rust-only (no `package.json`). If the `tauri` CLI is ever missing, install it with
+`cargo install tauri-cli --locked` (then invoke `cargo tauri …`) or
+`brew install tauri-cli` (then `tauri …`).
+
+Order matters: build the frontend BEFORE the freeze, because the spec bundles the
+built `dist/` into the sidecar (so the backend can serve the SPA same-origin).
+
 ```bash
-# 1. Freeze the backend (arm64, from the map env)
-cd mapper-backend && conda activate map
-pyinstaller mapper-desktop.spec --noconfirm
-# 2. Stage the sidecar with the required target-triple suffix
-mkdir -p ../mapper-tauri/binaries
-cp dist/mapper-backend ../mapper-tauri/binaries/mapper-backend-aarch64-apple-darwin
-# 3. Dev run (spawns the sidecar, real LCA compute)
-cd ../mapper-tauri && cargo tauri dev
-# 4. Bundle .app + .dmg
-cargo tauri build --bundles app,dmg
-# Output: target/release/bundle/macos/MApper.app  +  bundle/dmg/MApper_0.1.0_aarch64.dmg
+# Tooling on PATH (cargo for the Rust build, Homebrew tauri for the bundler):
+export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
+conda activate map
+
+# 1. Build the frontend with the same-origin base (gets bundled into the freeze).
+( cd mapper-frontend && VITE_API_BASE=http://localhost:8765 npm run build )
+
+# 2. Freeze the backend (arm64; picks up mapper/main.py, bundles dist/ + mapper/data).
+( cd mapper-backend && pyinstaller mapper-desktop.spec --noconfirm )
+
+# 3. Stage the sidecar with the required target-triple suffix.
+mkdir -p mapper-tauri/binaries
+cp mapper-backend/dist/mapper-backend mapper-tauri/binaries/mapper-backend-aarch64-apple-darwin
+
+# 4. Bundle .app + .dmg  (Homebrew `tauri`, NOT `cargo tauri`; targets come from
+#    tauri.conf.json. This re-runs the frontend build via beforeBuildCommand for
+#    the embedded splash assets, compiles Rust, and produces both bundles).
+( cd mapper-tauri && tauri build --target aarch64-apple-darwin )
+
+# Output (target-triple dir because of --target):
+#   mapper-tauri/target/aarch64-apple-darwin/release/bundle/macos/MApper.app
+#   mapper-tauri/target/aarch64-apple-darwin/release/bundle/dmg/MApper_0.1.0_aarch64.dmg
+# Dev run instead of bundling:  ( cd mapper-tauri && tauri dev )
 ```
 
 ## First-run / ecoinvent guard

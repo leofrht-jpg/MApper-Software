@@ -681,11 +681,19 @@ export function configureProjectGuard(
 }
 
 function _withProjectHeader(options?: RequestInit): RequestInit {
+  // `cache: 'no-store'` is load-bearing, not a nicety. The API serves dynamic
+  // data with NO cache directives, and read/write live on different URLs (e.g.
+  // GET …/cohort-mappings vs POST …/cohort-mappings/upload). So after a mutation,
+  // a webview/browser can serve the GET from its HTTP cache and the UI freezes on
+  // stale data (the cohort-mapping upload "table doesn't update" bug). Forcing
+  // no-store on every API request defeats that whole stale-read class at the
+  // source. Caller-supplied `cache` (none today) still wins via the spread.
+  const base: RequestInit = { cache: 'no-store', ...(options ?? {}) }
   const expected = _expectedProjectProvider()
-  if (!expected) return options ?? {}
+  if (!expected) return base
   const headers = new Headers(options?.headers || {})
   headers.set('X-Mapper-Project', expected)
-  return { ...(options ?? {}), headers }
+  return { ...base, headers }
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

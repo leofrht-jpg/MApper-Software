@@ -50,6 +50,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.middleware("http")
+async def _no_store_api(request: Request, call_next):
+    """Declare every /api response uncacheable.
+
+    The API serves dynamic, mutation-driven data. Without a cache directive a
+    browser/webview may serve a GET from its HTTP cache after a mutation on a
+    SIBLING url (e.g. POST …/cohort-mappings/upload, then GET …/cohort-mappings —
+    a POST only invalidates its own uri), freezing the UI on stale data. This is
+    the server-side half of the fix; the frontend client also sends
+    ``cache: 'no-store'``. Static SPA assets (served at ``/`` in the desktop
+    build) are intentionally left cacheable — they're content-hashed.
+    """
+    response = await call_next(request)
+    if request.url.path.startswith("/api"):
+        response.headers["Cache-Control"] = "no-store"
+    return response
+
+
 # REST + WebSocket routes all live under /api
 # WebSocket routes defined in ecoinvent.py and lca.py are included via the router
 app.include_router(router, prefix="/api")

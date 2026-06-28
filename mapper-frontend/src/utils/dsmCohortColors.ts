@@ -9,7 +9,14 @@
 
 import { useMemo } from 'react'
 import type { DimensionDef, SystemDefinition } from '../api/client'
-import { CHART_PALETTE, colorFor, useChartColors } from './chartColors'
+import {
+  CHART_PALETTE,
+  clearLabelColor,
+  colorFor,
+  getStoredLabelColor,
+  setLabelColor,
+  useChartColors,
+} from './chartColors'
 
 // Patch 4N — shared cohort-color utility.
 //
@@ -112,6 +119,80 @@ export function deriveDimColorsFromRowColors(
     }
   }
   return out
+}
+
+// Patch — per-dim upload-derivation reconciliation (cross-chart color sync).
+//
+// The cohort-mapping upload derives per-dimension colors from the file's row
+// colors (deriveDimColorsFromRowColors) and writes them via setLabelColor so
+// single-dim STACKED charts (e.g. DSM Stock Composition stacked by Fuel) paint
+// each fuel band with the uploaded color. The bug: the old code only ADDED
+// derived colors; it never CLEARED a per-dim color that a PREVIOUS upload set
+// but a NEW upload no longer derives (e.g. a fuel that became color-ambiguous,
+// or whose color was removed). The stale per-dim color survived in localStorage,
+// so the stacked chart kept showing the OLD color while the table (per-row
+// colors) updated — the reported table/chart divergence.
+//
+// Reconciliation: track each upload's derived (label → color) map; on the next
+// upload, clear any previously-derived label that the new upload doesn't
+// re-derive — but ONLY if its stored color is still the one this module wrote
+// (so a manual picker override made in between is preserved). Then apply the new
+// derived colors and record the new map.
+const UPLOAD_DERIVED_PREFIX = 'mapper-upload-derived-dims'
+
+function uploadDerivedKey(scope: string | null | undefined): string {
+  return `${UPLOAD_DERIVED_PREFIX}-${scope || '_global'}`
+}
+
+function readUploadDerived(scope: string | null | undefined): Record<string, string> {
+  try {
+    const raw = localStorage.getItem(uploadDerivedKey(scope))
+    if (!raw) return {}
+    const parsed = JSON.parse(raw)
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, string>) : {}
+  } catch {
+    return {}
+  }
+}
+
+function writeUploadDerived(scope: string | null | undefined, map: Record<string, string>): void {
+  try {
+    localStorage.setItem(uploadDerivedKey(scope), JSON.stringify(map))
+  } catch {
+    /* localStorage unavailable — non-fatal */
+  }
+}
+
+/**
+ * Apply a fresh per-dim derivation from a cohort-mapping upload, reconciling it
+ * against the previous upload's derivation so no STALE per-dim color survives.
+ *
+ * - Labels the previous upload derived but this one does not are CLEARED back to
+ *   the algorithm (not left on the old color) — unless their stored color was
+ *   changed since (a manual picker override), which is preserved.
+ * - Labels in the new derivation are applied via setLabelColor.
+ *
+ * Returns the number of per-dim colors applied. Call this from the upload
+ * boundary INSTEAD of looping setLabelColor directly.
+ */
+export function reconcileUploadDerivedDimColors(
+  derived: Record<string, string>,
+  scope: string | null | undefined,
+): number {
+  const prev = readUploadDerived(scope)
+  for (const [label, prevColor] of Object.entries(prev)) {
+    if (label in derived) continue
+    // Only clear if our previously-written color is still in place; a manual
+    // pick made since (different color) must survive.
+    if (getStoredLabelColor(label, scope) === prevColor) {
+      clearLabelColor(label, scope)
+    }
+  }
+  for (const [label, color] of Object.entries(derived)) {
+    setLabelColor(label, color, scope)
+  }
+  writeUploadDerived(scope, { ...derived })
+  return Object.keys(derived).length
 }
 
 // Builds the same label set DSM Dashboard's Stock Composition chart

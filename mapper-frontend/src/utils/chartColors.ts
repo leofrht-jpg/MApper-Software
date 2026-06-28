@@ -179,6 +179,15 @@ export function getOverriddenLabels(scope?: string | null): Set<string> {
   return readOverrides(scope)
 }
 
+/**
+ * Read the currently-stored color for a single label (or undefined if the
+ * label has no entry). Used by upload-derivation reconciliation to tell whether
+ * a previously-derived color is still in place (vs. manually re-picked since).
+ */
+export function getStoredLabelColor(label: string, scope?: string | null): string | undefined {
+  return readStored(scope)[label]
+}
+
 interface ColorChangeDetail {
   scope: string | null | undefined
 }

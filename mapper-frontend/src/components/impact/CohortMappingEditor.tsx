@@ -14,8 +14,8 @@ import { Badge } from '../ui/Badge'
 import { DimensionColorPicker } from '../ui/DimensionColorPicker'
 import { useDSMStore, type CohortMappingValue } from '../../stores/dsmStore'
 import { useBOMStore } from '../../stores/bomStore'
-import { useChartColors, colorFor, getOverriddenLabels, setLabelColor } from '../../utils/chartColors'
-import { deriveDimColorsFromRowColors } from '../../utils/dsmCohortColors'
+import { useChartColors, colorFor, getOverriddenLabels } from '../../utils/chartColors'
+import { deriveDimColorsFromRowColors, reconcileUploadDerivedDimColors } from '../../utils/dsmCohortColors'
 import { useProjectStore } from '../../stores/projectStore'
 import {
   downloadCohortMappingsTemplate,
@@ -215,11 +215,10 @@ export function CohortMappingEditor() {
         fresh,
         activeSystem.dimensions,
       )
-      let derivedCount = 0
-      for (const [value, color] of Object.entries(derived)) {
-        setLabelColor(value, color, currentProject)
-        derivedCount++
-      }
+      // Reconcile (not just add): clears per-dim colors a PRIOR upload derived
+      // but this one no longer does, so stacked charts never keep a stale color
+      // while the table's per-row colors update. Manual picker overrides survive.
+      const derivedCount = reconcileUploadDerivedDimColors(derived, currentProject)
       const warnings: string[] = []
       if (res.invalid_archetypes.length > 0) warnings.push(`${res.invalid_archetypes.length} unknown archetype(s): ${res.invalid_archetypes.slice(0, 3).join(', ')}${res.invalid_archetypes.length > 3 ? '…' : ''}`)
       if (res.invalid_cohorts.length > 0) warnings.push(`${res.invalid_cohorts.length} invalid cohort(s)`)

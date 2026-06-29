@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../mapper-frontend/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "{ cd mapper-frontend 2>/dev/null || cd ../mapper-frontend; } && VITE_API_BASE=http://localhost:8765 npm run dev",
-    "beforeBuildCommand": "{ cd mapper-frontend 2>/dev/null || cd ../mapper-frontend; } && VITE_API_BASE=http://localhost:8765 npm run build"
+    "beforeDevCommand": "npm --prefix ../mapper-frontend run dev:desktop",
+    "beforeBuildCommand": "npm --prefix ../mapper-frontend run build:desktop"
   },
   "app": {
     "windows": [
@@ -25,7 +25,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": ["app", "dmg", "nsis"],
     "externalBin": ["binaries/mapper-backend"],
     "icon": [
       "icons/32x32.png",

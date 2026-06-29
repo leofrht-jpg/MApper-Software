@@ -175,7 +175,7 @@ fn main() {
                     // route redirects to the API docs; /index.html is the SPA entry
                     // served by StaticFiles. The SPA uses no path-based routing, so
                     // the URL stays put and every asset/API/WS call is same-origin.
-                    let mut window = window;
+                    let window = window;
                     if let Ok(url) = format!("http://localhost:{PORT}/index.html").parse() {
                         let _ = window.navigate(url);
                     }

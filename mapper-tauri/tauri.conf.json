@@ -6,8 +6,8 @@
   "build": {
     "frontendDist": "../mapper-frontend/dist",
     "devUrl": "http://localhost:5173",
-    "beforeDevCommand": "npm --prefix ../mapper-frontend run dev:desktop",
-    "beforeBuildCommand": "npm --prefix ../mapper-frontend run build:desktop"
+    "beforeDevCommand": "npm --prefix mapper-frontend run dev:desktop",
+    "beforeBuildCommand": "npm --prefix mapper-frontend run build:desktop"
   },
   "app": {
     "windows": [

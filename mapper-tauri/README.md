@@ -57,8 +57,8 @@ conda activate map
 # Install the scientific stack from conda-forge (binary wheels required)
 conda install -c conda-forge brightway2 premise bw2io bw2calc bw2data \
     scikit-umfpack numpy scipy pandas xarray openpyxl
-pip install fastapi "uvicorn[standard]" platformdirs ecoinvent_interface \
-    pyinstaller
+pip install fastapi "uvicorn[standard]" python-multipart platformdirs \
+    ecoinvent_interface pyinstaller
 ```
 
 ### Freeze
@@ -119,7 +119,7 @@ cd mapper-tauri
 cargo tauri build
 ```
 
-The `beforeBuildCommand` (`npm --prefix ../mapper-frontend run build:desktop`)
+The `beforeBuildCommand` (`npm --prefix mapper-frontend run build:desktop`)
 runs the frontend build automatically — no separate step needed.
 
 Outputs (Windows): `target/release/bundle/nsis/MApper_0.1.0_x64-setup.exe`

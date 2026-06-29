@@ -74,20 +74,38 @@ fn kill_sidecar(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<SidecarHandle>() {
         if let Ok(mut guard) = state.0.lock() {
             if let Some(child) = guard.take() {
+                // On Windows, `taskkill /F /T /PID <pid>` terminates the entire
+                // process *tree* (bootloader + spawned Python interpreter) before
+                // the handle is dropped. This MUST happen while the bootloader is
+                // still alive so /T can walk its children; calling child.kill()
+                // first (TerminateProcess) would make the PID invalid by the time
+                // taskkill runs. child.kill() afterwards is a no-op if taskkill
+                // already terminated the process, which is fine.
+                #[cfg(target_os = "windows")]
+                {
+                    let pid = child.pid();
+                    let _ = std::process::Command::new("taskkill")
+                        .args(["/F", "/T", "/PID", &pid.to_string()])
+                        .status();
+                }
                 let _ = child.kill();
             }
         }
     }
+    // macOS / Linux: SIGKILL every remaining mapper-backend process by name.
     // The PyInstaller onefile spawns a process TREE — a bootloader, the real
     // uvicorn/Python child, and a detached resource-tracker that reparents to
     // launchd (ppid 1). `child.kill()` only reaps the bootloader, so the others
-    // orphan. SIGKILL every remaining process by the sidecar's unique binary
-    // name to guarantee no orphan. Safe: the standalone-web backend runs as
-    // `uvicorn` / `python`, NOT `mapper-backend`, so it is never matched; the
-    // Rust shell is `mapper-tauri`, also not matched.
-    let _ = std::process::Command::new("/usr/bin/pkill")
-        .args(["-KILL", "-f", "mapper-backend"])
-        .status();
+    // orphan. Safe: the standalone-web backend runs as `uvicorn`/`python`, NOT
+    // `mapper-backend`; the Rust shell is `mapper-tauri` — neither is matched.
+    // On Windows, taskkill /T above already walks and kills all descendants, so
+    // no name-based sweep is needed there.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = std::process::Command::new("/usr/bin/pkill")
+            .args(["-KILL", "-f", "mapper-backend"])
+            .status();
+    }
 }
 
 fn main() {

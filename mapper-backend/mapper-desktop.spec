@@ -15,6 +15,10 @@
 #
 # Build:  pyinstaller mapper-desktop.spec --noconfirm   (from mapper-backend/)
 # Output: dist/mapper-backend  (rename to mapper-backend-<target-triple> for Tauri)
+#   macOS: mapper-backend-aarch64-apple-darwin   (Apple Silicon)
+#   Windows: mapper-backend-x86_64-pc-windows-msvc.exe
+
+import sys as _sys
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
@@ -88,10 +92,33 @@ else:
 # uvicorn[standard] loads its protocol/loop implementations dynamically.
 hiddenimports += collect_submodules("uvicorn")
 hiddenimports += [
-    "websockets", "websockets.legacy", "httptools", "uvloop",
+    "websockets", "websockets.legacy", "httptools",
     "anyio", "anyio._backends._asyncio",
-    "scikits.umfpack",  # bw2calc's UMFPACK sparse solver (SuiteSparse)
 ]
+
+# uvloop is a Unix-only event-loop accelerator (libuv binding).  It has no
+# Windows wheels and is not importable there — including it on Windows causes
+# PyInstaller to error out or the frozen binary to crash at startup.
+if _sys.platform != "win32":
+    hiddenimports += ["uvloop"]
+
+# Windows asyncio event-loop backends (IocpProactor / SelectorEventLoop).
+# PyInstaller typically auto-collects these, but list them explicitly as
+# belt-and-suspenders — harmless on Windows, ignored on other platforms.
+if _sys.platform == "win32":
+    hiddenimports += [
+        "asyncio.windows_events",
+        "asyncio.windows_utils",
+    ]
+
+# bw2calc's UMFPACK sparse solver (SuiteSparse via scikit-umfpack).
+# Available on all platforms via conda-forge.  Guard with a try/except so
+# a missing package fails loudly here rather than silently at runtime.
+try:
+    import scikits.umfpack  # noqa: F401
+    hiddenimports += ["scikits.umfpack"]
+except ImportError:
+    print("[spec] scikits.umfpack not found — bw2calc will fall back to scipy solver")
 
 a = Analysis(
     ["desktop_entry.py"],

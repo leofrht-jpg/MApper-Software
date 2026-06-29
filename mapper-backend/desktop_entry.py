@@ -50,10 +50,21 @@ def _anchor_writable_cwd() -> None:
     try:
         from platformdirs import user_data_dir
 
+        # Returns the platform-correct directory:
+        #   macOS   → ~/Library/Application Support/mapper
+        #   Windows → %APPDATA%\mapper  (C:\Users\<user>\AppData\Roaming\mapper)
+        #   Linux   → ~/.local/share/mapper
         candidates.append(Path(user_data_dir("mapper", appauthor=False)) / "workspace")
     except Exception:
         pass
-    candidates.append(Path.home() / "Library" / "Application Support" / "MApper" / "workspace")
+    # Explicit platform fallbacks in case platformdirs is not available in the
+    # frozen environment (belt-and-suspenders; platformdirs is in the spec).
+    if os.name == "nt":
+        appdata = os.environ.get("APPDATA")
+        if appdata:
+            candidates.append(Path(appdata) / "MApper" / "workspace")
+    else:
+        candidates.append(Path.home() / "Library" / "Application Support" / "MApper" / "workspace")
     candidates.append(Path(tempfile.gettempdir()) / "mapper-workspace")
 
     for base in candidates:

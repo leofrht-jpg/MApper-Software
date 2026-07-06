@@ -47,25 +47,26 @@ for pkg in [
     except Exception as exc:  # noqa: BLE001 — a missing optional dep must not abort the freeze
         print(f"[spec] collect_all skipped for {pkg}: {exc}")
 
-# The mapper package ships JSON/CSV data (AESA boundary sets, SSP trajectories,
-# LCIA registry, grid intensities, …) and its API submodules are wired through
-# the router. NOTE: collect_data_files("mapper") silently returns nothing usable
-# for this LOCAL (non-pip-installed) package — the data never lands in the freeze,
-# which 500s grid-intensities and breaks AESA at runtime. Bundle mapper/data/**
-# EXPLICITLY (walk → (src, dest) tuples) so it reliably extracts to
-# _MEIPASS/mapper/data, matching the Path(__file__)-relative loads in the code.
+# Bundle the ENTIRE mapper/data/ tree in ONE datas entry (recursive). This holds
+# ALL runtime reference data the frozen backend reads:
+#   - aesa/boundary_sets.json, aesa/sharing_data.json, aesa/carbon_budgets.json,
+#     aesa/ssp_trajectories.json, aesa/co2e_ratio/*   (AESA — aesa_engine.py)
+#   - grid_intensity.json                             (system.py)
+#   - lcia_methods.json                               (lcia_method_engine.py)
+# Every reader resolves paths as Path(__file__).parent.parent / "data" / …, which
+# PyInstaller maps to _MEIPASS/mapper/data/… when frozen — so the whole tree MUST
+# land at that dest, or those endpoints 500 (AESA "Couldn't load sharing presets",
+# grid-intensities, …). NOTE: collect_data_files("mapper") returns nothing usable
+# for this LOCAL (non-pip-installed) package; the explicit directory entry below
+# is the reliable fix. A single directory source is included recursively.
 import os as _os2
 
-datas += collect_data_files("mapper")  # harmless; kept in case it ever resolves
+datas += collect_data_files("mapper")  # harmless; returns nothing usable for the local pkg
 hiddenimports += collect_submodules("mapper")
 
 _mapper_data = _os2.path.join(_os2.path.dirname(_os2.path.abspath(SPEC)), "mapper", "data")
 if _os2.path.isdir(_mapper_data):
-    for _root, _dirs, _files in _os2.walk(_mapper_data):
-        for _f in _files:
-            _abs = _os2.path.join(_root, _f)
-            _rel = _os2.path.relpath(_abs, _mapper_data)
-            datas.append((_abs, _os2.path.join("mapper", "data", _os2.path.dirname(_rel))))
+    datas += [(_mapper_data, "mapper/data")]   # ('mapper/data', 'mapper/data') — whole tree
 else:
     print(f"[spec] WARNING: mapper/data not found at {_mapper_data}")
 

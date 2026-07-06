@@ -2820,6 +2820,18 @@ file is pasted.
     (The Total view's per-scenario LINE colors are a different axis —
     `SCENARIO_PALETTE` — and stay as-is.) Locked by
     `tests/byCohortImpactColors.test.tsx`.
+  - **BOTH System-level "Impact over time, by cohort" charts — Static
+    Background (`DSMImpactPanel`) and Prospective Background
+    (`ProjectedImpactPanel`) — build `cohortColorMap` the SAME way:
+    `{ ck: dsmColors.colorForCohort(ck, i) }` via `useDSMSystemColors`.
+    They stack at the same level (cohort keys) and MUST share this one
+    source so the same cohort/fuel keeps its color when the user
+    switches tabs. `DSMImpactPanel` previously used an independent
+    `useChartColors(cohortStackKeys)` path (algorithmic per-cohort),
+    which flipped colors vs. Prospective's fuel colors — do not
+    reintroduce a second color-assignment path. Locked by
+    `tests/impactByCohortColorParity.test.tsx` (source-invariant +
+    behavioral parity).
 - **Don't define a local color palette for charts that share
   dimensions with other charts.** Cohort and archetype color mapping
   is centralised in `src/utils/dsmCohortColors.ts` (Patch 4N).

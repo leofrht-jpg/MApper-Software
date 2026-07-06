@@ -36,7 +36,8 @@ import { useParameterStore } from '../../stores/parameterStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { type DimensionDef } from '../../api/client'
 import { IndicatorChecklist, MethodFamilySelect, useMethodSelection } from '../MethodPicker'
-import { useChartColors, colorFor } from '../../utils/chartColors'
+import { colorFor } from '../../utils/chartColors'
+import { useDSMSystemColors } from '../../utils/dsmCohortColors'
 import { evaluateAxisConflict } from '../../utils/axisConflict'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
@@ -85,6 +86,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
     activeView,
     selectedYear,
     cohortMappings,
+    stackByDimension,
     dsmLCAResults,
     dsmLCAWarnings,
     selectedResultIndex,
@@ -485,7 +487,23 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
     return Array.from(all)
   }, [mfaLCAResult])
 
-  const cohortColorMap = useChartColors(cohortStackKeys)
+  // Color cohorts through the SHARED dsmCohortColors resolver — the single
+  // source of truth — exactly as ProjectedImpactPanel does, so the Static and
+  // Prospective "Impact over time, by cohort" charts show identical colors for
+  // the same cohort/fuel. Respects the DSM Stack-by dimension (same-fuel cohorts
+  // share the fuel color) and per-row overrides. Previously this used an
+  // independent per-cohort chartColors path (one algorithmic color per cohort
+  // key), which produced a different color per cohort than Prospective's shared
+  // fuel color.
+  const cohortRowColors = useDSMStore((s) => s.cohortRowColors)
+  const dsmColors = useDSMSystemColors(activeSystem ?? null, stackByDimension, {
+    rowColorOverrides: cohortRowColors,
+  })
+  const cohortColorMap = useMemo(() => {
+    const m: Record<string, string> = {}
+    cohortStackKeys.forEach((ck, i) => { m[ck] = dsmColors.colorForCohort(ck, i) })
+    return m
+  }, [cohortStackKeys, dsmColors])
 
   // Multi-DSM chart adapter (Patch 2E.2): build the {label, result}[] shape
   // expected by MultiScenarioImpactChart from the per-DSM scenario runs.

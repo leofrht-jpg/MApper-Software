@@ -8,7 +8,7 @@
 
 [package]
 name = "mapper-tauri"
-version = "0.1.0"
+version = "0.1.1"
 description = "MApper desktop shell (Tauri v2)"
 authors = ["Leonardo Ferhati"]
 edition = "2021"

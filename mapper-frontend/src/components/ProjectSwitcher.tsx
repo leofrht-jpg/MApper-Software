@@ -43,7 +43,19 @@ export function ProjectSwitcher() {
     exportProject,
     importProject,
     isLoading,
+    fetchProjects,
   } = useProjectStore()
+
+  // Always reflect the live backend: fetch fresh whenever the dropdown opens
+  // (covers the case where the initial mount fetch raced an unready sidecar and
+  // left the list empty). Closing never re-fetches.
+  const toggleOpen = () => {
+    setOpen((o) => {
+      const next = !o
+      if (next) void fetchProjects()
+      return next
+    })
+  }
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -177,7 +189,7 @@ export function ProjectSwitcher() {
   return (
     <div ref={ref} style={{ position: 'relative' }}>
       <button
-        onClick={() => setOpen((o) => !o)}
+        onClick={toggleOpen}
         style={{
           height: 32,
           padding: '0 12px',

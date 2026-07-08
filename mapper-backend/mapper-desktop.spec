@@ -112,14 +112,25 @@ if _sys.platform == "win32":
         "asyncio.windows_utils",
     ]
 
-# bw2calc's UMFPACK sparse solver (SuiteSparse via scikit-umfpack).
-# Available on all platforms via conda-forge.  Guard with a try/except so
-# a missing package fails loudly here rather than silently at runtime.
+# bw2calc's UMFPACK sparse solver (SuiteSparse via scikit-umfpack). Bundled ONLY
+# when importable in this env. It is currently NOT: the installed
+# scikit-umfpack 0.3.3 does `from numpy.testing import Tester`, which numpy 1.26
+# removed (Tester dropped in numpy 1.25) → ImportError. The one conda upgrade
+# that fixes it (scikit-umfpack 0.4.2) requires numpy 2.x, which would rewrite
+# the whole scientific stack (scipy, brightway2, premise) and is out of scope for
+# packaging. So we deliberately leave it unbundled and bw2calc uses scipy's
+# SuperLU solver — numerically correct, just slower than UMFPACK. This is the
+# accepted state (see the desktop-packaging notes), NOT a bug to re-chase. The
+# guard still bundles it automatically if a future numpy-2 migration makes it
+# importable again.
 try:
     import scikits.umfpack  # noqa: F401
     hiddenimports += ["scikits.umfpack"]
-except ImportError:
-    print("[spec] scikits.umfpack not found — bw2calc will fall back to scipy solver")
+except Exception as _umfpack_exc:  # noqa: BLE001 — ImportError OR numpy-incompat, both fall back
+    print(
+        f"[spec] scikit-umfpack unusable ({type(_umfpack_exc).__name__}); "
+        "bw2calc uses scipy's SuperLU solver (correct, slower) — expected on numpy 1.26"
+    )
 
 a = Analysis(
     ["desktop_entry.py"],

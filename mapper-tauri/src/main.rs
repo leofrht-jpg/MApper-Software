@@ -26,25 +26,24 @@
 //! endpoint deliberately does NOT touch Brightway2, so UI-only work (AESA setup,
 //! config) loads even before any LCA project exists.
 
+use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+use tauri::path::BaseDirectory;
 use tauri::{Manager, RunEvent, WebviewWindow};
-use tauri_plugin_shell::process::{CommandChild, CommandEvent};
-use tauri_plugin_shell::ShellExt;
 
 /// Fixed sidecar port for the desktop MVP (see DESKTOP.md for the dynamic-port
 /// hardening note). Must match `desktop_entry.py`'s default and the frontend's
 /// build-time `VITE_API_BASE`.
 const PORT: u16 = 8765;
-// Generous: the backend is a ~346 MB PyInstaller onefile that RE-EXTRACTS on
-// EVERY launch — measured cold boot 168 s, warm 117 s here, so extraction (not
-// just the first-run matplotlib font cache) dominates and even a warm boot is
-// ~2 min. 300 s gives ample headroom over the ~170 s cold boot for slower
-// machines / larger future builds, so the "backend not responding" dialog fires
-// only on a GENUINE failure, not a slow-but-successful start (the false-positive
-// bug: 180 s left only ~11 s of headroom). onedir + a Tauri resource is the
-// deferred boot-speed fix that would drop this to ~10 s — see DESKTOP.md.
+// The backend is now a PyInstaller ONEDIR bundle (spawned from the Tauri
+// resource dir — no per-launch self-extraction), so cold boot is ~10 s here
+// (down from the onefile's ~170 s). 300 s is kept as a very generous ceiling:
+// the first-EVER launch on a machine with a cold OS font cache can still pay a
+// one-time matplotlib font-scan, and slower hardware needs headroom — so the
+// "backend not responding" dialog fires only on a GENUINE failure, never a
+// slow-but-successful start. See DESKTOP.md for the onedir migration notes.
 const HEALTH_TIMEOUT: Duration = Duration::from_secs(300);
 
 // A self-contained loading page shown immediately while the sidecar boots, so
@@ -53,7 +52,7 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(300);
 const LOADING_DATA_URL: &str = "data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWw+PGhlYWQ+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxzdHlsZT4KaHRtbCxib2R5e21hcmdpbjowO2hlaWdodDoxMDAlO2JhY2tncm91bmQ6IzBiMGYxNDtjb2xvcjojZTZlZGYzO2ZvbnQtZmFtaWx5Oi1hcHBsZS1zeXN0ZW0sQmxpbmtNYWNTeXN0ZW1Gb250LCJTZWdvZSBVSSIsc2Fucy1zZXJpZn0KLndyYXB7aGVpZ2h0OjEwMCU7ZGlzcGxheTpmbGV4O2ZsZXgtZGlyZWN0aW9uOmNvbHVtbjthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OmNlbnRlcjtnYXA6MThweH0KLnNwaW5uZXJ7d2lkdGg6MzRweDtoZWlnaHQ6MzRweDtib3JkZXI6M3B4IHNvbGlkICMxZjI5Mzc7Ym9yZGVyLXRvcC1jb2xvcjojMTRiOGE2O2JvcmRlci1yYWRpdXM6NTAlO2FuaW1hdGlvbjpzcGluIC45cyBsaW5lYXIgaW5maW5pdGV9CkBrZXlmcmFtZXMgc3Bpbnt0b3t0cmFuc2Zvcm06cm90YXRlKDM2MGRlZyl9fQoudGl0bGV7Zm9udC1zaXplOjE3cHg7Zm9udC13ZWlnaHQ6NjAwO2xldHRlci1zcGFjaW5nOi4wMmVtfQouc3Vie2ZvbnQtc2l6ZToxM3B4O2NvbG9yOiM4Yjk3YTU7bWF4LXdpZHRoOjM0MHB4O3RleHQtYWxpZ246Y2VudGVyO2xpbmUtaGVpZ2h0OjEuNX0KPC9zdHlsZT48L2hlYWQ+PGJvZHk+PGRpdiBjbGFzcz0id3JhcCI+PGRpdiBjbGFzcz0ic3Bpbm5lciI+PC9kaXY+PGRpdiBjbGFzcz0idGl0bGUiPlN0YXJ0aW5nIE1BcHBlcuKApjwvZGl2PjxkaXYgY2xhc3M9InN1YiI+UHJlcGFyaW5nIHRoZSBiYWNrZW5kIOKAlCB0aGlzIGNhbiB0YWtlIHVwIHRvIDIgbWludXRlcyBvbiBmaXJzdCBsYXVuY2guIFRoZSB3aW5kb3cgb3BlbnMgYXV0b21hdGljYWxseSB3aGVuIGl0J3MgcmVhZHkuPC9kaXY+PC9kaXY+PC9ib2R5PjwvaHRtbD4K";
 
 /// Holds the spawned backend child so it can be killed on exit.
-struct SidecarHandle(Mutex<Option<CommandChild>>);
+struct SidecarHandle(Mutex<Option<Child>>);
 
 /// Minimal dependency-free health probe: a raw HTTP/1.0 GET to /api/health.
 /// Returns true only on a 200 response (uvicorn binds the port slightly before
@@ -83,17 +82,17 @@ fn health_ok(port: u16) -> bool {
 fn kill_sidecar(app: &tauri::AppHandle) {
     if let Some(state) = app.try_state::<SidecarHandle>() {
         if let Ok(mut guard) = state.0.lock() {
-            if let Some(child) = guard.take() {
+            if let Some(mut child) = guard.take() {
                 // On Windows, `taskkill /F /T /PID <pid>` terminates the entire
-                // process *tree* (bootloader + spawned Python interpreter) before
-                // the handle is dropped. This MUST happen while the bootloader is
+                // process *tree* (entrypoint + spawned Python interpreter) before
+                // the handle is dropped. This MUST happen while the entrypoint is
                 // still alive so /T can walk its children; calling child.kill()
                 // first (TerminateProcess) would make the PID invalid by the time
                 // taskkill runs. child.kill() afterwards is a no-op if taskkill
                 // already terminated the process, which is fine.
                 #[cfg(target_os = "windows")]
                 {
-                    let pid = child.pid();
+                    let pid = child.id();
                     let _ = std::process::Command::new("taskkill")
                         .args(["/F", "/T", "/PID", &pid.to_string()])
                         .status();
@@ -103,11 +102,12 @@ fn kill_sidecar(app: &tauri::AppHandle) {
         }
     }
     // macOS / Linux: SIGKILL every remaining mapper-backend process by name.
-    // The PyInstaller onefile spawns a process TREE — a bootloader, the real
-    // uvicorn/Python child, and a detached resource-tracker that reparents to
-    // launchd (ppid 1). `child.kill()` only reaps the bootloader, so the others
-    // orphan. Safe: the standalone-web backend runs as `uvicorn`/`python`, NOT
-    // `mapper-backend`; the Rust shell is `mapper-tauri` — neither is matched.
+    // The PyInstaller onedir entrypoint spawns a process TREE — the entrypoint,
+    // the real uvicorn/Python child, and a detached resource-tracker that
+    // reparents to launchd (ppid 1). `child.kill()` only reaps the entrypoint, so
+    // the others orphan. Safe: the standalone-web backend runs as `uvicorn`/
+    // `python`, NOT `mapper-backend`; the Rust shell is `mapper-tauri` — neither
+    // is matched.
     // On Windows, taskkill /T above already walks and kills all descendants, so
     // no name-based sweep is needed there.
     #[cfg(not(target_os = "windows"))]
@@ -120,7 +120,6 @@ fn kill_sidecar(app: &tauri::AppHandle) {
 
 fn main() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle().clone();
@@ -144,32 +143,60 @@ fn main() {
                     .status();
             }
 
-            // 1. Spawn the backend sidecar on the fixed port.
-            let command = app
-                .shell()
-                .sidecar("mapper-backend")
-                .expect("failed to create the backend sidecar command")
-                .env("MAPPER_PORT", PORT.to_string());
-            let (mut rx, child) = command
+            // 1. Resolve the ONEDIR entrypoint from the bundled Tauri resource
+            //    dir and spawn it directly (no shell plugin, no externalBin — the
+            //    onedir is a directory of the entrypoint + _internal/*.dylib, which
+            //    externalBin can't carry; it's bundled via bundle.resources).
+            //    tauri.conf maps `resources/mapper-backend/` -> `mapper-backend/`
+            //    under the resource root; try that first, then fallbacks, so a
+            //    change in Tauri's resource layout doesn't silently break spawn.
+            #[cfg(target_os = "windows")]
+            const ENTRY: &str = "mapper-backend.exe";
+            #[cfg(not(target_os = "windows"))]
+            const ENTRY: &str = "mapper-backend";
+            let candidates = [
+                format!("mapper-backend/{ENTRY}"),
+                format!("resources/mapper-backend/{ENTRY}"),
+                format!("_up_/resources/mapper-backend/{ENTRY}"),
+            ];
+            let entrypoint = candidates
+                .iter()
+                .find_map(|rel| {
+                    app.path()
+                        .resolve(rel, BaseDirectory::Resource)
+                        .ok()
+                        .filter(|p| p.exists())
+                })
+                .unwrap_or_else(|| {
+                    // Last resort: resolve the primary candidate anyway so the
+                    // spawn error names a concrete path for diagnostics.
+                    app.path()
+                        .resolve(&candidates[0], BaseDirectory::Resource)
+                        .expect("could not resolve the backend resource path")
+                });
+            eprintln!("[shell] backend entrypoint: {}", entrypoint.display());
+
+            // Tauri resource bundling does not guarantee the executable bit is
+            // preserved; ensure it before spawning (no-op if already set).
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if let Ok(meta) = std::fs::metadata(&entrypoint) {
+                    let mut perms = meta.permissions();
+                    perms.set_mode(perms.mode() | 0o755);
+                    let _ = std::fs::set_permissions(&entrypoint, perms);
+                }
+            }
+
+            // Spawn on the fixed port; inherit stdio so the backend's logs flow to
+            // the shell's stdout/stderr (unified log) for debugging, same as before.
+            let child = Command::new(&entrypoint)
+                .env("MAPPER_PORT", PORT.to_string())
+                .stdout(Stdio::inherit())
+                .stderr(Stdio::inherit())
                 .spawn()
                 .expect("failed to spawn the backend sidecar");
             app.manage(SidecarHandle(Mutex::new(Some(child))));
-
-            // Forward sidecar stdout/stderr to the shell's stderr for debugging.
-            tauri::async_runtime::spawn(async move {
-                while let Some(event) = rx.recv().await {
-                    match event {
-                        CommandEvent::Stdout(bytes) | CommandEvent::Stderr(bytes) => {
-                            eprint!("[backend] {}", String::from_utf8_lossy(&bytes));
-                        }
-                        CommandEvent::Error(err) => eprintln!("[backend] error: {err}"),
-                        CommandEvent::Terminated(payload) => {
-                            eprintln!("[backend] terminated: {payload:?}");
-                        }
-                        _ => {}
-                    }
-                }
-            });
 
             // 2. Show a loading page IMMEDIATELY, then poll health off the main
             //    thread and swap to the real UI once the backend answers.

@@ -56,5 +56,7 @@ Thumbs.db
 
 # Tauri sidecar binary (huge PyInstaller freeze — never commit)
 mapper-tauri/binaries/
+# Onedir sidecar staged as a Tauri resource (785 MB PyInstaller freeze — never commit)
+mapper-tauri/resources/
 mapper-tauri/target/
 mapper-tauri/gen/

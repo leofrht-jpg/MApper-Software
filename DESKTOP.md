@@ -17,8 +17,8 @@ student. Everything else is deferred (see below).
 │                                                                             │
 │  WebView ── navigates to ──►  http://localhost:8765/index.html               │
 │        │                       (SPA served by the backend via StaticFiles)   │
-│        └── HTTP/WS (same-origin) ──►  sidecar: mapper-backend-aarch64-...     │
-│                          (PyInstaller onefile of desktop_entry.py → uvicorn  │
+│        └── HTTP/WS (same-origin) ──►  sidecar: resources/mapper-backend/...   │
+│                          (PyInstaller onedir of desktop_entry.py → uvicorn   │
 │                           + FastAPI on 127.0.0.1:8765, also serving the SPA)  │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -38,11 +38,16 @@ backend serves the built SPA (`desktop_entry._mount_frontend` → FastAPI
 `Info.plist` `NSAllowsLocalNetworking` key is still needed — it permits the
 cleartext `http://localhost` *main-frame* load itself.)
 
-- **Freeze tool:** PyInstaller (onefile). Spec: `mapper-backend/mapper-desktop.spec`.
-  Entry: `mapper-backend/desktop_entry.py` (runs `uvicorn.run(app, port=8765)`,
-  no `--reload`). Output `dist/mapper-backend` is copied to
-  `mapper-tauri/binaries/mapper-backend-aarch64-apple-darwin` for Tauri's
-  `externalBin`.
+- **Freeze tool:** PyInstaller **onedir** (was onefile — see the migration note
+  below). Spec: `mapper-backend/mapper-desktop.spec`. Entry:
+  `mapper-backend/desktop_entry.py` (runs `uvicorn.run(app, port=8765)`, no
+  `--reload`). Output is a **directory** `dist/mapper-backend/` (entrypoint
+  `mapper-backend` + `_internal/` with all `.dylib`s + `mapper/data` + `frontend`).
+  It is staged (symlinks dereferenced — see below) into
+  `mapper-tauri/resources/mapper-backend/` and bundled via Tauri
+  `bundle.resources`; `main.rs` resolves the entrypoint under
+  `BaseDirectory::Resource` and spawns it with `std::process::Command`. **No
+  `externalBin`** (that only carries a single file, not the onedir tree).
 - **Port:** fixed **8765** (uncommon; avoids colliding with a dev `:8000`).
   Shared by `desktop_entry.py` (default), `main.rs` (`PORT`), and the frontend
   build env (`VITE_API_BASE`). Dynamic free-port handshake is deferred.
@@ -82,12 +87,12 @@ cleartext `http://localhost` *main-frame* load itself.)
 - **Target:** **aarch64-apple-darwin only**. Single target, no cross-compile, no
   Intel/universal, no Windows. Frozen from the native-arm64 `map` conda env
   (verified `platform.machine() == arm64`, not Rosetta).
-- **Sidecar teardown (the non-obvious part):** a PyInstaller **onefile** is a
-  *bootloader* that forks the real uvicorn/Python child, and that child in turn
-  spawns descendants (a multiprocessing resource-tracker) which **detach to
-  launchd — `ppid 1` — almost immediately**. So `CommandChild::kill()` (which
-  only reaps the bootloader) leaves orphaned Python/uvicorn processes holding
-  port 8765. The robust fix in `kill_sidecar()` is `child.kill()` **plus a
+- **Sidecar teardown (the non-obvious part):** the PyInstaller **onedir**
+  entrypoint forks the real uvicorn/Python child, and that child in turn spawns
+  descendants (a multiprocessing resource-tracker) which **detach to launchd —
+  `ppid 1` — almost immediately**. So `Child::kill()` (which only reaps the
+  entrypoint) leaves orphaned Python/uvicorn processes holding port 8765. The
+  robust fix in `kill_sidecar()` is `child.kill()` **plus a
   `pkill -KILL -f mapper-backend` sweep** that reaps every process by the
   sidecar's unique binary name regardless of reparenting. This is safe: the
   standalone-web backend runs as `uvicorn mapper.main:app` (argv has no
@@ -116,21 +121,27 @@ conda activate map
 # 1. Build the frontend with the same-origin base (gets bundled into the freeze).
 ( cd mapper-frontend && VITE_API_BASE=http://localhost:8765 npm run build )
 
-# 2. Freeze the backend (arm64; picks up mapper/main.py, bundles dist/ + mapper/data).
+# 2. Freeze the backend ONEDIR (arm64; bundles dist/ + mapper/data). Produces the
+#    DIRECTORY dist/mapper-backend/ (entrypoint + _internal/), NOT a single file.
 ( cd mapper-backend && pyinstaller mapper-desktop.spec --noconfirm )
 
-# 3. Stage the sidecar with the required target-triple suffix.
-mkdir -p mapper-tauri/binaries
-cp mapper-backend/dist/mapper-backend mapper-tauri/binaries/mapper-backend-aarch64-apple-darwin
+# 3. Stage the onedir as a Tauri resource, DEREFERENCING symlinks (cp -RL).
+#    PyInstaller creates ~53 versioned-dylib symlinks; tauri-build's resource
+#    walker chokes on them ("Not a directory"), so copy them as real files.
+rm -rf mapper-tauri/resources/mapper-backend
+mkdir -p mapper-tauri/resources
+cp -RL mapper-backend/dist/mapper-backend mapper-tauri/resources/mapper-backend
+#    (sanity: `find mapper-tauri/resources/mapper-backend -type l | wc -l` == 0)
 
 # 4. Bundle .app + .dmg  (Homebrew `tauri`, NOT `cargo tauri`; targets come from
-#    tauri.conf.json. This re-runs the frontend build via beforeBuildCommand for
-#    the embedded splash assets, compiles Rust, and produces both bundles).
+#    tauri.conf.json. bundle.resources embeds the whole onedir; main.rs spawns the
+#    entrypoint from BaseDirectory::Resource. Re-runs the frontend build via
+#    beforeBuildCommand, compiles Rust, produces both bundles).
 ( cd mapper-tauri && tauri build --target aarch64-apple-darwin )
 
 # Output (target-triple dir because of --target):
 #   mapper-tauri/target/aarch64-apple-darwin/release/bundle/macos/MApper.app
-#   mapper-tauri/target/aarch64-apple-darwin/release/bundle/dmg/MApper_0.1.0_aarch64.dmg
+#   mapper-tauri/target/aarch64-apple-darwin/release/bundle/dmg/MApper_0.1.1_aarch64.dmg
 # Dev run instead of bundling:  ( cd mapper-tauri && tauri dev )
 ```
 
@@ -140,6 +151,41 @@ The health endpoint deliberately does **not** touch Brightway2, so the UI loads
 even with no LCA project. ecoinvent is imported from inside the app (Database
 Explorer → import), never bundled. See `SHARING.md` for the student steps and
 the exact bw2 project path (`~/Library/Application Support/Brightway3`).
+
+## Onedir sidecar — boot speed (completed migration)
+
+The sidecar was migrated **onefile → onedir** to kill the ~2-minute per-launch
+self-extraction. Onefile re-extracted the whole ~346 MB archive to a fresh
+`_MEIPASS` on **every** launch (measured cold **168 s** / warm **117 s** here);
+onedir has **no extraction step** — cold boot dropped to **~10 s** (health-200,
+measured across repeated launches). The 300 s health timeout is retained purely
+as a generous ceiling for the one-time first-ever matplotlib font-cache scan on a
+cold OS font cache; the false-crash-dialog fix is unaffected.
+
+Integration pattern (**Pattern A** — resource dir + `std::process::Command`),
+chosen because Tauri v2 `externalBin` carries only a single file, not the onedir
+tree of entrypoint + sibling `.dylib`s:
+
+- **Spec:** `EXE(..., exclude_binaries=True)` + `COLLECT(...)` → `dist/mapper-backend/`
+  (`mapper-backend` entrypoint + `_internal/`). PyInstaller 6.x sets `_MEIPASS` to
+  `_internal/`, so every `mapper/data`/frontend path resolves unchanged. datas /
+  binaries / hiddenimports are byte-identical to the onefile spec.
+- **Stage:** `cp -RL` into `mapper-tauri/resources/mapper-backend/` — **dereference
+  symlinks** (PyInstaller emits ~53 versioned-dylib links; `tauri-build`'s resource
+  walker fails on them with `Not a directory (os error 20)`). Dereferencing is
+  functionally identical (dyld resolves each lib by its install-name from a real
+  copy); costs ~200 MB extra on disk, recompressed by the dmg.
+- **Bundle:** `bundle.resources: ["resources/mapper-backend"]` in `tauri.conf.json`
+  (no more `externalBin`). If the build script ever errors at a resource file after
+  a symlink→realfile change, `cargo clean -p mapper-tauri` clears stale
+  build-script state.
+- **Spawn:** `main.rs` resolves the entrypoint under `BaseDirectory::Resource`
+  (candidate paths, `chmod +x` guard for a possibly-stripped exec bit), spawns via
+  `std::process::Command` with `MAPPER_PORT` + inherited stdio, and stores the
+  `std::process::Child` for teardown. The health poll (300 s), data-URL loading
+  page, and `kill_sidecar` (child.kill + pkill sweep) are unchanged. The
+  `tauri-plugin-shell` dependency + `shell:allow-spawn` capability were removed
+  (spawning is now plain Rust, not gated by a Tauri capability).
 
 ## Deferred (NOT in this pass)
 
@@ -152,12 +198,6 @@ the exact bw2 project path (`~/Library/Application Support/Brightway3`).
 - **Dynamic free port** — currently a fixed 8765; a port handshake (backend
   prints the chosen port on stdout; the shell reads it) avoids the rare
   port-in-use collision and is the recommended next hardening step.
-- **Onefile boot latency / size:** the sidecar is a ~345 MB PyInstaller onefile
-  that self-extracts on every launch (measured cold boot ~105 s here; the very
-  first run is slowest because it also builds matplotlib's font cache — hence the
-  180 s health timeout). A PyInstaller **onedir** build (bundled as a Tauri
-  resource) boots much faster and is the recommended optimization once signing is
-  in place.
 - **Slimming the freeze:** excluding unused bw2io importers / premise data not
   needed by the reference workflow could cut size substantially.
 

@@ -148,12 +148,24 @@ a = Analysis(
 
 pyz = PYZ(a.pure)
 
+# ONEDIR mode (not onefile): the entrypoint EXE excludes the binaries/datas,
+# and COLLECT gathers them into a directory alongside it. This ELIMINATES the
+# ~2 min per-launch self-extraction of the onefile bootloader (which unpacked
+# ~346 MB to a fresh _MEIPASS every start) — onedir has NO extraction step, so
+# cold boot drops to ~10 s. The Tauri shell bundles the whole output directory
+# as a resource and spawns the entrypoint from it (see tauri.conf.json
+# bundle.resources + mapper-tauri/src/main.rs). datas/binaries/hiddenimports in
+# Analysis above are IDENTICAL to the onefile spec — only the packaging changed.
+#
+# PyInstaller 6.x onedir layout: dist/mapper-backend/mapper-backend (entrypoint)
+# + dist/mapper-backend/_internal/** (all .so/.dylib + mapper/data + frontend).
+# sys._MEIPASS resolves to _internal/, so every Path(__file__)-relative reader
+# (mapper/data/**, the served frontend) lands correctly with no code change.
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,   # <-- onedir: binaries live beside the exe, not inside it
     name="mapper-backend",
     debug=False,
     bootloader_ignore_signals=False,
@@ -163,4 +175,14 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=False,
+    upx_exclude=[],
+    name="mapper-backend",   # <-- output dir: dist/mapper-backend/
 )

@@ -1,16 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "MApper desktop capabilities: spawn the backend sidecar + show error dialogs.",
+  "description": "MApper desktop capabilities: show error dialogs. The backend onedir sidecar is spawned via std::process::Command from the bundled resource dir (not the shell plugin), so no shell capability is needed.",
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "dialog:default",
-    {
-      "identifier": "shell:allow-spawn",
-      "allow": [
-        { "name": "binaries/mapper-backend", "sidecar": true }
-      ]
-    }
+    "dialog:default"
   ]
 }

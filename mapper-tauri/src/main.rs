@@ -15,9 +15,10 @@
 //!   1. On startup, spawn the frozen Python backend as a sidecar on a fixed
 //!      localhost port (8765, matching `desktop_entry.py` / the frontend's
 //!      `VITE_API_BASE`).
-//!   2. Poll `GET /api/health` until the backend answers (180 s timeout), THEN
-//!      reveal the webview window (which starts hidden) so the user never sees a
-//!      half-loaded UI racing the backend. On timeout, show a clear error dialog.
+//!   2. Reveal the window immediately on a self-contained loading page, then poll
+//!      `GET /api/health` until the backend answers (300 s timeout — the onefile
+//!      cold boot is ~170 s) and swap to the backend-served UI. On genuine
+//!      timeout, show a clear error dialog.
 //!   3. On app exit, kill the sidecar so no `uvicorn` process is orphaned.
 //!
 //! The "needs an ecoinvent-backed Brightway2 project" first-run guidance is a
@@ -36,11 +37,20 @@ use tauri_plugin_shell::ShellExt;
 /// hardening note). Must match `desktop_entry.py`'s default and the frontend's
 /// build-time `VITE_API_BASE`.
 const PORT: u16 = 8765;
-// Generous: the backend is a ~345 MB PyInstaller onefile that self-extracts on
-// every launch, and the FIRST-ever launch also builds matplotlib's font cache —
-// a cold boot measured ~100 s here. Warm boots are faster. (onedir + a Tauri
-// resource is the deferred boot-speed fix — see DESKTOP.md.)
-const HEALTH_TIMEOUT: Duration = Duration::from_secs(180);
+// Generous: the backend is a ~346 MB PyInstaller onefile that RE-EXTRACTS on
+// EVERY launch — measured cold boot 168 s, warm 117 s here, so extraction (not
+// just the first-run matplotlib font cache) dominates and even a warm boot is
+// ~2 min. 300 s gives ample headroom over the ~170 s cold boot for slower
+// machines / larger future builds, so the "backend not responding" dialog fires
+// only on a GENUINE failure, not a slow-but-successful start (the false-positive
+// bug: 180 s left only ~11 s of headroom). onedir + a Tauri resource is the
+// deferred boot-speed fix that would drop this to ~10 s — see DESKTOP.md.
+const HEALTH_TIMEOUT: Duration = Duration::from_secs(300);
+
+// A self-contained loading page shown immediately while the sidecar boots, so
+// the user gets feedback during the ~2 min cold start instead of a blank/hidden
+// window. Inline base64 data URL (no bundled file, works in dev + release).
+const LOADING_DATA_URL: &str = "data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWw+PGhlYWQ+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxzdHlsZT4KaHRtbCxib2R5e21hcmdpbjowO2hlaWdodDoxMDAlO2JhY2tncm91bmQ6IzBiMGYxNDtjb2xvcjojZTZlZGYzO2ZvbnQtZmFtaWx5Oi1hcHBsZS1zeXN0ZW0sQmxpbmtNYWNTeXN0ZW1Gb250LCJTZWdvZSBVSSIsc2Fucy1zZXJpZn0KLndyYXB7aGVpZ2h0OjEwMCU7ZGlzcGxheTpmbGV4O2ZsZXgtZGlyZWN0aW9uOmNvbHVtbjthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OmNlbnRlcjtnYXA6MThweH0KLnNwaW5uZXJ7d2lkdGg6MzRweDtoZWlnaHQ6MzRweDtib3JkZXI6M3B4IHNvbGlkICMxZjI5Mzc7Ym9yZGVyLXRvcC1jb2xvcjojMTRiOGE2O2JvcmRlci1yYWRpdXM6NTAlO2FuaW1hdGlvbjpzcGluIC45cyBsaW5lYXIgaW5maW5pdGV9CkBrZXlmcmFtZXMgc3Bpbnt0b3t0cmFuc2Zvcm06cm90YXRlKDM2MGRlZyl9fQoudGl0bGV7Zm9udC1zaXplOjE3cHg7Zm9udC13ZWlnaHQ6NjAwO2xldHRlci1zcGFjaW5nOi4wMmVtfQouc3Vie2ZvbnQtc2l6ZToxM3B4O2NvbG9yOiM4Yjk3YTU7bWF4LXdpZHRoOjM0MHB4O3RleHQtYWxpZ246Y2VudGVyO2xpbmUtaGVpZ2h0OjEuNX0KPC9zdHlsZT48L2hlYWQ+PGJvZHk+PGRpdiBjbGFzcz0id3JhcCI+PGRpdiBjbGFzcz0ic3Bpbm5lciI+PC9kaXY+PGRpdiBjbGFzcz0idGl0bGUiPlN0YXJ0aW5nIE1BcHBlcuKApjwvZGl2PjxkaXYgY2xhc3M9InN1YiI+UHJlcGFyaW5nIHRoZSBiYWNrZW5kIOKAlCB0aGlzIGNhbiB0YWtlIHVwIHRvIDIgbWludXRlcyBvbiBmaXJzdCBsYXVuY2guIFRoZSB3aW5kb3cgb3BlbnMgYXV0b21hdGljYWxseSB3aGVuIGl0J3MgcmVhZHkuPC9kaXY+PC9kaXY+PC9ib2R5PjwvaHRtbD4K";
 
 /// Holds the spawned backend child so it can be killed on exit.
 struct SidecarHandle(Mutex<Option<CommandChild>>);
@@ -115,6 +125,25 @@ fn main() {
         .setup(|app| {
             let handle = app.handle().clone();
 
+            // 0. Defensive: reap any stale sidecar from a previous unclean exit so
+            //    the fresh spawn can't hit "address already in use" on PORT (which
+            //    would make the new sidecar exit → the poll never sees health → a
+            //    genuine-looking but avoidable "backend not responding" dialog).
+            //    Safe: the standalone-web backend runs as uvicorn/python and the
+            //    Rust shell is mapper-tauri — neither matches "mapper-backend".
+            #[cfg(target_os = "windows")]
+            {
+                let _ = std::process::Command::new("taskkill")
+                    .args(["/F", "/IM", "mapper-backend.exe"])
+                    .status();
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                let _ = std::process::Command::new("/usr/bin/pkill")
+                    .args(["-KILL", "-f", "mapper-backend"])
+                    .status();
+            }
+
             // 1. Spawn the backend sidecar on the fixed port.
             let command = app
                 .shell()
@@ -142,10 +171,20 @@ fn main() {
                 }
             });
 
-            // 2. Poll health off the main thread, then reveal the (hidden) window.
+            // 2. Show a loading page IMMEDIATELY, then poll health off the main
+            //    thread and swap to the real UI once the backend answers.
             let window: WebviewWindow = app
                 .get_webview_window("main")
                 .expect("main window not found");
+            // The window is config-hidden; reveal it now on a self-contained
+            // loading page so the user gets feedback during the ~2 min cold start
+            // instead of a blank/hidden window (the old design hid until health,
+            // which read as "nothing is happening" for two minutes).
+            if let Ok(url) = LOADING_DATA_URL.parse() {
+                let _ = window.navigate(url);
+            }
+            let _ = window.show();
+            let _ = window.set_focus();
             std::thread::spawn(move || {
                 let start = Instant::now();
                 let mut ready = false;
@@ -158,6 +197,12 @@ fn main() {
                 }
 
                 if ready {
+                    // Timing signal for future diagnostics (INFO to the shell's
+                    // stderr): how long the sidecar actually took to answer.
+                    eprintln!(
+                        "[shell] backend ready after {:.1}s",
+                        start.elapsed().as_secs_f32()
+                    );
                     // Load the UI FROM THE BACKEND over http://localhost:PORT.
                     //
                     // The webview's bundled page is served from Tauri's secure
@@ -179,23 +224,26 @@ fn main() {
                     if let Ok(url) = format!("http://localhost:{PORT}/index.html").parse() {
                         let _ = window.navigate(url);
                     }
-                    let _ = window.show();
+                    // Window is already visible (loading page); just refocus.
                     let _ = window.set_focus();
                 } else {
+                    // Genuine failure only: 300 s elapsed with no health. The
+                    // window stays on the loading page behind this dialog.
+                    eprintln!(
+                        "[shell] backend did NOT respond within {}s — showing failure dialog",
+                        HEALTH_TIMEOUT.as_secs()
+                    );
                     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
                     handle
                         .dialog()
                         .message(
-                            "MApper's backend did not start within 3 minutes.\n\n\
+                            "MApper's backend did not start within 5 minutes.\n\n\
                              Please quit and reopen MApper. If this keeps happening, \
                              see SHARING.md for setup and troubleshooting.",
                         )
                         .kind(MessageDialogKind::Error)
                         .title("MApper — backend not responding")
                         .blocking_show();
-                    // Reveal anyway so the user isn't stuck on a blank screen; the
-                    // UI surfaces backend-down state via its own error handling.
-                    let _ = window.show();
                 }
             });
 

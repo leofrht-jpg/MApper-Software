@@ -38,6 +38,18 @@ from typing import ClassVar
 from pydantic import BaseModel, Field, model_validator
 
 
+class ParameterKeyframe(BaseModel):
+    """One ``(year, value)`` anchor of a year-varying parameter trajectory.
+
+    Mirrors :class:`mapper.models.bom_schemas.QuantityMilestone` on purpose —
+    the interpolation rule (linear between anchors, clamp outside the range,
+    no extrapolation) is shared with ``bom_engine.resolve_quantity``.
+    """
+
+    year: int
+    value: float
+
+
 class Parameter(BaseModel):
     name: str  # unique within the table; snake_case
     base_value: float = 0.0
@@ -47,6 +59,13 @@ class Parameter(BaseModel):
     # Scenario name -> override value. Entries missing from this map inherit
     # from ``base_value``. Scenarios not listed here use the base value.
     scenario_overrides: dict[str, float] = Field(default_factory=dict)
+    # Optional year-varying trajectory. ``None``/empty => scalar parameter
+    # (``base_value`` for every year, identical to pre-keyframe behaviour).
+    # When present, the Base value at year Y is the linear interpolation of the
+    # keyframes (clamped, no extrapolation). Scalar ``scenario_overrides`` still
+    # win as a flat, year-invariant value when a scenario override is set — see
+    # :func:`resolve_parameter`.
+    keyframes: list[ParameterKeyframe] | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -63,6 +82,62 @@ class Parameter(BaseModel):
         """Alias for ``base_value`` — kept so legacy code reading ``p.value``
         (parameter_engine, tests) continues to work."""
         return self.base_value
+
+    @property
+    def is_time_varying(self) -> bool:
+        """True when this parameter carries a non-empty keyframe trajectory."""
+        return bool(self.keyframes)
+
+
+def _interpolate_keyframes(keyframes: list[ParameterKeyframe], year: int) -> float:
+    """Linear interpolation between keyframe anchors, clamped outside the range.
+
+    Same rule as ``bom_engine.resolve_quantity`` for milestones: years at or
+    before the first anchor / at or after the last anchor return the endpoint
+    value (no extrapolation); interior years interpolate linearly.
+    """
+    kf = sorted(keyframes, key=lambda k: k.year)
+    if year <= kf[0].year:
+        return float(kf[0].value)
+    if year >= kf[-1].year:
+        return float(kf[-1].value)
+    for a, b in zip(kf, kf[1:]):
+        if a.year <= year <= b.year:
+            span = b.year - a.year
+            if span == 0:
+                return float(a.value)
+            t = (year - a.year) / span
+            return float(a.value) + t * (float(b.value) - float(a.value))
+    # Unreachable given the clamp guards above, but keep callers NaN-free.
+    return float(kf[-1].value)
+
+
+def resolve_parameter(
+    param: Parameter,
+    year: int | None = None,
+    scenario: str | None = None,
+    base_scenario: str = "Base",
+) -> float:
+    """Return the scalar value of ``param`` under ``scenario`` at ``year``.
+
+    Resolution order (confirmed Phase 0 design):
+
+    1. A scalar ``scenario_overrides`` entry, when present for a non-Base
+       ``scenario``, wins as a **flat, year-invariant** value.
+    2. Otherwise, if ``param`` is time-varying and ``year`` is given, the Base
+       trajectory is interpolated at ``year`` (clamped, no extrapolation).
+    3. Otherwise ``base_value`` (scalar behaviour — identical to pre-keyframe).
+
+    Pure function: no I/O, no mutation. For a plain scalar parameter this is an
+    identity across all years.
+    """
+    if scenario is not None and scenario != base_scenario:
+        override = param.scenario_overrides.get(scenario)
+        if override is not None:
+            return float(override)
+    if param.keyframes and year is not None:
+        return _interpolate_keyframes(param.keyframes, int(year))
+    return float(param.base_value)
 
 
 class ParameterTable(BaseModel):
@@ -85,28 +160,48 @@ class ParameterTable(BaseModel):
 
     BASE_SCENARIO: ClassVar[str] = "Base"
 
-    def resolve(self, param_name: str, scenario: str | None = None) -> float:
-        """Return the effective value of ``param_name`` under ``scenario``.
+    def resolve(
+        self,
+        param_name: str,
+        scenario: str | None = None,
+        year: int | None = None,
+    ) -> float:
+        """Return the effective value of ``param_name`` under ``scenario`` / ``year``.
 
-        ``None`` or ``"Base"`` returns the base value. Unknown scenarios fall
-        back to base.
+        ``scenario`` ``None`` or ``"Base"`` uses the base trajectory; unknown
+        scenarios fall back to base. ``year`` is only consulted for time-varying
+        (keyframe) parameters — scalar parameters resolve identically regardless
+        of ``year``. See :func:`resolve_parameter` for the full precedence rule.
         """
         p = self.parameters.get(param_name)
         if p is None:
             raise KeyError(f"Unknown parameter: '{param_name}'")
-        if scenario is None or scenario == self.BASE_SCENARIO:
-            return float(p.base_value)
-        override = p.scenario_overrides.get(scenario)
-        if override is None:
-            return float(p.base_value)
-        return float(override)
+        return resolve_parameter(
+            p, year=year, scenario=scenario, base_scenario=self.BASE_SCENARIO
+        )
 
-    def resolve_all(self, scenario: str | None = None) -> dict[str, float]:
-        """Return the full ``{name: value}`` map for ``scenario``."""
+    def resolve_all(
+        self, scenario: str | None = None, year: int | None = None
+    ) -> dict[str, float]:
+        """Return the full ``{name: value}`` map for ``scenario`` at ``year``.
+
+        This is the per-simulation-year scalar dict the LCA engine consumes.
+        With ``year=None`` (scalar-only tables) it is byte-identical to the
+        pre-keyframe ``resolve_all(scenario)``.
+        """
         return {
-            name: self.resolve(name, scenario)
+            name: self.resolve(name, scenario, year)
             for name in self.parameters
         }
+
+    def has_time_varying(self) -> bool:
+        """True when any parameter carries a keyframe trajectory.
+
+        Lets callers gate the per-year re-resolution path (analogous to
+        ``bom_engine.has_evolution``): scalar-only tables keep the resolve-once
+        fast path and stay byte-identical.
+        """
+        return any(p.is_time_varying for p in self.parameters.values())
 
     def list_scenarios(self) -> list[str]:
         """All scenarios including the implicit Base column first."""

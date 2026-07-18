@@ -300,12 +300,14 @@ def flatten_roots_for_scope(
 
 
 def flatten_roots_for_year_and_scope(
-    roots: list[BOMNode], year: int, scope: str
+    roots: list[BOMNode], year: int, scope: str,
+    lever_values: dict[str, float] | None = None,
 ) -> list[FlattenedMaterial]:
-    """Year-aware + stage-filtered flatten."""
+    """Year-aware + stage-filtered flatten. ``lever_values`` threads global-lever
+    multipliers (e.g. ``p_bp``) down to ``resolve_quantity``; ``None`` → identity."""
     out: list[FlattenedMaterial] = []
     for r in filter_roots_by_scope(roots, scope):
-        out.extend(flatten_bom_for_year(r, year))
+        out.extend(flatten_bom_for_year(r, year, lever_values=lever_values))
     return out
 
 
@@ -321,37 +323,68 @@ def total_mass_kg(materials: list[FlattenedMaterial]) -> float:
 # through the multiplicative cascade the same way ``flatten_bom`` does.
 
 
-def resolve_quantity(node: BOMNode, year: int) -> float:
+def _apply_global_levers(
+    node: BOMNode, quantity: float, lever_values: dict[str, float] | None
+) -> float:
+    """Multiply ``quantity`` by each of ``node.global_levers`` resolved value.
+
+    A node with no ``global_levers`` returns ``quantity`` unchanged (identity —
+    non-tagged nodes are provably unaffected). A listed lever absent from
+    ``lever_values`` (or ``lever_values`` itself ``None``) resolves to 1.0, so
+    tagging a node with a lever the user hasn't defined is safe (no KeyError)
+    and neutral. This is the ``× p_bp(year)`` term of the composition, applied
+    AFTER the MaterialEvolution factor already baked into ``quantity``."""
+    levers = node.global_levers
+    if not levers:
+        return quantity
+    factor = 1.0
+    for name in levers:
+        v = lever_values.get(name, 1.0) if lever_values else 1.0
+        factor *= float(v)
+    return quantity * factor
+
+
+def resolve_quantity(
+    node: BOMNode, year: int, lever_values: dict[str, float] | None = None
+) -> float:
     """Return the effective per-unit quantity for ``node`` in ``year``.
 
     Falls back to ``node.quantity`` when no evolution is defined or the
     evolution is malformed (so callers never see NaN). Milestones outside the
     provided range are clamped to the nearest endpoint — we do not extrapolate.
+
+    ``lever_values`` (name → resolved value at ``year``, from the Phase 2
+    per-year parameter resolution) supplies the global-lever multipliers applied
+    AFTER the evolution factor. When ``None`` (or the node carries no
+    ``global_levers``) the result is byte-identical to the pre-lever engine.
     """
     base = float(node.quantity or 0.0)
     ev = node.evolution
     if ev is None or ev.method == "fixed":
-        return base
+        return _apply_global_levers(node, base, lever_values)
     if ev.method == "learning_rate" and ev.learning_rate is not None:
-        return base * (1.0 + float(ev.learning_rate)) ** (int(year) - int(ev.base_year))
+        q = base * (1.0 + float(ev.learning_rate)) ** (int(year) - int(ev.base_year))
+        return _apply_global_levers(node, q, lever_values)
     if ev.method == "rebound_effect" and ev.rebound_rate is not None:
         # Same compounding math as learning_rate — the semantic difference is
         # only in labelling (rebound typically positive, LR typically negative).
-        return base * (1.0 + float(ev.rebound_rate)) ** (int(year) - int(ev.base_year))
+        q = base * (1.0 + float(ev.rebound_rate)) ** (int(year) - int(ev.base_year))
+        return _apply_global_levers(node, q, lever_values)
     if ev.method == "milestones" and ev.milestones:
         ms = sorted(ev.milestones, key=lambda m: m.year)
         if year <= ms[0].year:
-            return float(ms[0].quantity)
+            return _apply_global_levers(node, float(ms[0].quantity), lever_values)
         if year >= ms[-1].year:
-            return float(ms[-1].quantity)
+            return _apply_global_levers(node, float(ms[-1].quantity), lever_values)
         for a, b in zip(ms, ms[1:]):
             if a.year <= year <= b.year:
                 span = b.year - a.year
                 if span == 0:
-                    return float(a.quantity)
+                    return _apply_global_levers(node, float(a.quantity), lever_values)
                 t = (year - a.year) / span
-                return float(a.quantity) + t * (float(b.quantity) - float(a.quantity))
-    return base
+                q = float(a.quantity) + t * (float(b.quantity) - float(a.quantity))
+                return _apply_global_levers(node, q, lever_values)
+    return _apply_global_levers(node, base, lever_values)
 
 
 def flatten_bom_for_year(
@@ -359,10 +392,15 @@ def flatten_bom_for_year(
     year: int,
     parent_quantity: float = 1.0,
     path: list[str] | None = None,
+    lever_values: dict[str, float] | None = None,
 ) -> list[FlattenedMaterial]:
-    """Year-aware variant of :func:`flatten_bom`. Uses ``resolve_quantity``."""
+    """Year-aware variant of :func:`flatten_bom`. Uses ``resolve_quantity``.
+
+    ``lever_values`` is threaded to ``resolve_quantity`` so global levers (e.g.
+    ``p_bp``) multiply per-node quantities in the cascade. ``None`` → identity.
+    """
     path = path or []
-    effective = parent_quantity * resolve_quantity(node, year)
+    effective = parent_quantity * resolve_quantity(node, year, lever_values)
 
     if node.node_type == "material":
         return [
@@ -379,7 +417,7 @@ def flatten_bom_for_year(
     out: list[FlattenedMaterial] = []
     if node.children:
         for child in node.children:
-            out.extend(flatten_bom_for_year(child, year, effective, path + [node.name]))
+            out.extend(flatten_bom_for_year(child, year, effective, path + [node.name], lever_values))
     return out
 
 
@@ -401,6 +439,16 @@ def has_evolution(roots: list[BOMNode]) -> bool:
 def _node_has_evolution(node: BOMNode) -> bool:
     ev = node.evolution
     return ev is not None and ev.method != "fixed"
+
+
+def has_global_levers(roots: list[BOMNode]) -> bool:
+    """True if any node in the tree (component OR material) opts into a global
+    lever. Levers can tag a component (multiplying all its descendants via the
+    cascade), so this walks all nodes, not only materials."""
+    for n in iter_all_nodes(roots):
+        if n.global_levers:
+            return True
+    return False
 
 
 def generate_archetype_timeline(

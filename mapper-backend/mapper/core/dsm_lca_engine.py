@@ -44,10 +44,12 @@ from mapper.core.bom_engine import (
     flatten_roots_for_scope,
     flatten_roots_for_year_and_scope,
     has_evolution,
+    has_global_levers,
     resolve_archetype_with_engine,
     stages_in_scope,
 )
 from mapper.core.parameter_engine import ParameterEngine
+from mapper.models.parameter_schemas import ParameterTable
 
 
 # scope="all" runs three scope-correct passes and sums them (Manufacturing ×
@@ -74,6 +76,8 @@ class DSMLCAPipeline:
         year_start: int | None = None,
         year_end: int | None = None,
         parameter_engine: ParameterEngine | None = None,
+        parameter_table: ParameterTable | None = None,
+        parameter_scenario: str | None = None,
     ) -> None:
         """``cohort_mappings`` maps ``cohort_key`` → ``(archetype_id, scaling_factor)``.
         Scaling factor defaults to 1.0 and multiplies every material quantity
@@ -85,18 +89,46 @@ class DSMLCAPipeline:
 
         ``year_start`` / ``year_end`` (inclusive) filter the simulation years.
 
-        ``parameter_engine``: optional engine used to resolve every node's
-        ``quantity_expression`` to a numeric ``quantity`` before flattening.
-        When ``None``, archetypes are used as-is (backward compat for BOMs
-        without expressions). Archetypes are deep-copied when resolved; the
-        originals are not mutated.
+        Parameter resolution — every node's ``quantity_expression`` is resolved
+        to a numeric ``quantity`` before flattening. Two mutually-exclusive
+        paths:
+
+        * ``parameter_table`` (+ optional ``parameter_scenario``) — the preferred
+          path. When the table has **time-varying** (keyframe) parameters
+          (``has_time_varying()``), resolution is deferred to the per-year
+          ``_flatten`` and the parameter values differ per simulation year.
+          When the table is scalar-only, archetypes are resolved **once** here
+          (byte-identical to a pre-built engine — the year axis is irrelevant to
+          scalar parameters, so no per-year re-resolution happens).
+        * ``parameter_engine`` — legacy pre-built engine; resolves once, never
+          year-varying. Kept for back-compat callers.
+
+        When neither is set, archetypes are used as-is (BOMs without
+        expressions). Archetypes are deep-copied when resolved; originals are
+        never mutated.
         """
         self.sim = simulation_result
-        if parameter_engine is not None:
-            archetypes = {
-                k: resolve_archetype_with_engine(arc, parameter_engine)
-                for k, arc in archetypes.items()
-            }
+        self._param_table = parameter_table
+        self._param_scenario = parameter_scenario
+        # Year-varying gate: ONLY a table with keyframe parameters defers to the
+        # per-year path. Scalar-only tables (and the legacy engine) keep the
+        # resolve-once fast path → byte-identical to pre-feature behaviour.
+        self._year_varying = parameter_table is not None and parameter_table.has_time_varying()
+        # Per-(archetype, year) resolved-archetype cache for the year-varying
+        # path — one resolution per archetype per year, reused across cohorts.
+        self._resolved_arc_cache: dict[tuple[str, int | None], Archetype] = {}
+        if not self._year_varying:
+            eng = parameter_engine
+            if eng is None and parameter_table is not None:
+                # Scalar-only table → resolve once (year=None; keyframes absent).
+                eng = ParameterEngine(parameter_table, scenario=parameter_scenario)
+            if eng is not None:
+                archetypes = {
+                    k: resolve_archetype_with_engine(arc, eng)
+                    for k, arc in archetypes.items()
+                }
+        # Year-varying: keep the RAW archetypes; _resolved_archetype resolves
+        # them per year on demand.
         self.archetypes = archetypes
         self.mappings = cohort_mappings
         self.methods = [tuple(m) for m in methods]
@@ -105,21 +137,62 @@ class DSMLCAPipeline:
         self.run_lca = lca_runner
         self.year_start = year_start
         self.year_end = year_end
-        # Cache keyed by (archetype_id, scope). Year is irrelevant for the base
-        # class (BOM treated as static) — the projected subclass adds a
-        # separate year-aware cache.
-        self._flat_cache: dict[tuple[str, str], list] = {}
+        # Cache keyed by (archetype_id, scope, year). Year is None (irrelevant)
+        # for the base class unless the parameter table is year-varying — the
+        # projected subclass adds a separate year-aware cache.
+        self._flat_cache: dict[tuple[str, str, int | None], list] = {}
+
+    def _resolved_archetype(self, archetype_id: str, year: int | None) -> Archetype:
+        """Return the archetype with ``quantity_expression``s resolved for ``year``.
+
+        Non-year-varying: returns the resolve-once archetype (``self.archetypes``
+        is already resolved, or raw when no parameters) — ``year`` is ignored.
+        Year-varying: resolves the raw archetype against
+        ``resolve_all(scenario, year)`` and caches per (archetype, year)."""
+        if not self._year_varying:
+            return self.archetypes[archetype_id]
+        y = int(year) if year is not None else None
+        key = (archetype_id, y)
+        cached = self._resolved_arc_cache.get(key)
+        if cached is None:
+            eng = ParameterEngine(self._param_table, scenario=self._param_scenario, year=y)
+            cached = resolve_archetype_with_engine(self.archetypes[archetype_id], eng)
+            self._resolved_arc_cache[key] = cached
+        return cached
+
+    def _lever_values(self, year: int | None) -> dict[str, float] | None:
+        """Resolved parameter dict for ``year`` — the source of global-lever
+        (e.g. ``p_bp``) multipliers. ``None`` when no parameter table is set
+        (levers then default to 1.0 in ``resolve_quantity``). Uses the year only
+        when the table is year-varying; scalar tables give a year-invariant dict
+        (a scalar ``p_bp`` still applies, just constant across years)."""
+        if self._param_table is None:
+            return None
+        y = year if self._year_varying else None
+        return self._param_table.resolve_all(self._param_scenario, y)
 
     def _flatten(
         self, archetype_id: str, year: int | None = None, scope: str = "all",
         db: str | None = None,
     ) -> list:
-        # ``year``/``db`` ignored here; the projected subclass overrides to
-        # honor MaterialEvolution per year and an explicit background db.
-        key = (archetype_id, scope)
+        # ``db`` ignored here; the projected subclass overrides to honor
+        # MaterialEvolution per year and an explicit background db. ``year`` is
+        # ignored for the flatten itself (base = BOM static) UNLESS the table is
+        # year-varying (enters the cache key + resolution) or a node opts into a
+        # global lever (then the year-aware flatten applies the lever per year).
+        arc = self._resolved_archetype(archetype_id, year)
+        levers = has_global_levers(arc.bom)
+        y = int(year) if (year is not None and (self._year_varying or levers)) else None
+        key = (archetype_id, scope, y)
         if key not in self._flat_cache:
-            arc = self.archetypes[archetype_id]
-            self._flat_cache[key] = flatten_roots_for_scope(arc.bom, scope)
+            if year is not None and levers:
+                # Lever-aware year flatten (also honours any MaterialEvolution).
+                flat = flatten_roots_for_year_and_scope(
+                    arc.bom, int(year), scope, self._lever_values(year)
+                )
+            else:
+                flat = flatten_roots_for_scope(arc.bom, scope)
+            self._flat_cache[key] = flat
         return self._flat_cache[key]
 
     def _counts_for_year(self, year_result: YearResult, scope: str) -> dict[str, float]:
@@ -554,10 +627,12 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         key = (archetype_id, y, scope, db)
         if key in self._flat_cache_year:
             return self._flat_cache_year[key]
-        arc = self.archetypes[archetype_id]
+        # Year-varying parameters resolve per year (keyed on the real year);
+        # non-year-varying returns the resolve-once archetype (year ignored).
+        arc = self._resolved_archetype(archetype_id, year)
         flat = (
-            flatten_roots_for_year_and_scope(arc.bom, y, scope)
-            if year is not None and has_evolution(arc.bom)
+            flatten_roots_for_year_and_scope(arc.bom, y, scope, self._lever_values(year))
+            if year is not None and (has_evolution(arc.bom) or has_global_levers(arc.bom))
             else flatten_roots_for_scope(arc.bom, scope)
         )
         flat = self._rewrite_db(flat, y, db=db) if year is not None else flat

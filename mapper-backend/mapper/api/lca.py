@@ -333,6 +333,7 @@ def _build_archetype_source_demand(
     stage_amounts: dict[str, float],
     methods: list[list[str]],
     parameter_scenario: str | None,
+    resolve_year: int = 2025,
 ) -> _ArchetypeDemand:
     """Shared source-DB demand builder for the single-product archetype LCA
     paths (discrete ``calculate_archetype_lca`` + the continuous-horizon
@@ -341,7 +342,11 @@ def _build_archetype_source_demand(
     aggregates the linked materials into a source-DB-keyed ``(db, code) →
     amount`` demand. Behavior-preserving extraction — raises the same
     HTTPExceptions as the inline code it replaced; the discrete path's numbers
-    stay byte-identical (guarded by the existing archetype-LCA tests)."""
+    stay byte-identical (guarded by the existing archetype-LCA tests).
+
+    ``resolve_year`` (default 2025 = reference year) is the year at which
+    time-varying (keyframe) parameters resolve. Scalar parameters ignore it, so
+    scalar-only tables stay byte-identical regardless of ``resolve_year``."""
     from mapper.api.bom import _get_archetype
     from mapper.api.parameters import _table_for
     from mapper.core.bom_engine import flatten_bom, resolve_archetype_with_engine
@@ -355,19 +360,21 @@ def _build_archetype_source_demand(
     if scope not in ("inflows", "stock", "outflows", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid scope: {scope}")
 
-    # Resolve parameter expressions in the BOM if a scenario is requested.
-    # Single-product mode in Impact Assessment uses this for parameter
-    # sensitivity fan-out. Backward compat: scenario None → table's base
-    # values, identical to pre-Patch behavior.
-    if parameter_scenario is not None:
-        table = _table_for()
+    # Resolve parameter expressions in the BOM if a scenario is requested OR the
+    # active table has time-varying (keyframe) parameters. Single-product mode in
+    # Impact Assessment uses this for parameter sensitivity fan-out. Year-varying
+    # parameters resolve at ``resolve_year`` (reference year, default 2025).
+    # Backward compat: scenario None AND no keyframes → no resolution, identical
+    # to pre-feature behavior (a scalar-only table resolves identically anyway).
+    table = _table_for()
+    if parameter_scenario is not None or table.has_time_varying():
         if parameter_scenario not in (None, "Base") and parameter_scenario not in table.list_scenarios():
             raise HTTPException(
                 status_code=400,
                 detail=f"Parameter scenario '{parameter_scenario}' not found in active table",
             )
         try:
-            engine = ParameterEngine(table, scenario=parameter_scenario)
+            engine = ParameterEngine(table, scenario=parameter_scenario, year=resolve_year)
             arc = resolve_archetype_with_engine(arc, engine)
         except ParameterError as e:
             raise HTTPException(

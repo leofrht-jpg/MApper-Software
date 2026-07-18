@@ -257,10 +257,14 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
     if not method_tuples:
         raise HTTPException(status_code=400, detail="At least one method is required.")
 
-    # Resolve parameter expressions against the selected set (if any).
+    # Resolve parameter expressions against the selected scenario (if any).
+    # ``parameter_set_id`` is a scenario NAME in the ParameterTable model.
     from mapper.api import parameters as _parameters
     from mapper.core.parameter_engine import ParameterEngine, ParameterError
+    from mapper.models.parameter_schemas import ParameterTable
     param_engine: ParameterEngine | None = None
+    param_table: ParameterTable | None = None
+    param_scenario: str | None = None
     if body.parameter_set_id:
         pset = _parameters.get_parameter_set(body.parameter_set_id, project)
         if pset is None:
@@ -268,7 +272,14 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                 status_code=400,
                 detail=f"Parameter set '{body.parameter_set_id}' not found",
             )
+        # Legacy pre-resolved engine — used only for subsystem dependency-rule
+        # expression resolution (compute_subsystem_result) below. The pipelines
+        # instead receive the raw ParameterTable + scenario so time-varying
+        # (keyframe) parameters resolve per simulation year. For scalar tables
+        # this is byte-identical to the pre-built engine.
         param_engine = ParameterEngine(pset.parameters)
+        param_table = _parameters._table_for(project)
+        param_scenario = body.parameter_set_id
 
     # Discover dependent subsystems of this primary system. Each yields its own
     # SimulationResult (computed against the primary sim) plus a user-defined
@@ -491,7 +502,8 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                             lca_runner=runner_local,
                             year_start=body.year_start,
                             year_end=body.year_end,
-                            parameter_engine=param_engine,
+                            parameter_table=param_table,
+                            parameter_scenario=param_scenario,
                             prospective_dbs=prosp,
                             fallback_base_db=body.base_db,
                             temporal_mode=body.temporal_mode,
@@ -504,7 +516,8 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                         lca_runner=runner_local,
                         year_start=body.year_start,
                         year_end=body.year_end,
-                        parameter_engine=param_engine,
+                        parameter_table=param_table,
+                        parameter_scenario=param_scenario,
                     )
 
                 primary_pipeline = _make_pipeline_local(sim, cohort_to_archetype)

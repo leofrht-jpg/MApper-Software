@@ -171,27 +171,37 @@ class ParameterEngine:
         parameters: (
             ParameterTable
             | dict[str, Parameter]
+            | dict[str, float]
             | list[Parameter]
             | None
         ) = None,
         scenario: str | None = None,
+        year: int | None = None,
     ) -> None:
         """Build the name→value map used to resolve expressions.
 
         Accepts a :class:`ParameterTable` (with an optional ``scenario`` name
-        for per-scenario overrides) or one of the legacy shapes (a list/dict
-        of :class:`Parameter` — ``scenario`` is ignored in that case).
+        for per-scenario overrides and an optional ``year`` for time-varying
+        keyframe parameters) or one of the legacy shapes: a list/dict of
+        :class:`Parameter`, or a pre-resolved ``dict[str, float]`` values map
+        (``scenario``/``year`` are ignored for the legacy shapes). ``year`` only
+        affects keyframe parameters; scalar tables resolve identically with or
+        without it.
         """
         if parameters is None:
             self.params: dict[str, float] = {}
             return
         if isinstance(parameters, ParameterTable):
-            self.params = parameters.resolve_all(scenario)
+            self.params = parameters.resolve_all(scenario, year)
             return
         if isinstance(parameters, list):
             self.params = {p.name: float(p.value) for p in parameters}
             return
-        self.params = {name: float(p.value) for name, p in parameters.items()}
+        # dict: either {name: Parameter} (legacy) or {name: float} (pre-resolved).
+        self.params = {
+            name: float(v.value if isinstance(v, Parameter) else v)
+            for name, v in parameters.items()
+        }
 
     # ── Public API ──────────────────────────────────────────────────────────
 

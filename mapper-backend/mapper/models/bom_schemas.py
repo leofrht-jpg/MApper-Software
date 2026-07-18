@@ -93,6 +93,16 @@ class BOMNode(BaseModel):
     children: list["BOMNode"] | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None
+    # Opt-in named global levers (parameter names) that multiply this node's
+    # per-year effective quantity, applied AFTER the MaterialEvolution factor:
+    #   Q_eff(year) = node.quantity × Π lever(year) × evolution_factor(year)
+    # ``None``/empty → no lever ever touches this node (non-tagged nodes are
+    # provably unaffected). The first intended lever is ``p_bp`` (global
+    # battery price/performance); the mechanism is name-generic, not
+    # battery-hardcoded. A listed lever absent from the parameter table
+    # resolves to 1.0 (identity). Additive — legacy BOMs without the field
+    # deserialize as ``None``.
+    global_levers: list[str] | None = None
     # Upload-time validation status (Patch 2). "ok" | "warning" | "error".
     # Errors block LCA computation; warnings are surfaced but allowed.
     # Default "ok" so legacy persisted archetypes (no field) deserialise fine.

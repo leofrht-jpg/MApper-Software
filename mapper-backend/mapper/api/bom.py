@@ -1152,7 +1152,10 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
     # Resolve parameter expressions against the selected set (if any).
     from mapper.api import parameters as _parameters
     from mapper.core.parameter_engine import ParameterEngine, ParameterError
+    from mapper.models.parameter_schemas import ParameterTable
     engine: ParameterEngine | None = None
+    param_table: ParameterTable | None = None
+    param_scenario: str | None = None
     if body.parameter_set_id:
         pset = _parameters.get_parameter_set(body.parameter_set_id, project)
         if pset is None:
@@ -1160,7 +1163,12 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
                 status_code=400,
                 detail=f"Parameter set '{body.parameter_set_id}' not found",
             )
+        # Legacy engine kept for subsystem dependency-rule resolution
+        # (compute_subsystem_result); the pipeline gets the raw table + scenario
+        # so time-varying (keyframe) parameters resolve per simulation year.
         engine = ParameterEngine(pset.parameters)
+        param_table = _parameters._table_for(project)
+        param_scenario = body.parameter_set_id
 
     # Discover dependent subsystems with user-defined cohort mappings so their
     # BOM impacts can be aggregated into the total (matches /impact/calculate).
@@ -1227,7 +1235,8 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
                 lca_runner=persistent,
                 year_start=body.year_start,
                 year_end=body.year_end,
-                parameter_engine=engine,
+                parameter_table=param_table,
+                parameter_scenario=param_scenario,
             )
 
         primary_results = _pipeline(sim, cohort_to_archetype).calculate(body.scope)

@@ -92,7 +92,14 @@ export function Archetypes() {
     | { x: number; y: number; kind: 'arc'; arc: ArchetypeSummary }
   >(null)
   const [dragOverPath, setDragOverPath] = useState<string | '__root__' | null>(null)
+  // Inline folder rename (replaces window.prompt, which is a no-op in the Tauri
+  // WKWebView desktop app — the whole reason rename "did nothing" there).
+  const [renamingPath, setRenamingPath] = useState<string | null>(null)
+  const [renameDraft, setRenameDraft] = useState('')
+  const [renameSaving, setRenameSaving] = useState(false)
+  const [renameError, setRenameError] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
+  const renameInputRef = useRef<HTMLInputElement>(null)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -117,6 +124,10 @@ export function Archetypes() {
   useEffect(() => {
     if (editingName) nameInputRef.current?.focus()
   }, [editingName])
+
+  useEffect(() => {
+    if (renamingPath) { renameInputRef.current?.focus(); renameInputRef.current?.select() }
+  }, [renamingPath])
 
   // Close context menu on outside click / escape.
   useEffect(() => {
@@ -221,15 +232,47 @@ export function Archetypes() {
     }
   }
 
-  const handleRenameFolder = async (path: string) => {
-    const input = prompt(`Rename folder "${path}" to:`, path)
-    if (!input || input === path) return
-    const err = validateFolderPath(input)
-    if (err) { alert(err); return }
+  const startRenameFolder = (path: string) => {
+    setRenamingPath(path)
+    setRenameDraft(path.split('/').pop() || path) // edit the leaf segment only
+    setRenameError(null)
+  }
+
+  const cancelRenameFolder = () => {
+    setRenamingPath(null)
+    setRenameError(null)
+  }
+
+  const commitRenameFolder = async () => {
+    const oldPath = renamingPath
+    if (!oldPath) return
+    const newName = renameDraft.trim()
+    const currentName = oldPath.split('/').pop() || oldPath
+    if (!newName || newName === currentName) { cancelRenameFolder(); return }
+    // Reconstruct the full path, keeping the parent prefix.
+    const parent = oldPath.includes('/') ? oldPath.slice(0, oldPath.lastIndexOf('/')) : ''
+    const newPath = parent ? `${parent}/${newName}` : newName
+    const err = validateFolderPath(newPath)
+    if (err) { setRenameError(err); return }
+    setRenameSaving(true)
+    setRenameError(null)
     try {
-      await renameFolder(path, input.trim().replace(/^\/+|\/+$/g, ''))
+      await renameFolder(oldPath, newPath)
+      // Remap expansion state so the renamed folder (and descendants) stay open.
+      setExpanded((s) => {
+        const next = new Set<string>()
+        for (const p of s) {
+          if (p === oldPath) next.add(newPath)
+          else if (p.startsWith(oldPath + '/')) next.add(newPath + p.slice(oldPath.length))
+          else next.add(p)
+        }
+        return next
+      })
+      setRenamingPath(null)
     } catch (e) {
-      alert(`Rename failed: ${e instanceof Error ? e.message : e}`)
+      setRenameError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRenameSaving(false)
     }
   }
 
@@ -383,25 +426,58 @@ export function Archetypes() {
                   : <ChevronRight size={12} style={{ color: 'var(--text-tertiary)', flexShrink: 0 }} />}
             {open ? <FolderOpen size={13} style={{ color: 'var(--mod-lca)', flexShrink: 0 }} />
                   : <Folder size={13} style={{ color: 'var(--mod-lca)', flexShrink: 0 }} />}
-            <span style={{
-              fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-primary)',
-              overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0,
-            }}>
-              {node.name}
-            </span>
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                setMenu({ x: e.clientX, y: e.clientY, kind: 'folder', path: node.path })
-              }}
-              title="Folder actions"
-              style={{
-                background: 'none', border: 'none', cursor: 'pointer',
-                color: 'var(--text-tertiary)', padding: 2, display: 'flex',
-              }}
-            >
-              <MoreHorizontal size={12} />
-            </button>
+            {renamingPath === node.path ? (
+              <input
+                ref={renameInputRef}
+                data-testid="folder-rename-input"
+                value={renameDraft}
+                disabled={renameSaving}
+                onClick={(e) => e.stopPropagation()}
+                onChange={(e) => setRenameDraft(e.target.value)}
+                onBlur={commitRenameFolder}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitRenameFolder() }
+                  if (e.key === 'Escape') { e.preventDefault(); cancelRenameFolder() }
+                }}
+                title={renameError ?? undefined}
+                style={{
+                  flex: 1, minWidth: 0, height: 22, padding: '0 6px',
+                  backgroundColor: 'var(--bg-elevated)',
+                  border: `1px solid ${renameError ? 'var(--danger)' : 'var(--border-default)'}`,
+                  borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)',
+                  fontSize: 'var(--text-xs)', fontWeight: 500, outline: 'none',
+                }}
+              />
+            ) : (
+              <span style={{
+                fontSize: 'var(--text-xs)', fontWeight: 500, color: 'var(--text-primary)',
+                overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, minWidth: 0,
+              }}>
+                {node.name}
+              </span>
+            )}
+            {renamingPath === node.path ? (
+              <span
+                data-testid="folder-rename-status"
+                style={{ fontSize: 10, color: renameError ? 'var(--danger)' : 'var(--text-tertiary)', flexShrink: 0, maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+              >
+                {renameSaving ? 'Saving…' : renameError ?? ''}
+              </span>
+            ) : (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setMenu({ x: e.clientX, y: e.clientY, kind: 'folder', path: node.path })
+                }}
+                title="Folder actions"
+                style={{
+                  background: 'none', border: 'none', cursor: 'pointer',
+                  color: 'var(--text-tertiary)', padding: 2, display: 'flex',
+                }}
+              >
+                <MoreHorizontal size={12} />
+              </button>
+            )}
           </div>
           {open && node.children.map((c) => renderNode(c, depth + 1))}
         </div>
@@ -791,7 +867,7 @@ export function Archetypes() {
               <MenuItem icon={<FolderPlus size={12} />} onClick={() => { handleNewFolder(menu.path); setMenu(null) }}>
                 New subfolder
               </MenuItem>
-              <MenuItem icon={<Pencil size={12} />} onClick={() => { handleRenameFolder(menu.path); setMenu(null) }}>
+              <MenuItem icon={<Pencil size={12} />} onClick={() => { startRenameFolder(menu.path); setMenu(null) }}>
                 Rename folder
               </MenuItem>
               <MenuDivider />

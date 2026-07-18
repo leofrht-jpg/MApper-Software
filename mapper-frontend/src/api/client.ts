@@ -420,6 +420,9 @@ export interface BOMNode {
   children?: BOMNode[] | null
   ecoinvent_activity?: EcoinventLink | null
   evolution?: MaterialEvolution | null
+  // Opt-in named global levers (parameter names, e.g. "p_bp") that multiply
+  // this node's per-year quantity after the MaterialEvolution factor (Phase 3).
+  global_levers?: string[] | null
   validation_status?: 'ok' | 'warning' | 'error'
   validation_message?: string | null
 }
@@ -3358,6 +3361,11 @@ export function connectToImpactTask(
  *  ``value`` field is a read-only convenience alias for ``base_value`` kept so
  *  older UI code (BOMTree, DependencyRulesEditor) can keep using ``p.value``
  *  during the scenarios rollout. */
+export interface ParameterKeyframe {
+  year: number
+  value: number
+}
+
 export interface Parameter {
   name: string
   base_value: number
@@ -3366,6 +3374,8 @@ export interface Parameter {
   description?: string | null
   category?: string | null
   scenario_overrides?: Record<string, number>
+  // Optional year-varying trajectory (Phase 1). null/empty → scalar parameter.
+  keyframes?: ParameterKeyframe[] | null
 }
 
 export interface ParameterTable {

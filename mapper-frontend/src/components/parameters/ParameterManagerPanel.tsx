@@ -11,12 +11,38 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   ChevronDown, ChevronRight, Plus, Trash2, Search,
   Download, Upload, FileDown, Save, AlertCircle, Sigma,
-  X, MoreHorizontal,
+  X, MoreHorizontal, Clock,
 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { NumberInput } from '../ui/NumberInput'
+import { KeyframeEditor } from './KeyframeEditor'
 import { useParameterStore } from '../../stores/parameterStore'
-import { BASE_SCENARIO, resolveParameterValue, type Parameter } from '../../api/client'
+import { useBOMStore } from '../../stores/bomStore'
+import {
+  BASE_SCENARIO, resolveParameterValue, getArchetype,
+  type Archetype, type Parameter,
+} from '../../api/client'
+import { findLeverReferenceMaterials, type LeverReferenceMaterial } from '../../utils/keyframes'
+
+/** Lazily fetch full archetype BOMs and scan them for nodes tagged with the
+ *  ``p_bp`` global lever — the reference materials for the composed-rate
+ *  preview. Only fetches when a ``p_bp`` parameter exists (rare), once. */
+function usePbpReferenceMaterials(hasPbp: boolean): LeverReferenceMaterial[] {
+  const summaries = useBOMStore((s) => s.archetypes)
+  const [mats, setMats] = useState<LeverReferenceMaterial[]>([])
+  useEffect(() => {
+    if (!hasPbp || summaries.length === 0) { setMats([]); return }
+    let cancelled = false
+    void (async () => {
+      try {
+        const full = await Promise.all(summaries.map((s) => getArchetype(s.id))) as Archetype[]
+        if (!cancelled) setMats(findLeverReferenceMaterials(full, 'p_bp'))
+      } catch { /* preview is best-effort; ignore fetch errors */ }
+    })()
+    return () => { cancelled = true }
+  }, [hasPbp, summaries])
+  return mats
+}
 
 const PARAM_NAME_RE = /^[a-z_][a-z0-9_]*$/
 const RESERVED = new Set(['min', 'max', 'abs', 'round', 'sum'])
@@ -123,6 +149,8 @@ export function ParameterManagerPanel() {
     [table],
   )
   const scenarioCols = table?.scenarios ?? []
+  const hasPbp = useMemo(() => params.some((p) => p.name === 'p_bp'), [params])
+  const taggedMaterials = usePbpReferenceMaterials(hasPbp)
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -806,6 +834,7 @@ export function ParameterManagerPanel() {
                           scenarios={scenarioCols}
                           colTemplate={colTemplate}
                           existingNames={params.map((q) => q.name).filter((n) => n !== p.name)}
+                          taggedMaterials={taggedMaterials}
                           onRename={(newName) => handleRenameParam(p.name, newName)}
                           onPatchField={(patch) => upsertParameter({ ...p, ...patch })}
                           onPatchOverride={(scen, value) => patchOverride(p.name, scen, value)}
@@ -836,13 +865,14 @@ export function ParameterManagerPanel() {
 // ── Individual parameter row ──────────────────────────────────────────────────
 
 function ParameterRow({
-  param, scenarios, colTemplate, existingNames,
+  param, scenarios, colTemplate, existingNames, taggedMaterials,
   onRename, onPatchField, onPatchOverride, onDelete,
 }: {
   param: Parameter
   scenarios: string[]
   colTemplate: string
   existingNames: string[]
+  taggedMaterials: LeverReferenceMaterial[]
   onRename: (newName: string) => void
   onPatchField: (patch: Partial<Parameter>) => void
   onPatchOverride: (scenario: string, value: number | null) => void
@@ -851,6 +881,8 @@ function ParameterRow({
   const [hover, setHover] = useState(false)
   const [nameDraft, setNameDraft] = useState(param.name)
   const [nameError, setNameError] = useState<string | null>(null)
+  const [rowExpanded, setRowExpanded] = useState(false)
+  const isTimeVarying = !!(param.keyframes && param.keyframes.length)
 
   useEffect(() => { setNameDraft(param.name) }, [param.name])
 
@@ -868,6 +900,7 @@ function ParameterRow({
   }
 
   return (
+    <>
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
@@ -881,7 +914,20 @@ function ParameterRow({
         backgroundColor: hover ? 'var(--bg-hover)' : 'transparent',
       }}
     >
-      <div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <button
+          data-testid={`param-expand-${param.name}`}
+          onClick={() => setRowExpanded((v) => !v)}
+          title={rowExpanded ? 'Collapse' : 'Time-varying / keyframes'}
+          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 0, display: 'flex' }}
+        >
+          {rowExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+        </button>
+        {isTimeVarying && (
+          <span data-testid={`param-timevarying-badge-${param.name}`} title="Time-varying (keyframes)" style={{ color: 'var(--mod-lca)', display: 'flex' }}>
+            <Clock size={11} />
+          </span>
+        )}
         <input
           value={nameDraft}
           onChange={(e) => { setNameDraft(e.target.value); setNameError(null) }}
@@ -938,6 +984,15 @@ function ParameterRow({
         <Trash2 size={12} />
       </button>
     </div>
+    {/* Keyframe editor — visibility-toggle (kept mounted once opened). */}
+    {rowExpanded && (
+      <KeyframeEditor
+        param={param}
+        onPatch={onPatchField}
+        taggedMaterials={taggedMaterials}
+      />
+    )}
+    </>
   )
 }
 

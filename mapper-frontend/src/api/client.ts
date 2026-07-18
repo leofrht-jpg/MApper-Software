@@ -597,6 +597,9 @@ export interface Subsystem {
   dimensions: DimensionDef[]
   depends_on?: string | null
   dependency_rules: DependencyRule[]
+  mode?: 'rules' | 'manual'
+  manual_inflows?: Record<string, Record<string, number>>
+  manual_outflows?: Record<string, Record<string, number>>
   initial_stock?: Record<string, number>
   cohort_mappings?: Record<string, SubsystemCohortMapping>
   unit_name?: string
@@ -781,7 +784,10 @@ async function uploadFile<T>(path: string, file: File): Promise<T> {
 }
 
 export async function downloadCSV(path: string, filename: string): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, { method: 'POST' })
+  // Send X-Mapper-Project so project-scoped endpoints (e.g. the subsystem
+  // stock template on the subsystems router) resolve against the client's
+  // declared project even if the backend's bw2 current project drifted.
+  const res = await fetch(`${API_BASE}${path}`, _withProjectHeader({ method: 'POST' }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -1967,6 +1973,59 @@ export async function validateDependencyRule(
   )
 }
 
+export interface DependencyRuleImportError {
+  row: number
+  field: string
+  message: string
+}
+
+export type DependencyRuleImportResult =
+  | { ok: true; rules: DependencyRule[] }
+  | { ok: false; errors: DependencyRuleImportError[] }
+
+/** Native download of the populated dependency-rules Excel template. */
+export async function downloadDependencyRulesTemplate(
+  systemId: string,
+  subsystemId: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/dsm/systems/${systemId}/dependency-rules/template?subsystem_id=${encodeURIComponent(subsystemId)}`,
+    _withProjectHeader({ method: 'GET' }),
+  )
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = 'dependency_rules_template.xlsx'
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+/**
+ * Parse + validate an uploaded dependency-rules .xlsx. Returns `{ok:true, rules}`
+ * (200) or `{ok:false, errors}` (422). Throws on a hard failure (wrong file
+ * type, unreadable workbook, missing sheet/columns) so the caller shows a toast.
+ */
+export async function importDependencyRules(
+  systemId: string,
+  subsystemId: string,
+  file: File,
+): Promise<DependencyRuleImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(
+    `${API_BASE}/dsm/systems/${systemId}/dependency-rules/import?subsystem_id=${encodeURIComponent(subsystemId)}`,
+    _withProjectHeader({ method: 'POST', body: form }),
+  )
+  if (res.status === 200 || res.status === 422) {
+    return (await res.json()) as DependencyRuleImportResult
+  }
+  throw new Error((await res.text()) || `HTTP ${res.status}`)
+}
+
 export async function computeSubsystem(
   systemId: string,
   subsystemId: string,
@@ -2029,11 +2088,53 @@ export async function clearSubsystemInitialStock(
 export async function downloadSubsystemStockTemplate(
   systemId: string,
   subsystemId: string,
+): Promise<void> {
+  // Static, human-readable filename — no UUID / system_id / timestamp.
+  return downloadCSV(
+    `/dsm/systems/${systemId}/subsystems/${subsystemId}/stock/template`,
+    'initial_stock_template.xlsx',
+  )
+}
+
+// ── Manual-mode subsystem inflows/outflows ──────────────────────────────────
+
+export interface ManualFlowUploadResult {
+  cohorts_found: number
+  rows_parsed: number
+}
+
+export async function uploadSubsystemManualFlow(
+  systemId: string,
+  subsystemId: string,
+  kind: 'inflows' | 'outflows',
+  file: File,
+): Promise<ManualFlowUploadResult> {
+  return uploadFile<ManualFlowUploadResult>(
+    `/dsm/systems/${systemId}/subsystems/${subsystemId}/manual-${kind}/upload`,
+    file,
+  )
+}
+
+export async function clearSubsystemManualFlow(
+  systemId: string,
+  subsystemId: string,
+  kind: 'inflows' | 'outflows',
+): Promise<{ cleared: boolean }> {
+  return request<{ cleared: boolean }>(
+    `/dsm/systems/${systemId}/subsystems/${subsystemId}/manual-${kind}`,
+    { method: 'DELETE' },
+  )
+}
+
+export async function downloadSubsystemManualFlowTemplate(
+  systemId: string,
+  subsystemId: string,
+  kind: 'inflows' | 'outflows',
   name: string,
 ): Promise<void> {
   return downloadCSV(
-    `/dsm/systems/${systemId}/subsystems/${subsystemId}/stock/template`,
-    `stock_template_${name}.csv`,
+    `/dsm/systems/${systemId}/subsystems/${subsystemId}/manual-${kind}/template`,
+    `${kind}_template_${name}.csv`,
   )
 }
 
@@ -2443,6 +2544,57 @@ export async function downloadCohortMappingsTemplate(
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(blobUrl)
+}
+
+/** Result of validating an uploaded subsystem cohort-mapping .xlsx. Mirrors
+ *  {@link DependencyRuleImportResult}: `{ok:true, mappings}` (200) or
+ *  `{ok:false, errors}` (422). Throws on a hard failure (wrong type, unreadable
+ *  workbook, missing sheet/columns) so the caller shows a toast. */
+export type SubsystemCohortMappingImportResult =
+  | { ok: true; mappings: Record<string, SubsystemCohortMapping> }
+  | { ok: false; errors: DependencyRuleImportError[] }
+
+/** Native download of the subsystem's populated cohort-mapping Excel template.
+ *  Filename is static + human-readable: `cohort_mapping_<subsystem>_template.xlsx`. */
+export async function downloadSubsystemCohortMappingTemplate(
+  systemId: string,
+  subsystemId: string,
+  subsystemName: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/dsm/systems/${systemId}/cohort-mapping/template?subsystem_id=${encodeURIComponent(subsystemId)}`,
+    _withProjectHeader({ method: 'GET' }),
+  )
+  if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const safe = subsystemName.trim().replace(/\s+/g, '_').toLowerCase()
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cohort_mapping_${safe}_template.xlsx`
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+/** Parse + validate an uploaded subsystem cohort-mapping .xlsx (validate-only —
+ *  does not save; the caller confirms + saves via the subsystem update). */
+export async function importSubsystemCohortMapping(
+  systemId: string,
+  subsystemId: string,
+  file: File,
+): Promise<SubsystemCohortMappingImportResult> {
+  const form = new FormData()
+  form.append('file', file)
+  const res = await fetch(
+    `${API_BASE}/dsm/systems/${systemId}/cohort-mapping/import?subsystem_id=${encodeURIComponent(subsystemId)}`,
+    _withProjectHeader({ method: 'POST', body: form }),
+  )
+  if (res.status === 200 || res.status === 422) {
+    return (await res.json()) as SubsystemCohortMappingImportResult
+  }
+  throw new Error((await res.text()) || `HTTP ${res.status}`)
 }
 
 export interface DSMLCARunOptions {

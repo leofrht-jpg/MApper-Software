@@ -1169,14 +1169,17 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
         aggregate_subsystem_results,
         build_subsystem_cohort_mapping,
     )
-    from mapper.core.subsystem_engine import compute_dependent_subsystem
+    from mapper.core.subsystem_engine import (
+        compute_subsystem_result,
+        subsystem_has_stock_source,
+    )
 
     dep_subs = _subs.get_subsystems_for_system(system_id, project)
     sub_sim_results: dict[str, object] = {}
     sub_cohort_mappings: dict[str, dict[str, tuple[str, float]]] = {}
     setup_warnings: list[str] = []
     for sub_id, sub in dep_subs.items():
-        if not sub.dependency_rules:
+        if not subsystem_has_stock_source(sub):
             continue
         sub_mapping, unmapped = build_subsystem_cohort_mapping(sub)
         if unmapped:
@@ -1204,7 +1207,7 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
                     detail=f"Archetype '{arc.name}' has {unlinked} unlinked material(s).",
                 )
         try:
-            sub_sim = compute_dependent_subsystem(sub, _get_system(system_id), sim, engine)
+            sub_sim = compute_subsystem_result(sub, _get_system(system_id), sim, engine)
         except (ParameterError, ValueError) as e:
             raise HTTPException(
                 status_code=400, detail=f"Dependent subsystem '{sub.name}': {e}"
@@ -1832,14 +1835,17 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
     # Discover dependent subsystems and compute their flows too.
     from mapper.api import subsystems as _subs
     from mapper.core.dsm_lca_engine import build_subsystem_cohort_mapping
-    from mapper.core.subsystem_engine import compute_dependent_subsystem
+    from mapper.core.subsystem_engine import (
+        compute_subsystem_result,
+        subsystem_has_stock_source,
+    )
     from mapper.models.bom_schemas import SubsystemRef
 
     dep_subs = _subs.get_subsystems_for_system(system_id, project)
     setup_warnings: list[str] = []
     sub_runs: list[tuple[str, str, object, dict[str, tuple[str, float]]]] = []
     for sub_id, sub in dep_subs.items():
-        if not sub.dependency_rules:
+        if not subsystem_has_stock_source(sub):
             continue
         sub_mapping, unmapped = build_subsystem_cohort_mapping(sub)
         if unmapped:
@@ -1857,7 +1863,7 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
             )
             continue
         try:
-            sub_sim = compute_dependent_subsystem(sub, sys_def, sim, None)
+            sub_sim = compute_subsystem_result(sub, sys_def, sim, None)
         except ValueError as e:
             setup_warnings.append(f"Subsystem '{sub.name}': {e}")
             continue

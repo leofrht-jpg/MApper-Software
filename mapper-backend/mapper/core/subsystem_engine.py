@@ -213,6 +213,89 @@ def compute_dependent_subsystem(
     )
 
 
+def compute_manual_subsystem(
+    subsystem: Subsystem,
+    primary_def: "SystemDefinition",
+    parameter_engine: ParameterEngine | None = None,
+) -> "SimulationResult":
+    """Simulate a MANUAL-mode subsystem independently from its OWN uploaded
+    inflows/outflows, using the same cohort-tracking ``DynamicStockModel`` as a
+    primary system (default Weibull survival). Fully decoupled from the primary.
+
+    ``subsystem.manual_inflows`` / ``manual_outflows`` are ``cohort → {year →
+    count}`` maps; ``initial_stock`` provides the age-0 base for year t₀.
+    """
+    if subsystem.type != "dependent":
+        raise ValueError(
+            f"compute_manual_subsystem requires type='dependent', got {subsystem.type!r}"
+        )
+
+    from mapper.core.dsm_engine import DynamicStockModel
+    from mapper.models.dsm_schemas import (
+        InflowData,
+        MaterializedDSMState,
+        OutflowData,
+        SystemDefinition,
+    )
+
+    # A synthetic system over the subsystem's OWN dimensions + the primary's
+    # time horizon, so the engine iterates the same year range.
+    syn_system = SystemDefinition(
+        id=subsystem.id,
+        name=subsystem.name,
+        time_horizon=primary_def.time_horizon,
+        dimensions=subsystem.dimensions,
+        unit_name=subsystem.unit_name,
+    )
+
+    def _to_year_rows(flows: dict[str, dict[int, float]]) -> dict[int, dict[str, float]]:
+        by_year: dict[int, dict[str, float]] = {}
+        for cohort, series in (flows or {}).items():
+            for year, count in (series or {}).items():
+                if count:
+                    by_year.setdefault(int(year), {})[cohort] = float(count)
+        return by_year
+
+    in_rows = _to_year_rows(subsystem.manual_inflows)
+    out_rows = _to_year_rows(subsystem.manual_outflows)
+    state = MaterializedDSMState(
+        system_id=subsystem.id,
+        survival_configs=[],  # no per-cohort curves → default Weibull
+        integer_units=subsystem.integer_units,
+        initial_stock={k: float(v) for k, v in (subsystem.initial_stock or {}).items() if v},
+        inflows=[InflowData(year=y, counts=in_rows[y]) for y in sorted(in_rows)],
+        stock_targets=[],
+        outflows=[OutflowData(year=y, counts=out_rows[y]) for y in sorted(out_rows)],
+    )
+    return DynamicStockModel(syn_system, state, parameter_engine).simulate()
+
+
+def compute_subsystem_result(
+    subsystem: Subsystem,
+    primary_def: "SystemDefinition",
+    primary_result: "SimulationResult",
+    parameter_engine: ParameterEngine | None = None,
+) -> "SimulationResult":
+    """Mode-aware compute dispatcher for a dependent subsystem.
+
+    ``mode == "manual"`` → simulate from the subsystem's own uploaded flows
+    (``compute_manual_subsystem``, ignores the primary's stock).
+    Otherwise → derive from the primary via dependency rules
+    (``compute_dependent_subsystem``).
+    """
+    if getattr(subsystem, "mode", "rules") == "manual":
+        return compute_manual_subsystem(subsystem, primary_def, parameter_engine)
+    return compute_dependent_subsystem(subsystem, primary_def, primary_result, parameter_engine)
+
+
+def subsystem_has_stock_source(subsystem: Subsystem) -> bool:
+    """True if the subsystem can produce a stock result — manual flows in manual
+    mode, or at least one dependency rule in rules mode."""
+    if getattr(subsystem, "mode", "rules") == "manual":
+        return bool(subsystem.manual_inflows) or bool(subsystem.initial_stock)
+    return bool(subsystem.dependency_rules)
+
+
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 

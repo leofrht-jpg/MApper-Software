@@ -625,28 +625,38 @@ def build_subsystem_cohort_mapping(
 ) -> tuple[dict[str, tuple[str, float]], list[str]]:
     """Return ``(mapping, unmapped)`` for a dependent subsystem.
 
-    Uses the user-defined ``subsystem.cohort_mappings`` if present; archetypes
-    referenced by rules but missing a mapping entry (or mapped to a blank
+    Uses the user-defined ``subsystem.cohort_mappings`` if present. EVERY
+    user-set mapping entry is applied, so the mapping works regardless of how
+    the subsystem derives its cohorts — from ``dependency_rules`` (rules mode)
+    OR from its own uploaded inflows/outflows (manual mode), which reference
+    cohort keys that never appear in ``dependency_rules``. Cohorts KNOWN to
+    carry stock (rule targets) that lack a mapping (or are mapped to a blank
     archetype id) are returned in ``unmapped`` so callers can skip them and
     surface a warning. If the subsystem has no user-defined mappings at all,
     falls back to identity mapping for backward compatibility.
     """
-    archetype_ids = {
-        r.dependent_archetype_id for r in subsystem.dependency_rules if r.dependent_archetype_id
-    }
     cm = subsystem.cohort_mappings or {}
     if not cm:
         return identity_cohort_mapping(subsystem), []
 
+    # Apply every user-set mapping entry (rule-mode targets AND manual-mode
+    # cohorts alike). The previous implementation only looked at cohorts
+    # referenced by dependency_rules, so a subsystem whose stock comes from
+    # manual flows (no rules) got an EMPTY mapping — its cohort mapping was
+    # silently ignored in Material Flows / Impact Assessment.
     mapping: dict[str, tuple[str, float]] = {}
-    unmapped: list[str] = []
-    for aid in archetype_ids:
-        entry = cm.get(aid)
-        if entry is None or not entry.archetype_id:
-            unmapped.append(aid)
+    for aid, entry in cm.items():
+        if not aid or entry is None or not entry.archetype_id:
             continue
         mapping[aid] = (entry.archetype_id, float(entry.scaling_factor or 1.0))
-    return mapping, sorted(unmapped)
+
+    # Warn only about cohorts we KNOW carry stock (rule targets) that are still
+    # unmapped — avoids flagging every declared-but-empty cartesian cohort.
+    rule_ids = {
+        r.dependent_archetype_id for r in subsystem.dependency_rules if r.dependent_archetype_id
+    }
+    unmapped = sorted(aid for aid in rule_ids if aid not in mapping)
+    return mapping, unmapped
 
 
 def _prefix_key(subsystem_id: str, key: str) -> str:

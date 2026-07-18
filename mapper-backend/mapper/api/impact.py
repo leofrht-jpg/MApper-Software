@@ -67,7 +67,10 @@ from mapper.core.dsm_lca_engine import (
     resolve_bracket,
     resolve_database_for_year,
 )
-from mapper.core.subsystem_engine import compute_dependent_subsystem
+from mapper.core.subsystem_engine import (
+    compute_subsystem_result,
+    subsystem_has_stock_source,
+)
 from mapper.models.bom_schemas import (
     ImpactAssessmentMeta,
     ImpactAssessmentRequest,
@@ -277,7 +280,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
     sub_cohort_mappings: dict[str, dict[str, tuple[str, float]]] = {}
     setup_warnings: list[str] = []
     for sub_id, sub in dep_subs.items():
-        if not sub.dependency_rules:
+        if not subsystem_has_stock_source(sub):
             continue
         mapping, unmapped = build_subsystem_cohort_mapping(sub)
         if unmapped:
@@ -323,7 +326,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                     detail=f"Archetype '{arc.name}' has {unlinked} unlinked material(s).",
                 )
         try:
-            sub_sim = compute_dependent_subsystem(
+            sub_sim = compute_subsystem_result(
                 sub, _get_system(body.mfa_system_id), sim, param_engine
             )
         except (ParameterError, ValueError) as e:

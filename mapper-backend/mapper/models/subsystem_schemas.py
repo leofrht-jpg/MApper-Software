@@ -65,6 +65,17 @@ class Subsystem(BaseModel):
     # Populated only when type == "dependent".
     depends_on: str | None = None                  # subsystem id of the primary (== system_id)
     dependency_rules: list[DependencyRule] = Field(default_factory=list)
+    # How this subsystem's stock is produced:
+    #   "rules"  → derived from the primary's stock via ``dependency_rules``.
+    #   "manual" → simulated independently from the subsystem's OWN uploaded
+    #              ``manual_inflows`` (cohort-tracking Weibull sim, same engine
+    #              as a primary system), decoupled from the primary.
+    # Both data sets are preserved when switching; only the active mode computes.
+    mode: Literal["rules", "manual"] = "rules"
+    # Manual-mode flows: cohort_key → {year → count}. Used only when
+    # mode == "manual". Uploaded like a primary system's inflows/outflows.
+    manual_inflows: dict[str, dict[int, float]] = Field(default_factory=dict)
+    manual_outflows: dict[str, dict[int, float]] = Field(default_factory=dict)
     # Optional base-year stock keyed by dependent cohort key (archetype id for
     # single-dim subsystems, pipe-joined for multi-dim). Provides a floor for
     # the first simulated year; rules drive all subsequent years.

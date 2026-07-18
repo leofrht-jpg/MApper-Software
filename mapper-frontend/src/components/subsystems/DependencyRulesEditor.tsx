@@ -8,12 +8,18 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Plus, Trash2, CheckCircle2, AlertCircle, ChevronRight, ChevronDown } from 'lucide-react'
+import { Plus, Trash2, CheckCircle2, AlertCircle, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import { useDSMStore } from '../../stores/dsmStore'
 import { useParameterStore } from '../../stores/parameterStore'
-import type { DependencyRule, DimensionDef, Subsystem } from '../../api/client'
+import {
+  downloadDependencyRulesTemplate,
+  importDependencyRules,
+  type DependencyRule,
+  type DimensionDef,
+  type Subsystem,
+} from '../../api/client'
 
 const BUILTIN_VARS = ['filtered_stock', 'total_primary_stock', 'year'] as const
 
@@ -59,12 +65,18 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
   const saveDependent = useSubsystemStore((s) => s.saveDependent)
   const validateRule = useSubsystemStore((s) => s.validateRule)
   const primaryDims = useDSMStore((s) => s.activeSystem?.dimensions ?? [])
+  const systemId = useDSMStore((s) => s.activeSystem?.id ?? null)
   const parameters = useParameterStore((s) => s.activeSet?.parameters ?? [])
 
   const [rules, setRules] = useState<DependencyRule[]>(subsystem.dependency_rules)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
   const [flash, setFlash] = useState('')
+  // Excel template + bulk import.
+  const [importing, setImporting] = useState(false)
+  // Non-null → the confirm-replace dialog is shown for these validated rules.
+  const [pendingImport, setPendingImport] = useState<DependencyRule[] | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   // Keep local rules in sync if subsystem identity changes.
   const lastSubId = useRef(subsystem.id)
@@ -125,6 +137,59 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
     }
   }
 
+  const handleTemplate = async () => {
+    if (!systemId) return
+    setError('')
+    try {
+      await downloadDependencyRulesTemplate(systemId, subsystem.id)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Template download failed')
+    }
+  }
+
+  const handleUploadClick = () => fileInputRef.current?.click()
+
+  const handleFileSelected = async (file: File) => {
+    if (!systemId) return
+    setError('')
+    setFlash('')
+    setImporting(true)
+    try {
+      const res = await importDependencyRules(systemId, subsystem.id, file)
+      if (res.ok) {
+        // Valid → ask before the destructive replace.
+        setPendingImport(res.rules)
+      } else {
+        setError(
+          'Import rejected — fix these rows and try again:\n' +
+            res.errors.map((e) => `• Row ${e.row} (${e.field}): ${e.message}`).join('\n'),
+        )
+      }
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Import failed')
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const confirmImport = async () => {
+    if (!pendingImport) return
+    const imported = pendingImport
+    setPendingImport(null)
+    setError('')
+    setRules(imported)
+    setSaving(true)
+    try {
+      await saveDependent({ ...subsystem, dependency_rules: imported })
+      setFlash('Saved')
+      setTimeout(() => setFlash(''), 2000)
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div style={{
       padding: 'var(--space-4)', backgroundColor: 'var(--bg-surface)',
@@ -146,6 +211,24 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
               <CheckCircle2 size={12} /> {flash}
             </span>
           )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx"
+            data-testid="dep-rules-file-input"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) handleFileSelected(f)
+              e.target.value = '' // allow re-selecting the same file
+            }}
+          />
+          <Button variant="ghost" onClick={handleTemplate} disabled={!systemId} title="Download an Excel template">
+            <Download size={14} strokeWidth={1.5} /> Template
+          </Button>
+          <Button variant="ghost" onClick={handleUploadClick} disabled={!systemId || importing} title="Import rules from an Excel file">
+            <Upload size={14} strokeWidth={1.5} /> {importing ? 'Reading…' : 'Upload'}
+          </Button>
           <Button variant="ghost" onClick={addRule}>
             <Plus size={14} strokeWidth={1.5} /> Add rule
           </Button>
@@ -160,11 +243,51 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
         </div>
       </div>
 
+      {pendingImport && (
+        <div
+          data-testid="dep-rules-import-confirm"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            backgroundColor: 'color-mix(in srgb, black 55%, transparent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-4)',
+          }}
+          onClick={() => setPendingImport(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-lg)', padding: 'var(--space-5)', maxWidth: 440,
+              display: 'flex', flexDirection: 'column', gap: 'var(--space-4)',
+            }}
+          >
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Import {pendingImport.length} rule{pendingImport.length === 1 ? '' : 's'}
+            </div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              This will <strong>replace all current dependency rules</strong> for this
+              subsystem. This action cannot be undone. Continue?
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Button variant="ghost" onClick={() => setPendingImport(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={confirmImport}
+                data-testid="dep-rules-import-replace"
+                style={{ backgroundColor: 'var(--danger)' }}
+              >
+                Replace
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {error && (
         <div style={{
           padding: '8px 12px', backgroundColor: 'var(--danger-muted)',
           border: '1px solid var(--danger)', borderRadius: 'var(--radius-md)',
-          fontSize: 'var(--text-xs)', color: 'var(--danger)',
+          fontSize: 'var(--text-xs)', color: 'var(--danger)', whiteSpace: 'pre-line',
         }}>
           {error}
         </div>

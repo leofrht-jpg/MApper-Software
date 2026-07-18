@@ -8,14 +8,35 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle } from 'lucide-react'
+import { AlertCircle, Download, Loader2, Upload } from 'lucide-react'
 import { Badge } from '../ui/Badge'
+import { Button } from '../ui/Button'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import { useBOMStore } from '../../stores/bomStore'
 import { useDSMStore } from '../../stores/dsmStore'
-import type { Subsystem, SubsystemCohortMapping } from '../../api/client'
+import {
+  downloadSubsystemCohortMappingTemplate,
+  importSubsystemCohortMapping,
+  type DimensionDef,
+  type Subsystem,
+  type SubsystemCohortMapping,
+} from '../../api/client'
 
 type SaveStatus = { kind: 'info' | 'success' | 'error'; msg: string } | null
+
+/** Cartesian product of non-age dimension labels, pipe-joined — the subsystem's
+ *  full cohort-key space (matches the backend `all_cohort_keys`). */
+function cohortKeysForDims(dims: DimensionDef[]): string[] {
+  const nads = dims.filter((d) => !d.is_age)
+  if (nads.length === 0) return []
+  let acc: string[][] = [[]]
+  for (const d of nads) {
+    const next: string[][] = []
+    for (const row of acc) for (const l of d.labels) next.push([...row, l])
+    acc = next
+  }
+  return acc.map((parts) => parts.join('|'))
+}
 
 export function DependentCohortMappingsPanel() {
   const activeSystem = useDSMStore((s) => s.activeSystem)
@@ -29,7 +50,9 @@ export function DependentCohortMappingsPanel() {
   }, [activeSystem?.id, fetchForSystem])
 
   const dependents = useMemo(
-    () => subsystems.filter((s) => s.type === 'dependent' && s.dependency_rules.length > 0),
+    // All dependent subsystems — rule-based OR manual (no rules). Manual
+    // subsystems still need their cohorts mapped to BOM archetypes.
+    () => subsystems.filter((s) => s.type === 'dependent'),
     [subsystems],
   )
 
@@ -49,11 +72,21 @@ export function SubsystemMappingCard({
 }: { subsystem: Subsystem; archetypesWithIssues: Set<string> }) {
   const saveDependent = useSubsystemStore((s) => s.saveDependent)
   const { archetypes } = useBOMStore()
+  const activeSystem = useDSMStore((s) => s.activeSystem)
   const autoSaveTimer = useRef<number | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [status, setStatus] = useState<SaveStatus>(null)
+  const [importError, setImportError] = useState('')
+  const [importing, setImporting] = useState(false)
+  // Validated-but-not-yet-applied import → destructive-replace confirm dialog.
+  const [pendingImport, setPendingImport] =
+    useState<Record<string, SubsystemCohortMapping> | null>(null)
   const [local, setLocal] = useState<Record<string, SubsystemCohortMapping>>(
     subsystem.cohort_mappings ?? {},
   )
+
+  // Parent system id — the endpoints are scoped to the primary system.
+  const systemId = activeSystem?.id ?? subsystem.depends_on ?? ''
 
   // Re-sync local state when the subsystem identity or its stored mappings change.
   const lastKey = useRef<string>('')
@@ -66,12 +99,17 @@ export function SubsystemMappingCard({
   }, [subsystem.id, subsystem.cohort_mappings])
 
   const dependentArchetypes = useMemo(() => {
-    const ids = new Set<string>()
+    // The subsystem's full cohort space, so cohorts are mappable regardless of
+    // how stock is derived — from rules (rules mode) or from uploaded flows
+    // (manual mode, where dependency_rules is empty). Union the declared
+    // cartesian cohorts with any rule targets + already-saved mapping keys.
+    const ids = new Set<string>(cohortKeysForDims(subsystem.dimensions))
     for (const r of subsystem.dependency_rules) {
       if (r.dependent_archetype_id) ids.add(r.dependent_archetype_id)
     }
+    for (const k of Object.keys(subsystem.cohort_mappings ?? {})) ids.add(k)
     return [...ids].sort()
-  }, [subsystem.dependency_rules])
+  }, [subsystem.dimensions, subsystem.dependency_rules, subsystem.cohort_mappings])
 
   const mappedCount = dependentArchetypes.filter((a) => !!local[a]?.archetype_id).length
 
@@ -99,6 +137,56 @@ export function SubsystemMappingCard({
     scheduleSave(next)
   }
 
+  const handleDownloadTemplate = async () => {
+    if (!systemId) return
+    setImportError('')
+    try {
+      await downloadSubsystemCohortMappingTemplate(systemId, subsystem.id, subsystem.name)
+    } catch (e: unknown) {
+      setStatus({ kind: 'error', msg: e instanceof Error ? e.message : 'Template download failed' })
+    }
+  }
+
+  const handleUploadClick = () => fileInputRef.current?.click()
+
+  const handleFileSelected = async (file: File) => {
+    if (!systemId) return
+    setImportError('')
+    setStatus(null)
+    setImporting(true)
+    try {
+      const res = await importSubsystemCohortMapping(systemId, subsystem.id, file)
+      if (res.ok) {
+        // Valid → ask before the destructive replace.
+        setPendingImport(res.mappings)
+      } else {
+        setImportError(
+          'Import rejected — fix these rows and try again:\n' +
+            res.errors.map((e) => `• Row ${e.row} (${e.field}): ${e.message}`).join('\n'),
+        )
+      }
+    } catch (e: unknown) {
+      setStatus({ kind: 'error', msg: e instanceof Error ? e.message : 'Import failed' })
+    } finally {
+      setImporting(false)
+    }
+  }
+
+  const confirmImport = async () => {
+    if (!pendingImport) return
+    const imported = pendingImport
+    setPendingImport(null)
+    setLocal(imported)
+    if (autoSaveTimer.current != null) window.clearTimeout(autoSaveTimer.current)
+    try {
+      await saveDependent({ ...subsystem, cohort_mappings: imported })
+      setStatus({ kind: 'success', msg: `Imported ${Object.keys(imported).length} mappings ✓` })
+      window.setTimeout(() => setStatus(null), 2000)
+    } catch (e) {
+      setStatus({ kind: 'error', msg: `Save failed: ${e instanceof Error ? e.message : String(e)}` })
+    }
+  }
+
   const statusColor = status?.kind === 'error' ? 'var(--danger)' : status?.kind === 'success' ? 'var(--success)' : 'var(--text-secondary)'
 
   return (
@@ -117,8 +205,54 @@ export function SubsystemMappingCard({
             {mappedCount} of {dependentArchetypes.length} archetypes mapped. Edits auto-save. Unmapped archetypes are excluded from Impact Assessment.
           </div>
         </div>
-        {status && <span style={{ fontSize: 'var(--text-xs)', color: statusColor }}>{status.msg}</span>}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {status && <span style={{ fontSize: 'var(--text-xs)', color: statusColor }}>{status.msg}</span>}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".xlsx"
+            data-testid="subsystem-cohort-file-input"
+            style={{ display: 'none' }}
+            onChange={(e) => {
+              const f = e.target.files?.[0]
+              if (f) void handleFileSelected(f)
+              e.target.value = '' // allow re-selecting the same file
+            }}
+          />
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleUploadClick}
+            disabled={!systemId || importing}
+            data-testid="subsystem-cohort-upload"
+            title="Import cohort mappings from an xlsx file"
+          >
+            {importing ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={14} />}
+            Upload
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleDownloadTemplate}
+            disabled={!systemId}
+            data-testid="subsystem-cohort-template"
+            title="Download a template with this subsystem's cohort keys"
+          >
+            <Download size={14} /> Template
+          </Button>
+        </div>
       </div>
+
+      {importError && (
+        <div style={{
+          padding: '8px 12px', marginBottom: 'var(--space-3)',
+          backgroundColor: 'var(--danger-muted)', border: '1px solid var(--danger)',
+          borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)',
+          color: 'var(--danger)', whiteSpace: 'pre-line',
+        }}>
+          {importError}
+        </div>
+      )}
 
       {archetypes.length === 0 ? (
         <div style={{
@@ -201,6 +335,46 @@ export function SubsystemMappingCard({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {pendingImport && (
+        <div
+          data-testid="subsystem-cohort-import-confirm"
+          style={{
+            position: 'fixed', inset: 0, zIndex: 1000,
+            backgroundColor: 'color-mix(in srgb, black 55%, transparent)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 'var(--space-4)',
+          }}
+          onClick={() => setPendingImport(null)}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-lg)', padding: 'var(--space-5)', maxWidth: 460,
+              display: 'flex', flexDirection: 'column', gap: 'var(--space-4)',
+            }}
+          >
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
+              Import {Object.keys(pendingImport).length} mapping{Object.keys(pendingImport).length === 1 ? '' : 's'}
+            </div>
+            <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+              This will <strong>replace all current cohort mappings</strong> for{' '}
+              <strong>{subsystem.name}</strong>. This action cannot be undone. Continue?
+            </div>
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <Button variant="ghost" onClick={() => setPendingImport(null)}>Cancel</Button>
+              <Button
+                variant="primary"
+                onClick={confirmImport}
+                data-testid="subsystem-cohort-import-replace"
+                style={{ backgroundColor: 'var(--danger)' }}
+              >
+                Replace
+              </Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

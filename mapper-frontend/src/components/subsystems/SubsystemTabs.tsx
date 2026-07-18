@@ -14,15 +14,32 @@ import { AddSubsystemDialog } from './AddSubsystemDialog'
 
 export const OVERALL_ID = '__overall__'
 
+/**
+ * The subsystem targeted by the active DSM tab, or `null` for the primary /
+ * Overall tab (which edit the primary system). Drives the header Edit button
+ * so it edits whichever tab is active, not always the primary.
+ */
+export function resolveActiveSubsystem<T extends { id: string }>(
+  activeSubsystemId: string | null,
+  subsystems: T[],
+): T | null {
+  if (!activeSubsystemId || activeSubsystemId === OVERALL_ID) return null
+  return subsystems.find((s) => s.id === activeSubsystemId) ?? null
+}
+
 interface SubsystemTabsProps {
   primarySystemId: string
+  // The primary system's name — the primary tab reads its label from this
+  // (was a hardcoded "Primary system"), matching how subsystem tabs read
+  // `s.name`. Renamed via the Edit flow. Falls back to "Main system".
+  primarySystemName?: string
 }
 
 // NOTE: `primarySystemId` is accepted for API clarity (the parent passes the
 // active system id) but the subsystem store is already scoped to the active
 // system, so the value isn't read here. Flagged in Patch 5AI — verify
 // subsystems re-fetch on system switch before wiring it in.
-export function SubsystemTabs({ primarySystemId: _primarySystemId }: SubsystemTabsProps) {
+export function SubsystemTabs({ primarySystemId: _primarySystemId, primarySystemName }: SubsystemTabsProps) {
   const subsystems = useSubsystemStore((s) => s.subsystems)
   const activeSubsystemId = useSubsystemStore((s) => s.activeSubsystemId)
   const selectSubsystem = useSubsystemStore((s) => s.selectSubsystem)
@@ -58,7 +75,7 @@ export function SubsystemTabs({ primarySystemId: _primarySystemId }: SubsystemTa
   const overallActive = activeSubsystemId === OVERALL_ID
   const showOverall = dependents.length >= 1
   const tabs: Array<{ id: string | null; label: string; type: 'primary' | 'dependent' }> = [
-    { id: null, label: 'Primary system', type: 'primary' },
+    { id: null, label: primarySystemName?.trim() || 'Main system', type: 'primary' },
     ...dependents.map((s) => ({ id: s.id, label: s.name, type: 'dependent' as const })),
   ]
 

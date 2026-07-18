@@ -44,7 +44,7 @@ const inputStyle: React.CSSProperties = {
 export function SystemCreator({ onClose }: SystemCreatorProps) {
   const createSystem = useDSMStore((s) => s.createSystem)
   const [step, setStep] = useState<1 | 2 | 3>(1)
-  const [name, setName] = useState('New stock system')
+  const [name, setName] = useState('Main system')
   const [description, setDescription] = useState('')
   const [startYear, setStartYear] = useState(2025)
   const [endYear, setEndYear] = useState(2050)

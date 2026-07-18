@@ -54,6 +54,7 @@ import { ScenarioManagerModal } from '../components/dsm/ScenarioManagerModal'
 import { SlotDataViewer, type SlotKey } from '../components/dsm/SlotDataViewer'
 import { SystemCreator } from '../components/dsm/SystemCreator'
 import { EditSystemModal } from '../components/dsm/EditSystemModal'
+import { EditSubsystemModal } from '../components/subsystems/EditSubsystemModal'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
 import { YearSlider } from '../components/ui/YearSlider'
@@ -62,7 +63,7 @@ import { multiResultKey, resolveSlot, useDSMStore } from '../stores/dsmStore'
 import type { ActiveResultView } from '../stores/dsmStore'
 import { useParameterStore } from '../stores/parameterStore'
 import { useSubsystemStore } from '../stores/subsystemStore'
-import { SubsystemTabs, OVERALL_ID } from '../components/subsystems/SubsystemTabs'
+import { SubsystemTabs, OVERALL_ID, resolveActiveSubsystem } from '../components/subsystems/SubsystemTabs'
 import { DependentSubsystemView } from '../components/subsystems/DependentSubsystemView'
 import { colorFor } from '../utils/chartColors'
 import { groupKeyForDim, parseCohortKey, useDSMSystemColors } from '../utils/dsmCohortColors'
@@ -157,6 +158,9 @@ export function DSMDashboard() {
   )
 
   const activeSubsystemId = useSubsystemStore((s) => s.activeSubsystemId)
+  const subsystems = useSubsystemStore((s) => s.subsystems)
+  // The subsystem targeted by the active tab (null for the primary/overall tab).
+  const activeSubsystem = resolveActiveSubsystem(activeSubsystemId, subsystems)
 
   const [activeTab, setActiveTab] = useState<'dynamics' | 'materials'>('dynamics')
   const [showCreator, setShowCreator] = useState(false)
@@ -601,7 +605,7 @@ export function DSMDashboard() {
       )}
 
       {/* Subsystem tab bar — only visible when ≥1 dependent exists. */}
-      {activeSystem.id && <SubsystemTabs primarySystemId={activeSystem.id} />}
+      {activeSystem.id && <SubsystemTabs primarySystemId={activeSystem.id} primarySystemName={activeSystem.name} />}
 
       {activeSubsystemId === OVERALL_ID ? (
         <MaterialFlowPanel />
@@ -1339,8 +1343,12 @@ export function DSMDashboard() {
           onClose={() => setViewSlotKey(null)}
         />
       )}
-      {showEdit && activeSystem && (
-        <EditSystemModal system={activeSystem} onClose={() => setShowEdit(false)} />
+      {showEdit && (
+        activeSubsystem ? (
+          <EditSubsystemModal subsystem={activeSubsystem} onClose={() => setShowEdit(false)} />
+        ) : activeSystem ? (
+          <EditSystemModal system={activeSystem} onClose={() => setShowEdit(false)} />
+        ) : null
       )}
     </div>
   )

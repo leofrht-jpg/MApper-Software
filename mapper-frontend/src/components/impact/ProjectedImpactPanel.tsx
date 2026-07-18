@@ -1035,9 +1035,10 @@ function ProjectedImpactPanelImpl() {
           )}
         </div>
 
-        {/* Change 4: preflight stacks full-width above; the Sensitivity-cases
-            box + Calculate sit in a LEFT-aligned row (aligned with the LCI
-            scenarios column above) instead of right-floating. Layout only. */}
+        {/* Preflight stacks full-width above; the Sensitivity-cases box is
+            LEFT-aligned (with the LCI scenarios column above). The Calculate
+            button was moved OUT of this row to the card footer below (bottom-
+            right), matching the Static tab. Layout only. */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
           {preflightIssues.length > 0 && (
             <div style={{
@@ -1118,23 +1119,30 @@ function ProjectedImpactPanelImpl() {
               </span>
             )}
           </div>
-          <StopButton taskId={stopTaskId} state={stopState} onClick={requestStop} style={{ height: 36 }} />
-          <Button variant="primary" onClick={handleRun} disabled={isRunning} style={{ backgroundColor: 'var(--mod-plca)', height: 36, flexShrink: 0, opacity: canRun ? 1 : 0.6 }}>
-            {isRunning ? (
-              <><Loader2 size={14} style={{ animation: 'impact-spin 1s linear infinite' }} /> Calculating…</>
-            ) : (
-              <>
-                <Calculator size={14} />
-                {isPairedMode && pairs.length > 0
-                  ? ` Calculate (${pairs.length} pair${pairs.length === 1 ? '' : 's'} × ${methods.length} method${methods.length === 1 ? '' : 's'})`
-                  : effectiveSelected.length > 1
-                    ? ` Calculate (${effectiveSelected.length} scenarios × ${methods.length} method${methods.length === 1 ? '' : 's'})`
-                    : methods.length > 1
-                      ? ` Calculate (${methods.length} methods)`
-                      : ' Calculate'}
-              </>
-            )}
-          </Button>
+          </div>
+          {/* Footer action area — Calculate anchored bottom-right of the config
+              card, below ALL configuration sections (incl. Sensitivity cases).
+              Matches the Static tab's footer (justify-end, gap 10). Repositioned
+              from the Sensitivity-cases row: layout only — the button's label,
+              handler, and disabled/loading states are unchanged. */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'flex-start', gap: 10 }} data-testid="projected-calculate-footer">
+            <StopButton taskId={stopTaskId} state={stopState} onClick={requestStop} style={{ height: 36 }} />
+            <Button variant="primary" onClick={handleRun} disabled={isRunning} style={{ backgroundColor: 'var(--mod-plca)', height: 36, flexShrink: 0, opacity: canRun ? 1 : 0.6 }}>
+              {isRunning ? (
+                <><Loader2 size={14} style={{ animation: 'impact-spin 1s linear infinite' }} /> Calculating…</>
+              ) : (
+                <>
+                  <Calculator size={14} />
+                  {isPairedMode && pairs.length > 0
+                    ? ` Calculate (${pairs.length} pair${pairs.length === 1 ? '' : 's'} × ${methods.length} method${methods.length === 1 ? '' : 's'})`
+                    : effectiveSelected.length > 1
+                      ? ` Calculate (${effectiveSelected.length} scenarios × ${methods.length} method${methods.length === 1 ? '' : 's'})`
+                      : methods.length > 1
+                        ? ` Calculate (${methods.length} methods)`
+                        : ' Calculate'}
+                </>
+              )}
+            </Button>
           </div>
         </div>
 

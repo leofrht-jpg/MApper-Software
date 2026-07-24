@@ -18,23 +18,27 @@ import { resolve } from 'node:path'
 const root = resolve(__dirname, '..')
 const pub = (f: string) => resolve(root, 'public', f)
 
+// Tab favicon is now the leaf-circuit icon (favicon.ico + favicon-32x32.png,
+// generated from mapper-tauri/icons/MApper-icon.png). apple-touch + PWA manifest
+// icons are kept unchanged.
 const ASSETS = [
-  'favicon.svg', 'favicon.ico', 'favicon-16.png', 'favicon-32.png', 'favicon-48.png',
+  'favicon.ico', 'favicon-32x32.png',
   'apple-touch-icon.png', 'icon-192.png', 'icon-512.png', 'site.webmanifest',
 ]
 
-describe('favicon assets (Patch 5AH)', () => {
+describe('favicon assets', () => {
   it('all favicon assets exist in public/', () => {
     for (const a of ASSETS) expect(existsSync(pub(a)), `${a} missing`).toBe(true)
   })
 
-  it('index.html head references the favicon set', () => {
+  it('index.html head references the leaf-circuit favicon (ico + 32x32 png)', () => {
     const html = readFileSync(resolve(root, 'index.html'), 'utf8')
-    expect(html).toContain('rel="icon" type="image/svg+xml" href="/favicon.svg"')
-    expect(html).toContain('href="/favicon.ico"')
-    expect(html).toContain('href="/favicon-32.png"')
+    expect(html).toContain('rel="icon" type="image/x-icon" href="/favicon.ico"')
+    expect(html).toContain('rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png"')
     expect(html).toContain('rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png"')
     expect(html).toContain('rel="manifest" href="/site.webmanifest"')
+    // The old bolt SVG is no longer the tab icon.
+    expect(html).not.toContain('href="/favicon.svg"')
   })
 
   it('manifest is valid JSON and references the 192/512 PWA icons + theme color', () => {

@@ -454,16 +454,27 @@ export function useDSMSystemColors(
     const dims = activeSystem?.dimensions ?? []
 
     const colorForCohort = (cohortKey: string, fallbackIndex = 0): string => {
+      // An EXPLICIT per-cohort override always wins — in BOTH cohort-key AND
+      // single-dim stacking. `colorForCohort` is only ever called with full
+      // cohort keys by "by-cohort" charts (Impact-over-time, ExpandedCohortChart,
+      // multi-scenario facets), where each series is exactly one cohort — so a
+      // per-cohort color is well-defined regardless of the Stack-by grouping.
+      // The user's assigned colors (primary CohortMapping.row_colors +
+      // subsystem cohort colors, both threaded in via `rowColorOverrides`) must
+      // surface here; suppressing them in single-dim mode was the "chart shows
+      // the default palette, not my assigned colors" bug. NOTE: this does NOT
+      // affect DSM Stock Composition — that chart reads `colorMap` directly (one
+      // color per merged dim band) and never calls `colorForCohort`.
+      const row = rowColorOverrides[cohortKey]
+      if (row) return row
       if (stackByDimension) {
-        // Single-dim stacking: per-dim colors only (Patch 4AK rule).
-        // Row overrides DO NOT propagate here — they're for cohort-key
-        // stacking, not for grouping a cohort under its dim value.
+        // Single-dim stacking, no per-cohort override: group under the dim
+        // value so same-dim cohorts share a color (matches DSM Stock
+        // Composition — Patch 4N/5AG cross-chart consistency).
         const v = groupKeyForDim(cohortKey, dims, stackByDimension)
         return colorFor(colorMap, v, fallbackIndex)
       }
-      // Cohort-key stacking: row override wins, then algorithm modulo.
-      const row = rowColorOverrides[cohortKey]
-      if (row) return row
+      // Cohort-key stacking, no override: deterministic palette (modulo).
       return CHART_PALETTE[fallbackIndex % CHART_PALETTE.length]
     }
 

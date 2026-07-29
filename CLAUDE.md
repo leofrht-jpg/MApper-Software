@@ -6769,16 +6769,39 @@ different resolution rules, side by side:
 
 Two distinct chart contexts, two distinct rules:
 
-| Chart context             | Resolution priority                                  |
-|---------------------------|------------------------------------------------------|
-| Cohort-key stacking       | Row override → algorithm modulo fallback             |
-| Single-dim stacking       | Per-dim override (Patch 4AJ) → algorithm fallback    |
+| Chart context             | Resolution priority                                              |
+|---------------------------|-----------------------------------------------------------------|
+| Cohort-key stacking       | Row override → algorithm modulo fallback                        |
+| Single-dim stacking       | Row override → per-dim override (Patch 4AJ) → algorithm fallback |
 
 `useDSMSystemColors(activeSystem, stackByDimension, { rowColorOverrides })`
-is the single source of truth. When `stackByDimension` is non-null,
-the single-dim branch fires; row overrides are deliberately IGNORED.
-When `stackByDimension` is null, the cohort-key branch fires and
-row overrides win.
+is the single source of truth.
+
+**An EXPLICIT per-cohort override always wins — in BOTH cohort-key and
+single-dim stacking (colour-fix, supersedes the original Patch 4AK
+"single-dim ignores row overrides" rule).** `colorForCohort` is only
+ever called with full cohort KEYS by "by-cohort" charts (Impact-over-time
+by cohort, `ExpandedCohortChart`, multi-scenario facets), where each
+series is exactly ONE cohort — so a per-cohort colour is well-defined
+regardless of the Stack-by grouping. Because `stackByDimension` defaults
+to the first non-age dimension on every system load (`dsmStore`), the
+old "single-dim ignores row overrides" rule silently dropped every
+user-assigned primary `CohortMapping.row_colors` AND subsystem
+`SubsystemCohortMapping.color` to the algorithmic palette on the
+"Impact over time, by cohort" chart — the reported "chart ignores my
+assigned colours" bug. The refined rule: **row override first (both
+modes); a cohort WITHOUT an override still groups under its dim value in
+single-dim mode** (per-dim colour → Patch 4N/5AG cross-chart fuel-colour
+consistency preserved), or gets the deterministic palette in cohort-key
+mode.
+
+This does **NOT** affect DSM Stock Composition: that chart reads
+`colorMap` directly (one colour per merged dim band) and never calls
+`colorForCohort`. Locked by `tests/byCohortAssignedColors.test.tsx`
+(assigned primary + subsystem colours resolve under the DEFAULT non-null
+`stackByDimension`; both bare and `<system_id>::`-prefixed key formats
+resolve; unassigned cohorts unaffected by the override map) and the
+updated `tests/patch4ak.test.tsx`.
 
 ### Storage models, deliberately different
 

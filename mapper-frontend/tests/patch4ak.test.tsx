@@ -99,15 +99,21 @@ describe('Patch 4AK — useDSMSystemColors row override resolution', () => {
     expect(other).toBe(CHART_PALETTE[1])
   })
 
-  it('single-dim stacking branch — row overrides DO NOT apply', () => {
+  it('single-dim stacking branch — an EXPLICIT per-cohort override still wins', () => {
+    // Refined rule (colour-fix): `colorForCohort` is only called with full
+    // cohort keys by by-cohort charts (each series = one cohort), so an
+    // explicit per-cohort assignment must surface even when Stack-by groups by
+    // a dimension. Suppressing it here was the "chart ignores my assigned
+    // colours" bug. DSM Stock Composition is unaffected (it reads colorMap
+    // directly, never colorForCohort).
     const { result } = renderHook(() => useDSMSystemColors(system, 'fuel_type', {
       rowColorOverrides: { 'BEV-LFP|Small': '#ff0000' },
     }))
-    // BEV-LFP|Small should resolve to the per-dim color for 'BEV-LFP',
-    // NOT the row override (#ff0000). Row colors are deliberately
-    // ignored in single-dim mode.
-    const c = result.current.colorForCohort('BEV-LFP|Small')
-    expect(c).not.toBe('#ff0000')
+    expect(result.current.colorForCohort('BEV-LFP|Small')).toBe('#ff0000')
+    // A cohort WITHOUT an override still groups under its dim value (per-dim
+    // color), preserving cross-chart fuel-color consistency.
+    const grouped = result.current.colorForCohort('BEV-LFP|Large')
+    expect(grouped).not.toBe('#ff0000')
   })
 
   it('no row override on cohort-key branch — algorithm fallback (modulo)', () => {
@@ -259,7 +265,7 @@ describe('Patch 4AK — row color applies to both pills in the row', () => {
 })
 
 describe('Patch 4AK — coexistence with Patch 4AJ per-dim overrides', () => {
-  it('cohort-key stacking uses row override; single-dim stacking uses per-dim', () => {
+  it('an explicit per-cohort override (more specific) wins over a per-dim override in BOTH modes', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const system: any = {
       id: 'sys-1', name: 'Fleet', unit_name: 'vehicles',
@@ -281,11 +287,32 @@ describe('Patch 4AK — coexistence with Patch 4AJ per-dim overrides', () => {
     }))
     expect(rA.current.colorForCohort('BEV-LFP|Small')).toBe('#222222')
 
-    // Single-dim stacking → per-dim wins (and row ignored).
+    // Single-dim stacking → the explicit per-cohort override (#222222) still
+    // wins; the per-dim color (#111111) applies only to cohorts that have NO
+    // per-cohort override.
     const { result: rB } = renderHook(() => useDSMSystemColors(system, 'fuel_type', {
       rowColorOverrides: { 'BEV-LFP|Small': '#222222' },
     }))
-    expect(rB.current.colorForCohort('BEV-LFP|Small')).toBe('#111111')
+    expect(rB.current.colorForCohort('BEV-LFP|Small')).toBe('#222222')
+  })
+
+  it('single-dim stacking WITHOUT a per-cohort override falls to the per-dim color', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const system: any = {
+      id: 'sys-2', name: 'Fleet', unit_name: 'vehicles',
+      dimensions: [
+        { name: 'fuel_type', is_age: false, labels: ['BEV-LFP'] },
+        { name: 'size', is_age: false, labels: ['Small'] },
+      ],
+    }
+    localStorage.setItem(
+      'mapper-color-assignments-test-project',
+      JSON.stringify({ 'BEV-LFP': '#111111' }),
+    )
+    const { result } = renderHook(() => useDSMSystemColors(system, 'fuel_type', {
+      rowColorOverrides: {},
+    }))
+    expect(result.current.colorForCohort('BEV-LFP|Small')).toBe('#111111')
   })
 })
 

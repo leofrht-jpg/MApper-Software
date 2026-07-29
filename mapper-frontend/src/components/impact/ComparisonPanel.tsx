@@ -40,11 +40,22 @@ const sty: React.CSSProperties = {
 function ComparisonPanelImpl() {
   const {
     staticResult, projectedResult, projectedMultiResult, compareResult, compare, error,
+    compareScenarioIndex, setCompareScenarioIndex,
     pairedScenarioOrder, pairedScenarioRuns, activePairedScenario, selectPairedScenario,
     staticDsmScenarioOrder, staticDsmScenarioRuns, activeStaticDsmScenario, selectStaticDsmScenario,
     projectedDsmScenarioOrder, projectedDsmScenarioRuns, activeProjectedDsmScenario, selectProjectedDsmScenario,
   } = useImpactStore()
+  // Multi-LCI-scenario Prospective run: Comparison diffs Static against ONE
+  // chosen scenario (compareScenarioIndex), picked via the in-tab select below.
+  // No longer a blocker — the delta is computed client-side per scenario.
   const isMultiProjected = !!projectedMultiResult && projectedMultiResult.scenarios.length > 1
+  const lciScenarios = projectedMultiResult?.scenarios ?? []
+  const lciScenarioLabel = (s: { scenario: { iam: string; ssp: string } }) =>
+    `${s.scenario.iam.toUpperCase()}/${s.scenario.ssp}`
+  const selectedLciIndex = compareScenarioIndex ?? 0
+  const selectedLciLabel = isMultiProjected && lciScenarios[selectedLciIndex]
+    ? lciScenarioLabel(lciScenarios[selectedLciIndex])
+    : null
   const isPairedProjected = pairedScenarioOrder.length > 1
   const isMultiDsmStatic = staticDsmScenarioOrder.length > 1
   const isMultiDsmProjected = projectedDsmScenarioOrder.length > 1
@@ -157,7 +168,13 @@ function ComparisonPanelImpl() {
   const deltaFormat = useNumberFormatter()
 
   const handleExport = async () => {
-    if (!staticResult || !projectedResult || !activeSystem) return
+    // For a multi-LCI run, export the SELECTED scenario's projected result
+    // (matching the on-screen comparison), not the scenarios[0]-pinned
+    // projectedResult.
+    const projectedForExport = (isMultiProjected && lciScenarios[selectedLciIndex]?.result)
+      ? lciScenarios[selectedLciIndex].result
+      : projectedResult
+    if (!staticResult || !projectedForExport || !activeSystem) return
     setIsExporting(true)
     try {
       const sysName = activeSystem.name.replace(/[^\w.-]+/g, '_') || 'system'
@@ -173,9 +190,11 @@ function ComparisonPanelImpl() {
       const dsmTag = activeDsmIdForName
         ? `_${dsmScenarioLabelFor(activeDsmIdForName).replace(/[^\w.-]+/g, '_')}`
         : ''
+      // Multi-LCI: tag the file with the chosen LCI scenario too.
+      const lciTag = selectedLciLabel ? `_${selectedLciLabel.replace(/[^\w.-]+/g, '_')}` : ''
       await exportImpact(
-        { result: projectedResult, compare_result: staticResult },
-        `${sysName}_comparison${dsmTag}_impact.xlsx`,
+        { result: projectedForExport, compare_result: staticResult },
+        `${sysName}_comparison${dsmTag}${lciTag}_impact.xlsx`,
       )
     } catch (e) {
       console.error('Export failed', e)
@@ -202,13 +221,13 @@ function ComparisonPanelImpl() {
         && commonDsmIds.includes(pairedScenarioRuns[activePairedScenario]?.dsmScenarioId ?? ''))
       : true
     if (
-      staticResult && projectedResult && !compareResult && !isMultiProjected
+      staticResult && projectedResult && !compareResult
       && multiDsmBothReady && pairedReady
     ) {
       void compare()
     }
   }, [
-    staticResult, projectedResult, compareResult, compare, isMultiProjected,
+    staticResult, projectedResult, compareResult, compare, compareScenarioIndex,
     isPairedProjected, isMultiDsmStatic, isMultiDsmBoth, commonDsmIds,
     activeStaticDsmScenario, activeProjectedDsmScenario,
     activePairedScenario, pairedScenarioRuns,
@@ -229,15 +248,6 @@ function ComparisonPanelImpl() {
       <EmptyState
         title="Comparison not ready"
         body="Run both Static Background and Prospective Background first."
-      />
-    )
-  }
-
-  if (isMultiProjected) {
-    return (
-      <EmptyState
-        title="Comparison unavailable for multi-scenario LCI"
-        body="The Prospective Background run includes multiple SSP × IAM scenarios. Re-run Prospective Background with a single scenario to enable Static vs Prospective comparison."
       />
     )
   }
@@ -308,6 +318,37 @@ function ComparisonPanelImpl() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
+      {/* Multi-LCI scenario picker — choose WHICH LCI scenario of a
+          multi-scenario Prospective run to diff Static against. Kept above the
+          Results card so it stays reachable while Results is collapsed. Absent
+          for single-scenario runs (behaviour identical to before). */}
+      {isMultiProjected && (
+        <div data-testid="comparison-lci-scenario-picker" style={{
+          display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap',
+          padding: '6px 10px',
+          backgroundColor: 'var(--bg-surface)',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)',
+        }}>
+          <span style={{
+            fontSize: 'var(--text-xs)', fontWeight: 600,
+            color: 'var(--text-secondary)',
+          }}>
+            Comparing Static against:
+          </span>
+          <select
+            data-testid="comparison-lci-scenario-select"
+            style={{ ...sty, minWidth: 200 }}
+            value={selectedLciIndex}
+            onChange={(e) => setCompareScenarioIndex(Number(e.target.value))}
+          >
+            {lciScenarios.map((s, i) => (
+              <option key={i} value={i}>{lciScenarioLabel(s)}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
       {/* DSM-scenario tab bar — paired×multi-DSM-static and multi-DSM-both
           intersection (Patch 2G). Switching swaps both sides via the
           appropriate selectors so Comparison stays aligned. */}
@@ -463,10 +504,10 @@ function ComparisonPanelImpl() {
 
       {/* Chart 1: Overlay */}
       <ChartCard
-        title="Impact per year — Static vs Projected"
+        title={`Impact per year — Static vs ${selectedLciLabel ?? 'Projected'}`}
         subtitle={current.unit}
         chartRef={overlayRef}
-        exportFilename={`impact_overlay_${current.method.join('_')}`}
+        exportFilename={`impact_overlay_${current.method.join('_')}${selectedLciLabel ? `_${selectedLciLabel.replace(/[^\w.-]+/g, '_')}` : ''}`}
         extra={<NumberFormatControl settings={overlayFormat.settings} onChange={overlayFormat.setSettings} />}
       >
         <ResponsiveContainer width="100%" height={280}>
@@ -477,17 +518,17 @@ function ComparisonPanelImpl() {
             <Tooltip content={<OverlayTooltip unit={current.unit} fmtValue={overlayFormat.format} />} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Line type="monotone" dataKey="static_impact" name="Static Background" stroke="var(--mod-lca)" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="projected_impact" name="Prospective Background" stroke="var(--mod-plca)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+            <Line type="monotone" dataKey="projected_impact" name={selectedLciLabel ? `Prospective — ${selectedLciLabel}` : 'Prospective Background'} stroke="var(--mod-plca)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
 
       {/* Chart 2: Delta bars */}
       <ChartCard
-        title="Δ per year (Projected − Static)"
+        title={`Δ per year (${selectedLciLabel ?? 'Projected'} − Static)`}
         subtitle={`${current.unit} — green = improvement, red = worse`}
         chartRef={deltaRef}
-        exportFilename={`impact_delta_${current.method.join('_')}`}
+        exportFilename={`impact_delta_${current.method.join('_')}${selectedLciLabel ? `_${selectedLciLabel.replace(/[^\w.-]+/g, '_')}` : ''}`}
         extra={<NumberFormatControl settings={deltaFormat.settings} onChange={deltaFormat.setSettings} />}
       >
         <ResponsiveContainer width="100%" height={240}>

@@ -93,6 +93,15 @@ interface ImpactStore {
    *  iterate or export across scenarios read this field directly. */
   projectedMultiResult: MultiScenarioProjectedImpactResult | null
 
+  /** Which LCI scenario of a multi-scenario Prospective run the Comparison tab
+   *  diffs Static against. `0` on a fresh multi run (scenarios[0]); `null` when
+   *  there is no multi result (single-scenario path uses `projectedResult`
+   *  directly). Selecting a scenario is a display-only pick — it NEVER mutates
+   *  `projectedResult` (the ProjectedImpactPanel + charts + AESA all read that
+   *  slot pinned to scenarios[0]); `compare()` derives its projected side from
+   *  `projectedMultiResult.scenarios[compareScenarioIndex].result` instead. */
+  compareScenarioIndex: number | null
+
   /** Paired DSM × LCI fan-out (Patch 2F). Projected-only (paired co-variation
    *  requires a prospective LCI on each pair). Single shared slot — only one
    *  paired run exists at a time, mutually exclusive with multi-DSM and
@@ -147,6 +156,11 @@ interface ImpactStore {
    *  to point at that pair's bucket). */
   selectPairedScenario: (pairKey: string) => void
   compare: () => Promise<void>
+  /** Pick which LCI scenario of a multi-scenario Prospective run Comparison
+   *  diffs against. Clears `compareResult` so the Comparison useEffect
+   *  recomputes against the newly-selected scenario. Clamped to the scenarios
+   *  array; a no-op when there is no multi result. */
+  setCompareScenarioIndex: (index: number) => void
   clearCompare: () => void
   reset: () => void
   /** Mirror a static-mode DSM×LCA calculation into staticResult so Comparison
@@ -261,6 +275,7 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
       projectedJob: job,
       projectedResult: null,
       projectedMultiResult: null,
+      compareScenarioIndex: null,
       compareResult: null,
     })
 
@@ -286,9 +301,13 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
             // nested result on ``projectedResult`` so the time-series chart and
             // headline keep rendering (Phase 2A: chart shows scenario 1 only).
             const first = result.scenarios[0]?.result ?? null
-            set({ projectedMultiResult: result, projectedResult: first })
+            // Reset the Comparison scenario pick to the first scenario of the
+            // NEW set (never leave it pointing past the end of a smaller array).
+            set({ projectedMultiResult: result, projectedResult: first, compareScenarioIndex: 0 })
           } else {
-            set({ projectedResult: result, projectedMultiResult: null })
+            // Single-scenario run (possibly after a multi run): clear the multi
+            // result AND the index so Comparison falls back to projectedResult.
+            set({ projectedResult: result, projectedMultiResult: null, compareScenarioIndex: null })
           }
         } catch (e) {
           const err = e instanceof Error ? e.message : String(e)
@@ -322,7 +341,15 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
 
   const compare: ImpactStore['compare'] = async () => {
     const s = get().staticResult
-    const p = get().projectedResult
+    // Comparison's projected side: for a multi-scenario Prospective run, diff
+    // against the user-selected scenario (`compareScenarioIndex`) — NOT the
+    // scenarios[0]-pinned `projectedResult` (which stays owned by the chart /
+    // AESA). Falls back to `projectedResult` for single-scenario runs.
+    const multi = get().projectedMultiResult
+    const idx = get().compareScenarioIndex
+    const p = (multi && idx != null)
+      ? (multi.scenarios[idx]?.result ?? multi.scenarios[0]?.result ?? null)
+      : get().projectedResult
     if (!s || !p) {
       set({ error: 'Both Static and Projected runs must complete first.' })
       return
@@ -333,6 +360,15 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
     } catch (e) {
       set({ error: e instanceof Error ? e.message : String(e) })
     }
+  }
+
+  const setCompareScenarioIndex: ImpactStore['setCompareScenarioIndex'] = (index) => {
+    const multi = get().projectedMultiResult
+    if (!multi) return
+    const clamped = Math.max(0, Math.min(index, multi.scenarios.length - 1))
+    // Clear compareResult so the Comparison useEffect recomputes against the
+    // newly-selected scenario (never render a stale delta).
+    set({ compareScenarioIndex: clamped, compareResult: null })
   }
 
   const runScenarios: ImpactStore['runScenarios'] = async (body, scenarios) => {
@@ -786,6 +822,7 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
     pairedScenarioRuns: {},
     activePairedScenario: null,
     projectedMultiResult: null,
+    compareScenarioIndex: null,
 
     run,
     runScenarios,
@@ -797,6 +834,7 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
     selectProjectedDsmScenario,
     selectPairedScenario,
     compare,
+    setCompareScenarioIndex,
     clearCompare: () => set({ compareResult: null }),
 
     setStaticFromMFA: ({ mfaSystemId, results, scope, yearStart, yearEnd, baseDb }) => {
@@ -860,6 +898,7 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
         pairedScenarioRuns: {},
         activePairedScenario: null,
         projectedMultiResult: null,
+        compareScenarioIndex: null,
       })
     },
   }

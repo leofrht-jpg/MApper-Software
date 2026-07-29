@@ -17,6 +17,7 @@ import { SingleProductImpact } from '../components/impact/SingleProductImpact'
 import { Button } from '../components/ui/Button'
 import { useImpactStore } from '../stores/impactStore'
 import { useDSMStore } from '../stores/dsmStore'
+import { computeCompareGate } from '../utils/compareGate'
 
 type TabKey = 'static' | 'projected' | 'compare'
 type ModeKey = 'system' | 'single_product'
@@ -29,9 +30,14 @@ export function ImpactAssessment({ onNavigate }: ImpactAssessmentProps = {}) {
   const [mode, setMode] = useState<ModeKey>('single_product')
   const [activeTab, setActiveTab] = useState<TabKey>('static')
   const [libraryOpen, setLibraryOpen] = useState(false)
-  const { staticResult, projectedResult, projectedMultiResult } = useImpactStore()
-  const isMultiProjected = !!projectedMultiResult && projectedMultiResult.scenarios.length > 1
-  const canCompare = !!staticResult && !!projectedResult && !isMultiProjected
+  const { staticResult, projectedResult } = useImpactStore()
+  // The compare gate names the SPECIFIC gap (missing Static / missing
+  // Prospective) rather than a generic "Run both first". A multi-LCI-scenario
+  // Prospective run sets projectedResult (scenarios[0]) too and is NO LONGER a
+  // blocker — the Comparison tab picks one scenario in-tab (see utils/compareGate
+  // + ComparisonPanel's scenario picker).
+  const compareGate = computeCompareGate(!!staticResult, !!projectedResult)
+  const canCompare = compareGate.canCompare
   // System-level assessment runs on the SELECTED DSM's fleet — so the gate is
   // an ACTIVE/selected DSM (Patch 5AC), NOT mere DSM existence: a DSM that
   // exists but isn't selected still has no fleet to assess. Show the helper when
@@ -81,7 +87,13 @@ export function ImpactAssessment({ onNavigate }: ImpactAssessmentProps = {}) {
             <DSMRequiredHelper hasAnyDSM={hasAnyDSM} onNavigate={onNavigate} />
           ) : (
             <>
-          <TabBar active={activeTab} onChange={setActiveTab} canCompare={canCompare} />
+          <TabBar
+            active={activeTab}
+            onChange={setActiveTab}
+            canCompare={canCompare}
+            compareSub={compareGate.subHint}
+            compareTitle={compareGate.titleHint}
+          />
           {/*
             Visibility-toggle, NOT conditional mount. All three panels stay mounted
             across tab switches so each panel's `useState` (scope, methods, years,
@@ -218,12 +230,15 @@ function ModeToggle({ mode, onChange }: { mode: ModeKey; onChange: (m: ModeKey) 
 }
 
 function TabBar({
-  active, onChange, canCompare,
-}: { active: TabKey; onChange: (t: TabKey) => void; canCompare: boolean }) {
-  const tabs: { key: TabKey; label: string; sub?: string; accent: string }[] = [
+  active, onChange, canCompare, compareSub, compareTitle,
+}: {
+  active: TabKey; onChange: (t: TabKey) => void; canCompare: boolean
+  compareSub: string; compareTitle: string
+}) {
+  const tabs: { key: TabKey; label: string; sub?: string; title?: string; accent: string }[] = [
     { key: 'static', label: 'Static Background', sub: 'One base ecoinvent', accent: 'var(--mod-lca)' },
     { key: 'projected', label: 'Prospective Background', sub: 'Year-matched prospective DBs', accent: 'var(--mod-plca)' },
-    { key: 'compare', label: 'Comparison', sub: canCompare ? 'Δ static vs projected' : 'Run both first', accent: 'var(--mod-dsm)' },
+    { key: 'compare', label: 'Comparison', sub: compareSub, title: canCompare ? undefined : compareTitle, accent: 'var(--mod-dsm)' },
   ]
   return (
     <div style={{ display: 'flex', gap: 'var(--space-1)', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
@@ -235,6 +250,8 @@ function TabBar({
             key={t.key}
             onClick={() => !disabled && onChange(t.key)}
             disabled={disabled}
+            title={t.title}
+            data-testid={`impact-tab-${t.key}`}
             style={{
               background: 'transparent',
               border: 'none',

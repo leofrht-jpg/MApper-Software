@@ -187,6 +187,54 @@ tree of entrypoint + sibling `.dylib`s:
   `tauri-plugin-shell` dependency + `shell:allow-spawn` capability were removed
   (spawning is now plain Rust, not gated by a Tauri capability).
 
+## UMFPACK in the frozen build (factorisation-reuse — the prospective-LCA speed fix)
+
+Prospective Impact Assessment factorises each premise db ONCE (via UMFPACK) and
+back-substitutes for every later solve (`PersistentLCARunner`). WITHOUT UMFPACK,
+bw2calc re-solves the full technosphere on every call and a 26-year × 25-indicator
+× 3-scenario run takes **≈ 54 min**; WITH it, ≈ 34 s per scenario (6 anchor-db
+factorisations, everything else back-substitution).
+
+**The trap that hid this for a while:** `scikit-umfpack 0.3.3` does
+`from numpy.testing import Tester` at import, which numpy ≥ 1.25 removed. The app
+shims it at runtime (`bw2_wrapper._patch_umfpack_import` stubs `Tester` BEFORE
+importing), so `_UMFPACK_OK` is True in dev. But the OLD spec guard did a **bare**
+`import scikits.umfpack` (no shim) → ImportError → the extension + its SuiteSparse
+dylibs were never bundled (freeze log: "scikits.umfpack not found"), so the frozen
+sidecar silently fell back to per-solve SuperLU — correct but ~90× slower.
+
+**The fix (packaging only — `mapper-desktop.spec`):**
+1. Apply the SAME `numpy.testing.Tester` shim at BUILD time so Analysis can import
+   `scikits.umfpack`. (Runtime ordering is unchanged — `bw2_wrapper` still shims
+   before its own import.)
+2. Bundle the compiled extension `scikits/umfpack/__umfpack.*.so` **by explicit
+   path** — `collect_dynamic_libs` / `collect_all` return EMPTY for it.
+3. Bundle the SuiteSparse dylib closure **by explicit path** from
+   `$CONDA_PREFIX/lib` (the classic Apple-Silicon layout: they live OUTSIDE the
+   package dir, so no collector finds them): `libumfpack.5`, `libamd.2`,
+   `libcholmod.3`, `libcolamd.2`, `libccolamd.2`, `libcamd.2`,
+   `libsuitesparseconfig.5`, `libmetis`, `libblas.3`, `liblapack.3`. PyInstaller
+   places them in `_internal/` and rewrites the `@rpath` (`@loader_path/../..` on
+   the extension, `@loader_path` on the dylibs) so the closure resolves at runtime.
+
+Do NOT attempt the numpy-2 / scikit-umfpack-0.4.2 migration — the shim makes 0.3.3
+importable; this is purely getting the compiled extension into the bundle.
+
+**How to verify in a frozen build** (so this isn't rediscovered):
+- Freeze log must print `[spec] UMFPACK bundled: 1 extension(s) + 10 SuiteSparse
+  dylibs` and must NOT print "scikits.umfpack not found".
+- `find dist/mapper-backend/_internal -name '__umfpack*.so'` and
+  `ls dist/mapper-backend/_internal/libumfpack*` must be non-empty.
+- `_UMFPACK_OK` must be **True inside the frozen process** (not just dev). Quick
+  check: temporarily gate `desktop_entry.main()` on an env var to print
+  `_UMFPACK_OK` + a `PersistentLCARunner` timing, then run
+  `MAPPER_UMFPACK_SELFTEST=1 ./dist/mapper-backend/mapper-backend`. Expect
+  `_UMFPACK_OK = True`, solve 1 slow (factorise), solves 2+ fast (`factor` stays
+  1, back-sub ~0.2–0.5 s). Remove the temp gate before shipping.
+- Numerical identity: the frozen UMFPACK result matches the dev UMFPACK result to
+  ≈ 7e-10 (an openBLAS-build difference between the two envs, NOT a solver change;
+  a SuperLU fallback would instead diverge by ≈ 3e-7).
+
 ## Deferred (NOT in this pass)
 
 - **Code signing + notarization** (Apple Developer ID). This build is unsigned →

@@ -663,7 +663,31 @@ class PersistentLCARunner:
         Before:  78 × spsolve       ≈ 78 × 1.7 s ≈ 133 s
         After :  1 × UMFPACK factor + 77 × back-sub ≈ 1.6 + 77 × 0.015 ≈ 3 s
 
-    Falls back to ``spsolve``-per-call if UMFPACK is unavailable.
+    **These figures require UMFPACK**, which is loaded via
+    ``_patch_umfpack_import`` (it stubs the removed ``numpy.testing.Tester``
+    symbol so ``scikits.umfpack`` imports on numpy ≥ 1.25 — raw import fails).
+    It is available in BOTH the conda dev env AND the frozen desktop sidecar:
+    ``mapper-desktop.spec`` applies the same shim at build time and bundles the
+    ``__umfpack`` extension + its SuiteSparse dylibs (they live in
+    ``$CONDA_PREFIX/lib``, outside the package, so the PyInstaller collectors
+    return empty and they are added by explicit path). Verified inside the
+    frozen process: ``_UMFPACK_OK`` is True and ``factorizations`` stays at the
+    number of premise dbs. Measured on ecoinvent-3.10 premise dbs (≈ 30 k ×
+    30 k): UMFPACK factor ≈ 4.5 s, back-sub ≈ 0.035 s → a real 26-year ×
+    25-indicator prospective run is ≈ 34 s (6 anchor-db factorizations,
+    everything else back-substitution).
+
+    Falls back to ``spsolve``-per-call only if UMFPACK is unavailable — and
+    there the reuse is LOST: each call re-solves the full system, so a
+    prospective run degrades to tens of minutes (the frozen build did exactly
+    this before the extension was bundled — ≈ 54 min for 3 scenarios). A *pure*
+    SuperLU ``splu`` reuse-fallback was profiled and rejected: factorizing a
+    premise technosphere with SuperLU measures ≈ 120 s/db AND shifts scores vs
+    UMFPACK by ≈ 3e-7 (SuperLU vs UMFPACK LU), so it would trade a large
+    slowdown for a correctness change. Bundling the real UMFPACK extension is
+    the fix — the frozen build now matches the dev UMFPACK answer to ≈ 7e-10
+    (an openBLAS-build difference between the two environments, NOT a solver
+    change).
 
     Thread safety: **not** thread-safe.  Create one instance per task.
     """

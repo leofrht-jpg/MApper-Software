@@ -33,13 +33,13 @@ MApper couples all four in one **cohort-preserving** pipeline: a time-resolved m
 - **Prospective LCA** — premise integration for 6 IAMs (REMIND, REMIND-EU, IMAGE, MESSAGE, GCAM, TIAM-UCL) × SSP1–5 scenarios. Year-matched background databases.
 - **AESA** — Planetary-boundary assessment with customizable sharing principles. Radar charts positioning your system relative to the safe operating space.
 - **Archetype System** — Hierarchical Bills of Materials with ecoinvent linking, folder organization, and material evolution modeling (learning rates, milestones, rebound effects).
-- **Impact Assessment** — Stage-aware scope filtering (Manufacturing→inflows, Operation→stock, End of Life→outflows). UMFPACK-optimized multi-indicator calculation. Comprehensive Excel export.
+- **Impact Assessment** — Stage-aware scope filtering (Manufacturing→inflows, Operation→stock, End of Life→outflows). Multi-indicator calculation (one technosphere solve per year, all indicators via characterisation-matrix switching), UMFPACK factorisation reuse (the premise db for each year is factorised once and back-substituted for every subsequent solve). Comprehensive Excel export.
 
 ## Architecture
 
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS
 - **Backend:** FastAPI + Python 3.11
-- **LCA engine:** Brightway2 + bw2calc (UMFPACK factorization reuse)
+- **LCA engine:** Brightway2 + bw2calc with UMFPACK factorisation reuse (bundled in the desktop build via `mapper-desktop.spec`; a 26-year × 25-indicator prospective run is ≈ 34 s instead of tens of minutes — see DESKTOP.md → "UMFPACK in the frozen build")
 - **DSM engine:** Cohort-based dynamic stock model with Weibull survival
 - **Prospective:** premise 2.1.3
 - **Desktop packaging:** Tauri v2

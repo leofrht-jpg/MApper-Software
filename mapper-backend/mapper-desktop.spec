@@ -112,24 +112,87 @@ if _sys.platform == "win32":
         "asyncio.windows_utils",
     ]
 
-# bw2calc's UMFPACK sparse solver (SuiteSparse via scikit-umfpack). Bundled ONLY
-# when importable in this env. It is currently NOT: the installed
-# scikit-umfpack 0.3.3 does `from numpy.testing import Tester`, which numpy 1.26
-# removed (Tester dropped in numpy 1.25) → ImportError. The one conda upgrade
-# that fixes it (scikit-umfpack 0.4.2) requires numpy 2.x, which would rewrite
-# the whole scientific stack (scipy, brightway2, premise) and is out of scope for
-# packaging. So we deliberately leave it unbundled and bw2calc uses scipy's
-# SuperLU solver — numerically correct, just slower than UMFPACK. This is the
-# accepted state (see the desktop-packaging notes), NOT a bug to re-chase. The
-# guard still bundles it automatically if a future numpy-2 migration makes it
-# importable again.
+# bw2calc's UMFPACK sparse solver (SuiteSparse via scikit-umfpack). This is the
+# factorisation-reuse path: WITH it, a prospective run factorises each premise db
+# ONCE (≈4.5 s) and back-substitutes (≈0.035 s) for every later solve — a 26yr ×
+# 25-indicator run is ≈34 s. WITHOUT it, bw2calc re-solves the full technosphere
+# every call and the same run takes tens of minutes (the frozen build was doing
+# exactly this — ≈54 min for 3 scenarios).
+#
+# The install (scikit-umfpack 0.3.3) does `from numpy.testing import Tester` at
+# import, which numpy ≥1.25 removed. The RUNTIME already handles this: bw2_wrapper
+# ._patch_umfpack_import() stubs `numpy.testing.Tester` BEFORE importing, so
+# `_UMFPACK_OK` is True in-process (that ordering is in the app code and is
+# UNCHANGED here). But the FREEZE was failing for a DIFFERENT reason: the previous
+# spec guard did a BARE `import scikits.umfpack` (no shim) → ImportError → the
+# extension + its SuiteSparse dylibs were never bundled ("scikits.umfpack not
+# found" in the freeze log). Fix = apply the SAME shim at BUILD time so Analysis
+# can import it, then bundle the compiled extension AND the SuiteSparse dylibs
+# EXPLICITLY (collect_dynamic_libs / collect_all return EMPTY for this package —
+# the dylibs live in $CONDA_PREFIX/lib, outside the package dir, the classic
+# Apple-Silicon conda layout). This is a packaging fix only; no numpy-2 /
+# scikit-umfpack-0.4.2 migration.
+import glob as _glob
+
+import numpy.testing as _nt_shim  # noqa: E402
+if not hasattr(_nt_shim, "Tester"):
+    class _DummyTester:  # build-time shim; mirrors bw2_wrapper._patch_umfpack_import
+        def __init__(self, *a, **k):
+            pass
+
+        def test(self, *a, **k):
+            pass
+
+    _nt_shim.Tester = _DummyTester  # type: ignore[attr-defined]
+
 try:
-    import scikits.umfpack  # noqa: F401
-    hiddenimports += ["scikits.umfpack"]
-except Exception as _umfpack_exc:  # noqa: BLE001 — ImportError OR numpy-incompat, both fall back
+    import scikits.umfpack as _skumf  # noqa: F401
+    _umfpack_importable = True
+except Exception as _umfpack_exc:  # noqa: BLE001
+    _umfpack_importable = False
     print(
-        f"[spec] scikit-umfpack unusable ({type(_umfpack_exc).__name__}); "
-        "bw2calc uses scipy's SuperLU solver (correct, slower) — expected on numpy 1.26"
+        f"[spec] scikits.umfpack STILL not importable after shim "
+        f"({type(_umfpack_exc).__name__}: {_umfpack_exc}) — bundling skipped, "
+        "prospective runs will use the slow SuperLU fallback"
+    )
+
+if _umfpack_importable:
+    hiddenimports += [
+        "scikits", "scikits.umfpack", "scikits.umfpack._umfpack",
+        "scikits.umfpack.umfpack", "scikits.umfpack.interface",
+    ]
+    # (1) The compiled extension module (.so). collect_dynamic_libs returns []
+    #     for it, so add every .so under the package dir explicitly, at its
+    #     package dest so Python can import it when frozen.
+    _skdir = _os.path.dirname(_skumf.__file__)
+    _added_exts = 0
+    for _ext in _glob.glob(_os.path.join(_skdir, "*.so")):
+        binaries.append((_ext, "scikits/umfpack"))
+        _added_exts += 1
+    # (2) The SuiteSparse dylibs the extension links via @rpath. They live in
+    #     $CONDA_PREFIX/lib (outside the package), so no collector finds them.
+    #     Add each @rpath-referenced soname (closure of __umfpack.*.so →
+    #     libumfpack.5 → cholmod/amd/… ) so PyInstaller places them in _internal/
+    #     and rewrites the @rpath. blas/lapack are openblas symlinks; include the
+    #     .3 sonames cholmod references by name.
+    _conda_lib = _os.path.join(_sys.prefix, "lib")
+    _suitesparse_dylibs = [
+        "libumfpack.5.dylib", "libamd.2.dylib", "libcholmod.3.dylib",
+        "libcolamd.2.dylib", "libccolamd.2.dylib", "libcamd.2.dylib",
+        "libsuitesparseconfig.5.dylib", "libmetis.dylib",
+        "libblas.3.dylib", "liblapack.3.dylib",
+    ]
+    _added_dylibs = 0
+    for _name in _suitesparse_dylibs:
+        _p = _os.path.join(_conda_lib, _name)
+        if _os.path.exists(_p):
+            binaries.append((_p, "."))
+            _added_dylibs += 1
+        else:
+            print(f"[spec] WARNING: SuiteSparse dylib not found: {_p}")
+    print(
+        f"[spec] UMFPACK bundled: {_added_exts} extension(s) + "
+        f"{_added_dylibs} SuiteSparse dylibs"
     )
 
 a = Analysis(

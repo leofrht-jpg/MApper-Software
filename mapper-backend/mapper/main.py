@@ -32,6 +32,15 @@ app = FastAPI(title="MApper API")
 async def _hydrate() -> None:
     _dsm.hydrate_from_disk()
     _parameters.install_parameters(parameter_storage.load_all())
+    # Sparse-solver readiness — load-bearing for prospective-LCA speed. In the
+    # frozen desktop sidecar this confirms the bundled scikits.umfpack extension
+    # + SuiteSparse dylibs actually import at runtime (not just on disk); False
+    # means the spsolve fallback, which degrades a prospective run to tens of
+    # minutes. Logged to mapper.log so a frozen build is verifiable post-launch.
+    from mapper.core.bw2_wrapper import _UMFPACK_OK
+    logging.getLogger("mapper").info(
+        "UMFPACK solver: %s", "OK" if _UMFPACK_OK else "UNAVAILABLE (spsolve fallback)"
+    )
 
 app.add_middleware(
     CORSMiddleware,

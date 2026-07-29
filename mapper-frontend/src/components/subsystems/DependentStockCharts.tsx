@@ -12,8 +12,9 @@ import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
 import type { SimulationResult } from '../../api/client'
-import { useChartColors, colorFor } from '../../utils/chartColors'
+import { useDSMSystemColors } from '../../utils/dsmCohortColors'
 import { ChartExportButton } from '../charts/ChartExportButton'
+import { CollapsibleSectionHeader } from '../ui/CollapsibleSectionHeader'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
@@ -28,9 +29,22 @@ const STOCK_DEFAULT = { notation: 'fixed' as const, sigFigs: 3, decimals: 0 }
 interface DependentStockChartsProps {
   result: SimulationResult
   unitName?: string
+  /**
+   * Per-cohort colour overrides for THIS subsystem, keyed by BARE cohort key
+   * (`dependent_archetype_id`) — the same keys the stock series use. Sourced
+   * from the subsystem's `cohort_mappings[ck].color` (the DSM-dashboard cohort
+   * mapping modal). Cohorts absent here fall back to the deterministic palette.
+   */
+  cohortColors?: Record<string, string>
+  collapsedStock?: boolean
+  collapsedFlows?: boolean
+  onToggleStock?: () => void
+  onToggleFlows?: () => void
 }
 
-export function DependentStockCharts({ result, unitName }: DependentStockChartsProps) {
+export function DependentStockCharts({
+  result, unitName, cohortColors, collapsedStock, collapsedFlows, onToggleStock, onToggleFlows,
+}: DependentStockChartsProps) {
   const { stockKeys, stockData, flowData } = useMemo(() => {
     const keys = new Set<string>()
     for (const yr of result.years) {
@@ -55,7 +69,16 @@ export function DependentStockCharts({ result, unitName }: DependentStockChartsP
     return { stockKeys: sortedKeys, stockData: stockRows, flowData: flowRows }
   }, [result])
 
-  const colorMap = useChartColors(stockKeys)
+  // Route colour resolution through the SINGLE source of truth
+  // (`dsmCohortColors`), the same resolver the Impact Assessment charts use, so
+  // an assigned subsystem cohort colour renders identically in both. This chart
+  // is scoped to one subsystem and stacks by cohort KEY (not a dimension), so
+  // `stackByDimension` is null and there is no `SystemDefinition` to pass:
+  // `colorForCohort` then returns the row override for the bare cohort key, else
+  // the deterministic `CHART_PALETTE` fallback.
+  const { colorForCohort } = useDSMSystemColors(null, null, {
+    rowColorOverrides: cohortColors ?? {},
+  })
   const stockRef = useRef<HTMLDivElement>(null)
   const flowRef = useRef<HTMLDivElement>(null)
 
@@ -70,6 +93,9 @@ export function DependentStockCharts({ result, unitName }: DependentStockChartsP
         chartRef={stockRef}
         exportFilename="dependent_stock_by_archetype"
         extra={<NumberFormatControl settings={stockFormat.settings} onChange={stockFormat.setSettings} />}
+        collapsed={collapsedStock}
+        onToggle={onToggleStock}
+        testId="stock-over-time-body"
       >
         <ChartExportContainer ref={stockRef} style={{ minHeight: 300, height: 300 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -86,8 +112,8 @@ export function DependentStockCharts({ result, unitName }: DependentStockChartsP
                   type="monotone"
                   dataKey={k}
                   stackId="1"
-                  stroke={colorFor(colorMap, k, i)}
-                  fill={colorFor(colorMap, k, i)}
+                  stroke={colorForCohort(k, i)}
+                  fill={colorForCohort(k, i)}
                   fillOpacity={0.7}
                   isAnimationActive={false}
                 />
@@ -102,6 +128,9 @@ export function DependentStockCharts({ result, unitName }: DependentStockChartsP
         chartRef={flowRef}
         exportFilename="dependent_inflows_outflows"
         extra={<NumberFormatControl settings={flowFormat.settings} onChange={flowFormat.setSettings} />}
+        collapsed={collapsedFlows}
+        onToggle={onToggleFlows}
+        testId="inflows-outflows-body"
       >
         <ChartExportContainer ref={flowRef} style={{ minHeight: 260, height: 260 }}>
           <ResponsiveContainer width="100%" height="100%">
@@ -125,30 +154,43 @@ export function DependentStockCharts({ result, unitName }: DependentStockChartsP
   )
 }
 
-function Card({ title, children, chartRef, exportFilename, extra }: {
+function Card({ title, children, chartRef, exportFilename, extra, collapsed, onToggle, testId }: {
   title: string
   children: React.ReactNode
   chartRef?: RefObject<HTMLDivElement | null>
   exportFilename?: string
   extra?: React.ReactNode
+  collapsed?: boolean
+  onToggle?: () => void
+  testId?: string
 }) {
   return (
     <div style={{
       padding: 'var(--space-4)', backgroundColor: 'var(--bg-surface)',
       border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
+      <CollapsibleSectionHeader
+        collapsed={collapsed}
+        onToggle={onToggle}
+        style={{ marginBottom: collapsed ? 0 : 'var(--space-3)' }}
+        actions={(
+          <>
+            {extra}
+            {chartRef && exportFilename && (
+              <ChartExportButton chartRef={chartRef} filename={exportFilename} />
+            )}
+          </>
+        )}
+      >
         <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
           {title}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          {extra}
-          {chartRef && exportFilename && (
-            <ChartExportButton chartRef={chartRef} filename={exportFilename} />
-          )}
-        </div>
+      </CollapsibleSectionHeader>
+      {/* Visibility-toggle: chart stays mounted when collapsed so its state
+          (formatter, export ref) survives collapse/expand. */}
+      <div data-testid={testId} style={{ display: collapsed ? 'none' : 'block' }}>
+        {children}
       </div>
-      {children}
     </div>
   )
 }

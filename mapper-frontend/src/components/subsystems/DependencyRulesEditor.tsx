@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Plus, Trash2, CheckCircle2, AlertCircle, ChevronRight, ChevronDown, Download, Upload } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { CollapsibleSectionHeader } from '../ui/CollapsibleSectionHeader'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import { useDSMStore } from '../../stores/dsmStore'
 import { useParameterStore } from '../../stores/parameterStore'
@@ -59,9 +60,11 @@ function cartesianArchetypes(dims: DimensionDef[]): string[] {
 
 interface DependencyRulesEditorProps {
   subsystem: Subsystem
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }
 
-export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps) {
+export function DependencyRulesEditor({ subsystem, collapsed, onToggleCollapse }: DependencyRulesEditorProps) {
   const saveDependent = useSubsystemStore((s) => s.saveDependent)
   const validateRule = useSubsystemStore((s) => s.validateRule)
   const primaryDims = useDSMStore((s) => s.activeSystem?.dimensions ?? [])
@@ -196,7 +199,48 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
       border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)',
       display: 'flex', flexDirection: 'column', gap: 'var(--space-4)',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <CollapsibleSectionHeader
+        collapsed={collapsed}
+        onToggle={onToggleCollapse}
+        actions={(
+          <>
+            {flash && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
+                <CheckCircle2 size={12} /> {flash}
+              </span>
+            )}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              data-testid="dep-rules-file-input"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) handleFileSelected(f)
+                e.target.value = '' // allow re-selecting the same file
+              }}
+            />
+            <Button variant="ghost" onClick={handleTemplate} disabled={!systemId} title="Download an Excel template">
+              <Download size={14} strokeWidth={1.5} /> Template
+            </Button>
+            <Button variant="ghost" onClick={handleUploadClick} disabled={!systemId || importing} title="Import rules from an Excel file">
+              <Upload size={14} strokeWidth={1.5} /> {importing ? 'Reading…' : 'Upload'}
+            </Button>
+            <Button variant="ghost" onClick={addRule}>
+              <Plus size={14} strokeWidth={1.5} /> Add rule
+            </Button>
+            <Button
+              variant="primary"
+              onClick={handleSave}
+              disabled={!dirty || saving}
+              style={{ backgroundColor: 'var(--mod-dsm)' }}
+            >
+              {saving ? 'Saving…' : 'Save rules'}
+            </Button>
+          </>
+        )}
+      >
         <div>
           <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
             Dependency rules
@@ -205,43 +249,7 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
             Each rule derives stock for one dependent archetype. Multiple rules for the same archetype sum.
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {flash && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
-              <CheckCircle2 size={12} /> {flash}
-            </span>
-          )}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx"
-            data-testid="dep-rules-file-input"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) handleFileSelected(f)
-              e.target.value = '' // allow re-selecting the same file
-            }}
-          />
-          <Button variant="ghost" onClick={handleTemplate} disabled={!systemId} title="Download an Excel template">
-            <Download size={14} strokeWidth={1.5} /> Template
-          </Button>
-          <Button variant="ghost" onClick={handleUploadClick} disabled={!systemId || importing} title="Import rules from an Excel file">
-            <Upload size={14} strokeWidth={1.5} /> {importing ? 'Reading…' : 'Upload'}
-          </Button>
-          <Button variant="ghost" onClick={addRule}>
-            <Plus size={14} strokeWidth={1.5} /> Add rule
-          </Button>
-          <Button
-            variant="primary"
-            onClick={handleSave}
-            disabled={!dirty || saving}
-            style={{ backgroundColor: 'var(--mod-dsm)' }}
-          >
-            {saving ? 'Saving…' : 'Save rules'}
-          </Button>
-        </div>
-      </div>
+      </CollapsibleSectionHeader>
 
       {pendingImport && (
         <div
@@ -283,6 +291,7 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
         </div>
       )}
 
+      <div data-testid="dep-rules-body" style={{ display: collapsed ? 'none' : 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
       {error && (
         <div style={{
           padding: '8px 12px', backgroundColor: 'var(--danger-muted)',
@@ -316,6 +325,7 @@ export function DependencyRulesEditor({ subsystem }: DependencyRulesEditorProps)
           onValidate={() => validateRule(rule)}
         />
       ))}
+      </div>
     </div>
   )
 }

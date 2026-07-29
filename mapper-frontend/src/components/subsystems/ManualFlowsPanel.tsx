@@ -10,6 +10,7 @@
 import { useRef, useState } from 'react'
 import { Download, Upload, Trash2, CheckCircle2 } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { CollapsibleSectionHeader } from '../ui/CollapsibleSectionHeader'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import {
   uploadSubsystemManualFlow,
@@ -20,12 +21,18 @@ import type { Subsystem } from '../../api/client'
 
 interface ManualFlowsPanelProps {
   subsystem: Subsystem
+  collapsedInflows?: boolean
+  collapsedOutflows?: boolean
+  onToggleInflows?: () => void
+  onToggleOutflows?: () => void
 }
 
 // Manual-mode editor: the subsystem's stock is simulated from its OWN uploaded
 // inflows (+ optional outflows), independent of the primary system — the same
 // CSV/XLSX upload convention as the primary's Annual inflows/outflows.
-export function ManualFlowsPanel({ subsystem }: ManualFlowsPanelProps) {
+export function ManualFlowsPanel({
+  subsystem, collapsedInflows, collapsedOutflows, onToggleInflows, onToggleOutflows,
+}: ManualFlowsPanelProps) {
   const systemId = useSubsystemStore((s) => s.currentSystemId)
   const fetchForSystem = useSubsystemStore((s) => s.fetchForSystem)
 
@@ -42,6 +49,8 @@ export function ManualFlowsPanel({ subsystem }: ManualFlowsPanelProps) {
         systemId={systemId}
         onChanged={() => systemId && fetchForSystem(systemId)}
         data={subsystem.manual_inflows ?? {}}
+        collapsed={collapsedInflows}
+        onToggleCollapse={onToggleInflows}
       />
       <FlowSlot
         kind="outflows"
@@ -51,13 +60,15 @@ export function ManualFlowsPanel({ subsystem }: ManualFlowsPanelProps) {
         systemId={systemId}
         onChanged={() => systemId && fetchForSystem(systemId)}
         data={subsystem.manual_outflows ?? {}}
+        collapsed={collapsedOutflows}
+        onToggleCollapse={onToggleOutflows}
       />
     </div>
   )
 }
 
 function FlowSlot({
-  kind, title, description, subsystem, systemId, onChanged, data,
+  kind, title, description, subsystem, systemId, onChanged, data, collapsed, onToggleCollapse,
 }: {
   kind: 'inflows' | 'outflows'
   title: string
@@ -66,6 +77,8 @@ function FlowSlot({
   systemId: string | null
   onChanged: () => void
   data: Record<string, Record<string, number>>
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
   const [busy, setBusy] = useState(false)
@@ -117,35 +130,41 @@ function FlowSlot({
       border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)',
       display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
+      <CollapsibleSectionHeader
+        collapsed={collapsed}
+        onToggle={onToggleCollapse}
+        actions={(
+          <>
+            {flash && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
+                <CheckCircle2 size={12} /> {flash}
+              </span>
+            )}
+            <Button variant="ghost" onClick={handleTemplate} disabled={busy || !systemId}>
+              <Download size={14} strokeWidth={1.5} /> Template
+            </Button>
+            <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={busy || !systemId} data-testid={`manual-${kind}-upload`}>
+              <Upload size={14} strokeWidth={1.5} /> {busy ? 'Uploading…' : 'Upload'}
+            </Button>
+            {cohorts.length > 0 && (
+              <Button variant="ghost" onClick={handleClear} disabled={busy} title={`Clear ${kind}`}>
+                <Trash2 size={14} strokeWidth={1.5} /> Clear
+              </Button>
+            )}
+            <input
+              ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
+              onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f) }}
+            />
+          </>
+        )}
+      >
         <div>
           <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>{title}</div>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>{description}</div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {flash && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
-              <CheckCircle2 size={12} /> {flash}
-            </span>
-          )}
-          <Button variant="ghost" onClick={handleTemplate} disabled={busy || !systemId}>
-            <Download size={14} strokeWidth={1.5} /> Template
-          </Button>
-          <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={busy || !systemId} data-testid={`manual-${kind}-upload`}>
-            <Upload size={14} strokeWidth={1.5} /> {busy ? 'Uploading…' : 'Upload'}
-          </Button>
-          {cohorts.length > 0 && (
-            <Button variant="ghost" onClick={handleClear} disabled={busy} title={`Clear ${kind}`}>
-              <Trash2 size={14} strokeWidth={1.5} /> Clear
-            </Button>
-          )}
-          <input
-            ref={fileRef} type="file" accept=".csv,.xlsx,.xls" style={{ display: 'none' }}
-            onChange={(e) => { const f = e.target.files?.[0]; if (f) handleUpload(f) }}
-          />
-        </div>
-      </div>
+      </CollapsibleSectionHeader>
 
+      <div data-testid={`manual-${kind}-body`} style={{ display: collapsed ? 'none' : 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       {error && (
         <div style={{
           padding: '8px 12px', backgroundColor: 'var(--danger-muted)',
@@ -158,6 +177,7 @@ function FlowSlot({
         {cohorts.length === 0
           ? `No ${kind} uploaded.`
           : `${cohorts.length} cohort${cohorts.length === 1 ? '' : 's'}: ${cohorts.slice(0, 6).join(', ')}${cohorts.length > 6 ? '…' : ''}`}
+      </div>
       </div>
     </div>
   )

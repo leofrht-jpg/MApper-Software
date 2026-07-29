@@ -23,6 +23,18 @@ type SubMode = 'rules' | 'manual'
 
 type DSMSubTab = 'dynamics' | 'materials'
 
+type SectionKey =
+  | 'initialStock' | 'dependencyRules' | 'manualInflows' | 'manualOutflows'
+  | 'stockOverTime' | 'inflowsOutflows'
+
+// All sections expanded by default. Chart sections only render once a compute
+// result exists (so "collapsed if no compute" is satisfied by their absence),
+// and appear expanded when they do.
+const DEFAULT_COLLAPSED: Record<SectionKey, boolean> = {
+  initialStock: false, dependencyRules: false, manualInflows: false,
+  manualOutflows: false, stockOverTime: false, inflowsOutflows: false,
+}
+
 interface DependentSubsystemViewProps {
   subsystemId: string
   activeTab: DSMSubTab
@@ -43,8 +55,26 @@ export function DependentSubsystemView({ subsystemId, activeTab, onTabChange }: 
   const [pendingMode, setPendingMode] = useState<SubMode | null>(null)
   const [switching, setSwitching] = useState(false)
 
+  // Per-section collapse state (UI preference only, not persisted to backend).
+  // Resets to defaults when switching to a different subsystem tab.
+  const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>(DEFAULT_COLLAPSED)
+  useEffect(() => { setCollapsed(DEFAULT_COLLAPSED) }, [subsystemId])
+  const toggleSection = (k: SectionKey) => setCollapsed((c) => ({ ...c, [k]: !c[k] }))
+
   const sub = useMemo(() => subsystems.find((s) => s.id === subsystemId) ?? null, [subsystems, subsystemId])
   const mode: SubMode = sub?.mode ?? 'rules'
+
+  // Per-cohort colour overrides for this subsystem's stock chart, keyed by the
+  // BARE cohort key (matching the stock series keys). Read straight from the
+  // reactive store `sub`, so a colour changed in the cohort-mapping modal
+  // (saveDependent → store update) re-renders the chart with no manual refresh.
+  const cohortColors = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const [ck, m] of Object.entries(sub?.cohort_mappings ?? {})) {
+      if (m?.color) out[ck] = m.color
+    }
+    return out
+  }, [sub?.cohort_mappings])
 
   const hasDataInMode = (m: SubMode): boolean => {
     if (!sub) return false
@@ -184,14 +214,38 @@ export function DependentSubsystemView({ subsystemId, activeTab, onTabChange }: 
 
           {/* Visibility-toggle (bodies stay mounted) — not conditional unmount. */}
           <div data-testid="subsystem-rules-body" style={{ display: mode === 'rules' ? 'flex' : 'none', flexDirection: 'column', gap: 'var(--space-5)' }}>
-            <InitialStockPanel subsystem={sub} />
-            <DependencyRulesEditor subsystem={sub} />
+            <InitialStockPanel
+              subsystem={sub}
+              collapsed={collapsed.initialStock}
+              onToggleCollapse={() => toggleSection('initialStock')}
+            />
+            <DependencyRulesEditor
+              subsystem={sub}
+              collapsed={collapsed.dependencyRules}
+              onToggleCollapse={() => toggleSection('dependencyRules')}
+            />
           </div>
           <div data-testid="subsystem-manual-body" style={{ display: mode === 'manual' ? 'block' : 'none' }}>
-            <ManualFlowsPanel subsystem={sub} />
+            <ManualFlowsPanel
+              subsystem={sub}
+              collapsedInflows={collapsed.manualInflows}
+              collapsedOutflows={collapsed.manualOutflows}
+              onToggleInflows={() => toggleSection('manualInflows')}
+              onToggleOutflows={() => toggleSection('manualOutflows')}
+            />
           </div>
 
-          {result && <DependentStockCharts result={result} unitName={sub.unit_name} />}
+          {result && (
+            <DependentStockCharts
+              result={result}
+              unitName={sub.unit_name}
+              cohortColors={cohortColors}
+              collapsedStock={collapsed.stockOverTime}
+              collapsedFlows={collapsed.inflowsOutflows}
+              onToggleStock={() => toggleSection('stockOverTime')}
+              onToggleFlows={() => toggleSection('inflowsOutflows')}
+            />
+          )}
         </>
       )}
 

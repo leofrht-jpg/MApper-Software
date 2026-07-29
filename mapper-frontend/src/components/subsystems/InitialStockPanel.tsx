@@ -10,14 +10,17 @@
 import { useRef, useState } from 'react'
 import { Download, Upload, Trash2, CheckCircle2 } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { CollapsibleSectionHeader } from '../ui/CollapsibleSectionHeader'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import type { Subsystem } from '../../api/client'
 
 interface InitialStockPanelProps {
   subsystem: Subsystem
+  collapsed?: boolean
+  onToggleCollapse?: () => void
 }
 
-export function InitialStockPanel({ subsystem }: InitialStockPanelProps) {
+export function InitialStockPanel({ subsystem, collapsed, onToggleCollapse }: InitialStockPanelProps) {
   const uploadInitialStock = useSubsystemStore((s) => s.uploadInitialStock)
   const clearInitialStock = useSubsystemStore((s) => s.clearInitialStock)
   const downloadStockTemplate = useSubsystemStore((s) => s.downloadStockTemplate)
@@ -76,7 +79,40 @@ export function InitialStockPanel({ subsystem }: InitialStockPanelProps) {
       border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)',
       display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <CollapsibleSectionHeader
+        collapsed={collapsed}
+        onToggle={onToggleCollapse}
+        actions={(
+          <>
+            {flash && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
+                <CheckCircle2 size={12} /> {flash}
+              </span>
+            )}
+            <Button variant="ghost" onClick={handleTemplate} disabled={busy}>
+              <Download size={14} strokeWidth={1.5} /> Template
+            </Button>
+            <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={busy}>
+              <Upload size={14} strokeWidth={1.5} /> {busy ? 'Uploading…' : 'Upload'}
+            </Button>
+            {entries.length > 0 && (
+              <Button variant="ghost" onClick={handleClear} disabled={busy} title="Clear initial stock">
+                <Trash2 size={14} strokeWidth={1.5} /> Clear
+              </Button>
+            )}
+            <input
+              ref={fileRef}
+              type="file"
+              accept=".csv,.xlsx,.xls"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) handleUpload(f)
+              }}
+            />
+          </>
+        )}
+      >
         <div>
           <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
             Initial stock
@@ -85,36 +121,9 @@ export function InitialStockPanel({ subsystem }: InitialStockPanelProps) {
             Base-year floor per archetype. Rules drive subsequent years; outflows emit if rules push below this.
           </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {flash && (
-            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--success)' }}>
-              <CheckCircle2 size={12} /> {flash}
-            </span>
-          )}
-          <Button variant="ghost" onClick={handleTemplate} disabled={busy}>
-            <Download size={14} strokeWidth={1.5} /> Template
-          </Button>
-          <Button variant="ghost" onClick={() => fileRef.current?.click()} disabled={busy}>
-            <Upload size={14} strokeWidth={1.5} /> {busy ? 'Uploading…' : 'Upload'}
-          </Button>
-          {entries.length > 0 && (
-            <Button variant="ghost" onClick={handleClear} disabled={busy} title="Clear initial stock">
-              <Trash2 size={14} strokeWidth={1.5} /> Clear
-            </Button>
-          )}
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".csv,.xlsx,.xls"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) handleUpload(f)
-            }}
-          />
-        </div>
-      </div>
+      </CollapsibleSectionHeader>
 
+      <div data-testid="initial-stock-body" style={{ display: collapsed ? 'none' : 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
       {error && (
         <div style={{
           padding: '8px 12px', backgroundColor: 'var(--danger-muted)',
@@ -160,6 +169,7 @@ export function InitialStockPanel({ subsystem }: InitialStockPanelProps) {
           </table>
         </div>
       )}
+      </div>
     </div>
   )
 }

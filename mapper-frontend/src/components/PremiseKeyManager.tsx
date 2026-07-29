@@ -13,6 +13,7 @@ import { Button } from './ui/Button'
 import {
   deletePremiseKey,
   getPremiseKeyStatus,
+  isTransientNetworkError,
   savePremiseKey,
   type PremiseKeyStatus,
 } from '../api/client'
@@ -43,9 +44,18 @@ export function PremiseKeyManager({ variant, onStatusChange }: Props) {
     try {
       const s = await getPremiseKeyStatus()
       setStatus(s)
+      setError(null)
       onStatusChange?.(s.configured)
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e))
+      // The status endpoint is project-independent and retries transient
+      // network errors internally — if one still surfaces, the backend wasn't
+      // reachable (e.g. still starting), not a real failure. Say so plainly
+      // rather than leaking the raw "Load failed".
+      setError(
+        isTransientNetworkError(e)
+          ? "Couldn't reach the backend — it may still be starting. Reopen Settings to retry."
+          : e instanceof Error ? e.message : String(e),
+      )
     }
   }
 

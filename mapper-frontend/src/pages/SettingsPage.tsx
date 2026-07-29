@@ -24,7 +24,9 @@ import { useLogStore } from '../stores/logStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useCarbonStore } from '../stores/carbonStore'
 
-const APP_VERSION = '0.1.0-alpha'
+// Single source of truth — injected at build time from package.json version
+// (vite.config.ts `define`). Bumping package.json propagates here automatically.
+const APP_VERSION = __APP_VERSION__
 
 type LogFilter = 'all' | 'errors' | 'warnings' | 'backend'
 
@@ -114,6 +116,22 @@ export function SettingsPage() {
             <span style={{ color: 'var(--text-secondary)' }}>DTU Centre for Absolute Sustainability</span>
           </div>
 
+          {/* DTU copyright notice — required on any published form of the
+              software (DTU legal). The copyright string is verbatim. */}
+          <div style={{ marginTop: 14, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', lineHeight: 1.7 }}>
+            © Copyright 2026 Technical University of Denmark
+            <br />
+            Released under the{' '}
+            <a
+              href="https://www.mozilla.org/en-US/MPL/2.0/"
+              target="_blank"
+              rel="noreferrer"
+              style={{ color: 'var(--accent)' }}
+            >
+              Mozilla Public License 2.0
+            </a>
+          </div>
+
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
             <LinkButton href="https://mapper.leonardoferhati.com" icon={<ExternalLink size={12} />}>
               Website
@@ -121,8 +139,8 @@ export function SettingsPage() {
             <LinkButton href="mailto:leo_frht@icloud.com" icon={<Mail size={12} />}>
               leo_frht@icloud.com
             </LinkButton>
-            <LinkButton icon={<Code2 size={12} />} disabled>
-              GitHub · coming soon
+            <LinkButton href="https://github.com/leofrht-jpg/MApper-Software" icon={<Code2 size={12} />}>
+              GitHub
             </LinkButton>
             <RestartTourButton />
           </div>
@@ -142,6 +160,8 @@ export function SettingsPage() {
             <Row k="Backend" v={`FastAPI · Brightway2${health ? ` ${health.brightway2_version}` : ''}`} />
             <Row k="Desktop shell" v="Tauri v2" />
             <Row k="Platform" v={navigator.platform || '—'} />
+            <Row k="License" v="Mozilla Public License 2.0" />
+            <Row k="Copyright" v="© Copyright 2026 Technical University of Denmark" />
           </Card>
         )}
       </Section>

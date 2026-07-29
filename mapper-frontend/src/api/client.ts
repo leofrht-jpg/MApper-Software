@@ -2906,9 +2906,16 @@ export interface PremiseKeyStatus {
 }
 
 export async function getPremiseKeyStatus(): Promise<PremiseKeyStatus> {
-  const res = await fetch(`${API_BASE}/plca/key/status`)
-  if (!res.ok) throw new Error(`GET /plca/key/status failed: ${res.status}`)
-  return res.json()
+  // The key-status endpoint is project-independent and always 200s when reached
+  // — so a "Load failed"/"Failed to fetch" here is a first-paint network race
+  // (the backend connection wasn't ready yet), not a real endpoint failure.
+  // Retry transiently so a mount-time blip self-heals instead of sticking a
+  // stale error banner (same class + fix as the AESA config load, Patch 5AM).
+  return withTransientRetry(async () => {
+    const res = await fetch(`${API_BASE}/plca/key/status`)
+    if (!res.ok) throw new Error(`GET /plca/key/status failed: ${res.status}`)
+    return res.json()
+  })
 }
 
 export async function savePremiseKey(key: string): Promise<void> {

@@ -1521,7 +1521,8 @@ def _build_mfa_lca_workbook(
     if elapsed_seconds is not None:
         m, s = divmod(int(elapsed_seconds), 60)
         meta_rows.append(("Calculation time", f"{m}m {s}s" if m else f"{s}s"))
-    meta_rows.append(("MApper version", "1.0"))
+    from mapper import __version__ as _mapper_version
+    meta_rows.append(("MApper version", _mapper_version))
 
     for label, value in meta_rows:
         ws.append([label, value])

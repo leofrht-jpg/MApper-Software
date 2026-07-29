@@ -70,6 +70,15 @@ if _os2.path.isdir(_mapper_data):
 else:
     print(f"[spec] WARNING: mapper/data not found at {_mapper_data}")
 
+# Bundle pyproject.toml so mapper.__version__ resolves from the single source
+# (pyproject) inside the frozen sidecar too — mapped to _MEIPASS/pyproject.toml.
+_pyproject = _os2.path.join(_os2.path.dirname(_os2.path.abspath(SPEC)), "pyproject.toml")
+if _os2.path.isfile(_pyproject):
+    datas += [(_pyproject, ".")]
+    print("[spec] bundled pyproject.toml for version single-source")
+else:
+    print(f"[spec] WARNING: pyproject.toml not found at {_pyproject}")
+
 # Bundle the BUILT frontend so the backend can serve it over http://localhost:PORT
 # (same origin as the API). This is what lets the desktop webview reach the
 # backend: WKWebView blocks cleartext-HTTP calls from the secure tauri:// page as

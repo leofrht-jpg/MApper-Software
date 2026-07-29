@@ -10,6 +10,7 @@
 import { create } from 'zustand'
 import { useProjectStore } from './projectStore'
 import { normalizeHex } from '../utils/chartColors'
+import { buildImpactExportFilename } from '../utils/exportFilename'
 import {
   HttpError,
   type CohortMappingEntry,
@@ -763,9 +764,16 @@ export const useDSMStore = create<DSMStore>((set, get) => ({
     const { activeSystem, dsmLCAResults } = get()
     if (!activeSystem?.id) throw new Error('No active system')
     if (dsmLCAResults.length === 0) throw new Error('No results to export')
-    const safe = activeSystem.name.replace(/[^A-Za-z0-9._-]+/g, '_') || 'system'
     const scope = dsmLCAResults[0].scope
-    await exportDSMLCA(activeSystem.id, `${safe}_impact_${scope}.xlsx`, year ?? null)
+    // Append the names of subsystems that contributed results (≥1 mapped
+    // cohort). Dynamic import avoids a static dsmStore↔subsystemStore cycle.
+    const { useSubsystemStore } = await import('./subsystemStore')
+    const contributingSubs = useSubsystemStore.getState().subsystems
+      .filter((s) => s.type === 'dependent'
+        && Object.values(s.cohort_mappings ?? {}).some((m) => !!m?.archetype_id))
+      .map((s) => s.name)
+    const filename = buildImpactExportFilename(activeSystem.name, contributingSubs, scope)
+    await exportDSMLCA(activeSystem.id, filename, year ?? null)
   },
 
   importSimulation: async (file) => {

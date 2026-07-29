@@ -11,6 +11,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render, act, waitFor } from '@testing-library/react'
 import { useDSMStore } from '../src/stores/dsmStore'
 import { useImpactStore } from '../src/stores/impactStore'
+import { useSubsystemStore } from '../src/stores/subsystemStore'
 
 /**
  * Patch 5F — cohort → archetype mapping is a single source of truth owned by
@@ -38,6 +39,14 @@ beforeEach(() => {
   runDSMLCASpy.mockClear()
   // @ts-expect-error — minimal ResizeObserver stub for recharts
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
+  // Reset the subsystem singleton and neutralise its network fetch. The store
+  // is a module singleton with a dsmStore subscription (subsystemStore.ts) that
+  // fires a REAL `fetchForSystem` on every activeSystem change — without this
+  // stub those fetches race across tests and pollute later renders.
+  useSubsystemStore.setState({
+    subsystems: [],
+    fetchForSystem: (async () => undefined) as never,
+  })
   // Seed an active system with two non-age dims → 4 cohort keys (the M in N/M).
   useDSMStore.setState({
     activeSystem: {
@@ -121,5 +130,38 @@ describe('cohort-mapping sync — single source of truth', () => {
     expect(serialized.toLowerCase()).not.toContain('cohort_mapping')
     expect(serialized.toLowerCase()).not.toContain('"mappings"')
     expect(serialized).not.toContain('archetype_id')
+  })
+
+  it('subsystem count regression: denominator excludes the synthesized primary ("6 of 8", not "6 of 12")', async () => {
+    const { getByTestId } = await renderPanel()
+    act(() => {
+      useDSMStore.setState({ cohortMappings: map(4) })  // primary 4/4
+      useSubsystemStore.setState({
+        // Neutralise the mount fetch so it can't clear the seeded list.
+        fetchForSystem: (async () => undefined) as never,
+        subsystems: [
+          // Synthesized PRIMARY entry — must NOT be counted (else its 4 cohorts
+          // are double-counted → "6 of 12", the reported bug).
+          {
+            id: 'sys-test', name: 'Test System', type: 'primary', dependency_rules: [],
+            dimensions: [
+              { name: 'fuel', display_name: 'Fuel', labels: ['BEV', 'ICEV'] },
+              { name: 'size', display_name: 'Size', labels: ['Small', 'Large'] },
+            ],
+            cohort_mappings: {},
+          },
+          // Dependent subsystem: 4 cohorts, 2 mapped.
+          {
+            id: 'sub1', name: 'Fueling', type: 'dependent', dependency_rules: [],
+            dimensions: [{ name: 'station', display_name: 'Station', labels: ['A', 'B', 'C', 'D'] }],
+            cohort_mappings: { A: { archetype_id: 'x' }, B: { archetype_id: 'y' } },
+          },
+        ] as never,
+      })
+    })
+    const node = getByTestId('ia-cohort-mapped-count')
+    // 4/4 primary + 2/4 subsystem = 6 of 8 (NOT 6 of 12).
+    expect(node.textContent).toContain('6 of 8 mapped')
+    expect(node.getAttribute('title')).toContain('4/4 primary + 2/4 subsystem')
   })
 })

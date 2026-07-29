@@ -37,7 +37,9 @@ import { useProjectStore } from '../../stores/projectStore'
 import { type DimensionDef } from '../../api/client'
 import { IndicatorChecklist, MethodFamilySelect, useMethodSelection } from '../MethodPicker'
 import { colorFor } from '../../utils/chartColors'
-import { useDSMSystemColors } from '../../utils/dsmCohortColors'
+import { useDSMSystemColors, buildCombinedRowColorOverrides, subsystemMappingCounts, cohortDisplayLabel, materialDisplayString } from '../../utils/dsmCohortColors'
+import { TruncatedAxisTick } from '../charts/TruncatedAxisTick'
+import { useSubsystemStore } from '../../stores/subsystemStore'
 import { evaluateAxisConflict } from '../../utils/axisConflict'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
@@ -54,11 +56,6 @@ const fmtCount = (n: number) => {
   return Math.round(n).toLocaleString()
 }
 
-function parseCohortKey(key: string, dims: DimensionDef[]): string[] {
-  const nads = dims.filter((d) => !d.is_age)
-  const parts = key.split(COHORT_SEP)
-  return nads.map((_, i) => parts[i] ?? '')
-}
 
 function enumerateCohortKeys(dims: DimensionDef[]): string[] {
   const nads = dims.filter((d) => !d.is_age)
@@ -98,7 +95,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
     exportDSMLCAResults,
   } = useDSMStore()
 
-  const { fetchArchetypes } = useBOMStore()
+  const { archetypes, fetchArchetypes } = useBOMStore()
 
   const [indicatorExpanded, setIndicatorExpanded] = useState(false)
   const [configExpanded, setConfigExpanded] = useState(true)
@@ -161,6 +158,8 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
 
   useEffect(() => { fetchArchetypes() }, [fetchArchetypes])
   useEffect(() => { if (activeSystem) fetchCohortMappings() }, [activeSystem?.id, fetchCohortMappings])
+  const fetchSubsystemsForSystem = useSubsystemStore((s) => s.fetchForSystem)
+  useEffect(() => { if (activeSystem?.id) fetchSubsystemsForSystem(activeSystem.id) }, [activeSystem?.id, fetchSubsystemsForSystem])
 
   useEffect(() => {
     if (!activeSystem?.id || dsmLCAResults.length === 0) return
@@ -496,8 +495,44 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
   // key), which produced a different color per cohort than Prospective's shared
   // fuel color.
   const cohortRowColors = useDSMStore((s) => s.cohortRowColors)
+  // Combine primary per-row colors with subsystem cohort colors, keyed by the
+  // subsystem-prefixed cohort key the aggregated impact result uses.
+  // The store's `subsystems` list includes the synthesized PRIMARY (type
+  // 'primary') alongside dependents — count/colour only the dependents, else the
+  // primary's cohorts are double-counted (primary once via `cohortKeys`, once
+  // via the primary entry here).
+  const allSubsystems = useSubsystemStore((s) => s.subsystems)
+  const subsystems = useMemo(() => allSubsystems.filter((s) => s.type === 'dependent'), [allSubsystems])
+  const combinedRowColors = useMemo(
+    () => buildCombinedRowColorOverrides(activeSystem?.id, cohortRowColors, subsystems),
+    [activeSystem?.id, cohortRowColors, subsystems],
+  )
+  // Cohort → Archetype count includes linked subsystems' cohort mappings.
+  const subCounts = useMemo(() => subsystemMappingCounts(subsystems), [subsystems])
+  const totalMapped = mappedCount + subCounts.mapped
+  const totalCohorts = cohortKeys.length + subCounts.total
+  // Human-readable cohort label (strips the subsystem-prefix UUID, appends the
+  // mapped archetype name). Used by the Impact-by-cohort table + chart tooltip.
+  const archetypeNameById = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const a of archetypes) m[a.id] = a.name
+    return m
+  }, [archetypes])
+  const cohortLabel = (ck: string) => cohortDisplayLabel(ck, {
+    systemId: activeSystem?.id,
+    primaryMappings: cohortMappings,
+    subsystems,
+    archetypeName: (id) => archetypeNameById[id],
+  })
+  // Material contribution keys are subsystem-prefixed (`<id>::<material>`) just
+  // like cohort keys — strip the UUID, disambiguate dependent-subsystem
+  // materials with the subsystem name. Never render the raw UUID.
+  const materialLabelFor = (raw: string) => materialDisplayString(raw, {
+    systemId: activeSystem?.id,
+    subsystems,
+  })
   const dsmColors = useDSMSystemColors(activeSystem ?? null, stackByDimension, {
-    rowColorOverrides: cohortRowColors,
+    rowColorOverrides: combinedRowColors,
   })
   const cohortColorMap = useMemo(() => {
     const m: Record<string, string> = {}
@@ -568,8 +603,12 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
             <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
               Cohort → Archetype
             </h3>
-            <span data-testid="ia-cohort-mapped-count" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              · {mappedCount} of {cohortKeys.length} mapped
+            <span
+              data-testid="ia-cohort-mapped-count"
+              title={subCounts.total > 0 ? `${mappedCount}/${cohortKeys.length} primary + ${subCounts.mapped}/${subCounts.total} subsystem` : undefined}
+              style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}
+            >
+              · {totalMapped} of {totalCohorts} mapped
             </span>
           </div>
           {onNavigate && (
@@ -1032,18 +1071,22 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
                       <Tooltip
                         content={<StackedTotalTooltip unit={mfaLCAResult.unit} formatValue={summaryFormat.format} />}
                       />
-                      {cohortStackKeys.map((k, i) => (
-                        <Area
-                          key={k}
-                          type="monotone"
-                          dataKey={k}
-                          stackId="1"
-                          stroke={colorFor(cohortColorMap, k, i)}
-                          fill={colorFor(cohortColorMap, k, i)}
-                          fillOpacity={0.7}
-                          isAnimationActive={false}
-                        />
-                      ))}
+                      {cohortStackKeys.map((k, i) => {
+                        const d = cohortLabel(k)
+                        return (
+                          <Area
+                            key={k}
+                            type="monotone"
+                            dataKey={k}
+                            name={d.archetype ? `${d.label} · ${d.archetype}` : d.label}
+                            stackId="1"
+                            stroke={colorFor(cohortColorMap, k, i)}
+                            fill={colorFor(cohortColorMap, k, i)}
+                            fillOpacity={0.7}
+                            isAnimationActive={false}
+                          />
+                        )
+                      })}
                       <ReferenceLine x={detailYear ?? undefined} stroke="var(--mod-dsm)" strokeDasharray="3 3" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -1091,9 +1134,17 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
                       {yearBreakdown.rows.map((row) => (
                         <tr key={row.cohort_key} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                           <td style={{ padding: '6px 10px', fontSize: 'var(--text-sm)' }}>
-                            {parseCohortKey(row.cohort_key, activeSystem.dimensions).map((p, i) => (
-                              <span key={i} style={{ marginRight: 4 }}><Badge label={p} variant="dsm" /></span>
-                            ))}
+                            {(() => {
+                              const d = cohortLabel(row.cohort_key)
+                              return (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <Badge label={d.label} variant="dsm" />
+                                  {d.archetype && (
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>· {d.archetype}</span>
+                                  )}
+                                </span>
+                              )
+                            })()}
                           </td>
                           <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{fmtCount(row.count)}</td>
                           <td style={{ padding: '6px 10px', textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>{detailFormat.format(row.perUnit)}</td>
@@ -1131,10 +1182,11 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
                       tickFormatter={(v) => detailFormat.format(v as number)}
                       label={{ value: mfaLCAResult.unit, position: 'insideBottom', offset: -6, style: { fill: 'var(--text-tertiary)', fontSize: 11 } }}
                     />
-                    <YAxis type="category" dataKey="name" stroke="var(--text-tertiary)" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} width={120} />
+                    <YAxis type="category" dataKey="name" stroke="var(--text-tertiary)" width={190} tick={<TruncatedAxisTick format={materialLabelFor} />} />
                     <Tooltip
                       contentStyle={{ backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', fontSize: 12 }}
                       formatter={(v) => (typeof v === 'number' ? detailFormat.format(v) : String(v))}
+                      labelFormatter={(v) => materialLabelFor(String(v))}
                     />
                     <Bar dataKey="impact" fill="var(--mod-lca)" fillOpacity={0.85} isAnimationActive={false} />
                   </BarChart>

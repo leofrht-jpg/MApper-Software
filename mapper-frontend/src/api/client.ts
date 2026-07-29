@@ -591,6 +591,8 @@ export interface DependencyRule {
 export interface SubsystemCohortMapping {
   archetype_id: string
   scaling_factor: number
+  // Optional per-cohort chart color, `#rrggbb`. null/absent → app default color.
+  color?: string | null
 }
 
 export interface Subsystem {

@@ -14,6 +14,7 @@ import { Button } from '../ui/Button'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import { useBOMStore } from '../../stores/bomStore'
 import { useDSMStore } from '../../stores/dsmStore'
+import { CHART_PALETTE } from '../../utils/chartColors'
 import {
   downloadSubsystemCohortMappingTemplate,
   importSubsystemCohortMapping,
@@ -129,11 +130,17 @@ export function SubsystemMappingCard({
 
   const updateMapping = (archetypeKey: string, patch: Partial<SubsystemCohortMapping> | null) => {
     const next = { ...local }
-    if (patch === null) delete next[archetypeKey]
-    else next[archetypeKey] = {
-      archetype_id: patch.archetype_id ?? next[archetypeKey]?.archetype_id ?? '',
-      scaling_factor: patch.scaling_factor ?? next[archetypeKey]?.scaling_factor ?? 1.0,
+    if (patch === null) { delete next[archetypeKey]; scheduleSave(next); return }
+    const prev = next[archetypeKey]
+    const merged: SubsystemCohortMapping = {
+      archetype_id: patch.archetype_id ?? prev?.archetype_id ?? '',
+      scaling_factor: patch.scaling_factor ?? prev?.scaling_factor ?? 1.0,
+      // 'color' in patch → explicit set (incl. null to clear); else preserve.
+      color: 'color' in patch ? (patch.color ?? null) : (prev?.color ?? null),
     }
+    // A cohort with neither an archetype nor a color has nothing to persist.
+    if (!merged.archetype_id && !merged.color) delete next[archetypeKey]
+    else next[archetypeKey] = merged
     scheduleSave(next)
   }
 
@@ -266,19 +273,50 @@ export function SubsystemMappingCard({
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
+                <th style={{ ...th, width: 44 }}>Color</th>
                 <th style={th}>Dependent archetype</th>
                 <th style={th}>BOM archetype</th>
                 <th style={{ ...th, textAlign: 'right' }}>Scale</th>
               </tr>
             </thead>
             <tbody>
-              {dependentArchetypes.map((key) => {
+              {dependentArchetypes.map((key, index) => {
                 const current = local[key]
                 const archetypeId = current?.archetype_id ?? ''
                 const scalingFactor = current?.scaling_factor ?? 1.0
                 const issue = archetypeId && archetypesWithIssues.has(archetypeId)
+                // Swatch shows the persisted color, else the app's deterministic
+                // fallback (never white/transparent).
+                const fallbackColor = CHART_PALETTE[index % CHART_PALETTE.length]
+                const swatchColor = current?.color ?? fallbackColor
+                const hasColor = !!current?.color
                 return (
                   <tr key={key} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    <td style={{ padding: '6px 10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <input
+                          type="color"
+                          data-testid={`subsystem-cohort-color-${key}`}
+                          value={swatchColor}
+                          onChange={(e) => updateMapping(key, { color: e.target.value })}
+                          title={hasColor ? `Color ${current?.color} — click to change` : 'Default color — click to set'}
+                          style={{
+                            width: 24, height: 24, padding: 0, border: hasColor ? '2px solid var(--text-tertiary)' : '1px solid var(--border-default)',
+                            borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer',
+                          }}
+                        />
+                        {hasColor && (
+                          <button
+                            data-testid={`subsystem-cohort-color-reset-${key}`}
+                            onClick={() => updateMapping(key, { color: null })}
+                            title="Reset to default color"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-tertiary)', padding: 0, fontSize: 11, lineHeight: 1 }}
+                          >
+                            ↺
+                          </button>
+                        )}
+                      </div>
+                    </td>
                     <td style={{ padding: '6px 10px' }}>
                       <Badge label={key} variant="dsm" />
                     </td>
@@ -288,7 +326,8 @@ export function SubsystemMappingCard({
                           value={archetypeId}
                           onChange={(e) => {
                             const nextId = e.target.value
-                            if (!nextId) updateMapping(key, null)
+                            // Preserve any set color when unmapping (color-only entry).
+                            if (!nextId) updateMapping(key, { archetype_id: '' })
                             else updateMapping(key, { archetype_id: nextId, scaling_factor: scalingFactor || 1.0 })
                           }}
                           style={selectSty}

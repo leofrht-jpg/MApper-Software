@@ -33,7 +33,9 @@ import { ComputeProgress } from '../ui/ComputeProgress'
 import { DSMScenariosChip } from '../dsm/DSMScenariosChip'
 import { IndicatorChecklist, MethodFamilySelect, useMethodSelection } from '../MethodPicker'
 import { colorFor } from '../../utils/chartColors'
-import { useDSMSystemColors } from '../../utils/dsmCohortColors'
+import { useDSMSystemColors, buildCombinedRowColorOverrides, subsystemMappingCounts, cohortDisplayLabel, materialDisplayString } from '../../utils/dsmCohortColors'
+import { TruncatedAxisTick } from '../charts/TruncatedAxisTick'
+import { useSubsystemStore } from '../../stores/subsystemStore'
 import { evaluateAxisConflict } from '../../utils/axisConflict'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
@@ -44,7 +46,6 @@ import { tightStackedDomain } from '../charts/yAxisDomain'
 import { MultiScenarioImpactChart } from '../charts/MultiScenarioImpactChart'
 import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 
-const COHORT_SEP = '|'
 
 const fmtCount = (n: number) => {
   if (n === 0) return '0'
@@ -52,11 +53,6 @@ const fmtCount = (n: number) => {
 }
 // ── Panel ─────────────────────────────────────────────────────────────────────
 
-function parseCohortKey(key: string, dims: { is_age?: boolean }[]): string[] {
-  const nads = dims.filter((d) => !d.is_age)
-  const parts = key.split(COHORT_SEP)
-  return nads.map((_, i) => parts[i] ?? '')
-}
 
 function ProjectedImpactPanelImpl() {
   const { activeSystem, simulationResult, systemState, activeView, selectedYear, cohortMappings, fetchCohortMappings, stackByDimension } = useDSMStore()
@@ -330,6 +326,8 @@ function ProjectedImpactPanelImpl() {
   useEffect(() => { fetchArchetypes() }, [fetchArchetypes])
   useEffect(() => { fetchDatabases() }, [fetchDatabases])
   useEffect(() => { if (activeSystem) fetchCohortMappings() }, [activeSystem?.id, fetchCohortMappings])
+  const fetchSubsystemsForSystem = useSubsystemStore((s) => s.fetchForSystem)
+  useEffect(() => { if (activeSystem?.id) fetchSubsystemsForSystem(activeSystem.id) }, [activeSystem?.id, fetchSubsystemsForSystem])
 
   const scenarios = useMemo(() => {
     const map = new Map<string, { base_db: string; iam: string; ssp: string; years: number[] }>()
@@ -597,8 +595,36 @@ function ProjectedImpactPanelImpl() {
   // resolution. Row overrides only apply in null-stackBy (cohort-key
   // stacked) branch — see useDSMSystemColors.
   const cohortRowColors = useDSMStore((s) => s.cohortRowColors)
+  // Combine primary per-row colors with subsystem cohort colors, keyed by the
+  // subsystem-prefixed cohort key the aggregated impact result uses.
+  // Dependents only — the store's `subsystems` includes the synthesized primary
+  // (type 'primary'); counting it double-counts the primary's cohorts.
+  const allProjSubsystems = useSubsystemStore((s) => s.subsystems)
+  const projSubsystems = useMemo(() => allProjSubsystems.filter((s) => s.type === 'dependent'), [allProjSubsystems])
+  const combinedRowColors = useMemo(
+    () => buildCombinedRowColorOverrides(activeSystem?.id, cohortRowColors, projSubsystems),
+    [activeSystem?.id, cohortRowColors, projSubsystems],
+  )
+  const subCounts = useMemo(() => subsystemMappingCounts(projSubsystems), [projSubsystems])
+  const archetypeNameById = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const a of archetypes) m[a.id] = a.name
+    return m
+  }, [archetypes])
+  const cohortLabel = (ck: string) => cohortDisplayLabel(ck, {
+    systemId: activeSystem?.id,
+    primaryMappings: cohortMappings,
+    subsystems: projSubsystems,
+    archetypeName: (id) => archetypeNameById[id],
+  })
+  // Material contribution keys are subsystem-prefixed (`<id>::<material>`) —
+  // strip the UUID; disambiguate dependent-subsystem materials by name.
+  const materialLabelFor = (raw: string) => materialDisplayString(raw, {
+    systemId: activeSystem?.id,
+    subsystems: projSubsystems,
+  })
   const dsmColors = useDSMSystemColors(activeSystem ?? null, stackByDimension, {
-    rowColorOverrides: cohortRowColors,
+    rowColorOverrides: combinedRowColors,
   })
   // Patch 5AG — the multi-scenario "By cohort" facets consume a cohort-key →
   // color map as a prop. Resolve it through the SHARED cohort resolver
@@ -730,8 +756,11 @@ function ProjectedImpactPanelImpl() {
           }}
         >
           <Info size={14} color="var(--mod-plca)" />
-          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-            Cohort mappings ({mappedCount} mapped)
+          <span
+            style={{ fontWeight: 600, color: 'var(--text-primary)' }}
+            title={subCounts.total > 0 ? `${mappedCount} primary + ${subCounts.mapped} subsystem` : undefined}
+          >
+            Cohort mappings ({mappedCount + subCounts.mapped} mapped)
           </span>
           <span style={{ marginLeft: 'auto', display: 'inline-flex' }}>
             {infoBannerExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -1645,13 +1674,17 @@ function ProjectedImpactPanelImpl() {
                         so the bands match what the DSM Stock
                         Composition chart shows for the same Stack-by.
                       */}
-                      {cohortStackKeys.map((k, i) => (
-                        <Area key={k} type="monotone" dataKey={k} stackId="1"
-                          stroke={dsmColors.colorForCohort(k, i)}
-                          fill={dsmColors.colorForCohort(k, i)}
-                          fillOpacity={0.7} isAnimationActive={false}
-                        />
-                      ))}
+                      {cohortStackKeys.map((k, i) => {
+                        const d = cohortLabel(k)
+                        return (
+                          <Area key={k} type="monotone" dataKey={k}
+                            name={d.archetype ? `${d.label} · ${d.archetype}` : d.label} stackId="1"
+                            stroke={dsmColors.colorForCohort(k, i)}
+                            fill={dsmColors.colorForCohort(k, i)}
+                            fillOpacity={0.7} isAnimationActive={false}
+                          />
+                        )
+                      })}
                       <ReferenceLine x={detailYear ?? undefined} stroke="var(--mod-plca)" strokeDasharray="3 3" />
                     </AreaChart>
                   </ResponsiveContainer>
@@ -1753,9 +1786,17 @@ function ProjectedImpactPanelImpl() {
                       {yearBreakdown.rows.map((row) => (
                         <tr key={row.cohort_key} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                           <td style={{ padding: '6px 10px', fontSize: 'var(--text-sm)' }}>
-                            {parseCohortKey(row.cohort_key, activeSystem.dimensions).map((p, i) => (
-                              <span key={i} style={{ marginRight: 4 }}><Badge label={p} variant="dsm" /></span>
-                            ))}
+                            {(() => {
+                              const d = cohortLabel(row.cohort_key)
+                              return (
+                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                  <Badge label={d.label} variant="dsm" />
+                                  {d.archetype && (
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: 'var(--text-xs)' }}>· {d.archetype}</span>
+                                  )}
+                                </span>
+                              )
+                            })()}
                           </td>
                           <td style={tdR}>{fmtCount(row.count)}</td>
                           <td style={tdR}>{detailFormat.format(row.perUnit)}</td>
@@ -1789,12 +1830,13 @@ function ProjectedImpactPanelImpl() {
                     <XAxis type="number" stroke="var(--text-tertiary)" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} tickFormatter={(v) => detailFormat.format(v as number)}
                       label={{ value: selectedResult.unit, position: 'insideBottom', offset: -6, style: { fill: 'var(--text-tertiary)', fontSize: 11 } }}
                     />
-                    <YAxis type="category" dataKey="name" stroke="var(--text-tertiary)" tick={{ fill: 'var(--text-secondary)', fontSize: 11 }} width={120} />
+                    <YAxis type="category" dataKey="name" stroke="var(--text-tertiary)" width={190} tick={<TruncatedAxisTick format={materialLabelFor} />} />
                     <Tooltip
                       contentStyle={TOOLTIP_CONTENT_STYLE}
                       itemStyle={TOOLTIP_ITEM_STYLE}
                       labelStyle={TOOLTIP_LABEL_STYLE}
                       formatter={(v) => (typeof v === 'number' ? detailFormat.format(v) : String(v))}
+                      labelFormatter={(v) => materialLabelFor(String(v))}
                     />
                     <Bar dataKey="impact" fill="var(--mod-plca)" fillOpacity={0.85} isAnimationActive={false} />
                   </BarChart>

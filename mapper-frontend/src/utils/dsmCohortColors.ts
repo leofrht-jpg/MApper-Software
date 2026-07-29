@@ -221,6 +221,176 @@ export function buildStackKeys(
   return dim?.labels ?? ['all']
 }
 
+/**
+ * Combined per-cohort-key color overrides for Impact Assessment charts, where
+ * cohort keys are subsystem-prefixed (`<id>::<cohort>`) when a subsystem is
+ * linked (see `dsm_lca_engine.aggregate_subsystem_results`).
+ *
+ * Emits each color under BOTH the bare cohort key AND the id-prefixed key so a
+ * chart resolves the same color whether it holds `BEV-LFP|Small` (no subsystem)
+ * or `<system_id>::BEV-LFP|Small` (subsystem present). Subsystem cohort colors
+ * (from `SubsystemCohortMapping.color`) are keyed by `<sub_id>::<cohort>`.
+ * dsmCohortColors.ts stays the single source of truth for cohort coloring.
+ */
+export function buildCombinedRowColorOverrides(
+  systemId: string | null | undefined,
+  primaryRowColors: Record<string, string>,
+  subsystems: ReadonlyArray<{
+    id: string
+    cohort_mappings?: Record<string, { color?: string | null }> | null
+  }>,
+): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const [ck, hex] of Object.entries(primaryRowColors ?? {})) {
+    if (!hex) continue
+    out[ck] = hex
+    if (systemId) out[`${systemId}::${ck}`] = hex
+  }
+  for (const sub of subsystems ?? []) {
+    for (const [ck, m] of Object.entries(sub.cohort_mappings ?? {})) {
+      if (m?.color) out[`${sub.id}::${ck}`] = m.color
+    }
+  }
+  return out
+}
+
+/**
+ * Combined cohort→archetype mapping counts for a subsystem list — the total
+ * cohort space and how many are mapped. Mirrors `SubsystemMappingCard`'s
+ * `dependentArchetypes` (cartesian cohort space ∪ rule targets ∪ saved mapping
+ * keys) so the Impact Assessment summary count matches the DSM editor exactly.
+ */
+export function subsystemMappingCounts(
+  subsystems: ReadonlyArray<{
+    type?: string
+    dimensions?: DimensionDef[] | null
+    dependency_rules?: ReadonlyArray<{ dependent_archetype_id?: string }> | null
+    cohort_mappings?: Record<string, { archetype_id?: string }> | null
+  }>,
+): { total: number; mapped: number } {
+  let total = 0
+  let mapped = 0
+  for (const sub of subsystems ?? []) {
+    // The store's subsystem list includes a synthesized PRIMARY entry; never
+    // count it here (the caller counts primary cohorts separately) — otherwise
+    // the primary's cohorts are double-counted in the denominator.
+    if (sub.type === 'primary') continue
+    const ids = new Set<string>()
+    const nads = (sub.dimensions ?? []).filter((d) => !d.is_age)
+    if (nads.length > 0) {
+      let acc: string[][] = [[]]
+      for (const d of nads) {
+        const next: string[][] = []
+        for (const row of acc) for (const l of d.labels ?? []) next.push([...row, l])
+        acc = next
+      }
+      for (const parts of acc) ids.add(parts.join(COHORT_SEP))
+    }
+    for (const r of sub.dependency_rules ?? []) {
+      if (r.dependent_archetype_id) ids.add(r.dependent_archetype_id)
+    }
+    for (const k of Object.keys(sub.cohort_mappings ?? {})) ids.add(k)
+    total += ids.size
+    mapped += [...ids].filter((a) => !!sub.cohort_mappings?.[a]?.archetype_id).length
+  }
+  return { total, mapped }
+}
+
+/**
+ * Human-readable label for an Impact Assessment cohort key, which may be
+ * subsystem-prefixed (`<id>::<cohort>`). The UUID prefix is ALWAYS stripped —
+ * it must never reach the user. Returns the readable cohort (pipe→space) plus,
+ * when resolvable, the mapped BOM-archetype name.
+ *
+ *   `<system_id>::BEV-LFP|SUV`  →  { label: 'BEV-LFP SUV', archetype: 'BEV-LFP SUV' }
+ *   `<sub_id>::CNG Station|Default` → { label: 'CNG Station Default',
+ *                                        archetype: 'Charging Infrastructure' }
+ *   unmapped / unknown id → { label: '<cohort suffix>', archetype: null }
+ */
+export function cohortDisplayLabel(
+  cohortKey: string,
+  opts: {
+    systemId?: string | null
+    primaryMappings?: Record<string, { archetype_id?: string }> | null
+    subsystems?: ReadonlyArray<{
+      id: string
+      cohort_mappings?: Record<string, { archetype_id?: string }> | null
+    }>
+    archetypeName?: (id: string) => string | undefined
+  } = {},
+): { label: string; archetype: string | null } {
+  const { systemId, primaryMappings = {}, subsystems = [], archetypeName } = opts
+  let id: string | null = null
+  let rest = cohortKey
+  const idx = cohortKey.indexOf('::')
+  if (idx >= 0) {
+    id = cohortKey.slice(0, idx)
+    rest = cohortKey.slice(idx + 2)
+  }
+  const label = rest.split(COHORT_SEP).join(' ').trim() || rest
+
+  let arcId: string | undefined
+  if (id && subsystems.some((s) => s.id === id)) {
+    arcId = subsystems.find((s) => s.id === id)?.cohort_mappings?.[rest]?.archetype_id
+  } else if (!id || (systemId && id === systemId)) {
+    arcId = (primaryMappings ?? {})[rest]?.archetype_id
+  }
+  const name = arcId && archetypeName ? archetypeName(arcId) : undefined
+  return { label, archetype: name && name !== label ? name : null }
+}
+
+/**
+ * Human-readable label for an Impact Assessment MATERIAL key, which may be
+ * subsystem-prefixed (`<id>::<material name>`). Like cohort keys, the prefix is
+ * the SUBSYSTEM/SYSTEM id added by `dsm_lca_engine.aggregate_subsystem_results`
+ * (`_prefix_key`) when a subsystem is linked — NOT an archetype id. The UUID
+ * prefix is ALWAYS stripped; it must never reach the user.
+ *
+ * Bars are per-(subsystem, material): the same material name can appear under
+ * the primary system AND a dependent subsystem, so a bare strip would produce
+ * two identical labels for different values. To disambiguate, a DEPENDENT
+ * subsystem's materials are suffixed with the subsystem NAME; the primary
+ * system's materials (and any unresolvable id) show the material name alone.
+ *
+ *   `<system_id>::Steel frame`        → `Steel frame`            (primary)
+ *   `<sub_id>::Nozzle`                → `Nozzle · Fueling`       (dependent)
+ *   `Steel frame` (no prefix, no subsystems) → `Steel frame`
+ *   `<unknown_id>::Widget`            → `Widget`                 (never the UUID)
+ */
+export function materialDisplayLabel(
+  materialKey: string,
+  opts: {
+    systemId?: string | null
+    subsystems?: ReadonlyArray<{ id: string; name?: string | null }>
+  } = {},
+): { label: string; subsystem: string | null } {
+  const { systemId, subsystems = [] } = opts
+  const idx = materialKey.indexOf('::')
+  if (idx < 0) return { label: materialKey, subsystem: null }
+  const id = materialKey.slice(0, idx)
+  const material = materialKey.slice(idx + 2)
+  // Primary system prefix → material alone (no disambiguating suffix needed).
+  if (systemId && id === systemId) return { label: material, subsystem: null }
+  // Dependent subsystem → suffix with its name to keep bars distinct.
+  const sub = subsystems.find((s) => s.id === id)
+  if (sub && sub.name) return { label: material, subsystem: sub.name }
+  // Unknown id (not primary, not a known subsystem) → material alone; the raw
+  // UUID is never surfaced.
+  return { label: material, subsystem: null }
+}
+
+/** Flatten `materialDisplayLabel` to a single display string (`material · sub`). */
+export function materialDisplayString(
+  materialKey: string,
+  opts: {
+    systemId?: string | null
+    subsystems?: ReadonlyArray<{ id: string; name?: string | null }>
+  } = {},
+): string {
+  const { label, subsystem } = materialDisplayLabel(materialKey, opts)
+  return subsystem ? `${label} · ${subsystem}` : label
+}
+
 export interface DSMSystemColors {
   /** Stack keys for the chosen stackByDimension (or `['all']` when null). */
   stackKeys: string[]

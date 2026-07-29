@@ -74,7 +74,7 @@ def _map_xlsx(rows: list[list], headers: list[str] | None = None, sheet: str = "
     wb = Workbook()
     ws = wb.active
     ws.title = sheet
-    ws.append(headers or ["dependent_archetype", "bom_archetype", "scale"])
+    ws.append(headers or ["dependent_archetype", "bom_archetype", "scale", "color"])
     for r in rows:
         ws.append(r)
     buf = io.BytesIO()
@@ -109,7 +109,7 @@ def test_template_columns_and_prepopulated_cohort_keys(system_subsystem_archetyp
 
     ws = wb["Mappings"]
     header = [c.value for c in ws[1]]
-    assert header == ["dependent_archetype", "bom_archetype", "scale"]
+    assert header == ["dependent_archetype", "bom_archetype", "scale", "color"]
     # Two cohort keys (Default, Large) pre-populated; bom_archetype + scale blank.
     dep_col = [ws.cell(row=r, column=1).value for r in range(2, ws.max_row + 1)]
     assert set(dep_col) == {"Default", "Large"}
@@ -125,6 +125,34 @@ def test_template_columns_and_prepopulated_cohort_keys(system_subsystem_archetyp
 # ── Import: valid ───────────────────────────────────────────────────────────
 
 
+def test_import_valid_color_applied(system_subsystem_archetype):
+    data = _map_xlsx([
+        ["Default", ARC_NAME, 1.0, "#2DD4BF"],   # uppercase → normalized lower
+        ["Large", ARC_NAME, 1.0, ""],            # blank → None
+    ])
+    resp = asyncio.run(sub_api.import_cohort_mapping(SYS_ID, SUB_ID, _upload(data)))
+    assert resp.status_code == 200
+    body = json.loads(resp.body)
+    assert body["mappings"]["Default"]["color"] == "#2dd4bf"
+    assert body["mappings"]["Large"]["color"] is None
+
+
+def test_import_invalid_color_rejected(system_subsystem_archetype):
+    data = _map_xlsx([["Default", ARC_NAME, 1.0, "not-a-color"]])
+    resp = asyncio.run(sub_api.import_cohort_mapping(SYS_ID, SUB_ID, _upload(data)))
+    assert resp.status_code == 422
+    body = json.loads(resp.body)
+    assert any(e["field"] == "color" for e in body["errors"])
+
+
+def test_template_has_color_reference_section(system_subsystem_archetype):
+    from openpyxl import load_workbook
+    resp = asyncio.run(sub_api.cohort_mapping_template(SYS_ID, SUB_ID))
+    wb = load_workbook(io.BytesIO(resp.body))
+    ref_text = "\n".join(str(c.value) for row in wb["Reference"].iter_rows() for c in row if c.value is not None)
+    assert "color" in ref_text.lower()
+
+
 def test_import_valid_returns_mapping(system_subsystem_archetype):
     data = _map_xlsx([
         ["Default", ARC_NAME, 1.5],
@@ -135,8 +163,8 @@ def test_import_valid_returns_mapping(system_subsystem_archetype):
     body = json.loads(resp.body)
     assert body["ok"] is True
     assert body["mappings"] == {
-        "Default": {"archetype_id": ARC_ID, "scaling_factor": 1.5},
-        "Large": {"archetype_id": ARC_ID, "scaling_factor": 1.0},
+        "Default": {"archetype_id": ARC_ID, "scaling_factor": 1.5, "color": None},
+        "Large": {"archetype_id": ARC_ID, "scaling_factor": 1.0, "color": None},
     }
 
 

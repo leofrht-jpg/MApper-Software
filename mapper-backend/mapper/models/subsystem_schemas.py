@@ -99,6 +99,10 @@ class Subsystem(BaseModel):
 class SubsystemCohortMapping(BaseModel):
     archetype_id: str
     scaling_factor: float = 1.0
+    # Optional per-cohort chart color, ``#rrggbb`` (lowercased). None/absent →
+    # the app's deterministic color-assignment fallback (never white). Mirrors
+    # the primary system's per-row color (CohortMapping.row_colors).
+    color: str | None = None
 
 
 Subsystem.model_rebuild()

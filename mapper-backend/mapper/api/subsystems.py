@@ -823,7 +823,7 @@ async def import_dependency_rules(
 # subsystem update endpoint.
 
 
-_COHORT_MAP_HEADERS = ["dependent_archetype", "bom_archetype", "scale"]
+_COHORT_MAP_HEADERS = ["dependent_archetype", "bom_archetype", "scale", "color"]
 
 
 def _cohort_mapping_workbook(sub: Subsystem, archetype_names: list[str]):
@@ -850,11 +850,12 @@ def _cohort_mapping_workbook(sub: Subsystem, archetype_names: list[str]):
     ws.freeze_panes = "A2"
 
     # Pre-populate the dependent_archetype column with the subsystem's cohort
-    # keys — the same rows shown in the modal. bom_archetype + scale stay blank.
+    # keys — the same rows shown in the modal. bom_archetype + scale + color
+    # stay blank for the user to fill.
     for ck in all_cohort_keys(sub.dimensions):
-        ws.append([ck, "", ""])
+        ws.append([ck, "", "", ""])
 
-    for col_letter, width in zip("ABC", [32, 32, 12]):
+    for col_letter, width in zip("ABCD", [32, 32, 12, 12]):
         ws.column_dimensions[col_letter].width = width
 
     ref = wb.create_sheet("Reference")
@@ -868,6 +869,8 @@ def _cohort_mapping_workbook(sub: Subsystem, archetype_names: list[str]):
 
     _section("Valid bom_archetype values (leave blank to leave a cohort unmapped)", archetype_names)
     _section("Valid dependent_archetype values", all_cohort_keys(sub.dimensions))
+    _section("color (optional)", ["Hex color for this cohort's chart series, e.g. #2dd4bf (#rrggbb).",
+                                  "Leave blank to use the app's default color."])
     ref.column_dimensions["A"].width = 48
     ref.protection.sheet = True
 
@@ -965,6 +968,7 @@ async def import_cohort_mapping(
         dep = _cell(r, "dependent_archetype")
         bom = _cell(r, "bom_archetype")
         scale_raw = _cell(r, "scale")
+        color_raw = _cell(r, "color")
 
         if not dep:
             errors.append(DependencyRuleImportError(row=ridx, field="dependent_archetype", message="dependent_archetype is required"))
@@ -996,9 +1000,15 @@ async def import_cohort_mapping(
                 if scale <= 0:
                     errors.append(DependencyRuleImportError(row=ridx, field="scale", message="scale must be a positive number"))
 
+        # color: blank/absent → None (app default). Otherwise must be valid hex.
+        from mapper.api.bom import _normalize_color
+        color, color_err = _normalize_color(color_raw)
+        if color_err:
+            errors.append(DependencyRuleImportError(row=ridx, field="color", message=f"'{color_raw}' is not a valid hex color (e.g. #2dd4bf)"))
+
         # Only mapped rows contribute to the saved mapping (unmapped = omitted).
         if arc_id is not None:
-            mappings[dep] = {"archetype_id": arc_id, "scaling_factor": scale}
+            mappings[dep] = {"archetype_id": arc_id, "scaling_factor": scale, "color": color}
 
     if not seen and not errors:
         raise HTTPException(status_code=400, detail="No data rows found in the Mappings sheet.")

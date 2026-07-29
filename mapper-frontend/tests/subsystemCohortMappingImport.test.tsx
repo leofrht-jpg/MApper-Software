@@ -78,6 +78,28 @@ function renderCard() {
   return render(<SubsystemMappingCard subsystem={SUB} archetypesWithIssues={new Set()} />)
 }
 
+describe('subsystem cohort mapping color picker', () => {
+  it('setting a color persists it on the cohort mapping record (auto-save)', async () => {
+    const { getByTestId } = renderCard()
+    const colorInput = getByTestId('subsystem-cohort-color-Default') as HTMLInputElement
+    await act(async () => { fireEvent.change(colorInput, { target: { value: '#2dd4bf' } }) })
+    await waitFor(() => expect(updateSubsystem).toHaveBeenCalled())
+    const body = updateSubsystem.mock.calls.at(-1)![2] as Subsystem
+    expect(body.cohort_mappings?.Default?.color).toBe('#2dd4bf')
+  })
+
+  it('reset button clears a set color back to default', async () => {
+    const sub = { ...SUB, cohort_mappings: { Default: { archetype_id: 'arc1', scaling_factor: 1, color: '#2dd4bf' } } }
+    const { getByTestId } = render(<SubsystemMappingCard subsystem={sub as never} archetypesWithIssues={new Set()} />)
+    await act(async () => { fireEvent.click(getByTestId('subsystem-cohort-color-reset-Default')) })
+    await waitFor(() => expect(updateSubsystem).toHaveBeenCalled())
+    const body = updateSubsystem.mock.calls.at(-1)![2] as Subsystem
+    // color cleared → entry keeps its archetype but no color.
+    expect(body.cohort_mappings?.Default?.color ?? null).toBeNull()
+    expect(body.cohort_mappings?.Default?.archetype_id).toBe('arc1')
+  })
+})
+
 describe('subsystem cohort mapping template + import', () => {
   it('Template button downloads with (systemId, subsystemId, name)', async () => {
     downloadSubsystemCohortMappingTemplate.mockResolvedValue(undefined)

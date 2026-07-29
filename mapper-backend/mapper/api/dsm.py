@@ -2198,16 +2198,10 @@ async def export_results(system_id: str) -> Response:
     if multi is not None and multi.scenarios:
         entries = _entries_from_multi(sys_def, state, multi)
         content = _build_export_workbook(sys_def, entries, multi.warnings)
-        n_scenarios = len({e.scenario_id for e in entries})
-        n_keys = len(entries)
-        today = datetime.date.today().isoformat()
-        # Scenario count drives the filename; when cases also vary we still
-        # pluralize on scenarios (the dominant axis for the user).
-        label = f"{n_keys}scenarios" if n_keys > 1 else "1scenario"
-        fname = f"mapper_dsm_export_{label}_{today}.xlsx"
-        if n_scenarios == 1 and n_keys == 1:
-            # Single-scenario single-case: keep the friendlier legacy name.
-            fname = f"{_sanitize_filename(sys_def.name)}_simulation.xlsx"
+        # Shared scheme — no scenario count, no date (DSM sim is the primary
+        # system; subsystems have their own sims → no contributing subs here).
+        from mapper.api.bom import build_export_filename
+        fname = build_export_filename(sys_def.name, [], "DSM")
     else:
         result = _proj_results(project).get(system_id)
         if result is None:
@@ -2225,7 +2219,8 @@ async def export_results(system_id: str) -> Response:
             result=result,
         )
         content = _build_export_workbook(sys_def, [entry], [])
-        fname = f"{_sanitize_filename(sys_def.name)}_simulation.xlsx"
+        from mapper.api.bom import build_export_filename
+        fname = build_export_filename(sys_def.name, [], "DSM")
 
     return Response(
         content=content,

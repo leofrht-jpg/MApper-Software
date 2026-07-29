@@ -48,6 +48,15 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # CORS hides ALL response headers from JS by default (only a safelist is
+    # readable). The Excel-export surfaces (Impact/AESA/DSM/MFA) read the
+    # server-built ``Content-Disposition`` filename — which names contributing
+    # subsystems the client can't always compute (e.g. AESA passes ``[]``) — so
+    # it MUST be explicitly exposed. Without this, cross-origin dev (Vite :5173
+    # → backend :8000) silently drops the header and downloads fall back to the
+    # client name, showing the old scheme (Car_Fleet_AESA.xlsx). Same-origin in
+    # the packaged app masked it; this makes dev match prod.
+    expose_headers=["Content-Disposition"],
 )
 
 @app.middleware("http")

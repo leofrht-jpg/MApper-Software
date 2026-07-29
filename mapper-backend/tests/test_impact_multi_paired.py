@@ -428,7 +428,8 @@ def test_export_lone_multi_paired_produces_workbook(monkeypatch):
     response = asyncio.run(impact_api.post_export(body))
     assert response.status_code == 200
     cd = response.headers.get("content-disposition", "")
-    assert "MultiPaired" in cd, (
-        f"Filename must use MultiPaired discriminator; got {cd!r}"
+    # Shared scheme: paired DSM × LCI is Prospective → pLCA (no axis marker, no date).
+    assert "_pLCA.xlsx" in cd, (
+        f"Paired export must use the shared pLCA scheme; got {cd!r}"
     )
     assert ".xlsx" in cd

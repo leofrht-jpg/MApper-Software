@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { buildExportFilename } from '../utils/exportFilename'
 import { createPortal } from 'react-dom'
 import { ArrowLeft, ChevronDown, Download, Save, Activity, BarChart3, List, Radar as RadarIcon } from 'lucide-react'
 import { Button } from '../components/ui/Button'
@@ -262,7 +263,7 @@ export function AESADashboard() {
       // list narrows server-bound payload to the visible indicators.
       const filterIds = exportAllIndicators.current ? null : effectiveDisplayed
       exportAllIndicators.current = false
-      await exportAESA(cfg, result, `${sysName}_aesa.xlsx`, filterIds)
+      await exportAESA(cfg, result, buildExportFilename(sysName, [], 'AESA'), filterIds)
     } catch (e) {
       console.error('AESA export failed', e)
     } finally {

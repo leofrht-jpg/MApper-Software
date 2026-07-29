@@ -396,5 +396,8 @@ def test_export_lone_multi_dsm_produces_workbook(monkeypatch):
     response = asyncio.run(impact_api.post_export(body))
     assert response.status_code == 200
     cd = response.headers.get("content-disposition", "")
-    assert "MultiDSM" in cd, f"Filename must use the MultiDSM discriminator; got {cd!r}"
+    # Shared scheme: no axis marker; domain (LCA/pLCA) by run mode.
+    import re
+    assert re.search(r'_(pLCA|LCA)\.xlsx"?', cd), f"Filename must use the shared scheme; got {cd!r}"
+    assert "MultiDSM" not in cd
     assert ".xlsx" in cd

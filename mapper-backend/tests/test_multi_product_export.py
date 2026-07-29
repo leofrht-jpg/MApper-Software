@@ -441,8 +441,9 @@ def test_endpoint_produces_xlsx_filename_with_date() -> None:
     response = asyncio.run(post_export_multi_product(body))
     date_tag = datetime.date.today().isoformat()
     cd = response.headers["content-disposition"]
-    assert "MultiProduct_Comparison" in cd
-    assert date_tag in cd
+    # Shared scheme: product-scoped, no date → Multi-item_comparison_LCA.xlsx
+    assert "Multi-item_comparison_LCA.xlsx" in cd
+    assert date_tag not in cd
     assert cd.endswith('.xlsx"')
 
 

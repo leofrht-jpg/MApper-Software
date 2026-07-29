@@ -82,6 +82,9 @@ describe('exportAESA filter wire format (Patch 4T)', () => {
     vi.restoreAllMocks()
     fetchMock = vi.fn().mockResolvedValue({
       ok: true,
+      // exportAESA prefers the server Content-Disposition filename; real fetch
+      // Responses always expose `headers`. Return none so it falls back.
+      headers: { get: () => null },
       blob: async () => new Blob(['x']),
     })
     ;(globalThis as any).fetch = fetchMock

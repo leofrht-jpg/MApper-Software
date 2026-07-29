@@ -8,6 +8,7 @@
  */
 
 import { recordComputation } from '../stores/carbonStore'
+import { buildExportFilename } from '../utils/exportFilename'
 
 // Backend origin. Standalone web dev defaults to localhost:8000 (unchanged —
 // `npm run dev` sets no env). The packaged desktop (Tauri) build sets
@@ -1234,7 +1235,6 @@ export async function exportMultiProductComparison(
     }>
   } = {},
 ): Promise<void> {
-  const date = new Date().toISOString().slice(0, 10)
   await _downloadXlsx(
     `${API_BASE}/impact/export-multi-product`,
     {
@@ -1245,7 +1245,7 @@ export async function exportMultiProductComparison(
       stage_amounts_meta: options.stageAmountsMeta ?? null,
       activity_vintage_meta: options.activityVintageMeta ?? null,
     },
-    `MApper_MultiProduct_Comparison_${date}.xlsx`,
+    buildExportFilename('Multi-item comparison', [], 'LCA'),
   )
 }
 
@@ -3305,7 +3305,7 @@ export async function exportSingleProductStatic(
   await _downloadXlsx(
     `${API_BASE}/impact/export-single-product-static`,
     { archetype_name: archetypeName, scope, scenarios, stage_amounts_meta: stageAmountsMeta ?? null },
-    `MApper_Impact_SingleProduct_Static_${archetypeName}.xlsx`,
+    buildExportFilename(archetypeName, [], 'LCA'),
   )
 }
 
@@ -3318,7 +3318,7 @@ export async function exportSingleProductProspective(
   await _downloadXlsx(
     `${API_BASE}/impact/export-single-product-prospective`,
     { archetype_name: archetypeName, scope, runs, stage_amounts_meta: stageAmountsMeta ?? null },
-    `MApper_Impact_SingleProduct_Prospective_${archetypeName}.xlsx`,
+    buildExportFilename(archetypeName, [], 'pLCA'),
   )
 }
 
@@ -3338,7 +3338,7 @@ export async function exportSingleProductComparison(
       projected_runs: projectedRuns,
       stage_amounts_meta: stageAmountsMeta ?? null,
     },
-    `MApper_Impact_SingleProduct_Comparison_${archetypeName}.xlsx`,
+    buildExportFilename(`${archetypeName} comparison`, [], 'LCA'),
   )
 }
 
@@ -4088,11 +4088,17 @@ export async function exportAESA(
     body: JSON.stringify({ config, result: payloadResult }),
   })
   if (!res.ok) throw new Error(`POST /aesa/export failed: ${res.status} ${await res.text()}`)
+  // Prefer the backend's Content-Disposition filename — it names any
+  // contributing dependent subsystem (the SR numerator sums primary +
+  // subsystem impacts), which the client-passed `filename` fallback can't
+  // know. Same server-name preference as exportImpact.
+  const cd = res.headers?.get('Content-Disposition')
+  const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = filename
+  a.download = serverName || filename
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)

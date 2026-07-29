@@ -14,6 +14,7 @@ import io
 import re
 import threading
 import uuid
+from collections.abc import Iterable
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 
@@ -1287,28 +1288,76 @@ def _short_method_label(method: list[str]) -> str:
     return method[-1] if method else "method"
 
 
-def _impact_export_filename(
-    primary_name: str, subsystem_names: list[str], scope: str, *, max_base: int = 100
+def build_export_filename(
+    system_name: str,
+    subsystem_names: list[str],
+    domain: str,
+    *,
+    max_base: int = 80,
 ) -> str:
-    """Impact-export filename. No subsystems → ``{primary}_impact_{scope}.xlsx``.
-    With subsystems → ``{primary}+{sub1}+{sub2}_impact_{scope}.xlsx``. Names are
-    sanitised (spaces→_, filename-invalid chars stripped). If the base exceeds
-    ``max_base`` chars it collapses to ``{primary}+{N}_subsystems_impact_{scope}``.
-    Mirrors the frontend ``buildImpactExportFilename`` helper."""
+    """The ONE Excel-export filename scheme, shared across every domain:
+
+        ``{system}+{sub1}+{sub2}_{DOMAIN}.xlsx``
+
+    - ``domain`` is a field acronym, exact casing: ``LCA`` (Static Background),
+      ``pLCA`` (Prospective Background), ``AESA``, ``DSM``, ``MFA``.
+    - No subsystems → ``{system}_{DOMAIN}.xlsx``.
+    - Only ``subsystem_names`` that CONTRIBUTED results should be passed (the
+      caller filters); empties are dropped here defensively.
+    - Sanitise: spaces → ``_``; strip ``/ \\ : * ? " < > |``.
+    - If the base (before ``_{DOMAIN}.xlsx``) exceeds ``max_base`` chars it
+      collapses to ``{system}+{N}_subsystems_{DOMAIN}.xlsx``.
+    - No date / timestamp / UUID / scenario count.
+
+    The frontend ``buildExportFilename`` (src/utils/exportFilename.ts) is the
+    byte-for-byte mirror of this — locked by a parity test on shared fixtures.
+    """
     import re
 
     def _san(n: str) -> str:
         n = re.sub(r'[/\\:*?"<>|]', "", n or "")
         return re.sub(r"\s+", "_", n.strip())
 
-    p = _san(primary_name) or "system"
+    p = _san(system_name) or "system"
     subs = [x for x in (_san(s) for s in subsystem_names) if x]
     if not subs:
-        base = f"{p}_impact_{scope}"
+        base = p
     else:
-        combined = f"{p}+{'+'.join(subs)}_impact_{scope}"
-        base = combined if len(combined) <= max_base else f"{p}+{len(subs)}_subsystems_impact_{scope}"
-    return f"{base}.xlsx"
+        combined = f"{p}+{'+'.join(subs)}"
+        base = combined if len(combined) <= max_base else f"{p}+{len(subs)}_subsystems"
+    return f"{base}_{domain}.xlsx"
+
+
+def contributing_subsystem_names(
+    cohort_keys: Iterable[str], system_id: str, project: str,
+) -> list[str]:
+    """Names of the subsystems that own ≥1 cohort key in ``cohort_keys``.
+
+    Subsystem cohorts are keyed ``<sub_id>::<cohort>`` by
+    ``aggregate_subsystem_results``; the primary system's cohorts carry the
+    ``<system_id>::`` prefix (or none). Returns the contributing subsystems'
+    display names, sorted by subsystem id, empty when none contributed — so
+    ``build_export_filename`` omits the subsystem segment.
+
+    This is the ONE gatherer every export caller (LCA, pLCA, AESA, MFA, …) must
+    route through, so the three inconsistent filenames that produced the
+    original bug can't recur: LCA passes its ``DSMLCAResult`` cohort keys, pLCA
+    its per-scenario result cohort keys, and AESA the per-boundary SR
+    ``impact_by_cohort`` keys — all resolve identically here.
+    """
+    contrib = sorted({
+        ck.split("::", 1)[0]
+        for ck in cohort_keys
+        if "::" in ck and ck.split("::", 1)[0] != system_id
+    })
+    if not contrib:
+        return []
+    from mapper.api import subsystems as _subs
+    name_by_id = {
+        sid: s.name
+        for sid, s in _subs.get_subsystems_for_system(system_id, project).items()
+    }
+    return [name_by_id.get(sid, sid) for sid in contrib]
 
 
 def _build_mfa_lca_workbook(
@@ -1363,64 +1412,34 @@ def _build_mfa_lca_workbook(
     INT_FMT = "#,##0"
     PCT_FMT = "0.00"
 
-    mapping_by_cohort: dict[str, tuple[str, float]] = {}
-    if cohort_mapping is not None:
-        for entry in cohort_mapping.mappings:
-            mapping_by_cohort[entry.cohort_key] = (entry.archetype_id, entry.scaling_factor)
+    # Cohort resolution (UUID strip / System / Archetype) is the shared, single
+    # source of truth in ``cohort_export`` — the prospective multi-LCI export
+    # uses the SAME resolver + sheet writers so the two can't diverge (the class
+    # of bug that kept recurring). Alias the resolver's methods to the local
+    # names the rest of this builder already uses.
+    from mapper.api.cohort_export import (
+        build_cohort_resolver,
+        write_by_cohort_sheet,
+        write_by_subsystem_sheet,
+    )
 
-    # Subsystem info (id → {name, mappings}). Used to resolve the owning system,
-    # archetype name, and readable cohort for subsystem-prefixed keys.
-    sub_by_id: dict[str, dict] = {s["id"]: s for s in (subsystems or [])}
-
-    def _split_prefix(ck: str) -> tuple[str | None, str]:
-        """(owner_id, cohort_suffix). owner_id None for a non-prefixed key."""
-        if "::" in ck:
-            pid, rest = ck.split("::", 1)
-            return pid, rest
-        return None, ck
-
-    def _is_subsystem_cohort(ck: str) -> bool:
-        pid, _ = _split_prefix(ck)
-        return pid is not None and pid != system_id
-
-    def _system_for(ck: str) -> str:
-        """Human-readable owning-system name for a (possibly prefixed) cohort."""
-        pid, _ = _split_prefix(ck)
-        if pid is None or pid == system_id:
-            return system_name
-        return sub_by_id.get(pid, {}).get("name") or system_name
-
-    def _resolve_arc(ck: str) -> tuple[str, float]:
-        """(archetype_id, scale) for a cohort key — resolves the primary mapping
-        (bare cohort, even when the key is <system_id>-prefixed) OR the owning
-        subsystem's mapping."""
-        pid, rest = _split_prefix(ck)
-        if pid is not None and pid != system_id:
-            return sub_by_id.get(pid, {}).get("mappings", {}).get(rest, ("", 1.0))
-        # Primary (bare OR <system_id>::<cohort>) → look up the bare cohort.
-        return mapping_by_cohort.get(rest, ("", 1.0))
-
-    nonage_dim_names: list[str] = []
-    if dims is not None:
-        for d in dims:
-            name = getattr(d, "name", None) or (d.get("name") if isinstance(d, dict) else None)
-            is_age = getattr(d, "is_age", None)
-            if is_age is None and isinstance(d, dict):
-                is_age = d.get("is_age", False)
-            if name and not is_age:
-                nonage_dim_names.append(name)
-    dim_headers = [d.capitalize() for d in nonage_dim_names] or ["Cohort"]
-    n_dims = len(dim_headers)
-
-    def _split_cohort(ck: str) -> list[str]:
-        # Strip the subsystem-prefix (``<id>::``) — the internal UUID must never
-        # appear in an exported cell; show the readable cohort suffix instead.
-        display = ck.split("::", 1)[-1] if "::" in ck else ck
-        parts = display.split("|")
-        out = parts[:n_dims] if nonage_dim_names else [display]
-        while len(out) < n_dims:
-            out.append("")
-        return out
+    _resolver = build_cohort_resolver(
+        system_name=system_name,
+        system_id=system_id,
+        cohort_mapping=cohort_mapping,
+        subsystems=subsystems,
+        archetypes=archetypes,
+        dims=dims,
+    )
+    mapping_by_cohort = _resolver._mapping_by_cohort
+    sub_by_id = _resolver._sub_by_id
+    _split_prefix = _resolver.split_prefix
+    _is_subsystem_cohort = _resolver.is_subsystem
+    _system_for = _resolver.system_for
+    _resolve_arc = _resolver.resolve_arc
+    _split_cohort = _resolver.split_cohort
+    dim_headers = _resolver.dim_headers
+    n_dims = _resolver.n_dims
 
     def _style_header(ws, row_num: int = 1) -> None:
         for cell in ws[row_num]:
@@ -1638,44 +1657,10 @@ def _build_mfa_lca_workbook(
         _autosize(ws_ft)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Sheet 5: By cohort (full granularity)
+    # Sheet 5: By cohort (full granularity) — shared writer (single-scenario:
+    # label None → no scenario column, byte-identical to the previous inline code)
     # ══════════════════════════════════════════════════════════════════════════
-    if results:
-        ws_coh = wb.create_sheet("By cohort")
-        ws_coh.sheet_properties.tabColor = "4A90D9"
-        # Header: Year | System | dims... | Archetype | Scale | Count | per-vehicle + total per indicator
-        coh_header = ["Year", "System"] + dim_headers + ["Archetype", "Scale", "Vehicle count"]
-        for l, u in zip(labels, units):
-            coh_header.append(f"{l} per vehicle ({u})")
-            coh_header.append(f"{l} total ({u})")
-        ws_coh.append(coh_header)
-        _style_header(ws_coh)
-
-        for y in years_list:
-            sc = (sim_counts or {}).get(y, {})
-            for ck in cohort_keys:
-                dim_vals = _split_cohort(ck)
-                count = sc.get(ck, 0.0)
-                arc_name = cohort_arc_name.get(ck, "") or "—"
-                row: list = [y, _system_for(ck)] + dim_vals + [
-                    arc_name,
-                    cohort_arc_scale.get(ck, 1.0),
-                    count,
-                ]
-                for ri, r in enumerate(results):
-                    yr = next((v for v in r.years if v.year == y), None)
-                    impact = yr.impact_by_cohort.get(ck, 0.0) if yr else 0.0
-                    per_v = (impact / count) if count else 0.0
-                    row.extend([per_v, impact])
-                ws_coh.append(row)
-
-        count_col = 2 + n_dims + 3  # Vehicle count column (+1 for System col)
-        for row in ws_coh.iter_rows(min_row=2, min_col=count_col, max_col=count_col):
-            for cell in row:
-                cell.number_format = INT_FMT
-        _apply_sci(ws_coh, 2, count_col + 1, len(coh_header))
-        ws_coh.freeze_panes = f"{get_column_letter(n_dims + 3)}2"
-        _autosize(ws_coh)
+    write_by_cohort_sheet(wb, [(None, results)], _resolver, sim_counts, labels, units)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Sheet 6: By archetype
@@ -1752,41 +1737,10 @@ def _build_mfa_lca_workbook(
         _autosize(ws_stg)
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Sheet: By subsystem (only when subsystems contributed results)
+    # Sheet: By subsystem (only when subsystems contributed results) — shared
+    # writer (single-scenario: no scenario column, same shape as before).
     # ══════════════════════════════════════════════════════════════════════════
-    if results and contributing_sub_ids:
-        ws_sub = wb.create_sheet("By subsystem")
-        ws_sub.sheet_properties.tabColor = "4A90D9"
-        sub_header = ["Year", "Subsystem", "Dependent archetype", "BOM archetype", "Scale", "Unit count"]
-        sub_header += [f"{l} ({u})" for l, u in zip(labels, units)]
-        ws_sub.append(sub_header)
-        _style_header(ws_sub)
-
-        sub_cohort_keys = [ck for ck in cohort_keys if _is_subsystem_cohort(ck)]
-        for y in years_list:
-            sc = (sim_counts or {}).get(y, {})
-            for ck in sub_cohort_keys:
-                _pid, rest = _split_prefix(ck)
-                count = sc.get(ck, 0.0)
-                row: list = [
-                    y,
-                    _system_for(ck),
-                    rest,                                    # readable cohort (no UUID)
-                    cohort_arc_name.get(ck, "") or "—",      # BOM archetype from mapping
-                    cohort_arc_scale.get(ck, 1.0),
-                    count,
-                ]
-                for r in results:
-                    yr = next((v for v in r.years if v.year == y), None)
-                    row.append(yr.impact_by_cohort.get(ck, 0.0) if yr else 0.0)
-                ws_sub.append(row)
-
-        for row in ws_sub.iter_rows(min_row=2, min_col=6, max_col=6):
-            for cell in row:
-                cell.number_format = INT_FMT
-        _apply_sci(ws_sub, 2, 7, len(sub_header))
-        ws_sub.freeze_panes = "C2"
-        _autosize(ws_sub)
+    write_by_subsystem_sheet(wb, [(None, results)], _resolver, sim_counts, labels, units)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Sheet: Cohort mappings (primary + subsystem, with a System column)
@@ -1903,15 +1857,13 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
     wb.save(buf)
     buf.seek(0)
     scope = results[0].scope
-    # Subsystems that actually contributed cohorts to the aggregated results.
-    _sub_name_by_id = {s["id"]: s["name"] for s in sub_export}
-    _contrib = sorted({
-        ck.split("::", 1)[0]
-        for r in results for yr in r.years for ck in yr.impact_by_cohort
-        if "::" in ck and ck.split("::", 1)[0] != system_id
-    })
-    _contrib_names = [_sub_name_by_id.get(sid, sid) for sid in _contrib]
-    filename = _impact_export_filename(sys_def.name, _contrib_names, scope)
+    # Subsystems that actually contributed cohorts to the aggregated results —
+    # shared gatherer so LCA / pLCA / AESA filenames can't drift.
+    _contrib_names = contributing_subsystem_names(
+        (ck for r in results for yr in r.years for ck in yr.impact_by_cohort),
+        system_id, project,
+    )
+    filename = build_export_filename(sys_def.name, _contrib_names, "LCA")
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2520,7 +2472,7 @@ async def export_material_flows(
     buf = io.BytesIO()
     wb.save(buf)
     buf.seek(0)
-    filename = f"{_sanitize_filename(sys_def.name, 'material_flows')}_flows_{scope}.xlsx"
+    filename = build_export_filename(sys_def.name, [], "MFA")
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

@@ -436,7 +436,7 @@ class TestExportRoutes:
         resp = client.post("/api/impact/export-single-product-static", json=body)
         assert resp.status_code == 200
         assert "spreadsheetml" in resp.headers["content-type"]
-        assert "MApper_Impact_SingleProduct_Static_" in resp.headers["content-disposition"]
+        assert resp.headers["content-disposition"].endswith('_LCA.xlsx"')  # shared scheme: {archetype}_LCA.xlsx
         # Round-trip the body bytes through openpyxl.
         wb = load_workbook(io.BytesIO(resp.content))
         assert "Configuration" in wb.sheetnames
@@ -464,7 +464,7 @@ class TestExportRoutes:
         }
         resp = client.post("/api/impact/export-single-product-prospective", json=body)
         assert resp.status_code == 200
-        assert "MApper_Impact_SingleProduct_Prospective_" in resp.headers["content-disposition"]
+        assert resp.headers["content-disposition"].endswith('_pLCA.xlsx"')  # {archetype}_pLCA.xlsx
 
     def test_comparison_route_400s_on_empty_runs(self):
         client = TestClient(app)
@@ -492,4 +492,4 @@ class TestExportRoutes:
         }
         resp = client.post("/api/impact/export-single-product-comparison", json=body)
         assert resp.status_code == 200
-        assert "MApper_Impact_SingleProduct_Comparison_" in resp.headers["content-disposition"]
+        assert resp.headers["content-disposition"].endswith('_comparison_LCA.xlsx"')  # {archetype}_comparison_LCA.xlsx

@@ -49,6 +49,8 @@ from mapper.api.bom import (
     _proj_cohort_mappings,
     _proj_results,
     _sanitize_filename,
+    build_export_filename,
+    contributing_subsystem_names,
 )
 from mapper.api.dsm import _get_or_create_state, _get_system, simulate_for_scenario
 from mapper.models.dsm_schemas import BASE_SCENARIO_ID, get_scenario
@@ -1069,6 +1071,7 @@ def _build_multi_scenario_workbook(
     sim_result,
     archetypes: dict,
     cohort_mapping,
+    subsystems: list | None = None,
 ):
     """Build a multi-LCI-scenario Excel workbook.
 
@@ -1078,11 +1081,13 @@ def _build_multi_scenario_workbook(
       - Sheet "Annual totals" — Year, LCI Scenario, then one column per indicator.
       - Sheet "By indicator" — Year, LCI Scenario, then triplets per indicator
         (Annual / Cumulative / YoY %).
+      - Sheet "By cohort" — Year, LCI Scenario, System, dims, Archetype, Scale,
+        count, per-vehicle + total per indicator (shape (a): a Scenario column,
+        one filterable sheet). Uses the SHARED cohort resolver/writer so the
+        cohort labels / System / Archetype resolution match the static export.
+      - Sheet "By subsystem" — subsystem-owned cohorts (present only when a
+        subsystem contributed), same shared writer.
       - Sheet "LCI Scenarios" — index of scenarios (base_db / iam / ssp).
-
-    Per-cohort and contribution-style sheets are deliberately omitted in the
-    multi-scenario export to keep the file readable. Users wanting per-cohort
-    detail should re-run the scenario standalone.
     """
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -1267,7 +1272,29 @@ def _build_multi_scenario_workbook(
     ws_bi.freeze_panes = "C2"
     _autosize(ws_bi)
 
-    # ── Sheet 4: LCI Scenarios index ──────────────────────────────────────────
+    # ── Sheets: By cohort + By subsystem (shared writers, scenario column) ─────
+    # Shape (a): ONE "By cohort" sheet with a leading "LCI Scenario" column and
+    # rows multiplied by scenario — filterable in Excel, single set of sheets.
+    # Same resolver + writers as the static export so cohort labels (UUID
+    # stripped), the System column, and archetype resolution can't diverge.
+    from mapper.api.cohort_export import (
+        build_cohort_resolver,
+        write_by_cohort_sheet,
+        write_by_subsystem_sheet,
+    )
+    _resolver = build_cohort_resolver(
+        system_name=system_name,
+        system_id=multi_result.meta.mfa_system_id,
+        cohort_mapping=cohort_mapping,
+        subsystems=subsystems,
+        archetypes=archetypes,
+        dims=list(getattr(sys_def, "dimensions", []) or []),
+    )
+    _scen_cohort = [(_scenario_label(s.scenario), s.result.results) for s in scenarios]
+    write_by_cohort_sheet(wb, _scen_cohort, _resolver, sim_counts, labels, units)
+    write_by_subsystem_sheet(wb, _scen_cohort, _resolver, sim_counts, labels, units)
+
+    # ── Sheet: LCI Scenarios index ────────────────────────────────────────────
     ws_idx = wb.create_sheet("LCI Scenarios")
     ws_idx.sheet_properties.tabColor = "9CA3AF"
     ws_idx.append(["LCI Scenario", "Base DB", "IAM", "SSP"])
@@ -2193,6 +2220,24 @@ def _build_multi_paired_workbook(
     return wb
 
 
+def _domain_for_meta(meta) -> str:
+    """Shared-scheme domain token: pLCA (Prospective Background) vs LCA (Static
+    Background), by run mode. Multi-DSM / multi-parameter fan-outs preserve the
+    originating mode on ``meta.mode``; multi-LCI / paired are always projected."""
+    return "pLCA" if getattr(meta, "mode", "") == "projected" else "LCA"
+
+
+def _contrib_subsystem_names(results, system_id: str, project: str) -> list[str]:
+    """Names of subsystems that CONTRIBUTED ≥1 cohort to ``results`` (any
+    iterable of ``DSMLCAResult``). Thin wrapper over the shared
+    ``contributing_subsystem_names`` gatherer (bom.py) so LCA / pLCA / AESA
+    filenames can't drift — it flattens the per-year ``impact_by_cohort`` keys."""
+    return contributing_subsystem_names(
+        (ck for r in results for yr in r.years for ck in yr.impact_by_cohort),
+        system_id, project,
+    )
+
+
 @router.post("/export")
 async def post_export(body: ImpactExportRequest) -> Response:
     # Multi-parameter (Static or Projected) and multi-LCI runs go through
@@ -2240,18 +2285,12 @@ async def post_export(body: ImpactExportRequest) -> Response:
         wb.save(buf)
         buf.seek(0)
 
-        import datetime
-        scope_labels_fname = {
-            "inflows": "Manufacturing",
-            "stock": "Operation",
-            "outflows": "End_of_Life",
-            "all": "Full_lifecycle",
-        }
-        scope_tag = scope_labels_fname.get(mpr.meta.scope, mpr.meta.scope)
-        date_tag = datetime.date.today().isoformat()
-        filename = (
-            f"MApper_Impact_MultiPaired_"
-            f"{_sanitize_filename(sys_def.name, 'system')}_{scope_tag}_{date_tag}.xlsx"
+        # Paired DSM × LCI is always Prospective → pLCA.
+        _flat = [r for s in mpr.scenarios for r in s.result.results]
+        filename = build_export_filename(
+            sys_def.name,
+            _contrib_subsystem_names(_flat, mpr.meta.mfa_system_id, _current_project()),
+            "pLCA",
         )
         return Response(
             content=buf.getvalue(),
@@ -2274,18 +2313,12 @@ async def post_export(body: ImpactExportRequest) -> Response:
         wb.save(buf)
         buf.seek(0)
 
-        import datetime
-        scope_labels_fname = {
-            "inflows": "Manufacturing",
-            "stock": "Operation",
-            "outflows": "End_of_Life",
-            "all": "Full_lifecycle",
-        }
-        scope_tag = scope_labels_fname.get(md.meta.scope, md.meta.scope)
-        date_tag = datetime.date.today().isoformat()
-        filename = (
-            f"MApper_Impact_MultiDSM_"
-            f"{_sanitize_filename(sys_def.name, 'system')}_{scope_tag}_{date_tag}.xlsx"
+        # Multi-DSM preserves the originating mode (Static or Projected).
+        _flat = [r for s in md.scenarios for r in s.result.results]
+        filename = build_export_filename(
+            sys_def.name,
+            _contrib_subsystem_names(_flat, md.meta.mfa_system_id, _current_project()),
+            _domain_for_meta(md.meta),
         )
         return Response(
             content=buf.getvalue(),
@@ -2311,18 +2344,12 @@ async def post_export(body: ImpactExportRequest) -> Response:
         wb.save(buf)
         buf.seek(0)
 
-        import datetime
-        scope_labels_fname = {
-            "inflows": "Manufacturing",
-            "stock": "Operation",
-            "outflows": "End_of_Life",
-            "all": "Full_lifecycle",
-        }
-        scope_tag = scope_labels_fname.get(mp.meta.scope, mp.meta.scope)
-        date_tag = datetime.date.today().isoformat()
-        filename = (
-            f"MApper_Impact_MultiParam_"
-            f"{_sanitize_filename(sys_def.name, 'system')}_{scope_tag}_{date_tag}.xlsx"
+        # Multi-parameter (sensitivity) preserves the originating mode.
+        _flat = [r for s in mp.scenarios for r in s.result.results]
+        filename = build_export_filename(
+            sys_def.name,
+            _contrib_subsystem_names(_flat, mp.meta.mfa_system_id, project),
+            _domain_for_meta(mp.meta),
         )
         return Response(
             content=buf.getvalue(),
@@ -2333,9 +2360,10 @@ async def post_export(body: ImpactExportRequest) -> Response:
     multi_result = _resolve_multi_export_result(body.task_id, body.multi_result)
 
     if multi_result is not None:
-        sys_def = _get_system(multi_result.meta.mfa_system_id)
-        mapping = _proj_cohort_mappings(project).get(multi_result.meta.mfa_system_id)
-        sim = _proj_results(project).get(multi_result.meta.mfa_system_id)
+        mfa_id = multi_result.meta.mfa_system_id
+        sys_def = _get_system(mfa_id)
+        mapping = _proj_cohort_mappings(project).get(mfa_id)
+        sim = _proj_results(project).get(mfa_id)
         sim_counts: dict[int, dict[str, float]] = {}
         if sim is not None:
             scope = multi_result.meta.scope
@@ -2347,6 +2375,16 @@ async def post_export(body: ImpactExportRequest) -> Response:
                 else:
                     sim_counts[yr.year] = dict(yr.stock)
 
+        # Linked subsystems (id → {name, mappings}) so the shared cohort writer
+        # resolves subsystem archetype names + labels the owning System — same
+        # shape the static export builds.
+        from mapper.api import subsystems as _subs
+        from mapper.core.dsm_lca_engine import build_subsystem_cohort_mapping
+        sub_export: list[dict] = []
+        for sub_id, sub in _subs.get_subsystems_for_system(mfa_id, project).items():
+            sub_map, _unmapped = build_subsystem_cohort_mapping(sub)
+            sub_export.append({"id": sub_id, "name": sub.name, "mappings": sub_map})
+
         wb = _build_multi_scenario_workbook(
             system_name=sys_def.name,
             multi_result=multi_result,
@@ -2355,25 +2393,28 @@ async def post_export(body: ImpactExportRequest) -> Response:
             sim_result=sim,
             archetypes=archetypes,
             cohort_mapping=mapping,
+            subsystems=sub_export,
         )
 
         buf = io.BytesIO()
         wb.save(buf)
         buf.seek(0)
 
-        import datetime
-        scope_labels_fname = {
-            "inflows": "Manufacturing",
-            "stock": "Operation",
-            "outflows": "End_of_Life",
-            "all": "Full_lifecycle",
-        }
-        scope_tag = scope_labels_fname.get(multi_result.meta.scope, multi_result.meta.scope)
-        date_tag = datetime.date.today().isoformat()
-        filename = (
-            f"MApper_Impact_MultiLCI_"
-            f"{_sanitize_filename(sys_def.name, 'system')}_{scope_tag}_{date_tag}.xlsx"
+        # Shared scheme — Prospective Background = pLCA. Contributing subsystems
+        # only (≥1 cohort with data) — via the shared gatherer, over the SAME
+        # per-scenario cohort keys the By-subsystem sheet reads, so the filename
+        # and that sheet can never disagree.
+        _contrib_names = contributing_subsystem_names(
+            (
+                ck
+                for s in multi_result.scenarios
+                for r in s.result.results
+                for yr in r.years
+                for ck in yr.impact_by_cohort
+            ),
+            mfa_id, project,
         )
+        filename = build_export_filename(sys_def.name, _contrib_names, "pLCA")
         return Response(
             content=buf.getvalue(),
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -2425,11 +2466,12 @@ async def post_export(body: ImpactExportRequest) -> Response:
     wb.save(buf)
     buf.seek(0)
 
-    import datetime
-    scope_labels = {"inflows": "Manufacturing", "stock": "Operation", "outflows": "End_of_Life", "all": "Full_lifecycle"}
-    scope_tag = scope_labels.get(result.meta.scope, result.meta.scope)
-    date_tag = datetime.date.today().isoformat()
-    filename = f"MApper_Impact_{_sanitize_filename(sys_def.name, 'system')}_{scope_tag}_{date_tag}.xlsx"
+    # Static Background → LCA, Prospective Background → pLCA; contributing subs only.
+    filename = build_export_filename(
+        sys_def.name,
+        _contrib_subsystem_names(result.results, result.meta.mfa_system_id, project),
+        _domain_for_meta(result.meta),
+    )
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -3124,15 +3166,22 @@ def _build_single_product_comparison_workbook(
 
 
 def _sp_filename(kind: str, archetype_name: str) -> str:
-    """Filename pattern matches the per-axis system-mode exports —
-    ``MApper_Impact_<Axis>_<discriminator>_<date>.xlsx``. ``kind`` is
-    the per-tab discriminator (``SingleProduct_Static`` etc.); the
-    archetype name is sanitised so spaces and slashes don't escape into
-    the filename."""
-    import datetime
-    safe = _sanitize_filename(archetype_name, "archetype")
-    date_tag = datetime.date.today().isoformat()
-    return f"MApper_Impact_{kind}_{safe}_{date_tag}.xlsx"
+    """Product-scoped export filename — the PARALLEL short scheme for
+    single-product (no system / no subsystems): ``{archetype}_{DOMAIN}.xlsx``,
+    via the same ``build_export_filename`` helper (empty subsystem list).
+    Static → LCA, Prospective → pLCA; the Comparison tab (LCA vs pLCA in one
+    file) adds a ``comparison`` marker so it doesn't collide with Static."""
+    domain = {
+        "SingleProduct_Static": "LCA",
+        "SingleProduct_Prospective": "pLCA",
+        "SingleProduct_Comparison": "LCA",
+    }.get(kind, "LCA")
+    label = (
+        f"{archetype_name} comparison"
+        if kind == "SingleProduct_Comparison"
+        else archetype_name
+    )
+    return build_export_filename(label, [], domain)
 
 
 def _sp_xlsx_response(wb, filename: str) -> Response:
@@ -3556,7 +3605,6 @@ async def post_export_multi_product(body: MultiProductExportRequest) -> Response
             detail="result.items must contain at least one entry",
         )
     wb = _build_multi_product_workbook(body)
-    import datetime
-    date_tag = datetime.date.today().isoformat()
-    filename = f"MApper_MultiProduct_Comparison_{date_tag}.xlsx"
+    # Product-scoped comparison of N items — no system; parallel short scheme.
+    filename = build_export_filename("Multi-item comparison", [], "LCA")
     return _sp_xlsx_response(wb, filename)

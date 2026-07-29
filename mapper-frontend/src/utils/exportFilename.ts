@@ -7,9 +7,13 @@
  * Lead developer: Leonardo Ferhati
  */
 
-// Impact-export filename builder — the frontend mirror of the backend
-// `_impact_export_filename` (bom.py). Keeping both in lockstep means the
-// browser download name (a.download) matches the Content-Disposition.
+// Excel-export filename builder — the frontend mirror of the backend
+// `build_export_filename` (bom.py). Keeping both in lockstep means the browser
+// download name (a.download) matches the Content-Disposition. Locked by a
+// parity test on shared fixtures (tests/exportFilename.test.ts).
+
+/** Domain acronym (exact casing — these are field acronyms). */
+export type ExportDomain = 'LCA' | 'pLCA' | 'AESA' | 'DSM' | 'MFA'
 
 /** Sanitise a name for a filename: strip filename-invalid characters
  *  (/ \ : * ? " < > |) and collapse whitespace runs to underscores. */
@@ -18,25 +22,28 @@ export function sanitizeForFilename(name: string): string {
 }
 
 /**
- * Build the fleet Impact-export filename.
- *   no subsystems → `{primary}_impact_{scope}.xlsx`
- *   with subsystems → `{primary}+{sub1}+{sub2}_impact_{scope}.xlsx`
- *   base > `maxBase` chars → `{primary}+{N}_subsystems_impact_{scope}.xlsx`
+ * The ONE Excel-export filename scheme, shared across every domain:
+ *   `{system}+{sub1}+{sub2}_{DOMAIN}.xlsx`
+ *   no subsystems → `{system}_{DOMAIN}.xlsx`
+ *   base (before `_{DOMAIN}.xlsx`) > `maxBase` → `{system}+{N}_subsystems_{DOMAIN}.xlsx`
+ * Only pass subsystems that CONTRIBUTED results; empties are dropped. No date /
+ * timestamp / UUID / scenario count. Byte-for-byte identical to the backend
+ * `build_export_filename`.
  */
-export function buildImpactExportFilename(
-  primaryName: string,
+export function buildExportFilename(
+  systemName: string,
   subsystemNames: string[],
-  scope: string,
-  maxBase = 100,
+  domain: ExportDomain | string,
+  maxBase = 80,
 ): string {
-  const p = sanitizeForFilename(primaryName) || 'system'
+  const p = sanitizeForFilename(systemName) || 'system'
   const subs = subsystemNames.map(sanitizeForFilename).filter(Boolean)
   let base: string
   if (subs.length === 0) {
-    base = `${p}_impact_${scope}`
+    base = p
   } else {
-    const combined = `${p}+${subs.join('+')}_impact_${scope}`
-    base = combined.length <= maxBase ? combined : `${p}+${subs.length}_subsystems_impact_${scope}`
+    const combined = `${p}+${subs.join('+')}`
+    base = combined.length <= maxBase ? combined : `${p}+${subs.length}_subsystems`
   }
-  return `${base}.xlsx`
+  return `${base}_${domain}.xlsx`
 }

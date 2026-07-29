@@ -8,6 +8,7 @@
  */
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { buildExportFilename } from '../../utils/exportFilename'
 import {
   Area, AreaChart, Bar, BarChart, CartesianGrid, ReferenceLine,
   ResponsiveContainer, Tooltip, XAxis, YAxis,
@@ -217,7 +218,6 @@ function ProjectedImpactPanelImpl() {
     if (!projectedResult || !activeSystem) return
     setIsExporting(true)
     try {
-      const sysName = activeSystem.name.replace(/[^\w.-]+/g, '_') || 'system'
       // Paired DSM × LCI fan-out (Patch 2F). Checked before multi-DSM /
       // multi-param because paired is mutually exclusive with all other
       // axes by axisConflict.
@@ -243,7 +243,7 @@ function ProjectedImpactPanelImpl() {
           }
           await exportImpact(
             { multi_paired_result: envelope, year: selectedYear ?? null },
-            `${sysName}_projected_impact_multi_paired.xlsx`,
+            buildExportFilename(activeSystem.name, [], 'pLCA'),
           )
           return
         }
@@ -267,7 +267,7 @@ function ProjectedImpactPanelImpl() {
           }
           await exportImpact(
             { multi_dsm_result: envelope, year: selectedYear ?? null },
-            `${sysName}_projected_impact_multi_dsm.xlsx`,
+            buildExportFilename(activeSystem.name, [], 'pLCA'),
           )
           return
         }
@@ -290,7 +290,7 @@ function ProjectedImpactPanelImpl() {
           }
           await exportImpact(
             { multi_param_result: envelope, year: selectedYear ?? null },
-            `${sysName}_projected_impact_multi_param.xlsx`,
+            buildExportFilename(activeSystem.name, [], 'pLCA'),
           )
           return
         }
@@ -304,7 +304,7 @@ function ProjectedImpactPanelImpl() {
             multi_result: projectedMultiResult,
             year: selectedYear ?? null,
           },
-          `${sysName}_projected_impact_multi_lci.xlsx`,
+          buildExportFilename(activeSystem.name, [], 'pLCA'),
         )
       } else {
         await exportImpact(
@@ -313,7 +313,7 @@ function ProjectedImpactPanelImpl() {
             year: selectedYear ?? null,
             compare_result: staticResult ?? null,
           },
-          `${sysName}_projected_impact.xlsx`,
+          buildExportFilename(activeSystem.name, [], 'pLCA'),
         )
       }
     } catch (e) {
@@ -1238,13 +1238,25 @@ function ProjectedImpactPanelImpl() {
           borderColor: 'color-mix(in srgb, var(--mod-plca) 40%, var(--border-subtle))',
         }}>
           <div style={{
-            display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8,
-            fontSize: 'var(--text-xs)', fontWeight: 600,
-            color: 'var(--mod-plca)',
-            textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            gap: 8, marginBottom: 8,
           }}>
-            <Layers size={12} />
-            Multi-LCI · {projectedMultiResult.scenarios.length} scenarios
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 'var(--text-xs)', fontWeight: 600,
+              color: 'var(--mod-plca)',
+              textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
+            }}>
+              <Layers size={12} />
+              Multi-LCI · {projectedMultiResult.scenarios.length} scenarios
+            </div>
+            {/* Export ALL results — every LCI scenario × every selected
+                indicator × every year in one workbook (handleExport routes the
+                multi_result envelope through the multi-LCI builder). */}
+            <Button variant="secondary" onClick={handleExport} disabled={isExporting} data-testid="projected-multi-export">
+              {isExporting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
+              Export all
+            </Button>
           </div>
           <div style={{
             display: 'grid',
@@ -1585,10 +1597,15 @@ function ProjectedImpactPanelImpl() {
                     Calculated in {Math.floor(projectedResult.elapsed_seconds / 60) > 0 ? `${Math.floor(projectedResult.elapsed_seconds / 60)}m ` : ''}{Math.round(projectedResult.elapsed_seconds % 60)}s
                   </span>
                 )}
-                <Button variant="secondary" size="sm" onClick={handleExport} disabled={isExporting}>
-                  {isExporting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
-                  Export
-                </Button>
+                {/* In multi-LCI mode the Export button lives in the MULTI-LCI
+                    card header (exports all scenarios). Here it covers the
+                    single-scenario / multi-DSM / multi-param / paired cases. */}
+                {!(projectedMultiResult && projectedMultiResult.scenarios.length > 1) && (
+                  <Button variant="secondary" onClick={handleExport} disabled={isExporting} data-testid="projected-results-export">
+                    {isExporting ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Download size={14} />}
+                    Export
+                  </Button>
+                )}
               </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginTop: 6, flexWrap: 'wrap' }}>

@@ -8,6 +8,7 @@
  */
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { buildExportFilename } from '../../utils/exportFilename'
 import { Calculator, AlertCircle, ChevronDown, ChevronRight, Loader2, Download, Layers } from 'lucide-react'
 import { BASE_SCENARIO, exportImpact, type MultiParamImpactResult } from '../../api/client'
 import {
@@ -420,10 +421,9 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
             meta: entries[0].result.meta,
             scenarios: entries,
           }
-          const sysName = activeSystem.name.replace(/[^\w.-]+/g, '_') || 'system'
           await exportImpact(
             { multi_dsm_result: envelope, year: selectedYear ?? null },
-            `${sysName}_static_impact_multi_dsm.xlsx`,
+            buildExportFilename(activeSystem.name, [], 'LCA'),
           )
           return
         }
@@ -449,10 +449,9 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
             meta: entries[0].result.meta,
             scenarios: entries,
           }
-          const sysName = activeSystem.name.replace(/[^\w.-]+/g, '_') || 'system'
           await exportImpact(
             { multi_param_result: envelope, year: selectedYear ?? null },
-            `${sysName}_static_impact_multi_param.xlsx`,
+            buildExportFilename(activeSystem.name, [], 'LCA'),
           )
           return
         }

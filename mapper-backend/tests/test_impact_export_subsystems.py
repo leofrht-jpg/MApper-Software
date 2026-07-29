@@ -22,7 +22,7 @@ import io
 
 from openpyxl import load_workbook
 
-from mapper.api.bom import _build_mfa_lca_workbook, _impact_export_filename
+from mapper.api.bom import _build_mfa_lca_workbook
 from mapper.models.bom_schemas import (
     Archetype,
     CohortMapping,
@@ -38,34 +38,9 @@ SUB_ID = "670be0bf-eb95-4479-b5f1-dea938d0e46f"
 METHOD = ["EF v3.1", "climate change", "GWP100"]
 
 
-# ── Filename ────────────────────────────────────────────────────────────────
-
-
-def test_filename_zero_subsystems_unchanged():
-    assert _impact_export_filename("Car Fleet", [], "all") == "Car_Fleet_impact_all.xlsx"
-
-
-def test_filename_one_subsystem():
-    assert _impact_export_filename("Car Fleet", ["Fueling Infrastructure"], "all") == \
-        "Car_Fleet+Fueling_Infrastructure_impact_all.xlsx"
-
-
-def test_filename_two_subsystems():
-    assert _impact_export_filename("Car Fleet", ["A", "B"], "all") == "Car_Fleet+A+B_impact_all.xlsx"
-
-
-def test_filename_strips_invalid_chars():
-    fn = _impact_export_filename('Car/Fleet:*?', ['Sub"<>|'], "all")
-    for bad in '/\\:*?"<>|':
-        assert bad not in fn
-    assert fn == "CarFleet+Sub_impact_all.xlsx"
-
-
-def test_filename_truncates_over_100_chars():
-    subs = [f"Very_Long_Subsystem_Name_Number_{i}" for i in range(6)]
-    fn = _impact_export_filename("Primary", subs, "all")
-    assert fn == "Primary+6_subsystems_impact_all.xlsx"
-    assert len(fn) - len(".xlsx") <= 100
+# Filename scheme is now the shared `build_export_filename` — see
+# tests/test_export_filename_parity.py (all domains, sanitisation, truncation,
+# and backend↔frontend parity on shared fixtures).
 
 
 # ── Workbook with subsystems ─────────────────────────────────────────────────

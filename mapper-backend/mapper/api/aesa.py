@@ -614,7 +614,17 @@ async def post_export(body: AESAExportRequest) -> Response:
     wb.save(buf)
     buf.seek(0)
 
-    filename = f"{_sanitize_filename(sys_def.name, 'system')}_aesa.xlsx"
+    # Shared scheme. Each SR row carries the aggregated ``impact_by_cohort``
+    # (the Sala numerator is ``yr.total_impact``, which SUMS primary + every
+    # subsystem), so a contributing dependent subsystem is present as a
+    # ``<sub_id>::`` cohort key. Route those keys through the SAME gatherer LCA
+    # and pLCA use, so all three filenames name the subsystem identically.
+    from mapper.api.bom import build_export_filename, contributing_subsystem_names
+    _sub_names = contributing_subsystem_names(
+        (ck for sr in body.result.results for ck in sr.impact_by_cohort),
+        config.mfa_system_id, _current_project(),
+    )
+    filename = build_export_filename(sys_def.name, _sub_names, "AESA")
     return Response(
         content=buf.getvalue(),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

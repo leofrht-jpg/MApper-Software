@@ -1141,6 +1141,257 @@ async def get_subsystem_result(system_id: str, subsystem_id: str) -> SimulationR
     return res
 
 
+# ── Subsystem DSM Excel export ──────────────────────────────────────────────
+#
+# The subsystem's compute payload is a SimulationResult (stock + flows), same
+# shape as a primary system — NOT impact. Subsystem IMPACT already flows into
+# the Impact Assessment exports' "By subsystem" sheet, so this is deliberately
+# the DSM (stock/flow) side and must not duplicate that. The primary DSM export
+# (dsm._build_export_workbook) is scenario/dimension-centric with a different
+# sheet set (Age Distribution, Mass Balance, Scaling Rules, …); the subsystem
+# export is archetype-centric with its own sheets (Cohort mappings, Dependency
+# rules, aggregate flows), so it's a focused builder here — but it REUSES the
+# shared build_export_filename helper and the same UUID-strip + archetype-name
+# resolution convention (no raw <uuid>:: in any cell).
+
+
+def _year_range(result) -> tuple[int | None, int | None]:
+    ys = [yr.year for yr in result.years]
+    return (min(ys), max(ys)) if ys else (None, None)
+
+
+def _build_subsystem_dsm_workbook(
+    *,
+    scope: str,
+    primary_def,
+    primary_result,
+    primary_initial_stock: dict,
+    primary_cohort_mapping,
+    subsystem: Subsystem,
+    subsystem_result: SimulationResult,
+    archetypes: dict,
+) -> bytes:
+    """Build the subsystem DSM workbook. ``scope`` ∈ {"combined", "subsystem"}.
+
+    combined → every data sheet carries a leading "System" column distinguishing
+    primary rows from subsystem rows (the By-cohort export convention). subsystem
+    → subsystem rows only, no System column.
+    """
+    import io as _io
+
+    from openpyxl import Workbook
+
+    from mapper.api.cohort_export import INT_FMT, autosize, style_header
+
+    combined = scope == "combined"
+
+    # Defensive UUID-prefix strip (a subsystem's OWN result keys are unprefixed;
+    # dependent_archetype_id is a user-selected readable name). Same convention
+    # as cohort_export._split_cohort — no raw <uuid>:: in any cell.
+    def _disp(ck: str) -> str:
+        return ck.split("::", 1)[-1]
+
+    sub_map = subsystem.cohort_mappings or {}
+
+    def sub_arc_name(ck: str) -> str:
+        m = sub_map.get(ck)
+        arc = archetypes.get(m.archetype_id) if m else None
+        return getattr(arc, "name", "") if arc else ""
+
+    prim_map: dict[str, tuple[str, float]] = {}
+    if primary_cohort_mapping is not None:
+        for e in primary_cohort_mapping.mappings:
+            prim_map[e.cohort_key] = (e.archetype_id, e.scaling_factor)
+
+    def prim_arc_name(ck: str) -> str:
+        aid = prim_map.get(ck, ("", 1.0))[0]
+        arc = archetypes.get(aid)
+        return getattr(arc, "name", "") if arc else ""
+
+    prim_name = primary_def.name
+    sub_name = subsystem.name
+    wb = Workbook()
+
+    # ── Summary ──────────────────────────────────────────────────────────
+    ws = wb.active
+    ws.title = "Summary"
+    y0, y1 = _year_range(subsystem_result)
+    sub_cohorts = sorted({ck for yr in subsystem_result.years for ck in yr.stock})
+    dim_str = ", ".join(
+        d.display_name or d.name for d in non_age_dimensions(subsystem.dimensions)
+    ) or "—"
+    rows: list[tuple] = [("Export scope", "Main system + subsystem" if combined else "Subsystem only")]
+    if combined:
+        prim_cohorts = sorted({ck for yr in primary_result.years for ck in yr.stock}) if primary_result else []
+        rows += [("Primary system", prim_name), ("Primary cohort count", len(prim_cohorts))]
+    rows += [
+        ("Subsystem", sub_name),
+        ("Dimensions", dim_str),
+        ("Mode", subsystem.mode),
+        ("Year range", f"{y0}–{y1}" if y0 is not None else "—"),
+        ("Cohort count", len(sub_cohorts)),
+        ("Unit", subsystem.unit_name),
+    ]
+    ws.append(["Field", "Value"])
+    style_header(ws)
+    for r in rows:
+        ws.append(list(r))
+    autosize(ws)
+
+    # ── Stock over time ──────────────────────────────────────────────────
+    ws = wb.create_sheet("Stock over time")
+    header = (["System"] if combined else []) + ["Year", "Cohort", "Archetype", "Count"]
+    ws.append(header)
+    style_header(ws)
+
+    def _stock_rows(result, sysname, arc_fn):
+        for yr in result.years:
+            for ck in sorted(yr.stock):
+                ws.append(([sysname] if combined else []) + [yr.year, _disp(ck), arc_fn(ck) or "—", yr.stock[ck]])
+
+    if combined and primary_result:
+        _stock_rows(primary_result, prim_name, prim_arc_name)
+    _stock_rows(subsystem_result, sub_name, sub_arc_name)
+    for row in ws.iter_rows(min_row=2, min_col=len(header), max_col=len(header)):
+        for c in row:
+            c.number_format = INT_FMT
+    autosize(ws)
+
+    # ── Inflows and outflows (aggregate — matches the two-series chart) ───
+    ws = wb.create_sheet("Inflows and outflows")
+    header = (["System"] if combined else []) + ["Year", "Total inflow", "Total outflow"]
+    ws.append(header)
+    style_header(ws)
+
+    def _flow_rows(result, sysname):
+        for yr in result.years:
+            ws.append(([sysname] if combined else []) + [yr.year, sum(yr.inflow.values()), sum(yr.outflow.values())])
+
+    if combined and primary_result:
+        _flow_rows(primary_result, prim_name)
+    _flow_rows(subsystem_result, sub_name)
+    first_num = (2 if combined else 1) + 1
+    for row in ws.iter_rows(min_row=2, min_col=first_num, max_col=len(header)):
+        for c in row:
+            c.number_format = INT_FMT
+    autosize(ws)
+
+    # ── Initial stock (base-year floor) ──────────────────────────────────
+    ws = wb.create_sheet("Initial stock")
+    header = (["System"] if combined else []) + ["Cohort", "Count"]
+    ws.append(header)
+    style_header(ws)
+    if combined:
+        for ck, v in sorted((primary_initial_stock or {}).items()):
+            ws.append([prim_name, _disp(ck), v])
+    for ck, v in sorted((subsystem.initial_stock or {}).items()):
+        ws.append(([sub_name] if combined else []) + [_disp(ck), v])
+    for row in ws.iter_rows(min_row=2, min_col=len(header), max_col=len(header)):
+        for c in row:
+            c.number_format = INT_FMT
+    autosize(ws)
+
+    # ── Cohort mappings (incl. colour) ───────────────────────────────────
+    ws = wb.create_sheet("Cohort mappings")
+    header = (["System"] if combined else []) + ["Cohort", "Archetype", "Scale", "Color"]
+    ws.append(header)
+    style_header(ws)
+    if combined and primary_cohort_mapping is not None:
+        row_colors = getattr(primary_cohort_mapping, "row_colors", {}) or {}
+        for e in primary_cohort_mapping.mappings:
+            ws.append([prim_name, _disp(e.cohort_key), prim_arc_name(e.cohort_key) or "—",
+                       e.scaling_factor, row_colors.get(e.cohort_key, "") or ""])
+    for ck, m in sorted(sub_map.items()):
+        ws.append(([sub_name] if combined else []) + [_disp(ck), sub_arc_name(ck) or "—",
+                   m.scaling_factor, m.color or ""])
+    autosize(ws)
+
+    # ── Dependency rules (rules mode only) ───────────────────────────────
+    if subsystem.mode == "rules" and subsystem.dependency_rules:
+        ws = wb.create_sheet("Dependency rules")
+        ws.append(["Dependent archetype", "Driver filter", "Expression", "Description"])
+        style_header(ws)
+        for r in subsystem.dependency_rules:
+            df = "; ".join(f"{k}={','.join(v)}" for k, v in (r.driver_filter or {}).items())
+            ws.append([_disp(r.dependent_archetype_id), df, r.expression, r.description or ""])
+        autosize(ws)
+
+    buf = _io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@router.get("/systems/{system_id}/subsystems/{subsystem_id}/export")
+async def export_subsystem_results(
+    system_id: str, subsystem_id: str, scope: str = "subsystem"
+) -> Response:
+    """Excel export of a dependent subsystem's DSM (stock/flow) results.
+
+    ``scope=subsystem`` → subsystem is the subject (Fueling_Infrastructure_DSM.xlsx);
+    ``scope=combined``  → main system + subsystem (Car_Fleet+Fueling_Infrastructure_DSM.xlsx).
+    """
+    if scope not in ("combined", "subsystem"):
+        raise HTTPException(status_code=400, detail="scope must be 'combined' or 'subsystem'")
+    sub = _sys_subs(system_id).get(subsystem_id)
+    if sub is None:
+        raise HTTPException(status_code=404, detail="Subsystem not found")
+    project = _current_project()
+    sub_result = _sys_sub_results(system_id, project).get(subsystem_id)
+    if sub_result is None:
+        raise HTTPException(
+            status_code=400,
+            detail="No subsystem results. Compute the subsystem first.",
+        )
+    primary_def = _get_system(system_id)
+
+    from mapper.api.bom import (
+        _proj_archetypes,
+        _proj_cohort_mappings,
+        build_export_filename,
+    )
+    from mapper.api.dsm import _get_or_create_state, _materialized
+
+    archetypes = _proj_archetypes(project)
+    primary_cohort_mapping = _proj_cohort_mappings(project).get(system_id)
+    primary_result = None
+    primary_initial_stock: dict = {}
+    if scope == "combined":
+        primary_result = _proj_results(project).get(system_id)
+        if primary_result is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "No primary simulation available for the combined export. Run the "
+                    "main system's simulation first, or export the subsystem only."
+                ),
+            )
+        primary_initial_stock = dict(_materialized(_get_or_create_state(system_id)).initial_stock or {})
+
+    content = _build_subsystem_dsm_workbook(
+        scope=scope,
+        primary_def=primary_def,
+        primary_result=primary_result,
+        primary_initial_stock=primary_initial_stock,
+        primary_cohort_mapping=primary_cohort_mapping,
+        subsystem=sub,
+        subsystem_result=sub_result,
+        archetypes=archetypes,
+    )
+    # Shared filename scheme, domain "DSM". Combined → primary is the subject
+    # with the subsystem appended; subsystem-only → the subsystem IS the subject
+    # (expressible via the existing helper: name + no subsystems).
+    if scope == "combined":
+        fname = build_export_filename(primary_def.name, [sub.name], "DSM")
+    else:
+        fname = build_export_filename(sub.name, [], "DSM")
+
+    return Response(
+        content=content,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
+    )
+
+
 # ── Public accessors (used by DSM-LCA aggregation) ──────────────────────────
 
 

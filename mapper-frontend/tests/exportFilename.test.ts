@@ -27,6 +27,10 @@ export const PARITY_FIXTURES: [string, string[], string, number | null, string][
   // AESA + contributing subsystem — the SR numerator sums primary + subsystem
   // impacts, so the AESA export now names the subsystem too (bugfix parity).
   ['Car Fleet', ['Fueling Infrastructure'], 'AESA', null, 'Car_Fleet+Fueling_Infrastructure_AESA.xlsx'],
+  // Subsystem DSM export: scope (a) main+subsystem, scope (b) subsystem is the
+  // subject (expressible with the current helper: subsystem name + no subs).
+  ['Car Fleet', ['Fueling Infrastructure'], 'DSM', null, 'Car_Fleet+Fueling_Infrastructure_DSM.xlsx'],
+  ['Fueling Infrastructure', [], 'DSM', null, 'Fueling_Infrastructure_DSM.xlsx'],
   ['Car Fleet', ['A', 'B'], 'LCA', null, 'Car_Fleet+A+B_LCA.xlsx'],
   ['Car Fleet', ['', '  '], 'LCA', null, 'Car_Fleet_LCA.xlsx'],
   ['Car Fleet / v2', [], 'LCA', null, 'Car_Fleet_v2_LCA.xlsx'],

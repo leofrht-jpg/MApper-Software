@@ -7,11 +7,14 @@
  * Lead developer: Leonardo Ferhati
  */
 
-import { useEffect, useMemo, useState } from 'react'
-import { Activity, Link2 } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { Activity, ChevronDown, Download, Link2 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import { useParameterStore } from '../../stores/parameterStore'
+import { useDSMStore } from '../../stores/dsmStore'
+import { exportSubsystemDSM } from '../../api/client'
+import { buildExportFilename } from '../../utils/exportFilename'
 import { DependencyRulesEditor } from './DependencyRulesEditor'
 import { DependentStockCharts } from './DependentStockCharts'
 import { InitialStockPanel } from './InitialStockPanel'
@@ -50,16 +53,33 @@ export function DependentSubsystemView({ subsystemId, activeTab, onTabChange }: 
   const isComputing = useSubsystemStore((s) => s.isComputing)
   const error = useSubsystemStore((s) => s.error)
   const activeParamSetId = useParameterStore((s) => s.activeSetId)
+  const activeSystem = useDSMStore((s) => s.activeSystem)
   const [showCohortMapping, setShowCohortMapping] = useState(false)
   // Rules vs Manual mode. `pendingMode` drives the switch-warning dialog.
   const [pendingMode, setPendingMode] = useState<SubMode | null>(null)
   const [switching, setSwitching] = useState(false)
+  // Export split-button (scope menu): Main system + subsystem / Subsystem only.
+  const [exportMenuOpen, setExportMenuOpen] = useState(false)
+  const [isExporting, setIsExporting] = useState(false)
+  const exportWrapRef = useRef<HTMLDivElement>(null)
 
   // Per-section collapse state (UI preference only, not persisted to backend).
   // Resets to defaults when switching to a different subsystem tab.
   const [collapsed, setCollapsed] = useState<Record<SectionKey, boolean>>(DEFAULT_COLLAPSED)
   useEffect(() => { setCollapsed(DEFAULT_COLLAPSED) }, [subsystemId])
   const toggleSection = (k: SectionKey) => setCollapsed((c) => ({ ...c, [k]: !c[k] }))
+
+  // Close the export scope menu on outside click / Escape.
+  useEffect(() => {
+    if (!exportMenuOpen) return
+    const onDown = (e: MouseEvent) => {
+      if (exportWrapRef.current && !exportWrapRef.current.contains(e.target as Node)) setExportMenuOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setExportMenuOpen(false) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  }, [exportMenuOpen])
 
   const sub = useMemo(() => subsystems.find((s) => s.id === subsystemId) ?? null, [subsystems, subsystemId])
   const mode: SubMode = sub?.mode ?? 'rules'
@@ -110,6 +130,27 @@ export function DependentSubsystemView({ subsystemId, activeTab, onTabChange }: 
   }
 
   const nonAgeDims = sub.dimensions.filter((d) => !d.is_age)
+
+  // Primary system id/name for the export (subsystem depends_on == system_id).
+  const primarySystemId = sub.depends_on ?? activeSystem?.id ?? ''
+  const primaryName = activeSystem?.name ?? 'system'
+  const handleExport = async (scope: 'combined' | 'subsystem') => {
+    setExportMenuOpen(false)
+    if (!result || !primarySystemId) return
+    setIsExporting(true)
+    try {
+      // Fallback only — the server Content-Disposition (preferred) carries the
+      // canonical scheme; scope (b) makes the subsystem the subject.
+      const fallback = scope === 'combined'
+        ? buildExportFilename(primaryName, [sub.name], 'DSM')
+        : buildExportFilename(sub.name, [], 'DSM')
+      await exportSubsystemDSM(primarySystemId, subsystemId, scope, fallback)
+    } catch (e) {
+      console.error('Subsystem export failed', e)
+    } finally {
+      setIsExporting(false)
+    }
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-5)' }}>
@@ -173,6 +214,58 @@ export function DependentSubsystemView({ subsystemId, activeTab, onTabChange }: 
               >
                 <Activity size={14} strokeWidth={1.5} /> {isComputing ? 'Computing…' : 'Compute'}
               </Button>
+
+              {/* Export (result export) — secondary, with a scope menu. Disabled
+                  until a compute result exists. */}
+              <div ref={exportWrapRef} style={{ position: 'relative' }}>
+                <Button
+                  variant="secondary"
+                  data-testid="subsystem-export"
+                  onClick={() => setExportMenuOpen((v) => !v)}
+                  disabled={!result || isExporting}
+                  title={!result ? 'Compute the subsystem first' : 'Export subsystem results to Excel'}
+                >
+                  <Download size={14} strokeWidth={1.5} />
+                  {isExporting ? 'Exporting…' : 'Export'}
+                  <ChevronDown size={13} strokeWidth={1.5} />
+                </Button>
+                {exportMenuOpen && result && (
+                  <div
+                    data-testid="subsystem-export-menu"
+                    role="menu"
+                    style={{
+                      position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 20,
+                      minWidth: 210, padding: 4,
+                      backgroundColor: 'var(--bg-surface)',
+                      border: '1px solid var(--border-default)',
+                      borderRadius: 'var(--radius-md)',
+                      boxShadow: 'var(--shadow-md)',
+                      display: 'flex', flexDirection: 'column', gap: 2,
+                    }}
+                  >
+                    {([
+                      { scope: 'combined' as const, label: 'Main system + subsystem' },
+                      { scope: 'subsystem' as const, label: 'Subsystem only' },
+                    ]).map((it) => (
+                      <button
+                        key={it.scope}
+                        role="menuitem"
+                        data-testid={`subsystem-export-${it.scope}`}
+                        onClick={() => void handleExport(it.scope)}
+                        style={{
+                          textAlign: 'left', padding: '7px 10px', cursor: 'pointer',
+                          background: 'none', border: 'none', borderRadius: 'var(--radius-sm)',
+                          fontSize: 'var(--text-sm)', color: 'var(--text-primary)',
+                        }}
+                        onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--bg-elevated)' }}
+                        onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent' }}
+                      >
+                        {it.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

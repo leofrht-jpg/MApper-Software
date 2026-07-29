@@ -1700,6 +1700,33 @@ export async function exportDSMCohorts(systemId: string): Promise<void> {
   URL.revokeObjectURL(url)
 }
 
+// Subsystem DSM (stock/flow) export. scope 'combined' = main system +
+// subsystem; 'subsystem' = subsystem only. Prefers the server-built filename
+// (Content-Disposition) — it carries the shared {system}+{sub}_DSM.xlsx /
+// {sub}_DSM.xlsx scheme the client fallback can't reproduce for scope (b).
+export async function exportSubsystemDSM(
+  systemId: string,
+  subsystemId: string,
+  scope: 'combined' | 'subsystem',
+  fallbackName: string,
+): Promise<void> {
+  const res = await fetch(
+    `${API_BASE}/dsm/systems/${systemId}/subsystems/${subsystemId}/export?scope=${scope}`,
+  )
+  if (!res.ok) throw new Error(await res.text())
+  const cd = res.headers?.get('Content-Disposition')
+  const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = serverName || fallbackName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
 export interface ImportResult {
   years_imported: number
   cohorts_found: number

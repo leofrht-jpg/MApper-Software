@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
-import { exportAESA, exportImpact } from '../src/api/client'
+import { exportAESA, exportImpact, exportSubsystemDSM } from '../src/api/client'
 
 // The export download helpers must PREFER the backend's Content-Disposition
 // filename over the client-built fallback — the server name carries the
@@ -64,6 +64,13 @@ describe('export downloads prefer the server Content-Disposition filename', () =
     const name = 'Car_Fleet+Fueling_Infrastructure_pLCA.xlsx'
     ;(globalThis as any).fetch = makeFetchMock(`attachment; filename="${name}"`)
     await exportImpact({ result: {} as any }, 'Car_Fleet_pLCA.xlsx')
+    expect(lastAnchor.download).toBe(name)
+  })
+
+  it('exportSubsystemDSM (new surface) uses the server name when present', async () => {
+    const name = 'Car_Fleet+Fueling_Infrastructure_DSM.xlsx'
+    ;(globalThis as any).fetch = makeFetchMock(`attachment; filename="${name}"`)
+    await exportSubsystemDSM('sys1', 'sub1', 'combined', 'fallback_DSM.xlsx')
     expect(lastAnchor.download).toBe(name)
   })
 })

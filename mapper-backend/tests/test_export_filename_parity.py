@@ -29,6 +29,10 @@ PARITY_FIXTURES = [
     # AESA + contributing subsystem — the SR numerator sums primary + subsystem
     # impacts, so the AESA export now names the subsystem too (bugfix parity).
     ("Car Fleet", ["Fueling Infrastructure"], "AESA", None, "Car_Fleet+Fueling_Infrastructure_AESA.xlsx"),
+    # Subsystem DSM export: scope (a) main+subsystem, scope (b) subsystem is the
+    # subject (expressible with the current helper: subsystem name + no subs).
+    ("Car Fleet", ["Fueling Infrastructure"], "DSM", None, "Car_Fleet+Fueling_Infrastructure_DSM.xlsx"),
+    ("Fueling Infrastructure", [], "DSM", None, "Fueling_Infrastructure_DSM.xlsx"),
     ("Car Fleet", ["A", "B"], "LCA", None, "Car_Fleet+A+B_LCA.xlsx"),
     ("Car Fleet", ["", "  "], "LCA", None, "Car_Fleet_LCA.xlsx"),
     ("Car Fleet / v2", [], "LCA", None, "Car_Fleet_v2_LCA.xlsx"),

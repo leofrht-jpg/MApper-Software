@@ -21,6 +21,36 @@ MAPPER_PORT env var. A dynamic free-port handshake is a later hardening step
 """
 from __future__ import annotations
 
+import sys
+
+# ── Neutralize the multiprocessing resource_tracker in the frozen build ──────
+# A dependency (premise's logger, at import time) creates a multiprocessing
+# semaphore. Python's resource_tracker then tries to launch a helper process via
+# ``sys.executable -c "…"`` — but in a PyInstaller-frozen build sys.executable is
+# THIS binary, which can't run ``-c``; the launch re-enters and re-creates a
+# semaphore, spawning ANOTHER tracker → an endless chain of backend processes
+# that swamp the machine (the packaged-app "No projects" / "Load failed" bug).
+#
+# The tracker only exists to reclaim shared resources if a process dies
+# ABNORMALLY. The semaphores themselves work without it, and SemLock's normal
+# finalizer still ``sem_unlink``s them on clean exit — so disabling the tracker
+# leaks a handful of named semaphores only on a hard crash (negligible; the OS
+# reclaims them), while removing the fork-bomb entirely. Must run BEFORE anything
+# that could create a multiprocessing primitive (i.e. before importing the app).
+if getattr(sys, "frozen", False):
+    try:
+        import multiprocessing.resource_tracker as _rt
+
+        _rt.ResourceTracker.ensure_running = lambda self: None  # type: ignore[method-assign]
+
+        def _rt_noop(*_a: object, **_k: object) -> None:
+            return None
+
+        _rt.register = _rt_noop  # type: ignore[assignment]
+        _rt.unregister = _rt_noop  # type: ignore[assignment]
+    except Exception:
+        pass
+
 import os
 import tempfile
 from pathlib import Path
@@ -126,4 +156,16 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    # CRITICAL for the frozen (PyInstaller) build: on macOS multiprocessing uses
+    # the "spawn" start method, which RE-EXECUTES this frozen binary for every
+    # child process. Without freeze_support() each spawned child re-runs main()
+    # → uvicorn.run() → another spawn → an exponential fork-bomb of backend
+    # processes all fighting over the port (the first binds and serves, so the
+    # app looks healthy at first, then the machine is swamped and the port owner
+    # churns → "Load failed" everywhere). freeze_support() makes a spawned child
+    # run its worker bootstrap and exit instead of re-running main(). Must be the
+    # first thing in __main__, before main() and its heavy imports.
+    import multiprocessing
+
+    multiprocessing.freeze_support()
     main()

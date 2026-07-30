@@ -12,9 +12,11 @@ import { readFileSync } from 'node:fs'
 import { render } from '@testing-library/react'
 import { SettingsPage } from '../src/pages/SettingsPage'
 
-// About panel: version is single-sourced from package.json (not a literal), the
-// exact DTU copyright is present, and the GitHub button is enabled with the repo
-// href (no "coming soon").
+// About panel: version is single-sourced from package.json (not a literal) and
+// the exact DTU copyright is present. The external-link buttons (Website,
+// GitHub, mailto:) are gone — the webview has no opener/shell plugin, so
+// <a target="_blank"> external URLs are dropped instead of handed to the OS.
+// The licence notice stays as plain text (DTU requirement) rather than a dead link.
 
 vi.mock('../src/api/client', async () => {
   const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client')
@@ -38,6 +40,21 @@ beforeEach(() => {
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
 })
 
+// The whole SettingsPage renders, and other cards legitimately keep their own
+// links (e.g. Premise has a mailto: for the key request). Scope link assertions
+// to the About card: the deepest element holding both its copyright and footer
+// lines (querySelectorAll is document order, so ancestors come first).
+function aboutCard(container: HTMLElement): HTMLElement {
+  const matches = Array.from(container.querySelectorAll('div')).filter((el) => {
+    const t = el.textContent ?? ''
+    return t.includes('© Copyright 2026 Technical University of Denmark')
+      && t.includes('Built with React · FastAPI · Brightway2 · Tauri')
+  })
+  const card = matches[matches.length - 1]
+  expect(card).toBeTruthy()
+  return card as HTMLElement
+}
+
 describe('Settings → About panel', () => {
   it('shows the version from package.json, not the old hardcoded literal', () => {
     const { container } = render(<SettingsPage />)
@@ -47,25 +64,44 @@ describe('Settings → About panel', () => {
     expect(text).not.toContain('0.1.0-alpha')      // the stale literal is gone
   })
 
-  it('renders the exact DTU copyright notice + MPL 2.0 link', () => {
+  it('keeps the exact DTU copyright notice and the MPL 2.0 name as plain text', () => {
     const { container } = render(<SettingsPage />)
-    expect(container.textContent).toContain('© Copyright 2026 Technical University of Denmark')
-    const mpl = Array.from(container.querySelectorAll('a')).find(
-      (a) => a.textContent === 'Mozilla Public License 2.0',
+    const text = container.textContent ?? ''
+    expect(text).toContain('© Copyright 2026 Technical University of Denmark')
+    // Licence notice intact...
+    expect(text).toContain('Released under the Mozilla Public License 2.0')
+    // ...but not a link, since the webview cannot open external URLs.
+    const mplLink = Array.from(aboutCard(container).querySelectorAll('a')).find((a) =>
+      (a.getAttribute('href') ?? '').includes('mozilla.org'),
     )
-    expect(mpl).toBeTruthy()
-    expect(mpl?.getAttribute('href')).toBe('https://www.mozilla.org/en-US/MPL/2.0/')
-    expect(mpl?.getAttribute('target')).toBe('_blank')
+    expect(mplLink).toBeUndefined()
   })
 
-  it('GitHub button is enabled with the repo href (no "coming soon")', () => {
+  it('does not render the non-functional external-link buttons', () => {
     const { container } = render(<SettingsPage />)
-    expect(container.textContent).not.toContain('coming soon')
-    const gh = Array.from(container.querySelectorAll('a')).find(
-      (a) => a.getAttribute('href') === 'https://github.com/leofrht-jpg/MApper-Software',
-    )
-    expect(gh).toBeTruthy()               // rendered as an <a> (enabled), not a disabled <span>
-    expect(gh?.textContent).toContain('GitHub')
-    expect(gh?.getAttribute('target')).toBe('_blank')
+    const card = aboutCard(container)
+    const hrefs = Array.from(card.querySelectorAll('a')).map((a) => a.getAttribute('href') ?? '')
+
+    // No links at all in the About card — every one of them was external.
+    expect(hrefs).toEqual([])
+    expect(hrefs).not.toContain('https://github.com/leofrht-jpg/MApper-Software')
+    expect(hrefs).not.toContain('https://mapper.leonardoferhati.com')
+    expect(hrefs.some((h) => h.startsWith('mailto:'))).toBe(false)
+
+    const text = card.textContent ?? ''
+    expect(text).not.toContain('Website')
+    expect(text).not.toContain('GitHub')
+    expect(text).not.toContain('coming soon')
+  })
+
+  it('still shows the contact address as selectable text and the internal tour action', () => {
+    const { container } = render(<SettingsPage />)
+    const text = container.textContent ?? ''
+    expect(text).toContain('leo_frht@icloud.com')   // copyable, just not a link
+    expect(text).toContain('Restart tour')          // internal action, unaffected
+    expect(text).toContain('Developed by')
+    expect(text).toContain('DTU Wind and Energy Systems')
+    expect(text).toContain('DTU Centre for Absolute Sustainability')
+    expect(text).toContain('Built with React · FastAPI · Brightway2 · Tauri')
   })
 })

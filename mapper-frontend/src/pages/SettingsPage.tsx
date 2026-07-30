@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
-import { Check, ChevronDown, ChevronRight, ExternalLink, Code2, Mail, PlayCircle } from 'lucide-react'
+import { Check, ChevronDown, ChevronRight, PlayCircle } from 'lucide-react'
 import { resetOnboarding } from '../components/OnboardingTour'
 import { useThemeStore } from '../stores/themeStore'
 import { THEME_ORDER, THEMES, type ThemeId } from '../styles/themes'
@@ -116,32 +116,33 @@ export function SettingsPage() {
             <span style={{ color: 'var(--text-secondary)' }}>DTU Centre for Absolute Sustainability</span>
           </div>
 
+          {/* Contact address as plain selectable text, not a mailto: link. The
+              webview has no opener/shell plugin wired up, so mailto: (like any
+              external scheme) is dropped instead of handed to the OS — a link
+              here would look clickable and do nothing. Plain text still copies. */}
+          <div
+            style={{
+              marginTop: 10,
+              fontSize: 'var(--text-xs)',
+              color: 'var(--text-secondary)',
+              fontFamily: 'var(--font-mono)',
+              userSelect: 'text',
+            }}
+          >
+            leo_frht@icloud.com
+          </div>
+
           {/* DTU copyright notice — required on any published form of the
-              software (DTU legal). The copyright string is verbatim. */}
+              software (DTU legal). The copyright string is verbatim. The licence
+              name is plain text for the same reason as the address above: the
+              notice must stay intact without pretending to be clickable. */}
           <div style={{ marginTop: 14, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', lineHeight: 1.7 }}>
             © Copyright 2026 Technical University of Denmark
             <br />
-            Released under the{' '}
-            <a
-              href="https://www.mozilla.org/en-US/MPL/2.0/"
-              target="_blank"
-              rel="noreferrer"
-              style={{ color: 'var(--accent)' }}
-            >
-              Mozilla Public License 2.0
-            </a>
+            Released under the Mozilla Public License 2.0
           </div>
 
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 16 }}>
-            <LinkButton href="https://mapper.leonardoferhati.com" icon={<ExternalLink size={12} />}>
-              Website
-            </LinkButton>
-            <LinkButton href="mailto:leo_frht@icloud.com" icon={<Mail size={12} />}>
-              leo_frht@icloud.com
-            </LinkButton>
-            <LinkButton href="https://github.com/leofrht-jpg/MApper-Software" icon={<Code2 size={12} />}>
-              GitHub
-            </LinkButton>
+          <div style={{ marginTop: 16 }}>
             <RestartTourButton />
           </div>
 
@@ -626,42 +627,6 @@ function Card({ children }: { children: React.ReactNode }) {
     >
       {children}
     </div>
-  )
-}
-
-function LinkButton({
-  href,
-  icon,
-  children,
-  disabled,
-}: {
-  href?: string
-  icon: React.ReactNode
-  children: React.ReactNode
-  disabled?: boolean
-}) {
-  const style: React.CSSProperties = {
-    display: 'inline-flex',
-    alignItems: 'center',
-    gap: 6,
-    padding: '6px 12px',
-    borderRadius: 'var(--radius-sm)',
-    border: '1px solid var(--border-subtle)',
-    background: 'var(--bg-elevated)',
-    fontSize: 'var(--text-xs)',
-    color: disabled ? 'var(--text-tertiary)' : 'var(--text-secondary)',
-    textDecoration: 'none',
-    cursor: disabled ? 'not-allowed' : 'pointer',
-    opacity: disabled ? 0.6 : 1,
-  }
-  if (disabled || !href) {
-    return <span style={style}>{icon}{children}</span>
-  }
-  return (
-    <a href={href} target="_blank" rel="noreferrer" style={style}>
-      {icon}
-      {children}
-    </a>
   )
 }
 

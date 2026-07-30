@@ -39,7 +39,7 @@ MApper couples all four in one **cohort-preserving** pipeline: a time-resolved m
 
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS
 - **Backend:** FastAPI + Python 3.11
-- **LCA engine:** Brightway2 + bw2calc with UMFPACK factorisation reuse (bundled in the desktop build via `mapper-desktop.spec`; a 26-year × 25-indicator prospective run is ≈ 34 s instead of tens of minutes — see DESKTOP.md → "UMFPACK in the frozen build")
+- **LCA engine:** Brightway2 + bw2calc with UMFPACK factorisation reuse — each premise db is factorised once and back-substituted for every subsequent solve. UMFPACK is bundled in the desktop build via `mapper-desktop.spec`, so the shipped app always gets this path: the Danish fleet case (3 LCI scenarios × 26 years × 25 indicators) completes in **under a minute**, down from ≈ 54 minutes. See DESKTOP.md → "UMFPACK in the frozen build"
 - **DSM engine:** Cohort-based dynamic stock model with Weibull survival
 - **Prospective:** premise 2.1.3
 - **Desktop packaging:** Tauri v2

@@ -1,0 +1,77 @@
+# MApper development environment.
+#
+# Created from the working macOS arm64 `map` env (the one the release builds are
+# frozen from) and pinned so CI reproduces it. Versions are pinned, build strings
+# are not — build hashes are per-platform and would make this file unsolvable on
+# anything but the machine it was exported from. This file must solve on
+# osx-arm64 (dev + release builds) and win-64 (Windows CI + Windows build).
+#
+#   conda env create -f environment.yml
+#   conda activate map
+#
+# The Brightway2 stack and the compiled scientific packages come from
+# conda-forge: bw2calc, scikit-umfpack and cryptography ship platform-specific
+# binaries there, and pip wheels for them are either absent or (for
+# scikit-umfpack) not linked against the SuiteSparse that conda-forge provides.
+# The web/API layer and premise are pip-installed, matching the dev env.
+name: map
+
+channels:
+  - conda-forge
+
+dependencies:
+  - python=3.11
+
+  # ── Brightway2 LCA stack ────────────────────────────────────────────────────
+  - brightway2=2.4.7
+  - bw2data=3.6.6
+  - bw2io=0.8.12
+  - bw2calc=1.8.2
+  - bw2analyzer=0.10
+  - ecoinvent_interface=3.1
+
+  # ── Scientific / data ───────────────────────────────────────────────────────
+  # numpy is held at 1.26 because bw2calc 1.8.2 and the pinned scipy are built
+  # against the 1.x ABI; numpy 2.x breaks the compiled extensions.
+  - numpy=1.26.4
+  # scipy is pinned here rather than in the pip section: left free, conda
+  # resolves 1.17.x and pip would then downgrade it underneath conda, leaving
+  # the env inconsistent. 1.13.1 is the version the dev env and every shipped
+  # release were built and tested against.
+  - scipy=1.13.1
+  - pandas=2.3.3
+  - openpyxl=3.1.5
+  - pyarrow=22.0.0
+  - lxml=4.9.3
+
+  # ── Sparse solver ───────────────────────────────────────────────────────────
+  # Load-bearing for prospective-LCA speed: factorisation reuse depends on
+  # UMFPACK (see PersistentLCARunner). Available on both osx-arm64 and win-64.
+  - scikit-umfpack=0.3.3
+  - suitesparse
+
+  # ── Misc runtime ────────────────────────────────────────────────────────────
+  - pydantic=2.12.5
+  - platformdirs=4.9.4
+  - country_converter=1.3.2
+  - cryptography=46.0.5
+
+  - pip
+
+  - pip:
+      # ── Web / API layer ─────────────────────────────────────────────────────
+      - fastapi==0.135.2
+      - uvicorn[standard]==0.42.0
+      - starlette==1.0.0
+      - python-multipart==0.0.22
+      - websockets==16.0
+
+      # ── Prospective LCA ─────────────────────────────────────────────────────
+      # Not on conda-forge at this version; pip-installed in the dev env too.
+      - premise==2.1.3
+      - xarray==2024.2.0
+
+      # ── Test tooling ────────────────────────────────────────────────────────
+      # httpx is required by fastapi.testclient.TestClient.
+      - pytest==9.0.3
+      - httpx==0.28.1

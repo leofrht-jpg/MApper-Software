@@ -1,0 +1,174 @@
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# © Copyright 2026 Technical University of Denmark
+# Lead developer: Leonardo Ferhati
+
+name: CI
+
+on:
+  push:
+    # TEMPORARY(ci-bringup): 'ci/**' lets this workflow be exercised on its own
+    # branch before it is merged. Remove that entry once CI is green on main.
+    branches: [main, 'ci/**']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── Frontend ────────────────────────────────────────────────────────────────
+  # Platform-independent (jsdom), so one runner is enough.
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: mapper-frontend
+    steps:
+      - uses: actions/checkout@v5
+
+      # Node 24, not 25: vitest workers were seen hanging under 25.9.0. That was
+      # probably an artefact of a half-materialised node_modules rather than Node
+      # itself (25.9.0 runs the suite fine on a warm tree), but CI pins the
+      # version that has never been in question.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: mapper-frontend/package-lock.json
+
+      - run: npm ci
+
+      - name: Type-check
+        run: npm run type-check
+
+      - name: Unit tests
+        run: npx vitest run
+
+  # ── Backend ─────────────────────────────────────────────────────────────────
+  # macOS and Windows are the two platforms MApper ships desktop builds for.
+  backend:
+    name: backend (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v5
+
+      # A cold conda solve of the Brightway2 + premise stack is the slowest part
+      # of this workflow by a wide margin, so the package cache is what makes CI
+      # fast enough that people actually wait for it. Keyed on environment.yml:
+      # any dependency change invalidates it.
+      - name: Cache conda packages
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/conda_pkgs
+          key: conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}
+          restore-keys: conda-${{ runner.os }}-
+
+      - uses: conda-incubator/setup-miniconda@v4
+        # Point conda's package cache at the directory cached above; without
+        # this the cache step would archive an empty directory every run.
+        env:
+          CONDA_PKGS_DIRS: ${{ runner.temp }}/conda_pkgs
+        with:
+          # Miniforge ships conda-forge as the default channel, matching
+          # environment.yml, and brings the libmamba solver.
+          miniforge-version: latest
+          activate-environment: map
+          environment-file: environment.yml
+          auto-activate-base: false
+
+      # Every test step below runs in a login shell so the `map` env is active:
+      # bash -el on macOS, pwsh on Windows (setup-miniconda's documented values).
+      - name: Report environment
+        shell: bash -el {0}
+        if: runner.os != 'Windows'
+        run: |
+          conda info
+          python -c "import bw2data, sys; print('python', sys.version); print('bw2data', bw2data.__version__)"
+
+      - name: Report environment
+        shell: pwsh
+        if: runner.os == 'Windows'
+        run: |
+          conda info
+          python -c "import bw2data, sys; print('python', sys.version); print('bw2data', bw2data.__version__)"
+
+      # ── macOS: one pytest process for the whole suite ───────────────────────
+      #
+      # `python -m pytest`, not bare `pytest`: there is no conftest.py and the
+      # package is not installed, so `import mapper` only resolves because
+      # `python -m` puts the working directory on sys.path. Bare `pytest` fails
+      # at collection.
+      #
+      # BRIGHTWAY2_DIR points at an empty scratch directory so the run is
+      # hermetic and the ecoinvent-dependent tests take their documented skip
+      # path (see the note on the Windows step).
+      - name: Backend tests
+        if: runner.os != 'Windows'
+        shell: bash -el {0}
+        run: |
+          mkdir -p "$RUNNER_TEMP/bw2"
+          export BRIGHTWAY2_DIR="$RUNNER_TEMP/bw2"
+          cd mapper-backend
+          python -m pytest -q --tb=short -rs
+
+      # ── Windows: one pytest process PER FILE ────────────────────────────────
+      #
+      # A single-process run of the whole suite dies part-way through with a
+      # native access violation — premise's GDAL/geo stack and openpyxl's
+      # lxml/libxml2 load conflicting native libraries into one interpreter. The
+      # suite only completes with a fresh process per file.
+      #
+      # pytest-forked is not an option here: it relies on os.fork(), which does
+      # not exist on Windows. Hence the explicit loop.
+      #
+      # No test files are excluded. The 19 tests that need a real ecoinvent
+      # database are already guarded by a skipif that checks for a non-biosphere
+      # technosphere database ("no technosphere databases") and skip themselves
+      # on a runner, which is also why the known contribution-analysis/sankey
+      # graph-traversal failures cannot arise in CI — those tests never execute
+      # without LCI data.
+      - name: Backend tests (one process per file)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $env:BRIGHTWAY2_DIR = Join-Path $env:RUNNER_TEMP 'bw2'
+          New-Item -ItemType Directory -Force -Path $env:BRIGHTWAY2_DIR | Out-Null
+          Set-Location mapper-backend
+
+          $failed = @()
+          $files = Get-ChildItem -Path tests -Filter 'test_*.py' | Sort-Object Name
+          Write-Host "Running $($files.Count) test files, one process each"
+
+          foreach ($f in $files) {
+            Write-Host "::group::$($f.Name)"
+            python -m pytest "tests/$($f.Name)" -q --tb=short -rs
+            $code = $LASTEXITCODE
+            Write-Host "::endgroup::"
+            # 0 = passed, 5 = no tests collected in that file (both acceptable);
+            # anything else, including a native crash, is a failure.
+            if ($code -ne 0 -and $code -ne 5) {
+              $failed += "$($f.Name) (exit $code)"
+              Write-Host "::error file=mapper-backend/tests/$($f.Name)::pytest exited $code"
+            }
+          }
+
+          if ($failed.Count -gt 0) {
+            Write-Host "Failing test files:"
+            $failed | ForEach-Object { Write-Host "  $_" }
+            exit 1
+          }
+          Write-Host "All $($files.Count) test files passed"

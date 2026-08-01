@@ -9,6 +9,23 @@
 
 import '@testing-library/jest-dom/vitest'
 
+// No unit test should perform real network I/O. Several components fire
+// fire-and-forget API calls from mount effects (getHealth, getGridIntensities,
+// …); under jsdom those reach Node's real fetch, fail with ECONNREFUSED against
+// the dev backend on :8000, and surface as *unhandled rejections* — nothing
+// awaits them, so no component catch is attached. Vitest then exits non-zero
+// with "caught N unhandled errors" even though every test passes, which would
+// make CI permanently red.
+//
+// Install a default fetch that never settles: the mount effects stay pending
+// for the lifetime of the test instead of rejecting. Tests that need real API
+// behaviour are unaffected — they either vi.mock('../src/api/client') (the
+// common pattern here) or assign their own globalThis.fetch, and both take
+// precedence over this default.
+if (typeof globalThis.fetch !== 'undefined') {
+  globalThis.fetch = (() => new Promise<Response>(() => {})) as typeof fetch
+}
+
 // jsdom in vitest 4 occasionally fails to wire up window.localStorage
 // (the `--localstorage-file` warning at runner startup). Components like
 // ChartExportButton call localStorage.getItem during render — install a

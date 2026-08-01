@@ -41,8 +41,10 @@ dependencies:
   - scipy=1.13.1
   - pandas=2.3.3
   - openpyxl=3.1.5
-  - pyarrow=22.0.0
-  - lxml=4.9.3
+  # pyarrow / lxml / country_converter are deliberately NOT pinned: nothing in
+  # mapper imports them directly (they arrive via the Brightway stack), and
+  # pinning them to the versions that happen to be in the dev env makes the
+  # solve fail — conda-forge no longer builds pyarrow 22 for python 3.11.
 
   # ── Sparse solver ───────────────────────────────────────────────────────────
   # Load-bearing for prospective-LCA speed: factorisation reuse depends on
@@ -53,7 +55,6 @@ dependencies:
   # ── Misc runtime ────────────────────────────────────────────────────────────
   - pydantic=2.12.5
   - platformdirs=4.9.4
-  - country_converter=1.3.2
   - cryptography=46.0.5
 
   - pip

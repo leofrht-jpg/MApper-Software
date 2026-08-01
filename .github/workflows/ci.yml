@@ -10,9 +10,7 @@ name: CI
 
 on:
   push:
-    # TEMPORARY(ci-bringup): 'ci/**' lets this workflow be exercised on its own
-    # branch before it is merged. Remove that entry once CI is green on main.
-    branches: [main, 'ci/**']
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:

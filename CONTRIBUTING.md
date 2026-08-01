@@ -26,9 +26,22 @@ MApper has a FastAPI/Python backend and a React/TypeScript/Vite frontend.
 ```bash
 git clone https://github.com/leofrht-jpg/MApper-Software.git
 cd MApper-Software
-chmod +x setup.sh
-./setup.sh        # creates the conda env and installs backend + frontend deps
-./start.sh        # runs backend + frontend for development
+conda env create -f environment.yml    # pinned env; same one CI uses
+conda activate map
+( cd mapper-frontend && npm ci )
+./start.sh                             # runs backend + frontend for development
+```
+
+`environment.yml` is the reference environment and is what CI installs, so it is
+the one to use if you want your results to match the pipeline. `./setup.sh` still
+works but creates a looser env from `mapper-backend/requirements.txt`.
+
+On macOS/Linux, add the sparse solver after creating the env — it is not in
+`environment.yml` because conda-forge has no Windows build, and release builds
+need it for the prospective-LCA fast path:
+
+```bash
+conda install -c conda-forge scikit-umfpack=0.3.3 suitesparse
 ```
 
 - **Backend** lives in `mapper-backend/` (package `mapper`). FastAPI app entry: `mapper-backend/mapper/main.py`.
@@ -46,8 +59,16 @@ See [INSTALL.md](INSTALL.md) for ecoinvent and premise data setup.
 
   ```bash
   cd mapper-backend
-  pytest tests/
+  python -m pytest tests/
   ```
+
+  Use `python -m pytest`, not bare `pytest`: there is no `conftest.py` and the
+  backend is not pip-installed, so `import mapper` only resolves because
+  `python -m` puts the working directory on `sys.path`. Bare `pytest` fails at
+  collection.
+
+  19 of the 695 tests need a real ecoinvent database and skip themselves when
+  none is present, so a clean checkout runs 676.
 
 ### Frontend (TypeScript/React)
 
@@ -80,6 +101,26 @@ python scripts/check_license_headers.py
    related issue.
 7. A maintainer reviews; address feedback; once approved and CI is green it gets
    merged.
+
+### Continuous integration
+
+Every push to `main` and every PR targeting `main` runs
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+
+| Job | Runner | What it does |
+| --- | --- | --- |
+| `frontend` | ubuntu-latest, Node 24 | `npm ci`, `npm run type-check`, `npx vitest run` |
+| `backend (macos-latest)` | macOS | `python -m pytest` over the whole suite |
+| `backend (windows-latest)` | Windows | one pytest process per test file |
+
+**PRs must pass CI before they can be merged.** If a job fails, fix the cause
+rather than excluding the test — an environment-dependent test may be skipped
+with a documented reason, but assertions should not be removed to get green.
+
+Windows runs one process per file on purpose: a single-process run of the whole
+suite dies part-way with a native access violation, because premise's GDAL/geo
+stack and openpyxl's lxml/libxml2 pull conflicting native libraries into one
+interpreter.
 
 ## Licensing of contributions
 

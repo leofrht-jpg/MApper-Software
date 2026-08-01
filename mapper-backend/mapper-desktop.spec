@@ -19,6 +19,25 @@
 #   Windows: mapper-backend-x86_64-pc-windows-msvc.exe
 
 import sys as _sys
+import os as _os_early
+
+# On conda-forge WINDOWS, compiled extensions (Pillow's _imaging → tiff/jpeg8/
+# openjp2/zlib-ng2/lcms2/freetype, scipy, cryptography, …) link DLLs that live in
+# $CONDA_PREFIX\Library\bin — OUTSIDE each package dir, with no per-package .libs
+# folder (the classic conda layout). PyInstaller's binary-dependency scanner
+# resolves an extension's imported DLLs against os.environ["PATH"]; when the freeze
+# is launched via the env's python.exe DIRECTLY (not `conda activate`), Library\bin
+# is NOT on PATH, so those DLLs are silently skipped and the frozen app dies at
+# startup with e.g. "DLL load failed while importing _imaging". Prepending
+# Library\bin here (before ANY collect_all / Analysis runs) lets the scanner find
+# and bundle the full transitive closure for every extension generically — not just
+# Pillow. macOS/Linux are unaffected (their conda dylibs are handled by the
+# explicit UMFPACK block below + standard rpath handling).
+if _sys.platform == "win32":
+    _lib_bin = _os_early.path.join(_sys.prefix, "Library", "bin")
+    if _os_early.path.isdir(_lib_bin):
+        _os_early.environ["PATH"] = _lib_bin + _os_early.pathsep + _os_early.environ.get("PATH", "")
+        print(f"[spec] prepended conda Library\\bin to PATH for DLL discovery: {_lib_bin}")
 
 from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_submodules
 
@@ -170,38 +189,66 @@ if _umfpack_importable:
         "scikits", "scikits.umfpack", "scikits.umfpack._umfpack",
         "scikits.umfpack.umfpack", "scikits.umfpack.interface",
     ]
-    # (1) The compiled extension module (.so). collect_dynamic_libs returns []
-    #     for it, so add every .so under the package dir explicitly, at its
-    #     package dest so Python can import it when frozen.
     _skdir = _os.path.dirname(_skumf.__file__)
     _added_exts = 0
-    for _ext in _glob.glob(_os.path.join(_skdir, "*.so")):
-        binaries.append((_ext, "scikits/umfpack"))
-        _added_exts += 1
-    # (2) The SuiteSparse dylibs the extension links via @rpath. They live in
-    #     $CONDA_PREFIX/lib (outside the package), so no collector finds them.
-    #     Add each @rpath-referenced soname (closure of __umfpack.*.so →
-    #     libumfpack.5 → cholmod/amd/… ) so PyInstaller places them in _internal/
-    #     and rewrites the @rpath. blas/lapack are openblas symlinks; include the
-    #     .3 sonames cholmod references by name.
-    _conda_lib = _os.path.join(_sys.prefix, "lib")
-    _suitesparse_dylibs = [
-        "libumfpack.5.dylib", "libamd.2.dylib", "libcholmod.3.dylib",
-        "libcolamd.2.dylib", "libccolamd.2.dylib", "libcamd.2.dylib",
-        "libsuitesparseconfig.5.dylib", "libmetis.dylib",
-        "libblas.3.dylib", "liblapack.3.dylib",
-    ]
-    _added_dylibs = 0
-    for _name in _suitesparse_dylibs:
-        _p = _os.path.join(_conda_lib, _name)
+    _added_libs = 0
+    # The compiled extension + its SuiteSparse native-lib closure live in
+    # platform-specific places that PyInstaller's collectors return EMPTY for
+    # (the extension is skipped by collect_dynamic_libs; the SuiteSparse libs
+    # live OUTSIDE the package, in the conda prefix), so both are added by
+    # explicit path. The layout differs per-OS — branch on it.
+    if _sys.platform == "win32":
+        # (1) The compiled extension (.pyd) under the package dir → package dest,
+        #     so Python can import scikits.umfpack.__umfpack when frozen.
+        for _ext in _glob.glob(_os.path.join(_skdir, "*.pyd")):
+            binaries.append((_ext, "scikits/umfpack"))
+            _added_exts += 1
+        # (2) The SuiteSparse + BLAS DLL closure the extension links. On
+        #     conda-forge Windows these live in $CONDA_PREFIX\Library\bin
+        #     (outside the package), so no collector finds them. The closure
+        #     (verified with dumpbin /dependents):
+        #       __umfpack.pyd → umfpack.dll
+        #       umfpack.dll   → cholmod, amd, suitesparseconfig, libblas
+        #       cholmod.dll   → amd, colamd, camd, ccolamd, liblapack, libblas,
+        #                       suitesparseconfig
+        #     Added at dest "." so they sit in _internal/ next to the exe, where
+        #     PyInstaller's runtime adds the DLL search dir. VCOMP140/VCRUNTIME140
+        #     (the MSVC OpenMP/CRT deps of cholmod) are picked up from System32 by
+        #     PyInstaller's own recursive scan of these binaries.
+        _conda_bin = _os.path.join(_sys.prefix, "Library", "bin")
+        _suitesparse_libs = [
+            "umfpack.dll", "cholmod.dll", "amd.dll", "colamd.dll",
+            "camd.dll", "ccolamd.dll", "suitesparseconfig.dll",
+            "libblas.dll", "liblapack.dll",
+        ]
+    else:
+        # (1) The compiled extension (.so) under the package dir → package dest.
+        for _ext in _glob.glob(_os.path.join(_skdir, "*.so")):
+            binaries.append((_ext, "scikits/umfpack"))
+            _added_exts += 1
+        # (2) The SuiteSparse dylibs the extension links via @rpath. They live in
+        #     $CONDA_PREFIX/lib (outside the package), so no collector finds them.
+        #     Add each @rpath-referenced soname (closure of __umfpack.*.so →
+        #     libumfpack.5 → cholmod/amd/… ) so PyInstaller places them in
+        #     _internal/ and rewrites the @rpath. blas/lapack are openblas
+        #     symlinks; include the .3 sonames cholmod references by name.
+        _conda_bin = _os.path.join(_sys.prefix, "lib")
+        _suitesparse_libs = [
+            "libumfpack.5.dylib", "libamd.2.dylib", "libcholmod.3.dylib",
+            "libcolamd.2.dylib", "libccolamd.2.dylib", "libcamd.2.dylib",
+            "libsuitesparseconfig.5.dylib", "libmetis.dylib",
+            "libblas.3.dylib", "liblapack.3.dylib",
+        ]
+    for _name in _suitesparse_libs:
+        _p = _os.path.join(_conda_bin, _name)
         if _os.path.exists(_p):
             binaries.append((_p, "."))
-            _added_dylibs += 1
+            _added_libs += 1
         else:
-            print(f"[spec] WARNING: SuiteSparse dylib not found: {_p}")
+            print(f"[spec] WARNING: SuiteSparse native lib not found: {_p}")
     print(
         f"[spec] UMFPACK bundled: {_added_exts} extension(s) + "
-        f"{_added_dylibs} SuiteSparse dylibs"
+        f"{_added_libs} SuiteSparse native libs"
     )
 
 a = Analysis(

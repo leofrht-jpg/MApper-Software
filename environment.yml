@@ -46,11 +46,20 @@ dependencies:
   # pinning them to the versions that happen to be in the dev env makes the
   # solve fail — conda-forge no longer builds pyarrow 22 for python 3.11.
 
-  # ── Sparse solver ───────────────────────────────────────────────────────────
-  # Load-bearing for prospective-LCA speed: factorisation reuse depends on
-  # UMFPACK (see PersistentLCARunner). Available on both osx-arm64 and win-64.
-  - scikit-umfpack=0.3.3
-  - suitesparse
+  # ── Sparse solver: NOT listed here, deliberately ────────────────────────────
+  #
+  # scikit-umfpack is load-bearing for prospective-LCA speed (factorisation
+  # reuse — see PersistentLCARunner), but conda-forge has no win-64 build, so
+  # listing it here makes this file unsolvable on Windows. It is therefore an
+  # explicit follow-up step on macOS/Linux:
+  #
+  #     conda activate map
+  #     conda install -c conda-forge scikit-umfpack=0.3.3 suitesparse
+  #
+  # Do this before freezing a macOS release: without it the run falls back to
+  # spsolve-per-call and a prospective run takes tens of minutes instead of
+  # under a minute. The test suite does not depend on it (nothing under tests/
+  # references UMFPACK), so CI is unaffected on either platform.
 
   # ── Misc runtime ────────────────────────────────────────────────────────────
   - pydantic=2.12.5

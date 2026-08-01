@@ -90,6 +90,17 @@ jobs:
           environment-file: environment.yml
           auto-activate-base: false
 
+      # environment.yml cannot list scikit-umfpack (no win-64 build on
+      # conda-forge), so macOS installs it here — the same follow-up step the
+      # file documents for developers. Nothing under tests/ references UMFPACK,
+      # so this is not needed to make the suite pass; it runs so CI proves the
+      # documented command still resolves, since macOS release builds depend on
+      # it for the prospective-LCA fast path.
+      - name: Install scikit-umfpack (macOS only)
+        if: runner.os != 'Windows'
+        shell: bash -el {0}
+        run: conda install -q -y -c conda-forge scikit-umfpack=0.3.3 suitesparse
+
       # Every test step below runs in a login shell so the `map` env is active:
       # bash -el on macOS, pwsh on Windows (setup-miniconda's documented values).
       - name: Report environment

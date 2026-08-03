@@ -86,6 +86,9 @@ from mapper.models.schemas import (
 )
 from mapper.ws.progress import stream_task_progress
 
+from mapper.api.cohort_export import excel_response
+
+
 router = APIRouter()
 
 # In-memory store for LCA results keyed by task_id
@@ -1746,17 +1749,10 @@ def _build_contribution_workbook(result: ContributionAnalysisResult):
 @router.post("/lca/contribution-analysis/export")
 async def export_contribution_analysis(body: ContributionAnalysisExportRequest) -> Response:
     wb = _build_contribution_workbook(body.result)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     safe = (body.result.target_label or "target").replace(" ", "-")[:40]
     date_tag = datetime.date.today().isoformat()
     filename = f"MApper_LCA_Contribution_{safe}_{date_tag}.xlsx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 def _build_multi_year_workbook(result: MultiYearContributionResult):
@@ -1881,9 +1877,6 @@ async def export_multi_year_contribution(
     body: MultiYearContributionExportRequest,
 ) -> Response:
     wb = _build_multi_year_workbook(body.result)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     safe = (body.result.target_label or "target").replace(" ", "-")[:40]
     span = (
         f"{body.result.years[0]}-{body.result.years[-1]}"
@@ -1891,29 +1884,18 @@ async def export_multi_year_contribution(
     )
     date_tag = datetime.date.today().isoformat()
     filename = f"MApper_LCA_Trajectory_{safe}_{span}_{date_tag}.xlsx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 @router.post("/lca/export-archetype")
 async def export_archetype_lca(body: ArchetypeLCAExportRequest) -> Response:
     wb = _build_lca_export_workbook(body.results)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     names = [d.archetype_name for d in body.results]
     safe = "_".join(n.replace(" ", "-") for n in names[:3]) or "archetype"
     scope = body.results[0].scope if body.results else "all"
     date_tag = datetime.date.today().isoformat()
     filename = f"MApper_LCA_{safe}_{scope}_{date_tag}.xlsx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 # ── Multi-product LCA comparison (Patch 4AG.1) ─────────────────────────────────

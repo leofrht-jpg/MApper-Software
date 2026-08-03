@@ -33,8 +33,9 @@ conda activate map
 ```
 
 `environment.yml` is the reference environment and is what CI installs, so it is
-the one to use if you want your results to match the pipeline. `./setup.sh` still
-works but creates a looser env from `mapper-backend/requirements.txt`.
+the one to use if you want your results to match the pipeline. `./setup.sh`
+(`setup.bat` on Windows) runs exactly the same steps in one command; it will not
+modify an existing `map` environment unless you pass `--force`.
 
 On macOS/Linux, add the sparse solver after creating the env — it is not in
 `environment.yml` because conda-forge has no Windows build, and release builds

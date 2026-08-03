@@ -1,3 +1,12 @@
+# NOT the reference environment — see ../environment.yml.
+#
+# This list is incomplete: it omits premise, pytest, pandas, openpyxl,
+# platformdirs and cryptography, so an env built from it cannot run the test
+# suite or a prospective analysis. It is kept only as a minimal record of the
+# direct runtime pins for the API layer.
+#
+# To set up MApper:  conda env create -f environment.yml
+#
 fastapi>=0.135.0
 uvicorn[standard]>=0.42.0
 pydantic>=2.12.0

@@ -32,6 +32,9 @@ from mapper.models.schemas import (
     MethodFamily,
 )
 
+from mapper.api.cohort_export import active_project_is_demo, excel_response_from_bytes
+
+
 router = APIRouter()
 
 
@@ -121,17 +124,19 @@ async def export_selection(
     filename = f"activities_{safe_db}_{date_tag}.{fmt}"
 
     if fmt == "xlsx":
-        content = build_selection_xlsx(rows)
-        media_type = (
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
-    else:
-        content = build_selection_csv(rows)
-        media_type = "text/csv; charset=utf-8"
+        # Shared exit: a demo export gets the in-workbook warning and the
+        # DEMO_ filename prefix like every other workbook.
+        return excel_response_from_bytes(build_selection_xlsx(rows), filename)
 
+    # CSV gets the filename prefix but NOT an in-file warning row: this file is
+    # re-importable and a banner line would occupy the header row and break
+    # parsing. In a demo project the activity names it contains already carry
+    # the "(FICTIONAL DATA)" suffix.
+    if active_project_is_demo() and not filename.startswith("DEMO_"):
+        filename = f"DEMO_{filename}"
     return Response(
-        content=content,
-        media_type=media_type,
+        content=build_selection_csv(rows),
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
 

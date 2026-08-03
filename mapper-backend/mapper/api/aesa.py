@@ -68,6 +68,9 @@ from mapper.models.aesa_schemas import (
 from mapper.models.bom_schemas import ImpactAssessmentResult
 
 
+from mapper.api.cohort_export import excel_response
+
+
 router = APIRouter(prefix="/aesa", tags=["aesa"])
 
 
@@ -547,14 +550,7 @@ async def get_sharing_template() -> Response:
     """Download an xlsx template pre-filled with the built-in Ferhati preset."""
     preset = build_default_sharing_preset()
     wb = _build_sharing_workbook(preset, include_instructions=True)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="aesa_sharing_template.xlsx"'},
-    )
+    return excel_response(wb, "aesa_sharing_template.xlsx", template=True)
 
 
 @router.get("/sharing/export/{preset_id}")
@@ -564,15 +560,8 @@ async def get_sharing_export(preset_id: str) -> Response:
         raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
     preset = SharingPreset(**raw)
     wb = _build_sharing_workbook(preset, include_instructions=True)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     filename = f"{_sanitize_filename(preset.name, 'aesa_sharing')}.xlsx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 @router.post("/sharing/import", response_model=SharingPreset)
@@ -625,11 +614,7 @@ async def post_export(body: AESAExportRequest) -> Response:
         config.mfa_system_id, _current_project(),
     )
     filename = build_export_filename(sys_def.name, _sub_names, "AESA")
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 def _build_aesa_workbook(

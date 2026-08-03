@@ -98,6 +98,9 @@ from mapper.models.bom_schemas import (
 from openpyxl.styles import Alignment, Font, PatternFill
 
 
+from mapper.api.cohort_export import excel_response
+
+
 router = APIRouter(prefix="/impact", tags=["impact"])
 
 
@@ -2281,9 +2284,6 @@ async def post_export(body: ImpactExportRequest) -> Response:
             system_name=sys_def.name, multi_paired_result=mpr,
         )
 
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
 
         # Paired DSM × LCI is always Prospective → pLCA.
         _flat = [r for s in mpr.scenarios for r in s.result.results]
@@ -2292,11 +2292,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             _contrib_subsystem_names(_flat, mpr.meta.mfa_system_id, _current_project()),
             "pLCA",
         )
-        return Response(
-            content=buf.getvalue(),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        return excel_response(wb, filename)
 
     if body.multi_dsm_result is not None:
         md = body.multi_dsm_result
@@ -2309,9 +2305,6 @@ async def post_export(body: ImpactExportRequest) -> Response:
 
         wb = _build_multi_dsm_workbook(system_name=sys_def.name, multi_dsm_result=md)
 
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
 
         # Multi-DSM preserves the originating mode (Static or Projected).
         _flat = [r for s in md.scenarios for r in s.result.results]
@@ -2320,11 +2313,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             _contrib_subsystem_names(_flat, md.meta.mfa_system_id, _current_project()),
             _domain_for_meta(md.meta),
         )
-        return Response(
-            content=buf.getvalue(),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        return excel_response(wb, filename)
 
     project = _current_project()
     archetypes = _proj_archetypes(project)
@@ -2340,9 +2329,6 @@ async def post_export(body: ImpactExportRequest) -> Response:
 
         wb = _build_multi_param_workbook(system_name=sys_def.name, multi_param_result=mp)
 
-        buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
 
         # Multi-parameter (sensitivity) preserves the originating mode.
         _flat = [r for s in mp.scenarios for r in s.result.results]
@@ -2351,11 +2337,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             _contrib_subsystem_names(_flat, mp.meta.mfa_system_id, project),
             _domain_for_meta(mp.meta),
         )
-        return Response(
-            content=buf.getvalue(),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        return excel_response(wb, filename)
 
     multi_result = _resolve_multi_export_result(body.task_id, body.multi_result)
 
@@ -2415,11 +2397,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             mfa_id, project,
         )
         filename = build_export_filename(sys_def.name, _contrib_names, "pLCA")
-        return Response(
-            content=buf.getvalue(),
-            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-        )
+        return excel_response(wb, filename)
 
     # Single-scenario path (legacy).
     result = _resolve_export_result(body.task_id, body.result)
@@ -2462,9 +2440,6 @@ async def post_export(body: ImpactExportRequest) -> Response:
         else:
             _append_compare_sheet(wb, static=compare_partner, projected=result)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
 
     # Static Background → LCA, Prospective Background → pLCA; contributing subs only.
     filename = build_export_filename(
@@ -2472,11 +2447,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
         _contrib_subsystem_names(result.results, result.meta.mfa_system_id, project),
         _domain_for_meta(result.meta),
     )
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 # ── Single-product Impact Assessment exports (Patch 4G) ─────────────────────
@@ -3185,14 +3156,7 @@ def _sp_filename(kind: str, archetype_name: str) -> str:
 
 
 def _sp_xlsx_response(wb, filename: str) -> Response:
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 @router.post("/export-single-product-static")

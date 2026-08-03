@@ -57,10 +57,22 @@ MApper couples all four in one **cohort-preserving** pipeline: a time-resolved m
 ```bash
 git clone https://github.com/leofrht-jpg/MApper-Software.git
 cd MApper-Software
-chmod +x setup.sh
-./setup.sh        # creates the conda env, installs backend + frontend deps
+
+conda env create -f environment.yml   # pinned environment; the one CI uses
+conda activate map
+
+# macOS/Linux only — the sparse solver that makes prospective LCA fast.
+# Not in environment.yml because conda-forge has no Windows build.
+conda install -c conda-forge scikit-umfpack=0.3.3 suitesparse
+
+( cd mapper-frontend && npm ci )
+
 ./start.sh        # starts backend (FastAPI) + frontend (Vite)
 ```
+
+> `./setup.sh` (or `setup.bat` on Windows) runs exactly these steps if you
+> prefer one command. It will not modify an existing `map` environment —
+> use `./setup.sh --force` to recreate one.
 
 Open [http://localhost:5173](http://localhost:5173).
 

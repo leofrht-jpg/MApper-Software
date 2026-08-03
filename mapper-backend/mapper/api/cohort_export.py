@@ -24,12 +24,37 @@ single-scenario case, N entries for multi-LCI.
 
 from __future__ import annotations
 
+import io
+import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
+from fastapi import Response
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
+
+logger = logging.getLogger("mapper.export")
+
+XLSX_MEDIA_TYPE = (
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+# Stamped into row 1 of every sheet of every export taken from the demo
+# project. A spreadsheet is the one artefact that leaves the application: it
+# gets emailed, archived and opened months later with no memory of where it
+# came from, and nothing in a grid of numbers says "fictional". The in-app
+# banner and the "(FICTIONAL DATA)" name suffixes do not travel with the file,
+# so the warning has to be inside the workbook itself.
+DEMO_EXPORT_WARNING = (
+    "\u26a0 SYNTHETIC DEMO DATA \u2014 every value in this workbook is fictional. "
+    "Produced by MApper's demo project to exercise the software without an "
+    "ecoinvent licence. This is NOT an environmental assessment \u2014 do not "
+    "cite, publish or make decisions from these numbers."
+)
+_DEMO_FONT = Font(bold=True, color="FFFFFF", size=11)
+_DEMO_FILL = PatternFill("solid", fgColor="C00000")
 
 SCI_FMT = "0.00E+00"
 INT_FMT = "#,##0"
@@ -38,6 +63,144 @@ COHORT_TAB_HEX = "4A90D9"
 
 _HEADER_FONT = Font(bold=True, color="FFFFFF")
 _HEADER_FILL = PatternFill("solid", fgColor=HEADER_FILL_HEX)
+
+
+# ── The one exit for every Excel export ──────────────────────────────────────
+
+
+def active_project_is_demo() -> bool:
+    """True when the active Brightway2 project is MApper's synthetic demo.
+
+    Keyed off the project identity (``demo_project.is_demo_project``), not the
+    filename or the sheet contents — a filename heuristic would miss a renamed
+    download and would false-positive on a real project someone called "demo".
+    Never raises: a broken bw2 state must not block an export.
+    """
+    try:
+        import bw2data as bd
+
+        from mapper.core.demo_project import is_demo_project
+
+        return is_demo_project(bd.projects.current)
+    except Exception:  # pragma: no cover - defensive
+        logger.warning("export: could not determine demo status", exc_info=True)
+        return False
+
+
+def stamp_demo_warning(wb: Workbook) -> None:
+    """Insert the fictional-data warning as row 1 of every sheet.
+
+    ``insert_rows(1)`` shifts existing content down but does NOT move
+    ``freeze_panes``, so any frozen row is re-pointed one row lower here —
+    otherwise the frozen header would end up showing the warning instead of the
+    column titles. Exports use no merged cells or charts (which openpyxl also
+    fails to shift), so nothing else needs fixing up.
+    """
+    for ws in wb.worksheets:
+        frozen = ws.freeze_panes
+        ws.insert_rows(1)
+
+        cell = ws.cell(row=1, column=1, value=DEMO_EXPORT_WARNING)
+        cell.font = _DEMO_FONT
+        cell.fill = _DEMO_FILL
+        cell.alignment = Alignment(vertical="center")
+        ws.row_dimensions[1].height = 24
+
+        # Fill the banner colour across the used width so it reads as a band
+        # rather than one coloured cell.
+        for col in range(2, max(ws.max_column, 1) + 1):
+            ws.cell(row=1, column=col).fill = _DEMO_FILL
+
+        if frozen:
+            m = re.match(r"^([A-Z]+)(\d+)$", str(frozen))
+            if m:
+                ws.freeze_panes = f"{m.group(1)}{int(m.group(2)) + 1}"
+
+
+def excel_response(
+    wb: Workbook,
+    filename: str,
+    *,
+    is_demo: bool | None = None,
+    template: bool = False,
+) -> Response:
+    """Serialise ``wb`` and return it as an .xlsx download.
+
+    Every Excel export in MApper returns through here. Centralising it is what
+    makes the demo warning impossible to forget: a new export surface gets the
+    stamping by construction rather than by remembering to add it.
+
+    When the active project is the demo, the workbook is stamped AND the
+    filename gains a ``DEMO_`` prefix, so the file is identifiable in a
+    downloads folder without being opened.
+
+    ``is_demo`` overrides the automatic check (tests, and callers that already
+    know).
+    """
+    demo = active_project_is_demo() if is_demo is None else is_demo
+    if demo:
+        # Templates are blank scaffolds the user fills in and uploads back.
+        # A warning row would sit above the header and break the parser, and
+        # there is no fictional *data* in them to misrepresent — so they get
+        # the filename prefix only. See test_demo_templates_still_round_trip.
+        if not template:
+            stamp_demo_warning(wb)
+        if not filename.startswith("DEMO_"):
+            filename = f"DEMO_{filename}"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return Response(
+        content=buf.getvalue(),
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def excel_response_from_bytes(
+    data: bytes,
+    filename: str,
+    *,
+    is_demo: bool | None = None,
+    template: bool = False,
+) -> Response:
+    """Same contract as :func:`excel_response`, for callers holding raw bytes.
+
+    Several export endpoints delegate to a builder that already serialised the
+    workbook. Rather than reshape those builders, this re-opens the bytes —
+    but ONLY when the demo is active. On a real project the bytes are returned
+    exactly as produced, so the normal export path is byte-for-byte unchanged
+    and carries no round-trip risk.
+    """
+    demo = active_project_is_demo() if is_demo is None else is_demo
+    if demo and template:
+        # See excel_response(): templates are round-tripped, so prefix only.
+        if not filename.startswith("DEMO_"):
+            filename = f"DEMO_{filename}"
+    elif demo:
+        try:
+            from openpyxl import load_workbook
+
+            wb = load_workbook(io.BytesIO(data))
+            stamp_demo_warning(wb)
+            out = io.BytesIO()
+            wb.save(out)
+            data = out.getvalue()
+            if not filename.startswith("DEMO_"):
+                filename = f"DEMO_{filename}"
+        except Exception:
+            # A stamping failure must not cost the user their export; the
+            # filename prefix still marks it.
+            logger.warning("export: demo stamping failed", exc_info=True)
+            if not filename.startswith("DEMO_"):
+                filename = f"DEMO_{filename}"
+
+    return Response(
+        content=data,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
 
 
 def style_header(ws, row_num: int = 1) -> None:

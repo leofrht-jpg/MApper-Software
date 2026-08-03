@@ -50,10 +50,18 @@ app.add_middleware(
     # calls this backend on 127.0.0.1; those origins must be allowed. Additive —
     # the existing localhost:5173 web workflow is unchanged.
     allow_origins=[
-        "http://localhost:5173",
         "tauri://localhost",
         "http://tauri.localhost",
     ],
+    # Any LOCAL dev-server port, not just 5173. Vite auto-increments when 5173
+    # is taken, and the resulting failure is a bare ERR_FAILED in the console
+    # with nothing pointing at CORS — the app simply renders empty. Restricted
+    # to loopback hosts over plain http, so no remote origin is granted access.
+    #
+    # This does not loosen the packaged app: there the frontend is served BY
+    # this backend on :8765, so requests are same-origin and CORS is never
+    # consulted. It only affects `npm run dev` against a separate backend.
+    allow_origin_regex=r"^http://(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

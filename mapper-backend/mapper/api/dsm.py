@@ -87,6 +87,9 @@ from mapper.models.dsm_schemas import (
 )
 
 
+from mapper.api.cohort_export import excel_response, excel_response_from_bytes
+
+
 router = APIRouter(prefix="/dsm", tags=["dsm"])
 
 # In-memory stores, hydrated from disk at startup. All stores are nested by
@@ -2222,11 +2225,7 @@ async def export_results(system_id: str) -> Response:
         from mapper.api.bom import build_export_filename
         fname = build_export_filename(sys_def.name, [], "DSM")
 
-    return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    return excel_response_from_bytes(content, fname)
 
 
 def _cohort_export_rows(
@@ -2279,15 +2278,9 @@ async def export_cohorts(system_id: str) -> Response:
         cell.font = Font(bold=True)
     for row in rows:
         ws.append(row)
-    buf = io.BytesIO()
-    wb.save(buf)
     years = [y.year for y in result.years]
     span = f"{min(years)}-{max(years)}" if years else "all"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="cohorts_{span}.xlsx"'},
-    )
+    return excel_response(wb, f"cohorts_{span}.xlsx")
 
 
 # ── Import from previously exported Excel ───────────────────────────────────
@@ -2730,21 +2723,12 @@ async def import_system(file: UploadFile = File(...)) -> SystemDefinition:
 # ── CSV templates ───────────────────────────────────────────────────────────
 
 
-_XLSX_MEDIA_TYPE = (
-    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-
 @router.post("/systems/{system_id}/templates/stock")
 async def template_stock(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = stock_template_xlsx(sys_def.dimensions)
     fname = f"stock_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return Response(
-        content=data,
-        media_type=_XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    return excel_response_from_bytes(data, fname, template=True)
 
 
 @router.post("/systems/{system_id}/templates/inflows")
@@ -2752,11 +2736,7 @@ async def template_inflows(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = inflow_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
     fname = f"inflow_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return Response(
-        content=data,
-        media_type=_XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    return excel_response_from_bytes(data, fname, template=True)
 
 
 @router.post("/systems/{system_id}/templates/stock-targets")
@@ -2764,11 +2744,7 @@ async def template_stock_targets(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = stock_target_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
     fname = f"stock_target_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return Response(
-        content=data,
-        media_type=_XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    return excel_response_from_bytes(data, fname, template=True)
 
 
 @router.post("/systems/{system_id}/templates/outflows")
@@ -2776,11 +2752,7 @@ async def template_outflows(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = outflow_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
     fname = f"outflow_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return Response(
-        content=data,
-        media_type=_XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    return excel_response_from_bytes(data, fname, template=True)
 
 
 @router.post("/systems/{system_id}/templates/stock-aggregate")
@@ -2788,8 +2760,4 @@ async def template_stock_aggregate(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = aggregate_stock_template_xlsx(sys_def.dimensions)
     fname = f"stock_aggregate_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return Response(
-        content=data,
-        media_type=_XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    return excel_response_from_bytes(data, fname, template=True)

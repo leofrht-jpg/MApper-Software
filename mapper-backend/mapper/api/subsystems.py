@@ -95,6 +95,9 @@ def _reconcile_project_from_header(
         bw2data.projects.set_current(x_mapper_project)
 
 
+from mapper.api.cohort_export import excel_response_from_bytes
+
+
 router = APIRouter(
     prefix="/dsm",
     tags=["subsystems"],
@@ -693,11 +696,7 @@ async def dependency_rules_template(system_id: str, subsystem_id: str) -> Respon
         raise HTTPException(status_code=404, detail="Subsystem not found")
     primary = _get_system(system_id)
     data = _dep_rules_workbook(sub, primary.dimensions)
-    return Response(
-        content=data,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="dependency_rules_template.xlsx"'},
-    )
+    return excel_response_from_bytes(data, "dependency_rules_template.xlsx", template=True)
 
 
 @router.post("/systems/{system_id}/dependency-rules/import")
@@ -891,11 +890,7 @@ async def cohort_mapping_template(system_id: str, subsystem_id: str) -> Response
     data = _cohort_mapping_workbook(sub, archetype_names)
     # Filename: cohort_mapping_<subsystem_name>_template.xlsx — spaces→_, lowered.
     safe = _sanitize_filename(sub.name, "subsystem").lower()
-    return Response(
-        content=data,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="cohort_mapping_{safe}_template.xlsx"'},
-    )
+    return excel_response_from_bytes(data, f"cohort_mapping_{safe}_template.xlsx", template=True)
 
 
 @router.post("/systems/{system_id}/cohort-mapping/import")
@@ -1385,11 +1380,7 @@ async def export_subsystem_results(
     else:
         fname = build_export_filename(sub.name, [], "DSM")
 
-    return Response(
-        content=content,
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{fname}"'},
-    )
+    return excel_response_from_bytes(content, fname)
 
 
 # ── Public accessors (used by DSM-LCA aggregation) ──────────────────────────

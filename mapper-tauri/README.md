@@ -52,7 +52,7 @@ Tauri v2 appends the target triple (and `.exe` on Windows) to the
 The `map` conda environment used on macOS does not exist on Windows. Create it:
 
 ```powershell
-conda create -n map python=3.11
+conda env create -f ../environment.yml   # from the repo root: environment.yml
 conda activate map
 # Install the scientific stack from conda-forge (binary wheels required)
 conda install -c conda-forge brightway2 premise bw2io bw2calc bw2data \

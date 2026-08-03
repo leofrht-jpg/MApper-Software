@@ -7,8 +7,8 @@ attribution requirements of the permissive licenses involved.
 
 Versions reflect the versions pinned/resolved at the time of public release.
 Transitive dependencies are not exhaustively listed; the authoritative,
-complete trees are `mapper-backend/requirements.txt` (+ the resolved conda/pip
-environment) and `mapper-frontend/package-lock.json`.
+complete trees are `environment.yml` (the pinned conda/pip environment CI
+installs) and `mapper-frontend/package-lock.json`.
 
 > **Note on data.** Third-party *data* (the ecoinvent database and IAM scenario
 > data used by premise) is separately licensed and is **not** bundled with

@@ -1,73 +1,114 @@
 #!/bin/bash
-set -e
+# SPDX-License-Identifier: MPL-2.0
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at https://mozilla.org/MPL/2.0/.
+#
+# © Copyright 2026 Technical University of Denmark
+# Lead developer: Leonardo Ferhati
+#
+# Optional convenience wrapper. The documented setup path is:
+#
+#     conda env create -f environment.yml
+#     conda activate map
+#     conda install -c conda-forge scikit-umfpack=0.3.3 suitesparse   # macOS/Linux
+#     ( cd mapper-frontend && npm ci )
+#
+# This script runs exactly those steps; it does nothing you cannot do by hand.
+#
+# It will NOT touch an existing `map` environment. The previous version ran
+# `conda create -n map` and then pip-installed into whatever `map` already was,
+# silently mutating a working environment and mixing a loose pip dependency set
+# into the pinned conda one. Recreating is now opt-in via --force.
+set -euo pipefail
 
-echo "=== MApper Setup ==="
-echo ""
+FORCE=0
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=1 ;;
+    -h|--help)
+      echo "Usage: ./setup.sh [--force]"
+      echo
+      echo "Creates the 'map' conda environment from environment.yml, adds the"
+      echo "sparse solver on macOS/Linux, and installs frontend packages."
+      echo
+      echo "  --force   remove and recreate an existing 'map' environment"
+      exit 0 ;;
+    *) echo "Unknown argument: $arg (try --help)"; exit 2 ;;
+  esac
+done
 
-# Check prerequisites
-command -v conda >/dev/null 2>&1 || { echo "❌ conda not found. Install Miniconda first: https://docs.conda.io/en/latest/miniconda.html"; exit 1; }
-command -v node >/dev/null 2>&1 || { echo "❌ Node.js not found. Install from https://nodejs.org (v18+)"; exit 1; }
+echo "=== MApper setup ==="
+echo
 
-# Create conda environment
-echo "📦 Creating conda environment 'map'..."
-conda create -n map python=3.11 -y 2>/dev/null || echo "Environment 'map' already exists"
+command -v conda >/dev/null 2>&1 || {
+  echo "conda not found. Install Miniconda: https://docs.conda.io/en/latest/miniconda.html"
+  exit 1
+}
+command -v node >/dev/null 2>&1 || {
+  echo "Node.js not found. Install from https://nodejs.org (v20+; CI uses 24)"
+  exit 1
+}
+
 eval "$(conda shell.bash hook)"
+
+# ── conda environment ────────────────────────────────────────────────────────
+if conda env list | awk '{print $1}' | grep -qx "map"; then
+  if [ "$FORCE" -eq 1 ]; then
+    echo "Removing existing 'map' environment (--force)…"
+    conda env remove -n map -y
+    echo "Creating 'map' from environment.yml…"
+    conda env create -f environment.yml
+  else
+    echo "A conda environment named 'map' already exists — leaving it alone."
+    echo
+    echo "  Update it in place:  conda env update -f environment.yml --prune"
+    echo "  Recreate it:         ./setup.sh --force"
+    echo
+    echo "Skipping environment creation; continuing with the frontend."
+  fi
+else
+  echo "Creating 'map' from environment.yml…"
+  conda env create -f environment.yml
+fi
+
 conda activate map
 
-# Install Python dependencies
-echo "📦 Installing Python packages..."
-cd mapper-backend
-pip install -r requirements.txt --break-system-packages -q
-cd ..
+# ── sparse solver (macOS/Linux only) ─────────────────────────────────────────
+# Not in environment.yml because conda-forge has no win-64 build, which would
+# make that file unsolvable on Windows. Prospective-LCA speed depends on it:
+# without UMFPACK a run falls back to spsolve-per-call and takes tens of
+# minutes instead of under a minute.
+case "$(uname -s)" in
+  Darwin|Linux)
+    if python -c "import scikits.umfpack" >/dev/null 2>&1; then
+      echo "scikit-umfpack already present."
+    else
+      echo "Installing scikit-umfpack (prospective-LCA fast path)…"
+      conda install -y -c conda-forge scikit-umfpack=0.3.3 suitesparse
+    fi ;;
+  *)
+    echo "Skipping scikit-umfpack (no conda-forge build for this platform)." ;;
+esac
 
-# Install Node dependencies
-echo "📦 Installing frontend packages..."
-cd mapper-frontend
-npm install --silent
-cd ..
+# ── frontend ─────────────────────────────────────────────────────────────────
+echo "Installing frontend packages…"
+( cd mapper-frontend && npm ci )
 
-# Create start script
-cat > start.sh << 'EOF'
-#!/bin/bash
-eval "$(conda shell.bash hook)"
-conda activate map
+# NOTE: start.sh is tracked in the repository and is deliberately NOT
+# regenerated here. The old script overwrote it on every run, discarding any
+# local edits.
 
-# Start backend
-cd mapper-backend
-uvicorn mapper.main:app --reload --port 8000 &
-BACKEND_PID=$!
-cd ..
-
-# Start frontend
-cd mapper-frontend
-npm run dev &
-FRONTEND_PID=$!
-cd ..
-
-echo ""
-echo "✅ MApper is running!"
-echo "   Open: http://localhost:5173"
-echo "   Press Ctrl+C to stop"
-echo ""
-
-# Wait and cleanup
-trap "kill $BACKEND_PID $FRONTEND_PID 2>/dev/null" EXIT
-wait
-EOF
-chmod +x start.sh
-
-echo ""
-echo "✅ Setup complete!"
-echo ""
-echo "To start MApper:"
-echo "   ./start.sh"
-echo ""
-echo "To import ecoinvent:"
-echo "   1. Start MApper"
-echo "   2. Go to Database Explorer"
-echo "   3. Click Import → select your ecoinvent .7z file"
-echo ""
-echo "To configure premise (optional, for prospective LCA):"
-echo "   mkdir -p ~/.premise"
-echo "   echo 'YOUR_KEY' > ~/.premise/premise_key"
-echo "   Request a key from romain.sacchi@psi.ch"
+echo
+echo "Setup complete."
+echo
+echo "  Start MApper:   ./start.sh     (then open http://localhost:5173)"
+echo
+echo "  No ecoinvent licence? Run the demo — synthetic data, nothing to download:"
+echo "      cd mapper-backend && python scripts/load_demo_project.py --verify"
+echo
+echo "  Real assessments need your own ecoinvent database:"
+echo "      Database Explorer -> Import -> select your ecoinvent .7z"
+echo
+echo "  Prospective LCA additionally needs a premise key:"
+echo "      mkdir -p ~/.premise && echo 'YOUR_KEY' > ~/.premise/premise_key"

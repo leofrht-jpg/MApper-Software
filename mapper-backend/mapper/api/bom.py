@@ -127,6 +127,9 @@ def _all_folder_paths(project: str | None = None) -> list[str]:
     return sorted(folders)
 
 
+from mapper.api.cohort_export import excel_response
+
+
 router = APIRouter(tags=["bom"])
 
 
@@ -218,16 +221,9 @@ async def export_all_archetypes(folder: str | None = None) -> Response:
         raise HTTPException(status_code=404, detail="No archetypes to export in the selected scope.")
     archetypes.sort(key=lambda a: ((a.folder or ""), a.name))
     wb = _build_multi_export_workbook(archetypes)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     tag = _sanitize_filename(folder.replace("/", "_"), "all") if folder else "all"
     filename = f"archetypes_{tag}.xlsx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 @router.get("/bom/archetypes/{arc_id}/validation-report", response_model=ValidationReport)
@@ -914,15 +910,8 @@ async def get_cohort_mappings_template(system_id: str) -> Response:
     archetypes = _proj_archetypes(project)
     archetypes_by_id = {arc_id: arc.name for arc_id, arc in archetypes.items()}
     wb = _cohort_template_workbook(sys_def, existing, archetypes_by_id)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     filename = f"{_sanitize_filename(sys_def.name, 'system')}_cohort_mappings_template.xlsx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 def _parse_cohort_upload(data: bytes, filename: str, nad_names: list[str]) -> list[dict]:
@@ -1854,9 +1843,6 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
         system_id=system_id,
         subsystems=sub_export,
     )
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     scope = results[0].scope
     # Subsystems that actually contributed cohorts to the aggregated results —
     # shared gatherer so LCA / pLCA / AESA filenames can't drift.
@@ -1865,11 +1851,7 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
         system_id, project,
     )
     filename = build_export_filename(sys_def.name, _contrib_names, "LCA")
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 # ── Material Flows ──────────────────────────────────────────────────────────
@@ -2470,15 +2452,8 @@ async def export_material_flows(
                 cell.number_format = num_fmt
         _auto(ws)
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     filename = build_export_filename(sys_def.name, [], "MFA")
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 # Useful for cleanup if the user deletes the parent DSM system from another router.
@@ -2654,15 +2629,8 @@ def _build_export_workbook(arc: Archetype) -> Workbook:
 async def export_archetype(arc_id: str) -> Response:
     arc = _get_archetype(arc_id)
     wb = _build_export_workbook(arc)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
     filename = _sanitize_filename(arc.name) + "_bom.xlsx"
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return excel_response(wb, filename)
 
 
 # ── Multi-archetype export ───────────────────────────────────────────────────
@@ -2811,14 +2779,7 @@ async def download_bom_template() -> Response:
     scaling.append(["Formula", "demand = count × scaling_factor × material_quantity"])
     scaling.append(["Cohort key format", "Pipe-delimited concatenation of your DSM dimension labels (e.g. 'Type_A|Class_1' if your system has 'type' and 'class' dimensions)."])
 
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="mapper_archetypes_template.xlsx"'},
-    )
+    return excel_response(wb, "mapper_archetypes_template.xlsx", template=True)
 
 
 class BOMImportResult(BaseModel):

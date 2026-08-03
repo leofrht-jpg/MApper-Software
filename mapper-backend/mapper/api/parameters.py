@@ -57,6 +57,9 @@ from mapper.models.parameter_schemas import (
 )
 
 
+from mapper.api.cohort_export import excel_response
+
+
 router = APIRouter(prefix="/parameters", tags=["parameters"])
 
 
@@ -400,26 +403,14 @@ def _sanitize_filename(name: str) -> str:
 @router.get("/template")
 async def download_template() -> Response:
     wb = _build_workbook(None)
-    buf = io.BytesIO()
-    wb.save(buf)
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="parameters_template.xlsx"'},
-    )
+    return excel_response(wb, "parameters_template.xlsx", template=True)
 
 
 @router.get("/export")
 async def export_table() -> Response:
     table = _table_for()
     wb = _build_workbook(table)
-    buf = io.BytesIO()
-    wb.save(buf)
-    return Response(
-        content=buf.getvalue(),
-        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        headers={"Content-Disposition": 'attachment; filename="parameters.xlsx"'},
-    )
+    return excel_response(wb, "parameters.xlsx")
 
 
 @router.post(

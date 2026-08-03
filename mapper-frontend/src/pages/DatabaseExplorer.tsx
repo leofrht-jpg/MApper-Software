@@ -16,6 +16,7 @@ import { useProjectStore } from '../stores/projectStore'
 import { useActivityStore } from '../stores/activityStore'
 import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
+import { DemoLoadButton } from '../components/DemoLoadButton'
 import { ImportWizard } from '../components/ImportWizard'
 import {
   type ActivityDetail,
@@ -1061,6 +1062,15 @@ function EmptyState({
         <Button variant="primary" onClick={onImport} style={{ background: 'var(--mod-lca)', borderColor: 'var(--mod-lca)' }}>
           <Upload size={14} /> Import a database
         </Button>
+        {/* Without an ecoinvent licence there is nothing to import, and this
+            empty state is where a new user (or a JOSS reviewer) lands first.
+            The demo gives them a runnable pipeline instead of a dead end. */}
+        <div style={{ marginTop: 28, paddingTop: 20, borderTop: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: 12 }}>
+            No ecoinvent licence?
+          </div>
+          <DemoLoadButton />
+        </div>
       </div>
     )
   }

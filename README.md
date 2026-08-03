@@ -64,7 +64,56 @@ chmod +x setup.sh
 
 Open [http://localhost:5173](http://localhost:5173).
 
+### Try it without ecoinvent
+
+**MApper works out of the box with no licence.** ecoinvent is separately
+licensed and is never bundled, so a fresh install has no life-cycle inventory
+data. Rather than leave you with nothing to run, MApper ships a demo project
+built from synthetic data:
+
+```bash
+cd mapper-backend
+python scripts/load_demo_project.py --verify
+```
+
+or, in the app, open **Database Explorer** and click
+**"Load demo project (no licence needed)"**.
+
+The first run takes about a minute: it installs `biosphere3` and ~760 LCIA
+methods, which ship inside `bw2io` and carry no licence restriction.
+
+**What the demo gives you** — a 31-year (2020–2050) passenger-vehicle fleet with
+battery-electric and combustion cohorts, and everything downstream of it:
+
+| Step | What you can verify |
+| --- | --- |
+| **DSM Modeller** | Cohort-tracked stock, inflows and outflows over 31 years, Weibull survival |
+| **LCA Architect** | Two bills of materials linked to the synthetic database |
+| **Impact Assessment** | A real `bw2calc` solve — real elementary flows, real IPCC characterisation factors |
+| **AESA** | Impact results downscaled against planetary boundaries |
+
+That covers the DSM → material flows → LCA → AESA integration, which is the
+part of MApper the paper argues is novel.
+
+> [!WARNING]
+> **Every number in the demo is fictional.** The inventory is invented — chosen
+> so charts have sensible proportions, and wrong. The LCA arithmetic is real;
+> the data it consumes is not. A red banner stays on screen for as long as the
+> demo project is active. **Do not cite, publish or present any demo output as
+> an environmental assessment.**
+
+The demo lives in its own Brightway2 project (`MApper demo (synthetic data)`)
+and touches nothing else. Delete that project to remove it.
+
+**What still needs a licence:** a real assessment needs your own ecoinvent
+database, and prospective (premise) analysis needs both ecoinvent and a premise
+key. The demo covers neither — it demonstrates that the software works, not
+what any real system emits.
+
 ### Example: first analysis
+
+*This is the workflow with a real ecoinvent licence. Without one, use
+**Try it without ecoinvent** above.*
 
 1. **Database Explorer** → import your ecoinvent `.7z` file (~10 min).
 2. *(Optional)* **pLCA Developer** → generate prospective databases (requires a premise key).

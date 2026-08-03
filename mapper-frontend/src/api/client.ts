@@ -4376,3 +4376,38 @@ export function connectToLcaInstallTask(
   if (onError) ws.onerror = onError
   return ws
 }
+
+// ── Demo project (licence-free path) ─────────────────────────────────────────
+//
+// The demo is a synthetic Brightway2 project that lets MApper be exercised with
+// no ecoinvent licence. `isDemoActive` drives the persistent banner — every
+// number produced while it is true is fictional.
+
+export interface DemoStatus {
+  demo_project_name: string
+  demo_database: string
+  current_project: string | null
+  is_demo_active: boolean
+}
+
+export interface DemoLoadResult extends DemoStatus {
+  bw2setup_ran: boolean
+  biosphere_flows: number
+  lcia_methods: number
+  technosphere_activities: number
+  dsm_system_id: string
+  dsm_years: number
+  archetypes: string[]
+  simulated: boolean
+  total_inflow_units: number
+  notes: string[]
+}
+
+export async function getDemoStatus(): Promise<DemoStatus> {
+  return request<DemoStatus>('/demo/status')
+}
+
+// First call installs biosphere3 + LCIA methods, so it can take ~1 minute.
+export async function loadDemoProject(rebuild = false): Promise<DemoLoadResult> {
+  return request<DemoLoadResult>(`/demo/load?rebuild=${rebuild}`, { method: 'POST' })
+}

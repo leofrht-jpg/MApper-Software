@@ -81,7 +81,12 @@ conda activate map
 # minutes instead of under a minute.
 case "$(uname -s)" in
   Darwin|Linux)
-    if python -c "import scikits.umfpack" >/dev/null 2>&1; then
+    # find_spec, NOT `import scikits.umfpack`: the raw import ALWAYS fails on
+    # numpy >= 1.25 (it references the removed numpy.testing.Tester and needs
+    # the shim in bw2_wrapper._patch_umfpack_import). Using the import as the
+    # guard made this branch run every time and reinstall into an existing
+    # environment — the behaviour this script exists to avoid.
+    if python -c "import importlib.util,sys; sys.exit(0 if importlib.util.find_spec('scikits.umfpack') else 1)" >/dev/null 2>&1; then
       echo "scikit-umfpack already present."
     else
       echo "Installing scikit-umfpack (prospective-LCA fast path)…"

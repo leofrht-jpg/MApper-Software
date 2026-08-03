@@ -42,7 +42,7 @@ def main() -> int:
     )
 
     print("Building MApper demo project (synthetic data, no ecoinvent needed)…")
-    print("The first run installs biosphere3 + LCIA methods and takes ~1 minute.\n")
+    print("First run installs biosphere3 + 762 LCIA methods: ~10 s, ~150 MB.\n")
 
     report = build_demo_project(rebuild=args.rebuild)
 

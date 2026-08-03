@@ -79,8 +79,9 @@ python scripts/load_demo_project.py --verify
 or, in the app, open **Database Explorer** and click
 **"Load demo project (no licence needed)"**.
 
-The first run takes about a minute: it installs `biosphere3` and ~760 LCIA
-methods, which ship inside `bw2io` and carry no licence restriction.
+The first run takes about 10 seconds and needs ~150 MB of disk: it installs
+`biosphere3` and 762 LCIA methods, which ship inside `bw2io` and carry no
+licence restriction. Re-running is a no-op (~2 s).
 
 **What the demo gives you** — a 31-year (2020–2050) passenger-vehicle fleet with
 battery-electric and combustion cohorts, and everything downstream of it:

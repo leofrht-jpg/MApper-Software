@@ -52,8 +52,8 @@ export function DemoLoadButton({ onLoaded }: { onLoaded?: () => void }) {
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', maxWidth: 460 }}>
         Creates a separate project with <b>synthetic, fictional</b> data so you can
         try the full DSM → material flows → LCA → AESA workflow without an
-        ecoinvent licence. Your own projects are not modified. First run takes
-        about a minute.
+        ecoinvent licence. Your own projects are not modified. First run takes about
+        10 seconds and ~150 MB of disk.
       </div>
       {error && (
         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--zone-highrisk, #ef4444)' }}>

@@ -153,7 +153,7 @@ def test_bw2package_install_downloads_and_records_tuples(
     # Manifest written.
     manifest_path = tmp_cache_root / "impact_world_plus_2_2_1" / "manifest.json"
     assert manifest_path.is_file()
-    data = json.loads(manifest_path.read_text())
+    data = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert data["installer"] == "bw2package"
     assert data["ecoinvent_version"] == "3.10"
     assert len(data["method_tuples"]) == 2

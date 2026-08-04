@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertCircle, ChevronDown, ChevronRight, Download, Loader2, Upload } from 'lucide-react'
+import { AlertCircle, Download, Loader2, Upload } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { CollapsibleSectionHeader } from '../ui/CollapsibleSectionHeader'

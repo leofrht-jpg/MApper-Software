@@ -34,7 +34,7 @@ _ENTRY = Path(__file__).resolve().parent.parent / "desktop_entry.py"
 
 
 def _main_block_body():
-    tree = ast.parse(_ENTRY.read_text())
+    tree = ast.parse(_ENTRY.read_text(encoding="utf-8"))
     for node in tree.body:
         if isinstance(node, ast.If):
             test = node.test
@@ -53,7 +53,7 @@ def test_entry_has_main_guard():
 
 def test_freeze_support_called_before_main():
     body = _main_block_body()
-    src = _ENTRY.read_text()
+    src = _ENTRY.read_text(encoding="utf-8")
     assert "multiprocessing.freeze_support()" in src, "freeze_support() missing — worker fork-bomb"
 
     def _call_name(stmt):
@@ -72,7 +72,7 @@ def test_freeze_support_called_before_main():
 
 def test_resource_tracker_neutralized_in_frozen_build():
     # The frozen-only guard must patch the tracker so it can never launch.
-    src = _ENTRY.read_text()
+    src = _ENTRY.read_text(encoding="utf-8")
     assert 'getattr(sys, "frozen", False)' in src, "tracker patch must be gated on the frozen build"
     assert "resource_tracker" in src
     assert "ensure_running" in src

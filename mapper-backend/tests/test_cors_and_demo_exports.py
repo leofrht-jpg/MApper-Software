@@ -164,12 +164,15 @@ def test_every_xlsx_export_routes_through_the_shared_exit():
     """
     import pathlib
 
+    # encoding="utf-8" is load-bearing: the API sources contain box-drawing
+    # and em-dash characters, and Path.read_text() defaults to the locale
+    # codec — cp1252 on the Windows runner, which raises UnicodeDecodeError.
     api = pathlib.Path(__file__).resolve().parent.parent / "mapper" / "api"
     offenders = []
     for f in api.glob("*.py"):
         if f.name == "cohort_export.py":
             continue
-        if "spreadsheetml.sheet" in f.read_text():
+        if "spreadsheetml.sheet" in f.read_text(encoding="utf-8"):
             offenders.append(f.name)
     assert not offenders, f"hand-rolled xlsx Response in: {offenders}"
 
@@ -219,7 +222,7 @@ def test_every_template_endpoint_passes_template_true():
     for f in api.glob("*.py"):
         if f.name == "cohort_export.py":
             continue
-        for line in f.read_text().splitlines():
+        for line in f.read_text(encoding="utf-8").splitlines():
             if "excel_response" not in line or "return" not in line:
                 continue
             if re.search(r"template", line, re.I) and "template=True" not in line:

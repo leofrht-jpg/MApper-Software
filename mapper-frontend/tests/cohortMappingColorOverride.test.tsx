@@ -72,14 +72,17 @@ beforeEach(() => {
   })
 })
 
-describe('CohortMappingEditor — header rename (Patch 4AJ)', () => {
-  it('section header reads "Cohort mapping"', async () => {
+describe('CohortMappingEditor — header naming', () => {
+  it('section header reads the system name, not "Cohort mapping"', async () => {
     const { CohortMappingEditor } = await import(
       '../src/components/impact/CohortMappingEditor'
     )
     const { container } = render(<CohortMappingEditor />)
-    expect(container.textContent).toContain('Cohort mapping')
-    // The old label must NOT be present.
+    // Named after the system itself. "Cohort mapping" duplicated the modal
+    // title and read as a repeat rather than as this system's own section.
+    expect(
+      container.querySelector('[data-testid="primary-mapping-heading"]')?.textContent,
+    ).toBe('Test System')
     expect(container.textContent).not.toContain('Cohort → Archetype')
   })
 })
@@ -90,9 +93,8 @@ describe('CohortMappingEditor — color picker interaction (Patch 4AJ)', () => {
       '../src/components/impact/CohortMappingEditor'
     )
     const result = render(<CohortMappingEditor />)
-    // Expand the table by clicking the header.
-    const header = result.container.querySelector('h4')!
-    fireEvent.click(header.parentElement!)
+    // The section is expanded on open now, so there is nothing to click —
+    // clicking the header here would collapse it instead.
     return result
   }
 

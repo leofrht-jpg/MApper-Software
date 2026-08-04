@@ -12,6 +12,7 @@ import { AlertCircle, Download, Loader2, Upload } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import { Button } from '../ui/Button'
 import { useSubsystemStore } from '../../stores/subsystemStore'
+import { CollapsibleSectionHeader } from '../ui/CollapsibleSectionHeader'
 import { useBOMStore } from '../../stores/bomStore'
 import { useDSMStore } from '../../stores/dsmStore'
 import { CHART_PALETTE } from '../../utils/chartColors'
@@ -61,16 +62,19 @@ export function DependentCohortMappingsPanel() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
-      {dependents.map((sub) => (
-        <SubsystemMappingCard key={sub.id} subsystem={sub} archetypesWithIssues={new Set(archetypes.filter((a) => a.unlinked_count > 0).map((a) => a.id))} />
+      {dependents.map((sub, i) => (
+        <SubsystemMappingCard key={sub.id} subsystem={sub} index={i} archetypesWithIssues={new Set(archetypes.filter((a) => a.unlinked_count > 0).map((a) => a.id))} />
       ))}
     </div>
   )
 }
 
 export function SubsystemMappingCard({
-  subsystem, archetypesWithIssues,
-}: { subsystem: Subsystem; archetypesWithIssues: Set<string> }) {
+  subsystem, archetypesWithIssues, index = 0,
+}: { subsystem: Subsystem; archetypesWithIssues: Set<string>; index?: number }) {
+  // Expanded by default: the modal is opened to edit mappings, so making the
+  // user expand a section first would be worse than not collapsing at all.
+  const [collapsed, setCollapsed] = useState(false)
   const saveDependent = useSubsystemStore((s) => s.saveDependent)
   const { archetypes } = useBOMStore()
   const activeSystem = useDSMStore((s) => s.activeSystem)
@@ -203,53 +207,71 @@ export function SubsystemMappingCard({
       borderRadius: 'var(--radius-lg)',
       padding: 'var(--space-4)',
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)', gap: 12, flexWrap: 'wrap' }}>
-        <div>
-          <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-            {subsystem.name} mappings ({mappedCount})
+      <CollapsibleSectionHeader
+        collapsed={collapsed}
+        onToggle={() => setCollapsed((v) => !v)}
+        style={{ marginBottom: collapsed ? 0 : 'var(--space-3)', flexWrap: 'wrap' }}
+        actions={(
+          <>
+            {status && <span style={{ fontSize: 'var(--text-xs)', color: statusColor }}>{status.msg}</span>}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx"
+              data-testid="subsystem-cohort-file-input"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) void handleFileSelected(f)
+                e.target.value = '' // allow re-selecting the same file
+              }}
+            />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleUploadClick}
+              disabled={!systemId || importing}
+              data-testid="subsystem-cohort-upload"
+              title="Import cohort mappings from an xlsx file"
+            >
+              {importing ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={14} />}
+              Upload
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDownloadTemplate}
+              disabled={!systemId}
+              data-testid="subsystem-cohort-template"
+              title="Download a template with this subsystem's cohort keys"
+            >
+              <Download size={14} /> Template
+            </Button>
+          </>
+        )}
+      >
+        <div style={{ minWidth: 0 }}>
+          {/* Subsystem's own name, matching how the primary section is now
+              named after its system. Ordinals ("sub-system 1") are only a
+              fallback for an unnamed subsystem — names carry more meaning. */}
+          <h4 data-testid="subsystem-mapping-heading" style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+            {subsystem.name?.trim() || `Subsystem ${index + 1}`}
+            <span style={{ fontWeight: 400, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+              {' '}· {mappedCount} of {dependentArchetypes.length} mapped
+            </span>
           </h4>
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
-            {mappedCount} of {dependentArchetypes.length} archetypes mapped. Edits auto-save. Unmapped archetypes are excluded from Impact Assessment.
+            Edits auto-save. Unmapped archetypes are excluded from Impact Assessment.
           </div>
         </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {status && <span style={{ fontSize: 'var(--text-xs)', color: statusColor }}>{status.msg}</span>}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx"
-            data-testid="subsystem-cohort-file-input"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) void handleFileSelected(f)
-              e.target.value = '' // allow re-selecting the same file
-            }}
-          />
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleUploadClick}
-            disabled={!systemId || importing}
-            data-testid="subsystem-cohort-upload"
-            title="Import cohort mappings from an xlsx file"
-          >
-            {importing ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={14} />}
-            Upload
-          </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleDownloadTemplate}
-            disabled={!systemId}
-            data-testid="subsystem-cohort-template"
-            title="Download a template with this subsystem's cohort keys"
-          >
-            <Download size={14} /> Template
-          </Button>
-        </div>
-      </div>
+      </CollapsibleSectionHeader>
 
+      {/* Hidden, NOT unmounted (CLAUDE.md): edits auto-save on a debounce, so
+          unmounting would drop a pending save along with scroll/edit state. */}
+      <div
+        data-testid="subsystem-mapping-body"
+        style={{ display: collapsed ? 'none' : 'block' }}
+      >
       {importError && (
         <div style={{
           padding: '8px 12px', marginBottom: 'var(--space-3)',
@@ -376,6 +398,7 @@ export function SubsystemMappingCard({
           </table>
         </div>
       )}
+      </div>
 
       {pendingImport && (
         <div

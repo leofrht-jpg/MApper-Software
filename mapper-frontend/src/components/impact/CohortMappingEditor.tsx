@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertCircle, ChevronDown, ChevronRight, Download, Loader2, Upload } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
+import { CollapsibleSectionHeader } from '../ui/CollapsibleSectionHeader'
 import { DimensionColorPicker } from '../ui/DimensionColorPicker'
 import { useDSMStore, type CohortMappingValue } from '../../stores/dsmStore'
 import { useBOMStore } from '../../stores/bomStore'
@@ -87,7 +88,8 @@ export function CohortMappingEditor() {
 
   const [status, setStatus] = useState<{ kind: 'info' | 'success' | 'error'; msg: string } | null>(null)
   const [busy, setBusy] = useState(false)
-  const [tableExpanded, setTableExpanded] = useState(false)
+  // Expanded by default: this section is why the modal was opened.
+  const [tableExpanded, setTableExpanded] = useState(true)
   const autoSaveTimer = useRef<number | null>(null)
   const didAutoGen = useRef(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -258,50 +260,52 @@ export function CohortMappingEditor() {
       borderRadius: 'var(--radius-lg)',
       padding: 'var(--space-4)',
     }}>
-      <div
-        style={{
-          display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-          gap: 12, flexWrap: 'wrap',
-          marginBottom: tableExpanded ? 'var(--space-3)' : 0,
-        }}
+      <CollapsibleSectionHeader
+        collapsed={!tableExpanded}
+        onToggle={() => setTableExpanded((v) => !v)}
+        style={{ flexWrap: 'wrap', marginBottom: tableExpanded ? 'var(--space-3)' : 0 }}
+        actions={(
+          <>
+            {status && <span style={{ fontSize: 'var(--text-xs)', color: statusColor }}>{status.msg}</span>}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".xlsx,.xlsm,.csv"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                const f = e.target.files?.[0]
+                if (f) void handleFile(f)
+              }}
+            />
+            <Button variant="ghost" size="sm" onClick={handleUploadClick} disabled={busy} title="Upload cohort mappings from xlsx or csv">
+              {busy ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={14} />}
+              Upload
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => { void handleDownloadTemplate() }} title="Download a blank template with all cohort combinations">
+              <Download size={14} /> Template
+            </Button>
+          </>
+        )}
       >
-        <div
-          onClick={() => setTableExpanded((v) => !v)}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', flex: 1, minWidth: 0 }}
-        >
-          <span style={{ color: 'var(--text-tertiary)', display: 'flex' }}>
-            {tableExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-          </span>
-          <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-            Cohort mapping
-          </h4>
-          <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-            · {mappedCount} of {cohortKeys.length} mapped
-          </span>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {status && <span style={{ fontSize: 'var(--text-xs)', color: statusColor }}>{status.msg}</span>}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xlsx,.xlsm,.csv"
-            style={{ display: 'none' }}
-            onChange={(e) => {
-              const f = e.target.files?.[0]
-              if (f) void handleFile(f)
-            }}
-          />
-          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); handleUploadClick() }} disabled={busy} title="Upload cohort mappings from xlsx or csv">
-            {busy ? <Loader2 size={14} style={{ animation: 'spin 1s linear infinite' }} /> : <Upload size={14} />}
-            Upload
-          </Button>
-          <Button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); void handleDownloadTemplate() }} title="Download a blank template with all cohort combinations">
-            <Download size={14} /> Template
-          </Button>
-        </div>
-      </div>
+        {/* Named after the system itself, not "Cohort mapping" — that repeated
+            the modal title and read as a duplicate rather than as this
+            system's own section. Same resolution as the primary DSM tab
+            label in SubsystemTabs, including the "Main system" fallback. */}
+        <h4 data-testid="primary-mapping-heading" style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
+          {activeSystem?.name?.trim() || 'Main system'}
+        </h4>
+        <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+          · {mappedCount} of {cohortKeys.length} mapped
+        </span>
+      </CollapsibleSectionHeader>
 
-      {tableExpanded && (archetypes.length === 0 ? (
+      {/* Hidden, NOT unmounted (CLAUDE.md): edits auto-save, so unmounting the
+          body would discard a pending save and lose scroll/edit state. */}
+      <div
+        data-testid="primary-mapping-body"
+        style={{ display: tableExpanded ? 'block' : 'none' }}
+      >
+        {archetypes.length === 0 ? (
         <div style={{
           padding: 12, fontSize: 'var(--text-sm)', color: 'var(--text-tertiary)',
           textAlign: 'center', backgroundColor: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)',
@@ -422,7 +426,8 @@ export function CohortMappingEditor() {
             </tbody>
           </table>
         </div>
-      ))}
+        )}
+      </div>
 
       {pickerOpen && (
         <DimensionColorPicker

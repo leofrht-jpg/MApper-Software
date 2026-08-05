@@ -1120,6 +1120,34 @@ def _build_sharing_workbook(
             ["Allocated SOS formula"],
             ["  allocated_sos(pb, year) = PB_value × ∏ layer_factor(layer, pb, year)"],
         ]
+        if bundle is not None:
+            rows += [
+                [""],
+                ["Sheet: Configuration"],
+                ["  Single-value settings: which planetary-boundary set this"],
+                ["  configuration uses, and the template it was cloned from."],
+                [""],
+                ["Sheet: Method Mapping"],
+                ["  Maps each LCA method to a planetary boundary. 'Method Tuple' is"],
+                ["  joined with ' | ' because a method name can itself contain commas."],
+                [""],
+                ["Sheet: Carbon Budget"],
+                ["  Budget scalars, then a Year -> Gt/yr depletion pathway. Leave the"],
+                ["  sheet reading '(none)' for no carbon budget."],
+                [""],
+                ["Sheet: Reference (locked, read-only)"],
+                ["  Valid values for every constrained field, generated from this"],
+                ["  installation's own data — not a static list."],
+                [""],
+                ["NUMERIC PRECISION"],
+                ["  Numbers are rounded to 12 decimal places when this workbook is"],
+                ["  written. .xlsx stores numbers as ~15-significant-digit decimal"],
+                ["  text, so a value cannot carry full float64 precision through a"],
+                ["  spreadsheet. A cell here is therefore the canonical value of the"],
+                ["  setting, NOT necessarily the exact in-memory figure it was"],
+                ["  exported from (e.g. 3.6 where memory held 3.5999999999999996)."],
+                ["  Importing this file back is exact: what you read is what applies."],
+            ]
         for r in rows:
             ws.append(r)
         ws.column_dimensions["A"].width = 95

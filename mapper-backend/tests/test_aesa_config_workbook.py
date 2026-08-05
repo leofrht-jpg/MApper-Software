@@ -247,3 +247,22 @@ def test_preset_from_bundle_keeps_the_patch2a_seeding_defaults():
     assert preset.carbon_budget == b.carbon_budget
     assert preset.built_in is False
     assert preset.name == "Saved from import"
+
+
+def test_instructions_document_the_12dp_rounding():
+    """A reader must not mistake a cell for the exact in-memory float.
+
+    The workbook is canonical and the engine is left untouched, so the loss of
+    precision happens on write — that has to be stated where someone reading
+    the file will see it, not only in the commit history.
+    """
+    b = _bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    text = "\n".join(
+        str(r[0]) for r in wb["Instructions"].iter_rows(values_only=True) if r and r[0]
+    )
+    assert "12 decimal places" in text
+    assert "NOT necessarily the exact in-memory figure" in text
+    # and the sheets added by this feature are described
+    for sheet in ("Configuration", "Method Mapping", "Carbon Budget", "Reference"):
+        assert f"Sheet: {sheet}" in text, sheet

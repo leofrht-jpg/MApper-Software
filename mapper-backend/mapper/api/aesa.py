@@ -546,53 +546,16 @@ async def put_downscaling_chain(preset_id: str, chain: DownscalingChain) -> Shar
     return preset
 
 
-# ─── Sharing xlsx: template / export / import ────────────────────────────────
-
-
-@router.get("/sharing/template")
-async def get_sharing_template() -> Response:
-    """Download an xlsx template pre-filled with the built-in Ferhati preset."""
-    preset = build_default_sharing_preset()
-    wb = _build_sharing_workbook(preset, include_instructions=True)
-    return excel_response(wb, "aesa_sharing_template.xlsx", template=True)
-
-
-@router.get("/sharing/export/{preset_id}")
-async def get_sharing_export(preset_id: str) -> Response:
-    raw = sharing_preset_storage.load(preset_id)
-    if raw is None:
-        raise HTTPException(status_code=404, detail=f"Preset '{preset_id}' not found")
-    preset = SharingPreset(**raw)
-    wb = _build_sharing_workbook(preset, include_instructions=True)
-    filename = f"{_sanitize_filename(preset.name, 'aesa_sharing')}.xlsx"
-    return excel_response(wb, filename)
-
-
-@router.post("/sharing/import", response_model=SharingPreset)
-async def post_sharing_import(
-    file: UploadFile = File(...),
-    name: str | None = None,
-) -> SharingPreset:
-    """Parse an uploaded xlsx into a new editable preset and persist it."""
-    content = await file.read()
-    try:
-        wb = load_workbook(io.BytesIO(content), data_only=True)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Cannot read xlsx: {e}") from e
-    try:
-        preset = _parse_sharing_workbook(wb, name or (file.filename or "Imported preset"))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    now = datetime.now(timezone.utc).isoformat()
-    preset = preset.model_copy(update={
-        "id": uuid.uuid4().hex,
-        "built_in": False,
-        "created_at": now,
-        "updated_at": now,
-    })
-    sharing_preset_storage.save(preset.model_dump())
-    return preset
-
+# ─── Sharing-preset xlsx endpoints: RETIRED ──────────────────────────────────
+#
+# GET /sharing/template, GET /sharing/export/{id} and POST /sharing/import were
+# removed once the AESACFG trio below superseded them: those carried only the
+# sharing preset, while section (2) also holds the boundary set, method -> PB
+# mapping and carbon budget, so a preset-only workbook could not round-trip the
+# section. Nothing in the app called them after the UI buttons were widened.
+#
+# `_build_sharing_workbook` / `_parse_sharing_workbook` are NOT dead: the
+# AESACFG builder and parser both delegate to them for the preset half.
 
 # ─── Whole-configuration xlsx (AESACFG): template / export / import ──────────
 #

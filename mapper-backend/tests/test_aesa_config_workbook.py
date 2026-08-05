@@ -266,3 +266,46 @@ def test_instructions_document_the_12dp_rounding():
     # and the sheets added by this feature are described
     for sheet in ("Configuration", "Method Mapping", "Carbon Budget", "Reference"):
         assert f"Sheet: {sheet}" in text, sheet
+
+
+# ── The demo project must not break the round trip ──────────────────────────
+
+
+def test_demo_stamped_export_still_imports():
+    """A config exported from a demo project must be re-importable.
+
+    excel_response() stamps a warning row at the top of every sheet on a demo
+    project. That row landed above the header row, so the importer rejected the
+    very file MApper had just exported — and the demo project is exactly what a
+    reviewer uses. Config exports are now marked round-trippable (prefix only),
+    and the parser additionally tolerates a stamped row so files exported
+    before that fix still load.
+    """
+    from mapper.api.cohort_export import stamp_demo_warning
+
+    b = _bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    stamp_demo_warning(wb)          # simulate the pre-fix demo export
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    back = _parse_aesa_config_workbook(load_workbook(buf, data_only=True), "demo")
+
+    assert back.boundary_set_id == b.boundary_set_id
+    assert [m.model_dump() for m in back.method_mapping] == \
+           [m.model_dump() for m in b.method_mapping]
+    assert back.carbon_budget is not None
+
+
+def test_config_export_endpoint_is_marked_round_trippable():
+    """Structural: the export must not be stamped, or the file cannot re-import."""
+    import inspect
+
+    from mapper.api import aesa
+
+    src = inspect.getsource(aesa.post_config_export)
+    assert "template=True" in src, (
+        "config export must pass template=True so excel_response does not stamp "
+        "a warning row above the header row"
+    )

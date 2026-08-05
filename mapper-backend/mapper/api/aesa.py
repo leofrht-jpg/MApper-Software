@@ -636,7 +636,13 @@ async def post_config_export(body: AESAConfiguration) -> Response:
         carbon_budget=body.carbon_budget,
     )
     wb = _build_sharing_workbook(preset, include_instructions=True, bundle=bundle)
-    return excel_response(wb, _config_filename(body.name))
+    # template=True here means "MApper reads this file back", not "this is a
+    # blank scaffold": the demo-project warning row would sit above the header
+    # row and the importer would reject the very file we just exported. A
+    # settings workbook carries no fictional measurements — only configuration
+    # — so the DEMO_ filename prefix is the appropriate marker. Regression:
+    # test_demo_stamped_export_still_imports.
+    return excel_response(wb, _config_filename(body.name), template=True)
 
 
 @router.post("/config/import", response_model=AESAConfigBundle)
@@ -1197,10 +1203,20 @@ def _norm_header(value) -> str:
 
 
 def _read_sheet_rows(ws) -> tuple[list[str], list[list]]:
-    """Return (headers lowercased, data rows) ignoring fully-empty trailing rows."""
+    """Return (headers lowercased, data rows) ignoring fully-empty trailing rows.
+
+    Skips a leading demo warning row if present. Workbooks exported from a demo
+    project before the export was marked round-trippable carry one, and it would
+    otherwise be read as the header row.
+    """
     rows = list(ws.iter_rows(values_only=True))
     if not rows:
         return [], []
+    if rows and rows[0] and isinstance(rows[0][0], str) and \
+            "SYNTHETIC DEMO DATA" in rows[0][0]:
+        rows = rows[1:]
+        if not rows:
+            return [], []
     headers = [_norm_header(h) for h in rows[0]]
     data = []
     for r in rows[1:]:

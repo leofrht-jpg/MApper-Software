@@ -4411,3 +4411,95 @@ export async function getDemoStatus(): Promise<DemoStatus> {
 export async function loadDemoProject(rebuild = false): Promise<DemoLoadResult> {
   return request<DemoLoadResult>(`/demo/load?rebuild=${rebuild}`, { method: 'POST' })
 }
+
+// ── AESA whole-configuration workbook (AESACFG) ──────────────────────────────
+//
+// Supersedes the preset-only /aesa/sharing/* trio for the UI: these carry all
+// of section (2), not just the sharing preset. The server owns the filename
+// (and prefixes DEMO_ on a demo project), so these prefer Content-Disposition
+// over any client-side guess — CORS already exposes that header.
+
+export interface AESAConfigBundle {
+  boundary_set_id: string
+  sharing_preset_id: string | null
+  sharing: SharingPreset
+  method_mapping: MethodPBMapping[]
+  carbon_budget: CarbonBudgetConfig | null
+}
+
+export interface AESAConfigImportError {
+  sheet: string
+  field: string
+  error: string
+}
+
+async function _downloadPreferringServerName(
+  path: string,
+  init: RequestInit,
+  fallback: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}${path}`, init)
+  if (!res.ok) throw new Error(`${path} failed: ${res.status} ${await res.text()}`)
+  const served = res.headers
+    .get('content-disposition')
+    ?.split('filename=')[1]
+    ?.replace(/"/g, '')
+    ?.trim()
+  const blob = await res.blob()
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = served || fallback
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+}
+
+export async function downloadAESAConfigTemplate(): Promise<void> {
+  return _downloadPreferringServerName(
+    '/aesa/config/template', { method: 'GET' }, 'AESA_configuration_template_AESACFG.xlsx')
+}
+
+export async function exportAESAConfig(config: AESAConfiguration): Promise<void> {
+  return _downloadPreferringServerName(
+    '/aesa/config/export',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(config),
+    },
+    'AESA_configuration_AESACFG.xlsx',
+  )
+}
+
+/**
+ * Parse + validate a workbook. Applies NOTHING — the caller shows the confirm
+ * dialog and then applies the returned bundle, because replacing the active
+ * configuration is destructive.
+ *
+ * Throws with `.errors` populated when the workbook is rejected, so the caller
+ * can list every failing sheet/field rather than just the first.
+ */
+export async function importAESAConfig(
+  file: File,
+  saveAsPreset?: string,
+): Promise<AESAConfigBundle> {
+  const form = new FormData()
+  form.append('file', file)
+  const qs = saveAsPreset ? `?save_as_preset=${encodeURIComponent(saveAsPreset)}` : ''
+  const res = await fetch(`${API_BASE}/aesa/config/import${qs}`, { method: 'POST', body: form })
+  if (!res.ok) {
+    let errors: AESAConfigImportError[] = []
+    try {
+      const body = await res.json()
+      errors = body?.detail?.errors ?? []
+    } catch { /* non-JSON error body */ }
+    const err = new Error(
+      errors.length ? `Import rejected (${errors.length} problem(s))` : `Import failed: ${res.status}`,
+    ) as Error & { errors: AESAConfigImportError[] }
+    err.errors = errors
+    throw err
+  }
+  return res.json()
+}

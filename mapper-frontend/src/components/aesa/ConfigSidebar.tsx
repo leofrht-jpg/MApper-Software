@@ -18,6 +18,7 @@ import { useDSMStore } from '../../stores/dsmStore'
 import { useImpactStore } from '../../stores/impactStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { PresetSelector } from './PresetSelector'
+import { ConfigWorkbookButtons } from './ConfigWorkbookButtons'
 import { CategoryAssignmentsTable } from './CategoryAssignmentsTable'
 import { DownscalingChainEditor } from './DownscalingChainEditor'
 import { PrinciplesEditor } from './PrinciplesEditor'
@@ -27,6 +28,7 @@ import type {
   ImpactAssessmentResult,
   ProspectiveSingleProductPoint,
   SSPTrajectory,
+  AESAConfiguration,
 } from '../../api/client'
 import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
@@ -812,7 +814,22 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
             </Section>
             </StageGroup>
 
-            <StageGroup number={2} title="AESA configuration (carrying capacity)">
+            <StageGroup
+              number={2}
+              title="AESA configuration"
+              actions={(
+                <ConfigWorkbookButtons
+                  config={draft as unknown as AESAConfiguration}
+                  onApply={(bundle) => updateDraft({
+                    boundary_set_id: bundle.boundary_set_id,
+                    sharing_preset_id: bundle.sharing_preset_id,
+                    sharing: bundle.sharing,
+                    method_mapping: bundle.method_mapping,
+                    carbon_budget: bundle.carbon_budget,
+                  })}
+                />
+              )}
+            >
             {/* Boundary set */}
             <Section title="Planetary Boundary set">
               <select
@@ -1689,21 +1706,34 @@ function Section({ title, children, right }: { title: string; children: React.Re
 // conditional-unmount (would destroy child-local state and re-trigger the
 // Issue-2 class of "control disappeared because its ancestor stopped rendering
 // it"). Defaults expanded; each group collapses independently (local state).
-function StageGroup({ number, title, children }: { number: number; title: string; children: React.ReactNode }) {
+function StageGroup({ number, title, actions, children }: {
+  number: number
+  title: string
+  /** Header controls. Rendered BESIDE the toggle, never inside it: the toggle
+   *  is a <button>, so nesting buttons would be invalid HTML and every click
+   *  would collapse the section. Sitting them as siblings removes the
+   *  event-bubbling trap by construction rather than by stopPropagation. */
+  actions?: React.ReactNode
+  children: React.ReactNode
+}) {
   const [open, setOpen] = useState(true)
   return (
     <div data-testid={`aesa-stage-${number}`} style={{ display: 'flex', flexDirection: 'column' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center',
+        background: 'var(--bg-elevated)',
+        borderTop: '1px solid var(--border-default)',
+        borderBottom: '1px solid var(--border-default)',
+      }}>
       <button
         type="button"
         data-testid={`aesa-stage-${number}-toggle`}
         onClick={() => setOpen((x) => !x)}
         aria-expanded={open}
         style={{
-          display: 'flex', alignItems: 'center', gap: 8, width: '100%',
+          display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0,
           padding: '8px 12px',
-          background: 'var(--bg-elevated)',
-          borderTop: '1px solid var(--border-default)',
-          borderBottom: '1px solid var(--border-default)',
+          background: 'transparent', border: 'none',
           cursor: 'pointer', textAlign: 'left',
         }}
       >
@@ -1724,6 +1754,12 @@ function StageGroup({ number, title, children }: { number: number; title: string
           }}
         />
       </button>
+        {actions && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '0 10px 0 0', flexShrink: 0 }}>
+            {actions}
+          </div>
+        )}
+      </div>
       <div data-testid={`aesa-stage-${number}-body`} style={{ display: open ? 'block' : 'none' }}>
         {children}
       </div>

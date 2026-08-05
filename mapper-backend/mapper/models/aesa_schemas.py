@@ -501,6 +501,51 @@ class AESAConfiguration(BaseModel):
     created_at: str
 
 
+class AESAConfigBundle(BaseModel):
+    """Everything one AESACFG workbook carries — the whole of section (2).
+
+    Deliberately NOT a storage model. It is the *lossy Excel transport*: it
+    drops ids, timestamps and result linkage, and exists only to move a
+    configuration between machines/people. The authoritative immutable record
+    for compute remains ``AESASession.configuration_snapshot``; the two do not
+    share a serialiser, on purpose — the snapshot must stay exact.
+
+    The workbook spans TWO objects, and which field belongs to which matters:
+
+    ``SharingPreset`` (the reusable carrying-capacity template)
+        name, description, principles, category_assignments, chain
+        — plus ``boundary_set_id`` / ``carbon_budget``, which live on the preset
+        as CREATION-TIME DEFAULTS for seeding new configs (Patch 2a).
+
+    ``AESAConfiguration`` (what compute actually reads)
+        boundary_set_id, carbon_budget, method_mapping, sharing_preset_id
+        — the config snapshot is authoritative; the preset never overrides it.
+
+    ``method_mapping`` has NO home on ``SharingPreset``. Importing must never
+    write it onto a preset, or a preset would silently acquire a field the
+    schema does not model. See ``to_preset()``.
+    """
+    boundary_set_id: str = "Sala2020_EF"
+    sharing_preset_id: str | None = None
+    sharing: SharingPreset
+    method_mapping: list[MethodPBMapping] = Field(default_factory=list)
+    carbon_budget: CarbonBudgetConfig | None = None
+
+    def to_preset(self, name: str) -> SharingPreset:
+        """The SharingPreset half, for "also save as a new preset".
+
+        Carries the preset-level fields plus the two Patch-2a seeding defaults.
+        ``method_mapping`` is deliberately NOT passed: it is config-level only.
+        """
+        return self.sharing.model_copy(update={
+            "id": "",
+            "name": name,
+            "built_in": False,
+            "boundary_set_id": self.boundary_set_id,
+            "carbon_budget": self.carbon_budget,
+        })
+
+
 class SharingPresetCreate(BaseModel):
     """Body for POST /sharing-presets. Server assigns id/timestamps."""
     name: str

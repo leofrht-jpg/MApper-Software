@@ -7,8 +7,8 @@
  * Lead developer: Leonardo Ferhati
  */
 
-import { useEffect, useRef, useState } from 'react'
-import { Copy, Download, FileSpreadsheet, Lock, Plus, Save, Trash2, Upload } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Copy, Lock, Plus, Save, Trash2 } from 'lucide-react'
 import { useAESAStore } from '../../stores/aesaStore'
 
 const BUILTIN_PRESET_ID = 'ferhati_2026_multi_d'
@@ -19,12 +19,10 @@ export function PresetSelector() {
   const {
     draft, presets, presetsLoading,
     loadPresets, selectPreset, duplicatePreset, deletePreset,
-    savePreset, savePresetAs, importPresetFile, exportPresetFile,
-    downloadSharingTemplate,
+    savePreset, savePresetAs,
   } = useAESAStore()
 
   const [busy, setBusy] = useState<string | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { void loadPresets() }, [loadPresets])
 
@@ -74,26 +72,6 @@ export function PresetSelector() {
   const handleSave = async () => {
     setBusy('save')
     try { await savePreset() } finally { setBusy(null) }
-  }
-
-  const handleImport = async (file: File) => {
-    setBusy('import')
-    try { await importPresetFile(file) } finally { setBusy(null) }
-  }
-
-  const handleExport = async () => {
-    if (!draftExistsGlobally) {
-      alert('Save the preset before exporting.')
-      return
-    }
-    const safe = draft.sharing.name.replace(/[^\w.-]+/g, '_') || 'preset'
-    setBusy('export')
-    try { await exportPresetFile(sharingId, `${safe}.xlsx`) } finally { setBusy(null) }
-  }
-
-  const handleTemplate = async () => {
-    setBusy('template')
-    try { await downloadSharingTemplate('sharing_template.xlsx') } finally { setBusy(null) }
   }
 
   return (
@@ -156,29 +134,13 @@ export function PresetSelector() {
         </ActionBtn>
       </div>
 
-      {/* Action buttons — second row (xlsx) */}
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
-        <ActionBtn onClick={() => fileRef.current?.click()} disabled={busy !== null} title="Import sharing preset from .xlsx">
-          <Upload size={11} /> Import
-        </ActionBtn>
-        <ActionBtn onClick={handleExport} disabled={busy !== null || !draftExistsGlobally} title="Export the current preset as .xlsx">
-          <Download size={11} /> Export
-        </ActionBtn>
-        <ActionBtn onClick={handleTemplate} disabled={busy !== null} title="Download a pre-filled xlsx template">
-          <FileSpreadsheet size={11} /> Template
-        </ActionBtn>
-        <input
-          ref={fileRef}
-          type="file"
-          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            const f = e.target.files?.[0]
-            if (f) void handleImport(f)
-            if (fileRef.current) fileRef.current.value = ''
-          }}
-        />
-      </div>
+      {/* The xlsx Import / Export / Template trio that used to sit here has
+          MOVED to the section (2) header (ConfigWorkbookButtons). It now
+          round-trips the whole configuration — boundary set, method -> PB
+          mapping and carbon budget as well as this preset — so it no longer
+          belongs inside the "Sharing preset" collapsible. Keeping a second,
+          preset-only trio here would put two near-identical control groups
+          in one dense section. */}
     </div>
   )
 }

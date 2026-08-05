@@ -18,7 +18,7 @@ import * as client from '../src/api/client'
 
 // Phase 3 — the Configuration sidebar is reorganized into 3 numbered stages:
 //   1. LCIA configuration (SR numerator)  — Compute Source cascade
-//   2. AESA configuration (carrying capacity) — PB set, Method→PB mapping,
+//   2. AESA configuration — PB set, Method→PB mapping,
 //      sharing preset, downscaling chain, principles, assignments, carbon budget
 //   3. Saved sessions
 // Presentational only: same components/testids/store bindings, reparented.
@@ -80,7 +80,12 @@ describe('AESA ConfigSidebar — 3 numbered stages (Phase 3)', () => {
   it('renders the three numbered stage headers', async () => {
     const { getByTestId } = await renderSidebar()
     expect(within(getByTestId('aesa-stage-1')).getByText('LCIA configuration')).toBeTruthy()
-    expect(within(getByTestId('aesa-stage-2')).getByText('AESA configuration (carrying capacity)')).toBeTruthy()
+    // Renamed: the "(carrying capacity)" qualifier was dropped when the
+    // section gained whole-configuration Template/Export/Import buttons —
+    // it now covers the configuration, not just the carrying-capacity half.
+    const stage2 = within(getByTestId('aesa-stage-2'))
+    expect(stage2.getByText('AESA configuration')).toBeTruthy()
+    expect(getByTestId('aesa-stage-2').textContent).not.toContain('carrying capacity')
     expect(within(getByTestId('aesa-stage-3')).getByText(/Saved sessions/)).toBeTruthy()
   })
 

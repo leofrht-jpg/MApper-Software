@@ -18,6 +18,7 @@ import io
 import uuid
 from datetime import datetime, timezone
 
+from pydantic import ValidationError
 from fastapi import APIRouter, Depends, HTTPException, Response, UploadFile, File
 
 from mapper.api.project_guard import verify_project_state
@@ -49,6 +50,7 @@ from mapper.core.aesa_engine import (
 from mapper.models.aesa_schemas import (
     AESAComputeRequest,
     AESAComputeResult,
+    AESAConfigBundle,
     AESAConfiguration,
     AESAConfigurationCreate,
     AESAExportRequest,
@@ -56,6 +58,7 @@ from mapper.models.aesa_schemas import (
     AESASessionCreate,
     AESASessionRename,
     BoundarySet,
+    CarbonBudgetConfig,
     CategoryAssignment,
     DownscalingChain,
     DownscalingLayer,
@@ -68,6 +71,7 @@ from mapper.models.aesa_schemas import (
 from mapper.models.bom_schemas import ImpactAssessmentResult
 
 
+from mapper.api.bom import build_export_filename
 from mapper.api.cohort_export import excel_response
 
 
@@ -590,6 +594,96 @@ async def post_sharing_import(
     return preset
 
 
+# ─── Whole-configuration xlsx (AESACFG): template / export / import ──────────
+#
+# These supersede the preset-only /sharing/* trio for the UI. Filenames use the
+# AESACFG domain token: "AESA" is already the results export, and these carry a
+# configuration, not results.
+
+
+def _config_filename(name: str) -> str:
+    return build_export_filename(name or "AESA", [], "AESACFG")
+
+
+@router.get("/config/template")
+async def get_config_template() -> Response:
+    """Blank-but-complete workbook: every field present, seeded with defaults.
+
+    Defaults are real values (the built-in template + the default budget) and
+    are labelled as such on the Configuration sheet, so the file doubles as the
+    "what can I configure?" artefact.
+    """
+    preset = build_default_sharing_preset()
+    bundle = AESAConfigBundle(
+        boundary_set_id=preset.boundary_set_id,
+        sharing=preset,
+        method_mapping=[],
+        carbon_budget=build_carbon_budget(),
+    )
+    wb = _build_sharing_workbook(preset, include_instructions=True, bundle=bundle)
+    return excel_response(wb, _config_filename("AESA_configuration_template"), template=True)
+
+
+@router.post("/config/export")
+async def post_config_export(body: AESAConfiguration) -> Response:
+    """Write the CURRENT configuration out, ready to re-import or hand on."""
+    preset = body.sharing or build_default_sharing_preset()
+    bundle = AESAConfigBundle(
+        boundary_set_id=body.boundary_set_id,
+        sharing_preset_id=body.sharing_preset_id,
+        sharing=preset,
+        method_mapping=body.method_mapping,
+        carbon_budget=body.carbon_budget,
+    )
+    wb = _build_sharing_workbook(preset, include_instructions=True, bundle=bundle)
+    return excel_response(wb, _config_filename(body.name))
+
+
+@router.post("/config/import", response_model=AESAConfigBundle)
+async def post_config_import(
+    file: UploadFile = File(...),
+    save_as_preset: str | None = None,
+) -> AESAConfigBundle:
+    """Parse + validate a workbook and RETURN the bundle. Applies nothing.
+
+    Applying is the caller's move, behind the inline confirm dialog — this is
+    destructive to the active configuration, so the server does not decide it.
+    Everything is validated first; any failure rejects the whole import.
+
+    ``save_as_preset`` additionally persists the preset half under that name.
+    ``method_mapping`` is NOT written to it — that field is config-level and has
+    no home on SharingPreset (see AESAConfigBundle.to_preset).
+    """
+    content = await file.read()
+    try:
+        wb = load_workbook(io.BytesIO(content), data_only=True)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Cannot read xlsx: {e}") from e
+
+    try:
+        bundle = _parse_aesa_config_workbook(wb, file.filename or "Imported configuration")
+    except ImportRejected as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "import_rejected", "errors": e.errors},
+        ) from e
+    except ValueError as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": "import_rejected",
+                    "errors": [{"sheet": "-", "field": "-", "error": str(e)}]},
+        ) from e
+
+    if save_as_preset:
+        now = datetime.now(timezone.utc).isoformat()
+        preset = bundle.to_preset(save_as_preset).model_copy(update={
+            "id": uuid.uuid4().hex, "created_at": now, "updated_at": now,
+        })
+        sharing_preset_storage.save(preset.model_dump())
+
+    return bundle
+
+
 # ─── Export ──────────────────────────────────────────────────────────────────
 
 
@@ -871,9 +965,37 @@ def _autosize_sharing(ws) -> None:
         ws.column_dimensions[get_column_letter(col_idx)].width = max(12, widest + 2)
 
 
-def _build_sharing_workbook(preset: SharingPreset, include_instructions: bool = True) -> Workbook:
+def _build_sharing_workbook(
+    preset: SharingPreset,
+    include_instructions: bool = True,
+    *,
+    bundle: "AESAConfigBundle | None" = None,
+) -> Workbook:
+    """Serialise a section-(2) configuration to xlsx.
+
+    ``bundle`` carries the config-level half (boundary set, method mapping,
+    carbon budget). When omitted the workbook degrades to the preset-only
+    shape it had before, so the older sharing-preset callers keep working.
+    """
     wb = Workbook()
     wb.remove(wb.active)
+
+    # Sheet 0: Configuration — the single-value settings. First sheet because
+    # it is what a reader wants to see first: which boundary set, which preset.
+    if bundle is not None:
+        ws = wb.create_sheet("Configuration")
+        ws.append(["Setting", "Value", "Notes"])
+        _style_sharing_header(ws)
+        for row in [
+            ["boundary_set_id", bundle.boundary_set_id,
+             "Planetary-boundary set. Valid ids on the Reference sheet."],
+            ["sharing_preset_id", bundle.sharing_preset_id or "",
+             "Bookmark to the preset this was cloned from. Compute ignores it."],
+            ["preset_name", preset.name, "Name of the carrying-capacity template."],
+            ["preset_description", preset.description, ""],
+        ]:
+            ws.append(row)
+        _autosize_sharing(ws)
 
     # Sheet 1: Principles
     ws = wb.create_sheet("Principles")
@@ -913,6 +1035,57 @@ def _build_sharing_workbook(preset: SharingPreset, include_instructions: bool = 
                 ws.append([layer.layer_number, principle_id, sys_val, glob_val, year, ""])
     _autosize_sharing(ws)
 
+    # Sheet: Method -> PB mapping. CONFIG-LEVEL — this has no home on
+    # SharingPreset, so it is only written when a bundle is supplied.
+    if bundle is not None:
+        ws = wb.create_sheet("Method Mapping")
+        ws.append(["Method Tuple", "PB ID", "Conversion Factor"])
+        _style_sharing_header(ws)
+        for m in bundle.method_mapping:
+            # The tuple is joined with " | " because a method name can itself
+            # contain commas ("climate change, GWP100").
+            ws.append([" | ".join(m.method_tuple), m.pb_id, m.conversion_factor])
+        _autosize_sharing(ws)
+
+    # Sheet: Carbon budget. Scalars as key/value, then the depletion pathway
+    # as a year->Gt block, which is the shape a user actually edits.
+    if bundle is not None:
+        ws = wb.create_sheet("Carbon Budget")
+        ws.append(["Setting", "Value", "Notes"])
+        _style_sharing_header(ws)
+        cb = bundle.carbon_budget
+        if cb is None:
+            ws.append(["(none)", "", "No carbon budget configured for this configuration."])
+        else:
+            for row in [
+                ["initial_budget_gt", cb.initial_budget_gt, "Gt CO2 (or CO2e once basis-applied)"],
+                ["budget_source", cb.budget_source, "e.g. IPCC AR6 1.5C 67th pct"],
+                ["start_year", cb.start_year, ""],
+                ["end_year", cb.end_year, ""],
+                ["ssp_scenario", cb.ssp_scenario, "Valid pathways on the Reference sheet"],
+                ["budget_basis", cb.budget_basis, "CO2 or CO2e_GHG"],
+                ["provisional", "TRUE" if cb.provisional else "FALSE", ""],
+            ]:
+                ws.append(row)
+            # co2e_conversion is a SOURCED input the schema refuses to
+            # fabricate. Dropping it here would silently make a CO2e_GHG basis
+            # inert on re-import, so it round-trips explicitly.
+            conv = cb.co2e_conversion
+            ws.append(["co2e_factor", round(conv.factor, 12) if conv else "",
+                       "Sourced CO2->CO2e factor. Blank = none."])
+            ws.append(["co2e_kind", conv.kind if conv else "", ""])
+            ws.append(["co2e_source", conv.source if conv else "", ""])
+            ws.append([])
+            ws.append(["Year", "Projected Emissions (Gt/yr)", ""])
+            for year in sorted(cb.projected_emissions):
+                # Rounded so the workbook is the exact value on the way back.
+                # These come from interpolation, so the raw doubles carry
+                # binary-repr noise (3.5999999999999996) that xlsx does not
+                # preserve; 12 dp is far finer than Gt/yr data warrants and
+                # makes export -> import -> export idempotent.
+                ws.append([year, round(float(cb.projected_emissions[year]), 12), ""])
+        _autosize_sharing(ws)
+
     # Sheet 5: Instructions
     if include_instructions:
         ws = wb.create_sheet("Instructions")
@@ -951,6 +1124,43 @@ def _build_sharing_workbook(preset: SharingPreset, include_instructions: bool = 
             ws.append(r)
         ws.column_dimensions["A"].width = 95
 
+    # Reference — every constrained field's valid values, read from LIVE data
+    # (boundary sets, AR6 budget options, SSP pathways) rather than hardcoded,
+    # so it cannot drift from what the engine accepts. Locked read-only, same
+    # as the subsystem cohort-mapping template.
+    if bundle is not None:
+        ref = wb.create_sheet("Reference")
+        ref.append(["Field", "Valid value", "Detail"])
+        _style_sharing_header(ref)
+
+        for bs in load_boundary_sets().values():
+            ref.append(["boundary_set_id", bs.id, f"{bs.name} — {bs.source}"])
+
+        for pr in preset.principles:
+            ref.append(["principle_id", pr.id, pr.name])
+
+        ref.append(["principle_mode", "category_specific", "Layer resolves per impact category"])
+        ref.append(["principle_mode", "fixed", "Layer uses one principle throughout"])
+
+        # AR6 temperature x probability combinations, as the engine serves them.
+        for opt in load_carbon_budget_options():
+            ref.append([
+                "carbon_budget option",
+                opt.get("id", ""),
+                f"{opt.get('name', '')} — {opt.get('remaining_gt_from_2025', '')} Gt "
+                f"from 2025 ({opt.get('source_budget', '')})",
+            ])
+
+        for ssp in load_ssp_trajectories():
+            ref.append(["ssp_scenario", ssp.get("id", ""), ssp.get("name", "")])
+
+        ref.append(["budget_basis", "CO2", "Default. No conversion applied."])
+        ref.append(["budget_basis", "CO2e_GHG",
+                    "Requires a sourced co2e_conversion; inert without one."])
+
+        _autosize_sharing(ref)
+        ref.protection.sheet = True  # locked / read-only
+
     return wb
 
 
@@ -979,6 +1189,182 @@ def _col(headers: list[str], *aliases: str) -> int:
         if key in headers:
             return headers.index(key)
     return -1
+
+
+class ImportRejected(ValueError):
+    """Import failed validation. Carries EVERY problem found, not just the first.
+
+    A half-applied AESA configuration is worse than none, so nothing is applied
+    until the whole workbook validates.
+    """
+
+    def __init__(self, errors: list[dict]):
+        self.errors = errors
+        super().__init__(f"{len(errors)} validation error(s)")
+
+
+def _kv_sheet(ws) -> dict[str, object]:
+    """Read a two-column Setting/Value sheet into a dict."""
+    out: dict[str, object] = {}
+    for row in ws.iter_rows(values_only=True):
+        if not row or row[0] is None:
+            continue
+        key = str(row[0]).strip()
+        if not key or key.lower() == "setting":
+            continue
+        out[key] = row[1] if len(row) > 1 else None
+    return out
+
+
+def _parse_aesa_config_workbook(wb: Workbook, default_name: str) -> AESAConfigBundle:
+    """Parse a full section-(2) workbook into a validated bundle.
+
+    Collects every error and raises once, so the caller can show the user all
+    of them and apply nothing. Validation is delegated to the Pydantic models
+    wherever possible — the same models compute reads — so the rules cannot
+    drift from the compute path.
+    """
+    errors: list[dict] = []
+
+    # The preset half reuses the existing parser, which already validates
+    # principles / assignments / chain / data against each other.
+    preset: SharingPreset | None = None
+    try:
+        preset = _parse_sharing_workbook(wb, default_name)
+    except ValueError as e:
+        errors.append({"sheet": "Principles/Chain", "field": "-", "error": str(e)})
+
+    cfg = _kv_sheet(wb["Configuration"]) if "Configuration" in wb.sheetnames else {}
+
+    # boundary_set_id — must name a set the engine actually has
+    valid_sets = set(load_boundary_sets())
+    boundary_set_id = str(cfg.get("boundary_set_id") or "Sala2020_EF").strip()
+    if boundary_set_id not in valid_sets:
+        errors.append({
+            "sheet": "Configuration", "field": "boundary_set_id",
+            "error": f"unknown boundary set '{boundary_set_id}'; "
+                     f"valid: {sorted(valid_sets)}",
+        })
+
+    sharing_preset_id = str(cfg.get("sharing_preset_id") or "").strip() or None
+    if preset is not None:
+        name = str(cfg.get("preset_name") or preset.name).strip() or preset.name
+        preset = preset.model_copy(update={
+            "name": name,
+            "description": str(cfg.get("preset_description") or "").strip(),
+        })
+
+    # Method Mapping — config-level
+    method_mapping: list[MethodPBMapping] = []
+    if "Method Mapping" in wb.sheetnames:
+        headers, rows = _read_sheet_rows(wb["Method Mapping"])
+        i_m = _col(headers, "method tuple", "method")
+        i_pb = _col(headers, "pb id")
+        i_cf = _col(headers, "conversion factor")
+        if i_m < 0 or i_pb < 0:
+            errors.append({
+                "sheet": "Method Mapping", "field": "-",
+                "error": "requires 'Method Tuple' and 'PB ID' columns",
+            })
+        else:
+            for n, r in enumerate(rows, start=2):
+                if r[i_m] is None or str(r[i_m]).strip() == "":
+                    continue
+                tup = [s.strip() for s in str(r[i_m]).split("|") if s.strip()]
+                pb = str(r[i_pb] or "").strip()
+                if not pb:
+                    errors.append({"sheet": "Method Mapping", "field": f"row {n} / PB ID",
+                                   "error": "missing PB ID"})
+                    continue
+                factor = 1.0
+                if i_cf >= 0 and r[i_cf] is not None:
+                    try:
+                        factor = float(r[i_cf])
+                    except (TypeError, ValueError):
+                        errors.append({
+                            "sheet": "Method Mapping",
+                            "field": f"row {n} / Conversion Factor",
+                            "error": f"not a number: {r[i_cf]!r}",
+                        })
+                        continue
+                try:
+                    method_mapping.append(
+                        MethodPBMapping(method_tuple=tup, pb_id=pb, conversion_factor=factor))
+                except ValidationError as e:
+                    errors.append({"sheet": "Method Mapping", "field": f"row {n}",
+                                   "error": str(e)})
+
+    # Carbon Budget — config-level
+    carbon_budget: CarbonBudgetConfig | None = None
+    if "Carbon Budget" in wb.sheetnames:
+        ws = wb["Carbon Budget"]
+        kv = _kv_sheet(ws)
+        if "(none)" not in kv:
+            emissions: dict[int, float] = {}
+            in_block = False
+            for row in ws.iter_rows(values_only=True):
+                if not row or row[0] is None:
+                    continue
+                head = str(row[0]).strip().lower()
+                if head == "year":
+                    in_block = True
+                    continue
+                if not in_block:
+                    continue
+                try:
+                    emissions[int(row[0])] = float(row[1])
+                except (TypeError, ValueError):
+                    errors.append({
+                        "sheet": "Carbon Budget", "field": f"year {row[0]!r}",
+                        "error": "projected emissions row must be (int year, number)",
+                    })
+            conv = None
+            if str(kv.get("co2e_factor") or "").strip() != "":
+                try:
+                    conv = {
+                        "factor": float(kv["co2e_factor"]),
+                        "kind": str(kv.get("co2e_kind") or "ratio").strip(),
+                        "source": str(kv.get("co2e_source") or "").strip(),
+                    }
+                except (TypeError, ValueError):
+                    errors.append({
+                        "sheet": "Carbon Budget", "field": "co2e_factor",
+                        "error": f"not a number: {kv.get('co2e_factor')!r}",
+                    })
+            payload = {
+                "co2e_conversion": conv,
+                "initial_budget_gt": kv.get("initial_budget_gt"),
+                "budget_source": str(kv.get("budget_source") or "").strip(),
+                "start_year": kv.get("start_year"),
+                "end_year": kv.get("end_year"),
+                "ssp_scenario": str(kv.get("ssp_scenario") or "").strip(),
+                "budget_basis": str(kv.get("budget_basis") or "CO2").strip(),
+                "provisional": str(kv.get("provisional") or "").strip().upper() == "TRUE",
+                "projected_emissions": emissions,
+            }
+            try:
+                # Pydantic is the validator — same model compute uses, so the
+                # accepted values cannot drift from what the engine accepts.
+                carbon_budget = CarbonBudgetConfig(**payload)
+            except ValidationError as e:
+                for err in e.errors():
+                    errors.append({
+                        "sheet": "Carbon Budget",
+                        "field": ".".join(str(x) for x in err["loc"]) or "-",
+                        "error": err["msg"],
+                    })
+
+    if errors:
+        raise ImportRejected(errors)
+
+    assert preset is not None  # no errors => preset parsed
+    return AESAConfigBundle(
+        boundary_set_id=boundary_set_id,
+        sharing_preset_id=sharing_preset_id,
+        sharing=preset,
+        method_mapping=method_mapping,
+        carbon_budget=carbon_budget,
+    )
 
 
 def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:

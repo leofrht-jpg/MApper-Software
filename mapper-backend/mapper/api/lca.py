@@ -1752,7 +1752,7 @@ async def export_contribution_analysis(body: ContributionAnalysisExportRequest) 
     safe = (body.result.target_label or "target").replace(" ", "-")[:40]
     date_tag = datetime.date.today().isoformat()
     filename = f"MApper_LCA_Contribution_{safe}_{date_tag}.xlsx"
-    return excel_response(wb, filename)
+    return excel_response(wb, filename, kind="data")
 
 
 def _build_multi_year_workbook(result: MultiYearContributionResult):
@@ -1884,7 +1884,7 @@ async def export_multi_year_contribution(
     )
     date_tag = datetime.date.today().isoformat()
     filename = f"MApper_LCA_Trajectory_{safe}_{span}_{date_tag}.xlsx"
-    return excel_response(wb, filename)
+    return excel_response(wb, filename, kind="data")
 
 
 @router.post("/lca/export-archetype")
@@ -1895,7 +1895,7 @@ async def export_archetype_lca(body: ArchetypeLCAExportRequest) -> Response:
     scope = body.results[0].scope if body.results else "all"
     date_tag = datetime.date.today().isoformat()
     filename = f"MApper_LCA_{safe}_{scope}_{date_tag}.xlsx"
-    return excel_response(wb, filename)
+    return excel_response(wb, filename, kind="data")
 
 
 # ── Multi-product LCA comparison (Patch 4AG.1) ─────────────────────────────────

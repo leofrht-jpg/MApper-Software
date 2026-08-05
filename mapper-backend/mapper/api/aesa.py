@@ -584,7 +584,7 @@ async def get_config_template() -> Response:
         carbon_budget=build_carbon_budget(),
     )
     wb = _build_sharing_workbook(preset, include_instructions=True, bundle=bundle)
-    return excel_response(wb, _config_filename("AESA_configuration_template"), template=True)
+    return excel_response(wb, _config_filename("AESA_configuration_template"), kind="round_trip")
 
 
 @router.post("/config/export")
@@ -599,13 +599,12 @@ async def post_config_export(body: AESAConfiguration) -> Response:
         carbon_budget=body.carbon_budget,
     )
     wb = _build_sharing_workbook(preset, include_instructions=True, bundle=bundle)
-    # template=True here means "MApper reads this file back", not "this is a
-    # blank scaffold": the demo-project warning row would sit above the header
-    # row and the importer would reject the very file we just exported. A
-    # settings workbook carries no fictional measurements — only configuration
-    # — so the DEMO_ filename prefix is the appropriate marker. Regression:
-    # test_demo_stamped_export_still_imports.
-    return excel_response(wb, _config_filename(body.name), template=True)
+    # kind="round_trip": MApper reads this file back. A demo-project warning
+    # row would sit above the header row and the importer would reject the very
+    # file we just exported. A settings workbook carries no fictional
+    # measurements — only configuration — so the DEMO_ filename prefix is the
+    # appropriate marker. Regression: test_demo_stamped_export_still_imports.
+    return excel_response(wb, _config_filename(body.name), kind="round_trip")
 
 
 @router.post("/config/import", response_model=AESAConfigBundle)
@@ -677,7 +676,7 @@ async def post_export(body: AESAExportRequest) -> Response:
         config.mfa_system_id, _current_project(),
     )
     filename = build_export_filename(sys_def.name, _sub_names, "AESA")
-    return excel_response(wb, filename)
+    return excel_response(wb, filename, kind="data")
 
 
 def _build_aesa_workbook(

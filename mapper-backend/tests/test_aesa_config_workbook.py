@@ -305,7 +305,7 @@ def test_config_export_endpoint_is_marked_round_trippable():
     from mapper.api import aesa
 
     src = inspect.getsource(aesa.post_config_export)
-    assert "template=True" in src, (
-        "config export must pass template=True so excel_response does not stamp "
-        "a warning row above the header row"
+    assert 'kind="round_trip"' in src, (
+        'config export must declare kind="round_trip" so excel_response does '
+        "not stamp a warning row above the header row"
     )

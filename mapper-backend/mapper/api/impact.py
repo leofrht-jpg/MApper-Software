@@ -2292,7 +2292,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             _contrib_subsystem_names(_flat, mpr.meta.mfa_system_id, _current_project()),
             "pLCA",
         )
-        return excel_response(wb, filename)
+        return excel_response(wb, filename, kind="data")
 
     if body.multi_dsm_result is not None:
         md = body.multi_dsm_result
@@ -2313,7 +2313,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             _contrib_subsystem_names(_flat, md.meta.mfa_system_id, _current_project()),
             _domain_for_meta(md.meta),
         )
-        return excel_response(wb, filename)
+        return excel_response(wb, filename, kind="data")
 
     project = _current_project()
     archetypes = _proj_archetypes(project)
@@ -2337,7 +2337,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             _contrib_subsystem_names(_flat, mp.meta.mfa_system_id, project),
             _domain_for_meta(mp.meta),
         )
-        return excel_response(wb, filename)
+        return excel_response(wb, filename, kind="data")
 
     multi_result = _resolve_multi_export_result(body.task_id, body.multi_result)
 
@@ -2397,7 +2397,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
             mfa_id, project,
         )
         filename = build_export_filename(sys_def.name, _contrib_names, "pLCA")
-        return excel_response(wb, filename)
+        return excel_response(wb, filename, kind="data")
 
     # Single-scenario path (legacy).
     result = _resolve_export_result(body.task_id, body.result)
@@ -2447,7 +2447,7 @@ async def post_export(body: ImpactExportRequest) -> Response:
         _contrib_subsystem_names(result.results, result.meta.mfa_system_id, project),
         _domain_for_meta(result.meta),
     )
-    return excel_response(wb, filename)
+    return excel_response(wb, filename, kind="data")
 
 
 # ── Single-product Impact Assessment exports (Patch 4G) ─────────────────────
@@ -3156,7 +3156,7 @@ def _sp_filename(kind: str, archetype_name: str) -> str:
 
 
 def _sp_xlsx_response(wb, filename: str) -> Response:
-    return excel_response(wb, filename)
+    return excel_response(wb, filename, kind="data")
 
 
 @router.post("/export-single-product-static")

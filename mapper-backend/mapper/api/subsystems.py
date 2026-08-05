@@ -696,7 +696,7 @@ async def dependency_rules_template(system_id: str, subsystem_id: str) -> Respon
         raise HTTPException(status_code=404, detail="Subsystem not found")
     primary = _get_system(system_id)
     data = _dep_rules_workbook(sub, primary.dimensions)
-    return excel_response_from_bytes(data, "dependency_rules_template.xlsx", template=True)
+    return excel_response_from_bytes(data, "dependency_rules_template.xlsx", kind="round_trip")
 
 
 @router.post("/systems/{system_id}/dependency-rules/import")
@@ -890,7 +890,7 @@ async def cohort_mapping_template(system_id: str, subsystem_id: str) -> Response
     data = _cohort_mapping_workbook(sub, archetype_names)
     # Filename: cohort_mapping_<subsystem_name>_template.xlsx — spaces→_, lowered.
     safe = _sanitize_filename(sub.name, "subsystem").lower()
-    return excel_response_from_bytes(data, f"cohort_mapping_{safe}_template.xlsx", template=True)
+    return excel_response_from_bytes(data, f"cohort_mapping_{safe}_template.xlsx", kind="round_trip")
 
 
 @router.post("/systems/{system_id}/cohort-mapping/import")
@@ -1380,7 +1380,7 @@ async def export_subsystem_results(
     else:
         fname = build_export_filename(sub.name, [], "DSM")
 
-    return excel_response_from_bytes(content, fname)
+    return excel_response_from_bytes(content, fname, kind="data")
 
 
 # ── Public accessors (used by DSM-LCA aggregation) ──────────────────────────

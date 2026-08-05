@@ -403,14 +403,14 @@ def _sanitize_filename(name: str) -> str:
 @router.get("/template")
 async def download_template() -> Response:
     wb = _build_workbook(None)
-    return excel_response(wb, "parameters_template.xlsx", template=True)
+    return excel_response(wb, "parameters_template.xlsx", kind="round_trip")
 
 
 @router.get("/export")
 async def export_table() -> Response:
     table = _table_for()
     wb = _build_workbook(table)
-    return excel_response(wb, "parameters.xlsx")
+    return excel_response(wb, "parameters.xlsx", kind="data")
 
 
 @router.post(

@@ -33,14 +33,11 @@ import {
   createSharingPreset,
   deleteAESAConfiguration,
   deleteSharingPreset,
-  downloadSharingTemplate as apiDownloadSharingTemplate,
   duplicateSharingPreset,
-  exportSharingPreset as apiExportSharingPreset,
   getAESAConfigurations,
   getAESADefaults,
   getSharingPresets,
   withTransientRetry,
-  importSharingPreset as apiImportSharingPreset,
   suggestAESAMethodMapping,
   updateAESAConfiguration,
   updateSharingPreset,
@@ -328,9 +325,6 @@ interface AESAStore {
   savePresetAs: (name: string) => Promise<SharingPreset | null>
   deletePreset: (presetId: string) => Promise<void>
   duplicatePreset: (presetId: string, newName?: string) => Promise<SharingPreset | null>
-  importPresetFile: (file: File) => Promise<SharingPreset | null>
-  exportPresetFile: (presetId: string, filename: string) => Promise<void>
-  downloadSharingTemplate: (filename?: string) => Promise<void>
 }
 
 function draftFromConfig(c: AESAConfiguration, fallback: SharingPreset): AESAConfigDraft {
@@ -988,35 +982,8 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     }
   },
 
-  importPresetFile: async (file) => {
-    try {
-      const preset = await apiImportSharingPreset(file)
-      set((s) => ({
-        presets: [...s.presets, preset],
-        draft: s.draft ? { ...s.draft, sharing: preset, sharing_preset_id: preset.id } : s.draft,
-      }))
-      return preset
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) })
-      return null
-    }
-  },
 
-  exportPresetFile: async (presetId, filename) => {
-    try {
-      await apiExportSharingPreset(presetId, filename)
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) })
-    }
-  },
 
-  downloadSharingTemplate: async (filename) => {
-    try {
-      await apiDownloadSharingTemplate(filename)
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) })
-    }
-  },
 }))
 
 let _lastProject: string | null = useProjectStore.getState().currentProject

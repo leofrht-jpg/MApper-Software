@@ -4190,36 +4190,9 @@ export async function putDownscalingChain(presetId: string, chain: DownscalingCh
   })
 }
 
-async function _downloadBlob(path: string, filename: string): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`)
-  if (!res.ok) throw new Error(`${path} failed: ${res.status} ${await res.text()}`)
-  const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
-}
 
-export async function downloadSharingTemplate(filename = 'sharing_template.xlsx'): Promise<void> {
-  return _downloadBlob('/aesa/sharing/template', filename)
-}
 
-export async function exportSharingPreset(presetId: string, filename: string): Promise<void> {
-  return _downloadBlob(`/aesa/sharing/export/${encodeURIComponent(presetId)}`, filename)
-}
 
-export async function importSharingPreset(file: File, name?: string): Promise<SharingPreset> {
-  const form = new FormData()
-  form.append('file', file)
-  const qs = name ? `?name=${encodeURIComponent(name)}` : ''
-  const res = await fetch(`${API_BASE}/aesa/sharing/import${qs}`, { method: 'POST', body: form })
-  if (!res.ok) throw new Error(`import sharing preset failed: ${res.status} ${await res.text()}`)
-  return res.json()
-}
 
 // ── System logs ──────────────────────────────────────────────────────────────
 

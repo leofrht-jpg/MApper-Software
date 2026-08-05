@@ -126,7 +126,7 @@ async def export_selection(
     if fmt == "xlsx":
         # Shared exit: a demo export gets the in-workbook warning and the
         # DEMO_ filename prefix like every other workbook.
-        return excel_response_from_bytes(build_selection_xlsx(rows), filename)
+        return excel_response_from_bytes(build_selection_xlsx(rows), filename, kind="data")
 
     # CSV gets the filename prefix but NOT an in-file warning row: this file is
     # re-importable and a banner line would occupy the header row and break

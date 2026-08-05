@@ -28,7 +28,7 @@ import io
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import Response
 from openpyxl import Workbook
@@ -40,6 +40,25 @@ logger = logging.getLogger("mapper.export")
 XLSX_MEDIA_TYPE = (
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 )
+
+# What a workbook IS, which decides how a demo project marks it. Required at
+# every call site — there is deliberately no default.
+#
+#   "data"       results/records a user reads. On a demo project the fictional-
+#                data warning is stamped into row 1 of every sheet, because the
+#                file travels and nothing else in it says the numbers are fake.
+#   "round_trip" an artefact MApper READS BACK — templates, settings exports.
+#                Stamping one puts a row above the header and the importer then
+#                rejects the file the app just produced. These get the DEMO_
+#                filename prefix only; they carry configuration, not fictional
+#                measurements.
+#
+# This was previously `template: bool = False`, i.e. opt-in, and the default was
+# wrong for round-trippable files. Two separate endpoints silently inherited the
+# stamp and broke on re-import (DSM upload templates, then the AESA config
+# export). Making it a required argument means a new export cannot inherit
+# either behaviour by accident — it has to say which it is.
+ExportKind = Literal["data", "round_trip"]
 
 # Stamped into row 1 of every sheet of every export taken from the demo
 # project. A spreadsheet is the one artefact that leaves the application: it
@@ -121,8 +140,8 @@ def excel_response(
     wb: Workbook,
     filename: str,
     *,
+    kind: ExportKind,
     is_demo: bool | None = None,
-    template: bool = False,
 ) -> Response:
     """Serialise ``wb`` and return it as an .xlsx download.
 
@@ -139,11 +158,7 @@ def excel_response(
     """
     demo = active_project_is_demo() if is_demo is None else is_demo
     if demo:
-        # Templates are blank scaffolds the user fills in and uploads back.
-        # A warning row would sit above the header and break the parser, and
-        # there is no fictional *data* in them to misrepresent — so they get
-        # the filename prefix only. See test_demo_templates_still_round_trip.
-        if not template:
+        if kind == "data":
             stamp_demo_warning(wb)
         if not filename.startswith("DEMO_"):
             filename = f"DEMO_{filename}"
@@ -162,8 +177,8 @@ def excel_response_from_bytes(
     data: bytes,
     filename: str,
     *,
+    kind: ExportKind,
     is_demo: bool | None = None,
-    template: bool = False,
 ) -> Response:
     """Same contract as :func:`excel_response`, for callers holding raw bytes.
 
@@ -174,8 +189,8 @@ def excel_response_from_bytes(
     and carries no round-trip risk.
     """
     demo = active_project_is_demo() if is_demo is None else is_demo
-    if demo and template:
-        # See excel_response(): templates are round-tripped, so prefix only.
+    if demo and kind == "round_trip":
+        # See ExportKind: MApper reads this file back, so prefix only.
         if not filename.startswith("DEMO_"):
             filename = f"DEMO_{filename}"
     elif demo:

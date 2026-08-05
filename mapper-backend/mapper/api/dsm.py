@@ -2225,7 +2225,7 @@ async def export_results(system_id: str) -> Response:
         from mapper.api.bom import build_export_filename
         fname = build_export_filename(sys_def.name, [], "DSM")
 
-    return excel_response_from_bytes(content, fname)
+    return excel_response_from_bytes(content, fname, kind="data")
 
 
 def _cohort_export_rows(
@@ -2280,7 +2280,7 @@ async def export_cohorts(system_id: str) -> Response:
         ws.append(row)
     years = [y.year for y in result.years]
     span = f"{min(years)}-{max(years)}" if years else "all"
-    return excel_response(wb, f"cohorts_{span}.xlsx")
+    return excel_response(wb, f"cohorts_{span}.xlsx", kind="data")
 
 
 # ── Import from previously exported Excel ───────────────────────────────────
@@ -2728,7 +2728,7 @@ async def template_stock(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = stock_template_xlsx(sys_def.dimensions)
     fname = f"stock_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return excel_response_from_bytes(data, fname, template=True)
+    return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
 @router.post("/systems/{system_id}/templates/inflows")
@@ -2736,7 +2736,7 @@ async def template_inflows(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = inflow_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
     fname = f"inflow_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return excel_response_from_bytes(data, fname, template=True)
+    return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
 @router.post("/systems/{system_id}/templates/stock-targets")
@@ -2744,7 +2744,7 @@ async def template_stock_targets(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = stock_target_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
     fname = f"stock_target_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return excel_response_from_bytes(data, fname, template=True)
+    return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
 @router.post("/systems/{system_id}/templates/outflows")
@@ -2752,7 +2752,7 @@ async def template_outflows(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = outflow_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
     fname = f"outflow_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return excel_response_from_bytes(data, fname, template=True)
+    return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
 @router.post("/systems/{system_id}/templates/stock-aggregate")
@@ -2760,4 +2760,4 @@ async def template_stock_aggregate(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = aggregate_stock_template_xlsx(sys_def.dimensions)
     fname = f"stock_aggregate_template_{_sanitize_filename(sys_def.name)}.xlsx"
-    return excel_response_from_bytes(data, fname, template=True)
+    return excel_response_from_bytes(data, fname, kind="round_trip")

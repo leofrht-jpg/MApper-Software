@@ -118,7 +118,7 @@ def test_stamp_moves_freeze_pane_down():
 
 
 def test_demo_export_is_stamped_and_prefixed():
-    res = excel_response(_wb_with(2), "Fleet_DSM.xlsx", is_demo=True)
+    res = excel_response(_wb_with(2), "Fleet_DSM.xlsx", kind="data", is_demo=True)
     assert 'filename="DEMO_Fleet_DSM.xlsx"' in res.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(res.body))
     for ws in wb.worksheets:
@@ -127,7 +127,7 @@ def test_demo_export_is_stamped_and_prefixed():
 
 def test_real_export_is_untouched():
     # The real-data path must not gain a warning row or a renamed file.
-    res = excel_response(_wb_with(2), "Fleet_DSM.xlsx", is_demo=False)
+    res = excel_response(_wb_with(2), "Fleet_DSM.xlsx", kind="data", is_demo=False)
     assert 'filename="Fleet_DSM.xlsx"' in res.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(res.body))
     assert wb["First"].cell(row=1, column=1).value == "Year"
@@ -139,11 +139,11 @@ def test_bytes_path_stamps_when_demo_and_passes_through_when_not():
     _wb_with(2).save(buf)
     raw = buf.getvalue()
 
-    plain = excel_response_from_bytes(raw, "x.xlsx", is_demo=False)
+    plain = excel_response_from_bytes(raw, "x.xlsx", kind="data", is_demo=False)
     assert plain.body == raw          # byte-identical on the real path
     assert 'filename="x.xlsx"' in plain.headers["content-disposition"]
 
-    demo = excel_response_from_bytes(raw, "x.xlsx", is_demo=True)
+    demo = excel_response_from_bytes(raw, "x.xlsx", kind="data", is_demo=True)
     assert 'filename="DEMO_x.xlsx"' in demo.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(demo.body))
     for ws in wb.worksheets:
@@ -151,7 +151,7 @@ def test_bytes_path_stamps_when_demo_and_passes_through_when_not():
 
 
 def test_prefix_is_not_doubled():
-    res = excel_response(_wb_with(1), "DEMO_already.xlsx", is_demo=True)
+    res = excel_response(_wb_with(1), "DEMO_already.xlsx", kind="data", is_demo=True)
     assert 'filename="DEMO_already.xlsx"' in res.headers["content-disposition"]
 
 
@@ -190,7 +190,7 @@ def test_templates_are_prefixed_but_not_stamped():
     download-fill-upload workflow.
     """
     res = excel_response(_wb_with(1), "inflow_template_x.xlsx",
-                         is_demo=True, template=True)
+                         kind="round_trip", is_demo=True)
     assert 'filename="DEMO_inflow_template_x.xlsx"' in res.headers["content-disposition"]
     wb = load_workbook(io.BytesIO(res.body))
     # header still on row 1
@@ -202,29 +202,53 @@ def test_bytes_template_path_is_also_unstamped():
     buf = io.BytesIO()
     _wb_with(1).save(buf)
     raw = buf.getvalue()
-    res = excel_response_from_bytes(raw, "t.xlsx", is_demo=True, template=True)
+    res = excel_response_from_bytes(raw, "t.xlsx", kind="round_trip", is_demo=True)
     assert res.body == raw          # untouched
     assert 'filename="DEMO_t.xlsx"' in res.headers["content-disposition"]
 
 
-def test_every_template_endpoint_passes_template_true():
-    """Guards the flag that keeps templates round-trippable.
+def test_every_export_declares_its_kind():
+    """No export may inherit stamping behaviour by default.
 
-    Forgetting it on a new template endpoint silently breaks upload for demo
-    users, which is exactly the bug this replaced — so it is asserted
-    structurally rather than left to review.
+    `kind` is a required argument on excel_response/_from_bytes precisely so a
+    new endpoint cannot silently get the wrong one. It was previously
+    `template: bool = False` — opt-in, defaulting to "stamp" — and two
+    round-trippable exports inherited the stamp and broke on re-import (the DSM
+    upload templates, then the AESA config export). Omitting `kind` now raises
+    a TypeError at call time; this test catches it at review time instead, and
+    on paths a test run might not exercise.
     """
     import pathlib
-    import re
+    import re as _re
 
     api = pathlib.Path(__file__).resolve().parent.parent / "mapper" / "api"
     missing = []
-    for f in api.glob("*.py"):
+    for f in sorted(api.glob("*.py")):
         if f.name == "cohort_export.py":
             continue
-        for line in f.read_text(encoding="utf-8").splitlines():
-            if "excel_response" not in line or "return" not in line:
+        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
+            if not _re.search(r"excel_response(_from_bytes)?\(", line):
                 continue
-            if re.search(r"template", line, re.I) and "template=True" not in line:
-                missing.append(f"{f.name}: {line.strip()}")
-    assert not missing, "template endpoint without template=True:\n" + "\n".join(missing)
+            if line.lstrip().startswith("#"):
+                continue
+            if "kind=" not in line:
+                missing.append(f"{f.name}:{n}: {line.strip()}")
+    assert not missing, (
+        "excel_response call without an explicit kind=\n  " + "\n  ".join(missing)
+    )
+
+
+def test_export_kind_has_no_default():
+    """Guards the inversion itself: giving `kind` a default would restore the
+    old failure mode, where forgetting it silently picked a behaviour."""
+    import inspect
+
+    from mapper.api.cohort_export import excel_response, excel_response_from_bytes
+
+    for fn in (excel_response, excel_response_from_bytes):
+        param = inspect.signature(fn).parameters["kind"]
+        assert param.default is inspect.Parameter.empty, (
+            f"{fn.__name__}: `kind` must stay required — a default is exactly "
+            "the hazard this replaced"
+        )
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY, fn.__name__

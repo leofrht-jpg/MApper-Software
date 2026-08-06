@@ -1,0 +1,634 @@
+{
+ "_generated_by": "mapper-backend: CarbonBudgetConfig.remaining_budget(year), the same call AESAEngine stamps onto each cumulative SR row (aesa_engine.py:741)",
+ "_why": "The chart must show the engine's number. Regenerate with the snippet in test_carbon_budget_series_fixture.py if the bundled budget data changes.",
+ "IPCC_AR6_1p5C_50__SSP2-4.5": {
+  "budget_option_id": "IPCC_AR6_1p5C_50",
+  "ssp_id": "SSP2-4.5",
+  "initial_budget_gt": 300.0,
+  "start_year": 2025,
+  "end_year": 2100,
+  "rows": [
+   {
+    "year": 2025,
+    "remaining_budget_gt": 300.0
+   },
+   {
+    "year": 2026,
+    "remaining_budget_gt": 262.5
+   },
+   {
+    "year": 2027,
+    "remaining_budget_gt": 224.9
+   },
+   {
+    "year": 2028,
+    "remaining_budget_gt": 187.2
+   },
+   {
+    "year": 2029,
+    "remaining_budget_gt": 149.4
+   },
+   {
+    "year": 2030,
+    "remaining_budget_gt": 111.5
+   },
+   {
+    "year": 2031,
+    "remaining_budget_gt": 73.5
+   },
+   {
+    "year": 2032,
+    "remaining_budget_gt": 35.80000000000001
+   },
+   {
+    "year": 2033,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2034,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2035,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2036,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2037,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2038,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2039,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2040,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2041,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2042,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2043,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2044,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2045,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2046,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2047,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2048,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2049,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2050,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2051,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2052,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2053,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2054,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2055,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2056,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2057,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2058,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2059,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2060,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2061,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2062,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2063,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2064,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2065,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2066,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2067,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2068,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2069,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2070,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2071,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2072,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2073,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2074,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2075,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2076,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2077,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2078,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2079,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2080,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2081,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2082,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2083,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2084,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2085,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2086,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2087,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2088,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2089,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2090,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2091,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2092,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2093,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2094,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2095,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2096,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2097,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2098,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2099,
+    "remaining_budget_gt": 0.0
+   },
+   {
+    "year": 2100,
+    "remaining_budget_gt": 0.0
+   }
+  ],
+  "engine_depletion_year": 2033,
+  "pre_fix_frontend_depletion_year": 2032
+ },
+ "IPCC_AR6_2C_50__SSP1-2.6": {
+  "budget_option_id": "IPCC_AR6_2C_50",
+  "ssp_id": "SSP1-2.6",
+  "initial_budget_gt": 1150.0,
+  "start_year": 2025,
+  "end_year": 2100,
+  "rows": [
+   {
+    "year": 2025,
+    "remaining_budget_gt": 1150.0
+   },
+   {
+    "year": 2026,
+    "remaining_budget_gt": 1113.0
+   },
+   {
+    "year": 2027,
+    "remaining_budget_gt": 1077.0
+   },
+   {
+    "year": 2028,
+    "remaining_budget_gt": 1042.0
+   },
+   {
+    "year": 2029,
+    "remaining_budget_gt": 1008.0
+   },
+   {
+    "year": 2030,
+    "remaining_budget_gt": 975.0
+   },
+   {
+    "year": 2031,
+    "remaining_budget_gt": 943.0
+   },
+   {
+    "year": 2032,
+    "remaining_budget_gt": 912.0
+   },
+   {
+    "year": 2033,
+    "remaining_budget_gt": 882.0
+   },
+   {
+    "year": 2034,
+    "remaining_budget_gt": 853.0
+   },
+   {
+    "year": 2035,
+    "remaining_budget_gt": 825.0
+   },
+   {
+    "year": 2036,
+    "remaining_budget_gt": 798.0
+   },
+   {
+    "year": 2037,
+    "remaining_budget_gt": 772.0
+   },
+   {
+    "year": 2038,
+    "remaining_budget_gt": 747.0
+   },
+   {
+    "year": 2039,
+    "remaining_budget_gt": 723.0
+   },
+   {
+    "year": 2040,
+    "remaining_budget_gt": 700.0
+   },
+   {
+    "year": 2041,
+    "remaining_budget_gt": 678.0
+   },
+   {
+    "year": 2042,
+    "remaining_budget_gt": 656.8
+   },
+   {
+    "year": 2043,
+    "remaining_budget_gt": 636.4
+   },
+   {
+    "year": 2044,
+    "remaining_budget_gt": 616.8
+   },
+   {
+    "year": 2045,
+    "remaining_budget_gt": 598.0
+   },
+   {
+    "year": 2046,
+    "remaining_budget_gt": 580.0
+   },
+   {
+    "year": 2047,
+    "remaining_budget_gt": 562.8
+   },
+   {
+    "year": 2048,
+    "remaining_budget_gt": 546.4
+   },
+   {
+    "year": 2049,
+    "remaining_budget_gt": 530.8
+   },
+   {
+    "year": 2050,
+    "remaining_budget_gt": 516.0
+   },
+   {
+    "year": 2051,
+    "remaining_budget_gt": 502.0
+   },
+   {
+    "year": 2052,
+    "remaining_budget_gt": 488.79999999999995
+   },
+   {
+    "year": 2053,
+    "remaining_budget_gt": 476.4
+   },
+   {
+    "year": 2054,
+    "remaining_budget_gt": 464.79999999999995
+   },
+   {
+    "year": 2055,
+    "remaining_budget_gt": 454.0
+   },
+   {
+    "year": 2056,
+    "remaining_budget_gt": 444.0
+   },
+   {
+    "year": 2057,
+    "remaining_budget_gt": 434.79999999999995
+   },
+   {
+    "year": 2058,
+    "remaining_budget_gt": 426.4
+   },
+   {
+    "year": 2059,
+    "remaining_budget_gt": 418.79999999999995
+   },
+   {
+    "year": 2060,
+    "remaining_budget_gt": 412.0
+   },
+   {
+    "year": 2061,
+    "remaining_budget_gt": 406.0
+   },
+   {
+    "year": 2062,
+    "remaining_budget_gt": 400.6
+   },
+   {
+    "year": 2063,
+    "remaining_budget_gt": 395.80000000000007
+   },
+   {
+    "year": 2064,
+    "remaining_budget_gt": 391.6
+   },
+   {
+    "year": 2065,
+    "remaining_budget_gt": 388.0
+   },
+   {
+    "year": 2066,
+    "remaining_budget_gt": 385.0
+   },
+   {
+    "year": 2067,
+    "remaining_budget_gt": 382.6
+   },
+   {
+    "year": 2068,
+    "remaining_budget_gt": 380.80000000000007
+   },
+   {
+    "year": 2069,
+    "remaining_budget_gt": 379.6
+   },
+   {
+    "year": 2070,
+    "remaining_budget_gt": 379.0
+   },
+   {
+    "year": 2071,
+    "remaining_budget_gt": 379.0
+   },
+   {
+    "year": 2072,
+    "remaining_budget_gt": 379.29999999999995
+   },
+   {
+    "year": 2073,
+    "remaining_budget_gt": 379.9
+   },
+   {
+    "year": 2074,
+    "remaining_budget_gt": 380.79999999999995
+   },
+   {
+    "year": 2075,
+    "remaining_budget_gt": 382.0
+   },
+   {
+    "year": 2076,
+    "remaining_budget_gt": 383.5
+   },
+   {
+    "year": 2077,
+    "remaining_budget_gt": 385.29999999999995
+   },
+   {
+    "year": 2078,
+    "remaining_budget_gt": 387.4
+   },
+   {
+    "year": 2079,
+    "remaining_budget_gt": 389.79999999999995
+   },
+   {
+    "year": 2080,
+    "remaining_budget_gt": 392.5
+   },
+   {
+    "year": 2081,
+    "remaining_budget_gt": 395.5
+   },
+   {
+    "year": 2082,
+    "remaining_budget_gt": 398.70000000000005
+   },
+   {
+    "year": 2083,
+    "remaining_budget_gt": 402.1
+   },
+   {
+    "year": 2084,
+    "remaining_budget_gt": 405.70000000000005
+   },
+   {
+    "year": 2085,
+    "remaining_budget_gt": 409.5
+   },
+   {
+    "year": 2086,
+    "remaining_budget_gt": 413.5
+   },
+   {
+    "year": 2087,
+    "remaining_budget_gt": 417.70000000000005
+   },
+   {
+    "year": 2088,
+    "remaining_budget_gt": 422.1
+   },
+   {
+    "year": 2089,
+    "remaining_budget_gt": 426.70000000000005
+   },
+   {
+    "year": 2090,
+    "remaining_budget_gt": 431.5
+   },
+   {
+    "year": 2091,
+    "remaining_budget_gt": 436.5
+   },
+   {
+    "year": 2092,
+    "remaining_budget_gt": 441.6
+   },
+   {
+    "year": 2093,
+    "remaining_budget_gt": 446.80000000000007
+   },
+   {
+    "year": 2094,
+    "remaining_budget_gt": 452.1
+   },
+   {
+    "year": 2095,
+    "remaining_budget_gt": 457.5
+   },
+   {
+    "year": 2096,
+    "remaining_budget_gt": 463.0
+   },
+   {
+    "year": 2097,
+    "remaining_budget_gt": 468.6
+   },
+   {
+    "year": 2098,
+    "remaining_budget_gt": 474.30000000000007
+   },
+   {
+    "year": 2099,
+    "remaining_budget_gt": 480.1
+   },
+   {
+    "year": 2100,
+    "remaining_budget_gt": 486.0
+   }
+  ],
+  "engine_depletion_year": null,
+  "pre_fix_frontend_depletion_year": null
+ }
+}

@@ -22,6 +22,16 @@ import type { CarbonBudgetConfig, SustainabilityRatioResult } from '../src/api/c
 // throughout the horizon because late-century net-negative emissions
 // replenish it). Patch X2 surfaces the methodological reality
 // affirmatively.
+//
+// UPDATED — the inset now READS `remaining_budget_gt` off the SR rows
+// instead of re-deriving the curve from `projected_emissions`. These
+// tests used to drive the annotation through the frontend's own
+// accumulation, so they asserted the annotation while exercising the
+// very arithmetic that was wrong (one year early on every depleting
+// configuration). The fixtures below apply the ENGINE's rule —
+// `remaining(y) = max(0, initial − Σ_{y' < y})`, EXCLUDING the current
+// year — and feed it in as the backend would. The three scenarios and
+// their expected annotations are unchanged.
 
 vi.mock('recharts', async () => {
   const actual = await vi.importActual<typeof import('recharts')>('recharts')
@@ -61,6 +71,24 @@ function buildBudget(
   }
 }
 
+/** SR rows carrying the budget series the ENGINE would stamp on them.
+ *
+ *  Mirrors `CarbonBudgetConfig.remaining_budget`: the sum runs over
+ *  `range(start_year, year)`, so the current year's emissions are NOT yet
+ *  consumed. Accumulating inclusively here would re-create the bug these
+ *  fixtures are meant to be immune to. */
+function srRows(
+  initial: number, emissionsByYear: Record<number, number>,
+): SustainabilityRatioResult[] {
+  const years = Object.keys(emissionsByYear).map(Number).sort((a, b) => a - b)
+  let consumed = 0
+  return years.map((y) => {
+    const remaining = Math.max(0, initial - consumed)
+    consumed += emissionsByYear[y] ?? 0
+    return { ...MIN_RESULTS[0], year: y, remaining_budget_gt: remaining }
+  })
+}
+
 describe('Patch X2 — Carbon Budget Depletion annotation', () => {
   it('renders "depleted ~YYYY" when cumulative crosses the budget', () => {
     // 100 Gt budget; 25 Gt/yr emissions → depletes at year 2029
@@ -69,7 +97,7 @@ describe('Patch X2 — Carbon Budget Depletion annotation', () => {
     for (let y = 2025; y <= 2100; y++) emissions[y] = 25
     const budget = buildBudget(100, emissions)
     const { container } = render(
-      <TimelineView results={MIN_RESULTS} carbonBudget={budget} />,
+      <TimelineView results={srRows(100, emissions)} carbonBudget={budget} />,
     )
     const depleted = container.querySelector(
       '[data-testid="carbon-budget-depletion-year"]',
@@ -92,7 +120,7 @@ describe('Patch X2 — Carbon Budget Depletion annotation', () => {
     // Cumulative peak ~360, end-of-horizon ~130. Never crosses 1150.
     const budget = buildBudget(1150, emissions)
     const { container } = render(
-      <TimelineView results={MIN_RESULTS} carbonBudget={budget} />,
+      <TimelineView results={srRows(1150, emissions)} carbonBudget={budget} />,
     )
     const notDepleted = container.querySelector(
       '[data-testid="carbon-budget-not-depleted"]',
@@ -115,7 +143,7 @@ describe('Patch X2 — Carbon Budget Depletion annotation', () => {
     for (let y = 2030; y <= 2100; y++) emissions[y] = -30
     const budget = buildBudget(100, emissions)
     const { container } = render(
-      <TimelineView results={MIN_RESULTS} carbonBudget={budget} />,
+      <TimelineView results={srRows(100, emissions)} carbonBudget={budget} />,
     )
     const depleted = container.querySelector(
       '[data-testid="carbon-budget-depletion-year"]',

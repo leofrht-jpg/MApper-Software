@@ -276,42 +276,127 @@ export function TimelineView({ results, carbonBudget, sharing }: Props) {
       </ResponsiveContainer>
       </ChartExportContainer>
 
-      {carbonBudget && <CarbonBudgetInset budget={carbonBudget} sharing={sharing ?? null} />}
+      {carbonBudget && (
+        <CarbonBudgetInset budget={carbonBudget} sharing={sharing ?? null} results={results} />
+      )}
     </div>
   )
 }
 
-function CarbonBudgetInset({ budget, sharing }: { budget: CarbonBudgetConfig; sharing: SharingPreset | null }) {
+/**
+ * Build the remaining-budget series from what the ENGINE computed.
+ *
+ * `SustainabilityRatioResult` carries `remaining_budget_gt` on every cumulative
+ * (carbon-budget) row, so the number the chart needs is already on the result
+ * the page is rendering. Exported for the regression test.
+ *
+ * This replaces a frontend re-derivation that was quietly a different quantity.
+ * It accumulated INCLUSIVELY —
+ *
+ *     cum += emissions[y]; remaining = initial - cum
+ *
+ * — while `CarbonBudgetConfig.remaining_budget(year)` sums
+ * `range(start_year, year)`, EXCLUDING the current year. The chart therefore
+ * drew `remaining_budget(year + 1)`: 37 Gt low at 2025, 32 at 2030, 22 at 2040
+ * on the shipped 2°C/50 × SSP1-2.6 default, and the depletion annotation landed
+ * one year early on every depleting configuration. Don't reintroduce the
+ * arithmetic to "fix" the offset — read the field.
+ */
+export function budgetSeriesFromResults(results: SustainabilityRatioResult[]): Array<{
+  year: number
+  remaining: number
+}> {
+  const byYear = new Map<number, number>()
+  for (const r of results) {
+    if (r.remaining_budget_gt === null || r.remaining_budget_gt === undefined) continue
+    // First row wins per year: every cumulative boundary at a given year shares
+    // one global budget, so the value is the same whichever row supplies it.
+    if (!byYear.has(r.year)) byYear.set(r.year, r.remaining_budget_gt)
+  }
+  return Array.from(byYear.entries())
+    .sort((a, b) => a[0] - b[0])
+    .map(([year, remaining]) => ({ year, remaining }))
+}
+
+/** First year the engine's remaining budget reaches zero, else null.
+ *  `remaining_budget` clamps at 0, so "depleted" is exactly `<= 0`. */
+export function depletionYearFromSeries(
+  series: Array<{ year: number; remaining: number }>,
+): number | null {
+  return series.find((p) => p.remaining <= 0)?.year ?? null
+}
+
+function CarbonBudgetInset({ budget, sharing, results }: {
+  budget: CarbonBudgetConfig
+  sharing: SharingPreset | null
+  results: SustainabilityRatioResult[]
+}) {
   const carbonRef = useRef<HTMLDivElement>(null)
   // Carbon budget Gt CO₂ — Fixed-only (typical range ~100s of Gt).
   const cbFormat = useNumberFormatter({ notation: 'fixed', decimals: 1 })
   const { depletionYear, series, totalAllocated, fleetShareFrac } = useMemo(() => {
-    const years = Object.keys(budget.projected_emissions)
-      .map(Number)
-      .filter((y) => y >= budget.start_year && y <= budget.end_year)
-      .sort((a, b) => a - b)
+    const pts = budgetSeriesFromResults(results)
 
     // Share factor for climate_change, taken at the first projected year so the
-    // curve has a single scale. (Full year-by-year factors come from compute.)
-    const shareFrac = sharing
-      ? computeChainFactor(sharing, 'climate_change', years[0] ?? budget.start_year)
+    // curve has a single scale.
+    //
+    // NOTE — this is NOT the SR denominator, though it is drawn on the same
+    // axes. The SR divides by the year-by-year allocated SOS; this line samples
+    // ONE year's chain factor and holds it flat, and multiplies the REMAINING
+    // budget rather than the per-year allocation (`global_allocation_gt`).
+    // Deliberate approximation, kept for shape; do not read a value off it.
+    const shareFrac = sharing && pts.length > 0
+      ? computeChainFactor(sharing, 'climate_change', pts[0].year)
       : null
 
-    let cum = 0
-    const pts = years.map((y) => {
-      cum += budget.projected_emissions[y] ?? 0
-      const remaining = Math.max(0, budget.initial_budget_gt - cum)
-      const fleet_allocated = shareFrac !== null ? remaining * shareFrac : null
-      return { year: y, used: cum, remaining, fleet_allocated }
-    })
-    const deplete = pts.find((p) => p.used >= budget.initial_budget_gt)
+    const withFleet = pts.map((p) => ({
+      ...p,
+      fleet_allocated: shareFrac !== null ? p.remaining * shareFrac : null,
+    }))
+
+    // Cumulative emissions consumed by the end of the horizon, derived from the
+    // engine's own endpoint rather than re-summed: initial − last remaining.
+    const last = pts.length > 0 ? pts[pts.length - 1].remaining : null
     return {
-      depletionYear: deplete?.year ?? null,
-      series: pts,
-      totalAllocated: cum,
+      depletionYear: depletionYearFromSeries(pts),
+      series: withFleet,
+      totalAllocated: last === null ? null : budget.initial_budget_gt - last,
       fleetShareFrac: shareFrac,
     }
-  }, [budget, sharing])
+  }, [budget, sharing, results])
+
+  // No engine series → draw nothing rather than a projection of our own.
+  // A curve computed here is exactly what this patch removes: it would agree
+  // with Compute only by coincidence, and there is no way for a reader to tell
+  // which number is authoritative. Happens when the carbon budget is configured
+  // but no cumulative boundary was mapped (so no row carries
+  // `remaining_budget_gt`).
+  if (series.length === 0) {
+    return (
+      <div
+        data-testid="carbon-budget-no-engine-series"
+        style={{
+          padding: '10px 12px',
+          border: '1px solid var(--border-subtle)',
+          borderRadius: 'var(--radius-md)',
+          backgroundColor: 'var(--bg-elevated)',
+          fontSize: 11, color: 'var(--text-tertiary)',
+        }}
+      >
+        <span style={{
+          fontSize: 10, fontWeight: 600, color: 'var(--text-tertiary)',
+          textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
+        }}>
+          Carbon budget depletion
+        </span>
+        <div style={{ marginTop: 4 }}>
+          No depletion data in this result — the budget is configured, but no
+          cumulative boundary (climate change) was mapped to an impact method,
+          so Compute produced no remaining-budget series to show.
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div style={{
@@ -419,7 +504,10 @@ function CarbonBudgetInset({ budget, sharing }: { budget: CarbonBudgetConfig; sh
       </ResponsiveContainer>
       </ChartExportContainer>
       <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
-        Total global emissions over horizon: {totalAllocated.toFixed(1)} Gt · {budget.budget_source}
+        {totalAllocated !== null && (
+          <>Total global emissions over horizon: {totalAllocated.toFixed(1)} Gt · </>
+        )}
+        {budget.budget_source}
         {fleetShareFrac !== null && (
           <> · system share {(fleetShareFrac * 100).toFixed(4)}%</>
         )}

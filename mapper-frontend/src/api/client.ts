@@ -3855,6 +3855,20 @@ export interface SustainabilityRatioResult {
   unit: string
   impact_by_cohort: Record<string, number>
   method_label: string
+  /**
+   * Global remaining carbon budget at `year`, in Gt CO₂ — only on cumulative
+   * (carbon-budget) boundaries; null on flow boundaries and when no budget is
+   * configured.
+   *
+   * The backend has emitted this since the carbon-budget path shipped; the
+   * frontend type simply never declared it, which is how the timeline inset
+   * came to re-derive the value (and to get it wrong by one year). Read this,
+   * do not recompute it — see `budgetSeriesFromResults`.
+   */
+  remaining_budget_gt?: number | null
+  /** `remaining_budget(year) / (end_year − year)`, Gt CO₂/yr. Same rule: the
+   *  engine's per-year allocation, not something to re-derive here. */
+  global_allocation_gt?: number | null
 }
 
 export interface AESAYearSummary {

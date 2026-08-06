@@ -312,9 +312,22 @@ interface AESAStore {
   duplicatePreset: (presetId: string, newName?: string) => Promise<SharingPreset | null>
 }
 
-function draftFromConfig(c: AESAConfiguration, fallback: SharingPreset): AESAConfigDraft {
+/** Build an editable draft from a saved configuration.
+ *
+ *  Returns null when there is nothing to build a draft's `sharing` from:
+ *  `AESAConfiguration.sharing` is optional (a pre-N-layer config may carry
+ *  only `multi_d`), `AESAConfigDraft.sharing` is not, and no fallback preset
+ *  is guaranteed to exist. Saying so in the return type is the alternative to
+ *  asserting the gap away with a cast — which is exactly what the caller in
+ *  `loadSession` used to do (`?? null as never`), and how a null reached a
+ *  field every consumer dereferences. */
+function draftFromConfig(
+  c: AESAConfiguration,
+  fallback: SharingPreset | null,
+): AESAConfigDraft | null {
   const sharing = c.sharing
     ?? (c.multi_d ? migrateMultiDToPreset(c.multi_d) : fallback)
+  if (!sharing) return null
   return {
     name: c.name,
     boundary_set_id: c.boundary_set_id,
@@ -446,8 +459,14 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     const fallback = builtIn ?? (defaults ? migrateMultiDToPreset(defaults.default_multi_d) : null)
     set({
       activeConfigId: id,
-      draft: cfg && fallback
+      // draftFromConfig now reports "no sharing to build from" by returning
+      // null, so the fallback preset no longer has to exist up front: a
+      // config carrying its own inline sharing loads even when the preset
+      // list is empty, which the old `cfg && fallback` guard sent to
+      // defaults instead.
+      draft: cfg
         ? draftFromConfig(cfg, fallback)
+          ?? (defaults ? draftFromDefaults(defaults, presets) : null)
         : defaults
           ? draftFromDefaults(defaults, presets)
           : null,
@@ -727,6 +746,15 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     // `activeSessionId`); Compute is replaced with "Return to live
     // view".
     const cfg = session.configuration_snapshot
+    // A sharing preset to fall back on if the snapshot carries neither an
+    // inline `sharing` nor a legacy `multi_d` to migrate. In practice the
+    // live draft is always seeded by then; if it genuinely is not,
+    // draftFromConfig returns null and the draft is left alone rather than
+    // filled with a fabricated preset — the saved RESULT still renders,
+    // which is what the user opened.
+    const sessionDraft = draftFromConfig(
+      cfg, get().draft?.sharing ?? get().presets[0] ?? null,
+    )
     set({
       activeSessionId: session.id,
       result: session.result,
@@ -734,16 +762,19 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       // the saved values (read-only). The `creatingNewConfig` flag
       // is irrelevant in session-loaded mode — the empty state
       // never renders.
-      draft: {
-        name: cfg.name,
-        boundary_set_id: cfg.boundary_set_id,
-        sharing: cfg.sharing ?? get().draft?.sharing ?? null as never,
-        sharing_preset_id: cfg.sharing_preset_id ?? null,
-        carbon_budget: cfg.carbon_budget,
-        method_mapping: cfg.method_mapping,
-        impact_mode: cfg.impact_mode,
-        dsm_scenario_id: cfg.dsm_scenario_id ?? null,
-      },
+      //
+      // Built by `draftFromConfig`, the same function the saved-config
+      // path uses. This used to be a hand-rolled copy ending in
+      // `?? null as never`, which is the same defeat-the-checker move as
+      // the `as unknown as` that hid the export-settings 422:
+      // `AESAConfiguration.sharing` is optional, `AESAConfigDraft.sharing`
+      // is not, and the cast asserted the gap away. A pre-N-layer snapshot
+      // (multi_d only, sharing null) would have put a null in a field every
+      // consumer dereferences — `draft.sharing.chain`, `.built_in`,
+      // `.principles`. draftFromConfig migrates multi_d instead, and falls
+      // back to the live draft's preset only when there is nothing to
+      // migrate.
+      ...(sessionDraft ? { draft: sessionDraft } : {}),
       lastRunAt: session.created_at,
       // Patch 4T — restore the saved display filter. Pre-Patch-4T
       // sessions don't carry the field; ``displayed_indicators ??

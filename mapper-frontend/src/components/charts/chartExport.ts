@@ -211,6 +211,34 @@ function findChartSvg(container: HTMLElement): SVGSVGElement | null {
   return best
 }
 
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/**
+ * Parse a serialized SVG string back into an `<svg>` root for svg2pdf.
+ *
+ * The cast is the one place in this module that TypeScript cannot express:
+ * `Document.documentElement` is typed `HTMLElement`, while an
+ * `image/svg+xml` document's root really is an `SVGSVGElement`, and the two
+ * are unrelated types. What the cast must NOT do is assert that blindly —
+ * `DOMParser.parseFromString` never throws, so a malformed string yields a
+ * document whose root is a `<parsererror>` element, and handing that to
+ * svg2pdf fails somewhere far from the cause. Check first, then cast once,
+ * here, so the three call sites get a named error instead of a lie.
+ */
+function parseSvgRoot(svgString: string): SVGSVGElement {
+  const root = new DOMParser().parseFromString(svgString, 'image/svg+xml').documentElement
+  if (root.getElementsByTagName('parsererror').length > 0 ||
+      root.nodeName.toLowerCase() === 'parsererror') {
+    throw new Error('Chart export: the serialized SVG could not be re-parsed')
+  }
+  if (root.namespaceURI !== SVG_NS || root.nodeName.toLowerCase() !== 'svg') {
+    throw new Error(
+      `Chart export: expected an <svg> root, got <${root.nodeName.toLowerCase()}>`,
+    )
+  }
+  return root as unknown as SVGSVGElement
+}
+
 async function svgToRaster(
   svgString: string,
   width: number,
@@ -281,11 +309,11 @@ async function svgToPdf(
     doc.rect(0, 0, width, height, 'F')
   }
 
-  const parser = new DOMParser()
-  const docSvg = parser.parseFromString(svgString, 'image/svg+xml').documentElement as unknown as SVGSVGElement
   try {
-    await svg2pdf(docSvg, doc, { x: 0, y: 0, width, height })
+    await svg2pdf(parseSvgRoot(svgString), doc, { x: 0, y: 0, width, height })
   } catch {
+    // Re-parse or re-render failed; fall back to the live DOM node, which is
+    // already an SVGSVGElement and needs no cast at all.
     await svg2pdf(sourceSvg, doc, { x: 0, y: 0, width, height })
   }
 
@@ -618,9 +646,7 @@ export async function exportLegend(
     return
   }
   if (format === 'pdf') {
-    const parser = new DOMParser()
-    const docSvg = parser.parseFromString(svgString, 'image/svg+xml').documentElement as unknown as SVGSVGElement
-    await svgToPdf(docSvg, svgString, width, height, bg, filename)
+    await svgToPdf(parseSvgRoot(svgString), svgString, width, height, bg, filename)
     return
   }
   await svgToRaster(svgString, width, height, bg, format, filename, scale)
@@ -645,9 +671,7 @@ export async function exportChartWithLegend(
     return
   }
   if (format === 'pdf') {
-    const parser = new DOMParser()
-    const docSvg = parser.parseFromString(svgString, 'image/svg+xml').documentElement as unknown as SVGSVGElement
-    await svgToPdf(docSvg, svgString, width, height, bg, filename)
+    await svgToPdf(parseSvgRoot(svgString), svgString, width, height, bg, filename)
     return
   }
   await svgToRaster(svgString, width, height, bg, format, filename, scale)

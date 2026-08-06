@@ -28,7 +28,6 @@ import type {
   ImpactAssessmentResult,
   ProspectiveSingleProductPoint,
   SSPTrajectory,
-  AESAConfiguration,
 } from '../../api/client'
 import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
@@ -819,7 +818,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               title="AESA configuration"
               actions={(
                 <ConfigWorkbookButtons
-                  config={draft as unknown as AESAConfiguration}
+                  config={draft}
                   onApply={(bundle) => updateDraft({
                     boundary_set_id: bundle.boundary_set_id,
                     sharing_preset_id: bundle.sharing_preset_id,

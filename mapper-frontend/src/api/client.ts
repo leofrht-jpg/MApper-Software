@@ -4434,7 +4434,27 @@ export async function downloadAESAConfigTemplate(): Promise<void> {
     '/aesa/config/template', { method: 'GET' }, 'AESA_configuration_template_AESACFG.xlsx')
 }
 
-export async function exportAESAConfig(config: AESAConfiguration): Promise<void> {
+/**
+ * What POST /aesa/config/export accepts — the server's AESAConfigurationCreate.
+ *
+ * Deliberately NOT `AESAConfiguration`: that requires `id` and `created_at`,
+ * which the server assigns on save. The sidebar exports the live draft, which
+ * has neither, and typing this as the saved shape forced an
+ * `as unknown as` cast at the call site that hid a 422 from the type checker.
+ */
+export interface AESAConfigExportInput {
+  name: string
+  boundary_set_id?: string
+  sharing?: SharingPreset | null
+  sharing_preset_id?: string | null
+  carbon_budget?: CarbonBudgetConfig | null
+  method_mapping?: MethodPBMapping[]
+  impact_mode?: 'static' | 'projected'
+  mfa_system_id?: string | null
+  dsm_scenario_id?: string | null
+}
+
+export async function exportAESAConfig(config: AESAConfigExportInput): Promise<void> {
   return _downloadPreferringServerName(
     '/aesa/config/export',
     {

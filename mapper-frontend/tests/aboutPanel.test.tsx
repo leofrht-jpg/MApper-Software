@@ -60,7 +60,7 @@ describe('Settings → About panel', () => {
     const { container } = render(<SettingsPage />)
     const text = container.textContent ?? ''
     expect(PKG_VERSION).toBeTruthy()
-    expect(text).toContain(`v${PKG_VERSION}`)     // e.g. "v0.1.5"
+    expect(text).toContain(`v${PKG_VERSION}`)     // e.g. "v0.1.6"
     expect(text).not.toContain('0.1.0-alpha')      // the stale literal is gone
   })
 

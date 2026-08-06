@@ -90,7 +90,9 @@ export function BoxPlotView({ result }: Props) {
   }, [perPB])
 
   if (!perPB.length) {
-    return <Empty msg="No sensitivity data. Enable 'Run sensitivity' in the sidebar and re-compute." />
+    // Names the control exactly as the sidebar header labels it, so the
+    // instruction points at something the user can actually find.
+    return <Empty msg="No sensitivity data. Tick 'Sensitivity analysis' in the Configuration header and re-compute." />
   }
 
   const W = 900

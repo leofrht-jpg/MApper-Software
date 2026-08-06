@@ -118,7 +118,12 @@ describe('Part B — named retry banner', () => {
   })
 })
 
-describe('Part C — σ control accessible label/tooltip', () => {
+// Patch 5AS — this control used to render as a checkbox plus a bare "σ".
+// The aria-label asserted below sat on the wrapping <label>, where it does
+// NOT name the input; the checkbox's accessible name was the glyph itself.
+// The control now carries visible text, which is both the visible label and
+// the accessible name — see aesaSensitivityToggleLabel.test.tsx.
+describe('Part C — sensitivity control accessible label/tooltip', () => {
   beforeEach(() => {
     vi.spyOn(client, 'getAESADefaults').mockResolvedValue(DEFAULTS)
     vi.spyOn(client, 'getSharingPresets').mockResolvedValue([SHARING])
@@ -126,14 +131,14 @@ describe('Part C — σ control accessible label/tooltip', () => {
     vi.spyOn(client, 'getAESASessions').mockResolvedValue([])
   })
 
-  it('the run-sensitivity (σ) toggle exposes a descriptive title + aria-label', async () => {
+  it('the sensitivity toggle exposes visible label text and a descriptive title', async () => {
     const { getByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
     const toggle = getByTestId('aesa-run-sensitivity-toggle')
     const title = toggle.getAttribute('title') ?? ''
-    const aria = toggle.getAttribute('aria-label') ?? ''
-    expect(title.toLowerCase()).toContain('sensitivity')
-    expect(title.toLowerCase()).toContain('sharing principles')
-    expect(aria.toLowerCase()).toContain('sensitivity')
+    expect(title.toLowerCase()).toContain('sharing principle')
+    // The name is carried by visible text now, not by an aria-label on a
+    // <label> (which never named the input in the first place).
+    expect(toggle.textContent?.trim()).toBe('Sensitivity analysis')
     // One control: the checkbox lives inside the labelled toggle.
     expect(toggle.querySelector('input[type="checkbox"]')).toBeTruthy()
   })

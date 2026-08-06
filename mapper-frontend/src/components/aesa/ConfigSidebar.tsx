@@ -391,7 +391,13 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
   if (collapsed) {
     return (
       <aside data-testid="aesa-config-sidebar-collapsed" style={collapsedStyle}>
-        <button onClick={onToggle} style={toggleButton} title="Expand configuration">
+        <button
+          onClick={onToggle}
+          style={toggleButton}
+          data-testid="aesa-sidebar-expand"
+          title="Expand configuration sidebar"
+          aria-label="Expand configuration sidebar"
+        >
           <ChevronRight size={16} />
         </button>
         <span style={{
@@ -451,12 +457,9 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
           for users who don't hover. The footer is removed entirely.
       */}
       <header style={headerStyle}>
+        <div style={headerRowStyle}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
-          <span style={{
-            fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)',
-            textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
-            whiteSpace: 'nowrap',
-          }}>
+          <span style={headerLabelStyle}>
             Configuration
           </span>
         </div>
@@ -476,33 +479,6 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
             </Button>
           ) : (
             <>
-              {/* Run-sensitivity toggle inline with Compute. ONE control: the
-                  whole label (checkbox + "σ" glyph) toggles `runSensitivity`,
-                  which is sent as `run_sensitivity` to the AESA compute. When
-                  on, Compute ALSO evaluates the Sustainability Ratio under all
-                  five uniform sharing principles (EpC, IN, AGR, LA, AR) — the
-                  per-principle spread that powers the box-plot view. Off =
-                  primary principle only (no spread). σ = the sensitivity
-                  (sigma) glyph; the tooltip spells it out. */}
-              <label
-                data-testid="aesa-run-sensitivity-toggle"
-                style={{
-                  display: 'inline-flex', alignItems: 'center', gap: 4,
-                  fontSize: 10, color: 'var(--text-secondary)',
-                  cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                }}
-                title="Sensitivity analysis (σ): also compute the Sustainability Ratio under all 5 uniform sharing principles (EpC, IN, AGR, LA, AR) — the spread shown in the box-plot view. Off = primary principle only."
-                aria-label="Run sensitivity analysis across the five uniform sharing principles"
-              >
-                <input
-                  type="checkbox"
-                  checked={runSensitivity}
-                  onChange={(e) => setRunSensitivity(e.target.checked)}
-                  style={{ margin: 0 }}
-                />
-                σ
-              </label>
               <Button
                 onClick={handleCompute}
                 disabled={!canCompute}
@@ -541,10 +517,61 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               </Button>
             </>
           ))}
-          <button onClick={onToggle} style={toggleButton} title="Collapse">
+          <button
+            onClick={onToggle}
+            style={toggleButton}
+            data-testid="aesa-sidebar-collapse"
+            title="Collapse configuration sidebar"
+            aria-label="Collapse configuration sidebar"
+          >
             <ChevronLeft size={16} />
           </button>
         </div>
+        </div>
+
+        {/* Patch 5AS — the sensitivity toggle. It used to sit in the icon
+            cluster as a bare checkbox plus a "σ" glyph, which named nothing:
+            the input's accessible name was literally "σ", and the only
+            explanation lived in a tooltip nobody hovers. It now carries a
+            written label, typographically identical to the "Configuration"
+            label it aligns under (`headerLabelStyle`).
+
+            Its own row, not the icon cluster: "Sensitivity analysis" needs
+            ~150 px, and the cluster has no room for that at the 300 px
+            minimum sidebar width (SIDEBAR_MIN_WIDTH) once Compute, Save and
+            Collapse are placed. Truncating it would only trade one cryptic
+            glyph for another.
+
+            What it does: when checked, Compute ALSO evaluates the
+            Sustainability Ratio under each uniform sharing principle (EpC,
+            IN, AGR, LA, AR) in addition to the configured Multi-D chain —
+            the per-principle spread the box-plot view draws. It is a
+            methodological-choice sweep, not a statistical or input-data
+            uncertainty analysis. Transient UI state: it is deliberately not
+            part of AESAConfiguration, so it is not saved with a
+            configuration template nor written to the AESACFG workbook. It
+            resets to on for every session. */}
+        {!showEmptyState && !inSessionMode && (
+          <label
+            htmlFor="aesa-run-sensitivity"
+            data-testid="aesa-run-sensitivity-toggle"
+            style={{
+              ...headerLabelStyle,
+              display: 'inline-flex', alignItems: 'center', gap: 6,
+              width: 'fit-content', cursor: 'pointer',
+            }}
+            title="Also computes the Sustainability Ratio under each uniform sharing principle (EpC, IN, AGR, LA, AR), giving the spread shown in the box-plot view. Off computes the configured sharing chain only, which is faster."
+          >
+            <input
+              id="aesa-run-sensitivity"
+              type="checkbox"
+              checked={runSensitivity}
+              onChange={(e) => setRunSensitivity(e.target.checked)}
+              style={{ margin: 0, cursor: 'pointer' }}
+            />
+            Sensitivity analysis
+          </label>
+        )}
       </header>
 
       {/* Patch 5AM — config-load failure banner. Named, non-blocking, with a
@@ -1926,12 +1953,32 @@ const collapsedStyle: React.CSSProperties = {
   borderRadius: 'var(--radius-lg)',
 }
 
+// Patch 5AS — the header stacks: row 1 is the "Configuration" label and the
+// icon actions, row 2 is the labelled sensitivity toggle. Two rows because a
+// written label does not fit beside the actions at SIDEBAR_MIN_WIDTH.
 const headerStyle: React.CSSProperties = {
+  display: 'flex',
+  flexDirection: 'column',
+  gap: 8,
+  padding: '10px 12px',
+  borderBottom: '1px solid var(--border-subtle)',
+}
+
+const headerRowStyle: React.CSSProperties = {
   display: 'flex',
   justifyContent: 'space-between',
   alignItems: 'center',
-  padding: '10px 12px',
-  borderBottom: '1px solid var(--border-subtle)',
+}
+
+// Shared so the sensitivity toggle's label is typographically identical to
+// the "Configuration" label above it, rather than merely similar.
+const headerLabelStyle: React.CSSProperties = {
+  fontSize: 'var(--text-xs)',
+  fontWeight: 600,
+  color: 'var(--text-secondary)',
+  textTransform: 'uppercase',
+  letterSpacing: 'var(--tracking-wide)',
+  whiteSpace: 'nowrap',
 }
 
 const bodyStyle: React.CSSProperties = {

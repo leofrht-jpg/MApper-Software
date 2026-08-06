@@ -43,6 +43,7 @@ import {
   updateSharingPreset,
 } from '../api/client'
 import { useProjectStore } from './projectStore'
+import { resolveYearPair } from '../utils/aesaSeries'
 
 // ── Preset helpers ──────────────────────────────────────────────────────────
 
@@ -92,27 +93,6 @@ function migrateMultiDToPreset(mD: MultiDConfig): SharingPreset {
   }
 }
 
-/** Resolve (system, global) for a given year from sparse year_data (mirror of
- *  ``_resolve_year`` on the backend). */
-function resolveYearData(
-  yearData: Record<number, [number, number]> | undefined,
-  year: number,
-): [number, number] | null {
-  if (!yearData) return null
-  const keys = Object.keys(yearData).map(Number)
-  if (keys.length === 0) return null
-  if (yearData[year]) return yearData[year]
-  if (keys.length === 1) return yearData[keys[0]]
-  const nearest = keys.reduce((best, y) => {
-    const d = Math.abs(y - year)
-    const bd = Math.abs(best - year)
-    if (d < bd) return y
-    if (d === bd && y < best) return y
-    return best
-  }, keys[0])
-  return yearData[nearest]
-}
-
 function layerFactor(
   layer: DownscalingLayer,
   pbId: string,
@@ -123,7 +103,12 @@ function layerFactor(
     ? layer.fixed_principle
     : assignments[pbId]
   if (!principle) return 0
-  const pair = resolveYearData(layer.data?.[principle], year)
+  // Shared with the chain editor's preview and mirroring the backend's
+  // `_resolve_year`, including the per-principle resolution mode. A local
+  // copy here is how the preview and Compute drift apart.
+  const pair = resolveYearPair(
+    layer.data?.[principle], year, layer.resolution?.[principle] ?? 'step',
+  )
   if (!pair) return 0
   const [sys, glob] = pair
   if (glob <= 0) return 0

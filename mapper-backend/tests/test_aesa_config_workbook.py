@@ -311,6 +311,175 @@ def test_config_export_endpoint_is_marked_round_trippable():
     )
 
 
+def _all_error_text(exc: BaseException) -> str:
+    """Every message an import rejection carries.
+
+    ImportRejected deliberately reports EVERY problem at once, so its str() is
+    just a count ("1 validation error(s)"); the human-readable reasons live in
+    ``.errors``. Assert against those, not the summary.
+    """
+    parts = [str(exc)]
+    for e in getattr(exc, "errors", []) or []:
+        parts.extend(str(v) for v in e.values())
+    return " | ".join(parts)
+
+
+# ── Per-principle resolution mode on the Sharing Data sheet ─────────────────
+
+
+def _series_bundle() -> AESAConfigBundle:
+    """The shipped preset with a two-year EpC series added on layer 1, one
+    principle set to interpolate and the rest left at the default. The shipped
+    template itself is never modified — this is a copy."""
+    b = _bundle()
+    layers = list(b.sharing.chain.layers)
+    first = layers[0]
+    principle = next(iter(first.data))
+    data = {**first.data, principle: {2025: (100.0, 1000.0), 2050: (200.0, 1000.0)}}
+    layers[0] = first.model_copy(update={
+        "data": data, "resolution": {principle: "interpolate"},
+    })
+    sharing = b.sharing.model_copy(update={
+        "chain": b.sharing.chain.model_copy(update={"layers": layers}),
+    })
+    return b.model_copy(update={"sharing": sharing})
+
+
+def test_resolution_mode_survives_the_round_trip():
+    original = _series_bundle()
+    back = _roundtrip(original)
+    assert back.sharing.chain.model_dump() == original.sharing.chain.model_dump()
+    # And specifically the mode, so a passing dump-comparison can't hide it.
+    assert back.sharing.chain.layers[0].resolution == \
+           original.sharing.chain.layers[0].resolution
+    assert "interpolate" in back.sharing.chain.layers[0].resolution.values()
+
+
+def test_resolution_roundtrip_survives_a_second_pass():
+    once = _roundtrip(_series_bundle())
+    twice = _roundtrip(once)
+    assert twice.model_dump() == once.model_dump()
+
+
+def test_sharing_data_sheet_carries_a_resolution_column():
+    b = _series_bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    headers = [str(c.value).strip().lower() if c.value else "" for c in wb["Sharing Data"][1]]
+    assert "resolution" in headers
+    # Written on every row, not only where it differs from the default: a user
+    # editing the sheet should see the mode without reading the Instructions.
+    col = headers.index("resolution")
+    values = {r[col].value for r in wb["Sharing Data"].iter_rows(min_row=2) if r[0].value}
+    assert values and None not in values
+
+
+def test_a_workbook_with_no_resolution_column_still_imports_as_step():
+    """The backward-compat path: every AESACFG workbook exported before the
+    column existed has no such column, and must load unchanged."""
+    b = _series_bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    ws = wb["Sharing Data"]
+    headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+    ws.delete_cols(headers.index("resolution") + 1)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    back = _parse_aesa_config_workbook(load_workbook(buf, data_only=True), "legacy")
+    for layer in back.sharing.chain.layers:
+        assert layer.resolution == {}
+        for principle in layer.data:
+            assert layer.resolution_for(principle) == "step"
+
+
+def test_a_blank_resolution_cell_means_step():
+    b = _series_bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    ws = wb["Sharing Data"]
+    headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+    col = headers.index("resolution") + 1
+    for row in range(2, ws.max_row + 1):
+        ws.cell(row=row, column=col).value = None
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    back = _parse_aesa_config_workbook(load_workbook(buf, data_only=True), "blank")
+    assert all(ly.resolution == {} for ly in back.sharing.chain.layers)
+
+
+def test_an_explicit_step_cell_imports_as_the_default_not_as_a_stored_value():
+    b = _series_bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    ws = wb["Sharing Data"]
+    headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+    col = headers.index("resolution") + 1
+    for row in range(2, ws.max_row + 1):
+        ws.cell(row=row, column=col).value = "step"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    back = _parse_aesa_config_workbook(load_workbook(buf, data_only=True), "stepped")
+    assert all(ly.resolution == {} for ly in back.sharing.chain.layers)
+
+
+def test_an_unknown_resolution_value_is_rejected_with_a_useful_message():
+    b = _series_bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    ws = wb["Sharing Data"]
+    headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+    ws.cell(row=2, column=headers.index("resolution") + 1).value = "linear"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    with pytest.raises((ValueError, ImportRejected)) as exc:
+        _parse_aesa_config_workbook(load_workbook(buf, data_only=True), "bad")
+    assert "linear" in _all_error_text(exc.value)
+
+
+def test_contradictory_resolution_rows_are_rejected_not_guessed():
+    """Two rows of one principle disagreeing is the user writing two answers to
+    one question. Picking one would silently change every ratio it produces."""
+    b = _series_bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    ws = wb["Sharing Data"]
+    headers = [str(c.value).strip().lower() if c.value else "" for c in ws[1]]
+    col = headers.index("resolution") + 1
+    principle_col = headers.index("principle") + 1
+    first_principle = ws.cell(row=2, column=principle_col).value
+    flipped = 0
+    for row in range(2, ws.max_row + 1):
+        if ws.cell(row=row, column=principle_col).value == first_principle:
+            ws.cell(row=row, column=col).value = "step" if flipped else "interpolate"
+            flipped += 1
+    assert flipped >= 2, "fixture needs a principle with at least two year rows"
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    with pytest.raises((ValueError, ImportRejected)) as exc:
+        _parse_aesa_config_workbook(load_workbook(buf, data_only=True), "conflict")
+    assert "Resolution" in _all_error_text(exc.value)
+
+
+def test_reference_sheet_lists_the_resolution_modes_including_blank():
+    b = _bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    rows = [(r[0].value, r[1].value) for r in wb["Reference"].iter_rows(min_row=2)]
+    modes = {v for f, v in rows if f == "resolution"}
+    assert {"step", "interpolate", "(blank)"} <= modes
+
+
+def test_instructions_explain_time_varying_shares_with_a_worked_example():
+    b = _bundle()
+    wb = _build_sharing_workbook(b.sharing, include_instructions=True, bundle=b)
+    text = "\n".join(str(r[0].value or "") for r in wb["Instructions"].iter_rows())
+    assert "interpolate" in text and "step" in text
+    assert "clamp" in text.lower()          # both ends held, no extrapolation
+    assert "Worked example" in text
+    assert "2037" in text                   # the example resolves a real year
 # ── Export must work for an UNSAVED configuration ───────────────────────────
 
 

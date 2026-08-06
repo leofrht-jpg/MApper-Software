@@ -3725,6 +3725,12 @@ export interface CategoryAssignment {
 /** Layer data: principle_id → year → [system_value, global_value]. */
 export type LayerData = Record<string, Record<number, [number, number]>>
 
+/** How a principle's sparse year series is read BETWEEN the years supplied.
+ *  'step' (the default, and the behaviour of every configuration written
+ *  before this existed) holds each value until the next supplied year;
+ *  'interpolate' draws a straight line. Both clamp at the ends. */
+export type ResolutionMode = 'step' | 'interpolate'
+
 export interface DownscalingLayer {
   layer_number: number
   name: string
@@ -3732,6 +3738,11 @@ export interface DownscalingLayer {
   fixed_principle?: string | null
   description?: string
   data: LayerData
+  /** Principle id → resolution mode. Keyed per (layer, principle) because
+   *  `data` is: one layer can hold a moving EpC series beside a frozen AR
+   *  one. Only non-default entries are stored, so a missing key means
+   *  'step' — the backend normalises explicit 'step' away. */
+  resolution?: Record<string, ResolutionMode>
 }
 
 export interface DownscalingChain {

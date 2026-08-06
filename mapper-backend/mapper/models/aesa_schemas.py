@@ -32,6 +32,7 @@ from pydantic import BaseModel, Field, model_validator
 from mapper.core.compute_metrics import ComputeMetrics
 
 from mapper.models.bom_schemas import ImpactAssessmentResult
+from mapper.models.interpolation import interpolate_anchors
 from mapper.models.schemas import ArchetypeLCACalculateResult
 
 
@@ -40,6 +41,16 @@ BOUNDARY_TYPE = Literal["cumulative", "flow"]
 PB_STATUS_2023 = Literal["safe", "exceeded", "increasing_risk", "regional"]
 ZONE = Literal["safe", "zone_of_uncertainty", "high_risk"]
 PRINCIPLE_MODE = Literal["category_specific", "fixed"]
+
+# How a principle's sparse year series is read BETWEEN the years supplied.
+# "step" is the default and the pre-existing behaviour; it must stay the
+# default so every configuration written before this field existed resolves
+# bit-identically. Which one is correct is a methodological question per
+# principle, not a global preference: EpC rests on a population projection,
+# which is a curve and wants "interpolate"; AR (acquired rights) is anchored
+# to a historical period, where holding a value is defensible.
+RESOLUTION_MODE = Literal["step", "interpolate"]
+RESOLUTION_MODES: tuple[str, ...] = ("step", "interpolate")
 
 # Built-in principle IDs. User-defined principles are allowed — validation
 # happens against the active preset's principle list, not this literal.
@@ -167,11 +178,27 @@ class CategoryAssignment(BaseModel):
 def _resolve_year(
     year_data: dict[int, tuple[float, float]] | None,
     year: int,
+    mode: RESOLUTION_MODE = "step",
 ) -> tuple[float, float] | None:
     """Look up (system, global) for ``year`` in a sparse yearly dict.
 
-    Rules: exact match wins; else nearest (min |Δyear|, ties favour older);
-    else None. Single-entry series act as a constant across all years.
+    ``mode="step"`` (the default, and the behaviour of every configuration
+    written before the mode existed): exact match wins; else nearest
+    (min |Δyear|, ties favour older). With anchors at 2025 and 2050, 2037
+    takes the 2025 value and 2038 jumps to the 2050 value.
+
+    ``mode="interpolate"``: linear between the bracketing anchors. The system
+    and global series are interpolated **independently and then divided**, not
+    the other way round — the stored values are quantities (population, GDP,
+    land area), so an interpolated year must give the same factor the user
+    would have got by supplying that year's two quantities directly. The ratio
+    of two linear series is not itself linear, so interpolating the ratio
+    would produce a number matching no supplied datum.
+
+    Both modes clamp outside the supplied range — no extrapolation, matching
+    ``Parameter.keyframes`` and ``bom_engine.resolve_quantity``. A single-entry
+    series is a constant across all years under either mode, and ``None``
+    (no data) stays ``None``.
     """
     if not year_data:
         return None
@@ -180,6 +207,11 @@ def _resolve_year(
     years = sorted(year_data.keys())
     if len(years) == 1:
         return year_data[years[0]]
+    if mode == "interpolate":
+        return (
+            interpolate_anchors([(y, year_data[y][0]) for y in years], year),
+            interpolate_anchors([(y, year_data[y][1]) for y in years], year),
+        )
     nearest = min(years, key=lambda y: (abs(y - year), y))
     return year_data[nearest]
 
@@ -203,6 +235,31 @@ class DownscalingLayer(BaseModel):
     # Principle id → year → (system_value, global_value). Tuples are
     # (de)serialized as 2-lists by pydantic, which matches JSON convention.
     data: dict[str, dict[int, tuple[float, float]]] = Field(default_factory=dict)
+    # Principle id → how that principle's series is read between the years
+    # supplied in ``data``. Keyed per (layer, principle) because that is how
+    # ``data`` itself is keyed: one layer can hold a moving EpC series beside
+    # a frozen AR one, and the choice belongs to the principle, not the layer.
+    #
+    # Only NON-DEFAULT entries are stored (see ``_normalise_resolution``), so a
+    # missing key means "step". That keeps ``model_dump()`` canonical: a
+    # configuration that has never touched the mode dumps ``{}`` whether it was
+    # built before the field existed, parsed from a workbook with the column
+    # blank, or parsed from one with the column filled in with "step".
+    resolution: dict[str, RESOLUTION_MODE] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def _normalise_resolution(self) -> DownscalingLayer:
+        # Drop explicit "step" entries: step IS the default, so storing it
+        # would give one behaviour two representations, and round-trip
+        # equality would depend on which one a config happened to take.
+        stepped = [p for p, m in self.resolution.items() if m == "step"]
+        for p in stepped:
+            del self.resolution[p]
+        return self
+
+    def resolution_for(self, principle_id: str) -> RESOLUTION_MODE:
+        """How ``principle_id``'s series is read between supplied years."""
+        return self.resolution.get(principle_id, "step")
 
     @model_validator(mode="after")
     def _check_fixed(self) -> DownscalingLayer:
@@ -221,7 +278,9 @@ class DownscalingLayer(BaseModel):
         principle = self.resolve_principle(pb_id, assignments)
         if not principle:
             return 0.0
-        pair = _resolve_year(self.data.get(principle), year)
+        pair = _resolve_year(
+            self.data.get(principle), year, self.resolution_for(principle),
+        )
         if pair is None:
             return 0.0
         sys_val, glob_val = pair

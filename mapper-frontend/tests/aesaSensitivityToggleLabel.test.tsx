@@ -27,7 +27,9 @@ import type {
 // it sat on the wrapping <label>, where it does not name the input.)
 //
 // What this suite locks in:
-//   1. The control has visible label text, "Sensitivity analysis".
+//   1. The control has visible label text, "Sharing sensitivity" — naming the
+//      axis it varies rather than the technique, so it cannot be read as the
+//      "Sensitivity cases" parameter axis on Impact Assessment.
 //   2. That text is ASSOCIATED with the checkbox — getByLabelText resolves to
 //      the input, so it is a real label, not adjacent text. This is the
 //      assertion that fails if someone reverts to a glyph.
@@ -122,7 +124,11 @@ function setStores({
   } as any)
 }
 
-const LABEL = 'Sensitivity analysis'
+// "Sharing sensitivity", not "Sensitivity analysis". Impact Assessment already
+// owns "Sensitivity cases" for its parameter axis, itself renamed off
+// "Scenarios" to stop it colliding with LCI Scenarios; a bare "Sensitivity …"
+// here would reintroduce that collision across a different axis.
+const LABEL = 'Sharing sensitivity'
 
 describe('the sensitivity toggle is a named control, not a glyph (Patch 5AS)', () => {
   beforeEach(() => setStores())
@@ -154,6 +160,19 @@ describe('the sensitivity toggle is a named control, not a glyph (Patch 5AS)', (
   it('no "σ" glyph survives anywhere in the sidebar', () => {
     const { container } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
     expect(container.textContent).not.toContain('σ')
+  })
+
+  it('does not collide with the "Sensitivity cases" parameter axis', () => {
+    // Impact Assessment's parameter axis is "Sensitivity cases" (Base /
+    // Optimistic / Pessimistic), itself renamed off "Scenarios" to stop it
+    // colliding with LCI Scenarios. This control sweeps SHARING PRINCIPLES —
+    // a different axis — so it must not carry a bare "Sensitivity …" label
+    // that reads as the same thing.
+    const { getByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    const text = getByTestId('aesa-run-sensitivity-toggle').textContent ?? ''
+    expect(text).toBe(LABEL)
+    expect(text).not.toMatch(/sensitivity (analysis|cases)/i)
+    expect(text.toLowerCase()).toContain('sharing')
   })
 
   it('the tooltip explains what the two words cannot carry', () => {

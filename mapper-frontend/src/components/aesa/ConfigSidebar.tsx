@@ -536,11 +536,19 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
             written label, typographically identical to the "Configuration"
             label it aligns under (`headerLabelStyle`).
 
-            Its own row, not the icon cluster: "Sensitivity analysis" needs
-            ~150 px, and the cluster has no room for that at the 300 px
-            minimum sidebar width (SIDEBAR_MIN_WIDTH) once Compute, Save and
-            Collapse are placed. Truncating it would only trade one cryptic
-            glyph for another.
+            Its own row, not the icon cluster: the label needs ~150 px, and
+            the cluster has no room for that at the 300 px minimum sidebar
+            width (SIDEBAR_MIN_WIDTH) once Compute, Save and Collapse are
+            placed. Truncating it would only trade one cryptic glyph for
+            another.
+
+            "Sharing sensitivity", NOT "Sensitivity analysis": Impact
+            Assessment already owns "Sensitivity cases" for its parameter
+            axis (Base / Optimistic / Pessimistic), itself renamed off
+            "Scenarios" to stop it colliding with LCI Scenarios. This control
+            varies a different axis — the sharing principles — so the bare
+            word would reintroduce the collision that rename removed. Name
+            the axis, not the technique.
 
             What it does: when checked, Compute ALSO evaluates the
             Sustainability Ratio under each uniform sharing principle (EpC,
@@ -560,7 +568,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               display: 'inline-flex', alignItems: 'center', gap: 6,
               width: 'fit-content', cursor: 'pointer',
             }}
-            title="Also computes the Sustainability Ratio under each uniform sharing principle (EpC, IN, AGR, LA, AR), giving the spread shown in the box-plot view. Off computes the configured sharing chain only, which is faster."
+            title="Also computes the Sustainability Ratio under each uniform sharing principle (EpC, IN, AGR, LA, AR), giving the spread shown in the box-plot view. Off computes the configured sharing chain only, which is faster. Varies the sharing principle, not the parameter Sensitivity cases on Impact Assessment."
           >
             <input
               id="aesa-run-sensitivity"
@@ -569,7 +577,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               onChange={(e) => setRunSensitivity(e.target.checked)}
               style={{ margin: 0, cursor: 'pointer' }}
             />
-            Sensitivity analysis
+            Sharing sensitivity
           </label>
         )}
       </header>

@@ -138,7 +138,7 @@ describe('Part C — sensitivity control accessible label/tooltip', () => {
     expect(title.toLowerCase()).toContain('sharing principle')
     // The name is carried by visible text now, not by an aria-label on a
     // <label> (which never named the input in the first place).
-    expect(toggle.textContent?.trim()).toBe('Sensitivity analysis')
+    expect(toggle.textContent?.trim()).toBe('Sharing sensitivity')
     // One control: the checkbox lives inside the labelled toggle.
     expect(toggle.querySelector('input[type="checkbox"]')).toBeTruthy()
   })

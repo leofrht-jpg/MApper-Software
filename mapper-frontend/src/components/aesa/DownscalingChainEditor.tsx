@@ -10,6 +10,8 @@
 import { useMemo, useState } from 'react'
 import { ArrowDown, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import { computeChainFactor, useAESAStore } from '../../stores/aesaStore'
+import { describeLayerSeries, resolveYearPair, seriesBadgeText } from '../../utils/aesaSeries'
+import type { SeriesShape } from '../../utils/aesaSeries'
 import { LayerEditModal } from './LayerEditModal'
 
 interface Props {
@@ -45,29 +47,18 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
 
   const layerFactorFor = (pbId: string | null): number[] => {
     if (!chain || !pbId) return []
-    // Per-layer factor using the same resolution as the backend.
+    // Same resolver the store and the backend use, per-principle resolution
+    // mode included. This used to be a third hand-rolled copy of the
+    // nearest-year rule; a preview computed differently from Compute is a
+    // preview that lies.
     return chain.layers.map((ly) => {
       const principle = ly.principle_mode === 'fixed'
         ? ly.fixed_principle
         : assignmentsMap[pbId]
       if (!principle) return 0
-      const yearData = ly.data?.[principle]
-      if (!yearData) return 0
-      const keys = Object.keys(yearData).map(Number)
-      if (keys.length === 0) return 0
-      let pair: [number, number] | null = yearData[year] ?? null
-      if (!pair) {
-        if (keys.length === 1) pair = yearData[keys[0]]
-        else {
-          const nearest = keys.reduce((best, k) => {
-            const d = Math.abs(k - year); const bd = Math.abs(best - year)
-            if (d < bd) return k
-            if (d === bd && k < best) return k
-            return best
-          }, keys[0])
-          pair = yearData[nearest]
-        }
-      }
+      const pair = resolveYearPair(
+        ly.data?.[principle], year, ly.resolution?.[principle] ?? 'step',
+      )
       if (!pair) return 0
       const [sys, glob] = pair
       return glob > 0 ? sys / glob : 0
@@ -93,6 +84,7 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
               mode={layer.principle_mode}
               fixedPrinciple={layer.fixed_principle ?? null}
               description={layer.description ?? ''}
+              series={describeLayerSeries(layer.data, layer.resolution)}
               factor={factor}
               readOnly={readOnly}
               canDelete={chain.layers.length > 1}
@@ -168,7 +160,7 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
 }
 
 function LayerCard({
-  index, name, mode, fixedPrinciple, description, factor,
+  index, name, mode, fixedPrinciple, description, series, factor,
   readOnly, canDelete, onEdit, onDelete,
 }: {
   index: number
@@ -176,6 +168,7 @@ function LayerCard({
   mode: 'category_specific' | 'fixed'
   fixedPrinciple: string | null
   description: string
+  series: SeriesShape[]
   factor: number
   readOnly: boolean
   canDelete: boolean
@@ -201,6 +194,35 @@ function LayerCard({
           {description && (
             <div style={{ fontSize: 10, color: 'var(--text-secondary)', marginTop: 2 }}>
               {description}
+            </div>
+          )}
+          {/* Per-principle temporal shape. A chain mixing a moving EpC with a
+              frozen AR is a legitimate methodological choice and a silent
+              error when unintended — so it is SHOWN, never warned about.
+              Series badges carry the module accent; constants stay muted, so
+              "which of these actually moves" reads at a glance. */}
+          {series.length > 0 && (
+            <div
+              data-testid={`layer-series-badges-${index}`}
+              style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }}
+            >
+              {series.map((s) => (
+                <span
+                  key={s.principleId}
+                  data-testid={`layer-${index}-series-${s.principleId}`}
+                  title={s.isSeries
+                    ? `${s.principleId}: ${s.points} values from ${s.firstYear} to ${s.lastYear}. `
+                      + (s.mode === 'interpolate'
+                        ? 'Years in between are interpolated linearly.'
+                        : 'Each value holds until the next year supplied (step).')
+                      + ' Clamped outside the range.'
+                    : `${s.principleId}: one value at ${s.firstYear}, constant across all years.`}
+                  style={s.isSeries ? seriesBadge : constantBadge}
+                >
+                  <strong style={{ fontWeight: 600 }}>{s.principleId}</strong>
+                  {' · '}{seriesBadgeText(s)}
+                </span>
+              ))}
             </div>
           )}
           <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4, fontFamily: 'var(--font-mono)' }}>
@@ -250,6 +272,32 @@ const preview: React.CSSProperties = {
   border: '1px solid var(--border-subtle)',
   borderRadius: 'var(--radius-sm)',
   marginTop: 4,
+}
+
+const badgeBase: React.CSSProperties = {
+  display: 'inline-flex', alignItems: 'center',
+  padding: '1px 6px',
+  fontSize: 9.5,
+  borderRadius: 'var(--radius-sm)',
+  border: '1px solid transparent',
+  whiteSpace: 'nowrap',
+}
+
+// Accented: this principle's share MOVES over the assessment horizon.
+const seriesBadge: React.CSSProperties = {
+  ...badgeBase,
+  color: 'var(--mod-aesa)',
+  background: 'color-mix(in srgb, var(--mod-aesa) 12%, transparent)',
+  borderColor: 'color-mix(in srgb, var(--mod-aesa) 35%, transparent)',
+}
+
+// Muted: one value, constant across all years. The resolution mode is
+// deliberately omitted here — with a single point it changes nothing.
+const constantBadge: React.CSSProperties = {
+  ...badgeBase,
+  color: 'var(--text-tertiary)',
+  background: 'var(--bg-surface)',
+  borderColor: 'var(--border-subtle)',
 }
 
 const iconBtn: React.CSSProperties = {

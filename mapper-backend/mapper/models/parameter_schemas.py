@@ -37,6 +37,8 @@ from typing import ClassVar
 
 from pydantic import BaseModel, Field, model_validator
 
+from mapper.models.interpolation import interpolate_anchors
+
 
 class ParameterKeyframe(BaseModel):
     """One ``(year, value)`` anchor of a year-varying parameter trajectory.
@@ -92,24 +94,16 @@ class Parameter(BaseModel):
 def _interpolate_keyframes(keyframes: list[ParameterKeyframe], year: int) -> float:
     """Linear interpolation between keyframe anchors, clamped outside the range.
 
-    Same rule as ``bom_engine.resolve_quantity`` for milestones: years at or
-    before the first anchor / at or after the last anchor return the endpoint
-    value (no extrapolation); interior years interpolate linearly.
+    Same rule as ``bom_engine.resolve_quantity`` for milestones, and as the
+    AESA per-principle ``"interpolate"`` resolution mode: years at or before
+    the first anchor / at or after the last anchor return the endpoint value
+    (no extrapolation); interior years interpolate linearly.
+
+    The arithmetic lives in :func:`mapper.models.interpolation.interpolate_anchors`
+    so there is exactly one copy of it. This function is the keyframe-shaped
+    adapter, kept because callers and tests import it by name.
     """
-    kf = sorted(keyframes, key=lambda k: k.year)
-    if year <= kf[0].year:
-        return float(kf[0].value)
-    if year >= kf[-1].year:
-        return float(kf[-1].value)
-    for a, b in zip(kf, kf[1:]):
-        if a.year <= year <= b.year:
-            span = b.year - a.year
-            if span == 0:
-                return float(a.value)
-            t = (year - a.year) / span
-            return float(a.value) + t * (float(b.value) - float(a.value))
-    # Unreachable given the clamp guards above, but keep callers NaN-free.
-    return float(kf[-1].value)
+    return interpolate_anchors([(k.year, k.value) for k in keyframes], year)
 
 
 def resolve_parameter(

@@ -65,6 +65,7 @@ from mapper.models.aesa_schemas import (
     MethodPBMapping,
     PlanetaryBoundary,
     PrincipleDefinition,
+    RESOLUTION_MODES,
     SharingPreset,
     SharingPresetCreate,
 )
@@ -994,13 +995,21 @@ def _build_sharing_workbook(
 
     # Sheet 4: Sharing Data
     ws = wb.create_sheet("Sharing Data")
-    ws.append(["Layer", "Principle", "System Value", "Global Value", "Year", "Source"])
+    # "Resolution" is written on every row rather than only where it differs
+    # from the default: a user editing this sheet should be able to see the
+    # mode without consulting the Instructions to learn that blank means step.
+    # The import maps blank -> step, so workbooks exported before the column
+    # existed still load (see _parse_aesa_config_workbook).
+    ws.append(["Layer", "Principle", "System Value", "Global Value", "Year",
+               "Resolution", "Source"])
     _style_sharing_header(ws)
     for layer in preset.chain.layers:
         for principle_id, years in layer.data.items():
+            mode = layer.resolution_for(principle_id)
             for year, pair in sorted(years.items()):
                 sys_val, glob_val = pair
-                ws.append([layer.layer_number, principle_id, sys_val, glob_val, year, ""])
+                ws.append([layer.layer_number, principle_id, sys_val, glob_val,
+                           year, mode, ""])
     _autosize_sharing(ws)
 
     # Sheet: Method -> PB mapping. CONFIG-LEVEL — this has no home on
@@ -1085,6 +1094,32 @@ def _build_sharing_workbook(
             ["  One row per combination. If only one year is given for a principle"],
             ["  the engine uses it as constant across all years."],
             [""],
+            ["  A TIME-VARYING SHARE: give the same principle several rows with"],
+            ["  different years. Each year's row supplies that year's two values,"],
+            ["  and the share is recomputed for every assessment year."],
+            [""],
+            ["  Resolution — how the years BETWEEN your rows are read. Set it per"],
+            ["  principle; leave it blank for 'step'."],
+            ["    step        : each value holds until the next year you supply."],
+            ["    interpolate : a straight line is drawn between your years."],
+            ["  Both CLAMP at the ends: years before your first row use the first"],
+            ["  value, years after your last row use the last one. Nothing is ever"],
+            ["  extrapolated beyond the data you gave."],
+            [""],
+            ["  Worked example — two rows for EpC on layer 1:"],
+            ["    Layer 1 | EpC | 5,900,000 | 8,100,000,000 | 2025 | interpolate"],
+            ["    Layer 1 | EpC | 6,400,000 | 9,700,000,000 | 2050 | interpolate"],
+            ["  System and global are interpolated separately and then divided, so"],
+            ["  2037 (48% of the way from 2025 to 2050) gives"],
+            ["    (5,900,000 + 0.48 × 500,000) / (8,100,000,000 + 0.48 × 1.6e9)"],
+            ["    = 6,140,000 / 8,868,000,000 = 6.923e-4."],
+            ["  With 'step' instead, 2037 would give the 2025 share exactly"],
+            ["  (5,900,000 / 8,100,000,000 = 7.284e-4) and 2038 would jump to the"],
+            ["  2050 share. Which is right is a methodological choice, and it is"],
+            ["  per principle: a population-based share (EpC) is a curve and wants"],
+            ["  interpolate; a share anchored to a historical period (AR, acquired"],
+            ["  rights) may be correct held flat."],
+            [""],
             ["Allocated SOS formula"],
             ["  allocated_sos(pb, year) = PB_value × ∏ layer_factor(layer, pb, year)"],
         ]
@@ -1137,6 +1172,15 @@ def _build_sharing_workbook(
 
         ref.append(["principle_mode", "category_specific", "Layer resolves per impact category"])
         ref.append(["principle_mode", "fixed", "Layer uses one principle throughout"])
+
+        # Sharing Data → Resolution. Blank is listed as its own row because
+        # blank is what every workbook written before this column existed
+        # carries, and a user needs to know it is valid rather than missing.
+        ref.append(["resolution", "step",
+                    "Default. Each value holds until the next year supplied."])
+        ref.append(["resolution", "interpolate",
+                    "Straight line between the years supplied."])
+        ref.append(["resolution", "(blank)", "Same as step."])
 
         # AR6 temperature x probability combinations, as the engine serves them.
         for opt in load_carbon_budget_options():
@@ -1459,6 +1503,7 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
             "fixed_principle": fp if mode == "fixed" else None,
             "description": str(r[i_cdesc] or "").strip() if i_cdesc >= 0 else "",
             "data": {},
+            "resolution": {},
         }
     if not layers_meta:
         raise ValueError("Downscaling Chain sheet is empty.")
@@ -1470,6 +1515,9 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
     i_sv = _col(d_headers, "system value")
     i_gv = _col(d_headers, "global value")
     i_yr = _col(d_headers, "year")
+    # Optional: workbooks exported before the per-principle resolution mode
+    # existed have no such column, and must keep importing unchanged.
+    i_res = _col(d_headers, "resolution", "resolution mode")
     if min(i_dl, i_dp, i_sv, i_gv, i_yr) < 0:
         raise ValueError(
             "Sharing Data sheet requires Layer, Principle, System Value, Global Value, Year columns.",
@@ -1493,6 +1541,30 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
             raise ValueError(f"Sharing Data row references unknown principle '{pid}'.")
         layers_meta[num]["data"].setdefault(pid, {})[year] = (sys_v, glob_v)
 
+        # Resolution is a property of the (layer, principle) series, but it is
+        # carried on every row of that series because the sheet is row-shaped.
+        # Blank means step. A row disagreeing with an earlier row for the same
+        # principle is rejected rather than silently resolved: the user wrote
+        # two different answers to one question, and guessing which they meant
+        # would change every ratio that principle produces.
+        if i_res >= 0 and r[i_res] is not None and str(r[i_res]).strip():
+            mode = str(r[i_res]).strip().lower()
+            if mode not in RESOLUTION_MODES:
+                raise ValueError(
+                    f"Sharing Data row has an unknown Resolution '{r[i_res]}' "
+                    f"for principle '{pid}' — expected one of "
+                    f"{', '.join(RESOLUTION_MODES)}, or blank for step.",
+                )
+            prev = layers_meta[num]["resolution"].get(pid)
+            if prev is not None and prev != mode:
+                raise ValueError(
+                    f"Sharing Data gives principle '{pid}' on layer {num} two "
+                    f"different Resolution values ('{prev}' and '{mode}'). "
+                    "One principle's series has one resolution mode; make the "
+                    "rows agree.",
+                )
+            layers_meta[num]["resolution"][pid] = mode
+
     # Build layers in order
     layers: list[DownscalingLayer] = []
     for num in sorted(layers_meta):
@@ -1504,6 +1576,7 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
             fixed_principle=meta["fixed_principle"],
             description=meta["description"],
             data=meta["data"],
+            resolution=meta["resolution"],
         ))
 
     return SharingPreset(

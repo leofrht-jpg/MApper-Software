@@ -11,15 +11,17 @@ import { readFileSync } from 'node:fs'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import { apiOriginForMode } from './apiOrigin.config'
 
 // Single source of truth for the app version: package.json. Injected at build
 // time (also applied by Vitest, which uses this config) so no runtime API call
 // is needed and bumping package.json propagates to every displayed version.
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf-8'))
 
-export default defineConfig({
+export default defineConfig(({ mode }) => ({
   plugins: [react(), tailwindcss()],
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+    __API_ORIGIN_DEFAULT__: JSON.stringify(apiOriginForMode(mode)),
   },
-})
+}))

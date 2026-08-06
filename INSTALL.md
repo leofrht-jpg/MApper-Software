@@ -41,6 +41,14 @@ cd MApper-Software
 conda env create -f environment.yml
 conda activate map
 
+REM The sparse solver that makes prospective LCA fast. conda-forge ships only
+REM 0.4.2 for win-64, and its metadata carries the numpy it was built against
+REM (numpy>=2.3.5) on top of the real ABI floor (numpy>=1.23) — so the normal
+REM solve demands numpy 2 and conflicts with the pinned numpy 1.26.4.
+REM Install it with --no-deps, pinning the exact build. See the note below.
+conda install -c conda-forge suitesparse
+conda install --no-deps https://conda.anaconda.org/conda-forge/win-64/scikit-umfpack-0.4.2-py311hb8cab9b_2.conda
+
 cd mapper-frontend && npm ci && cd ..
 
 setup.bat        REM writes start.bat (not tracked in the repo)
@@ -51,9 +59,29 @@ start.bat
 `start.bat`. It leaves an existing `map` environment untouched; pass `--force`
 to recreate it.
 
-> `scikit-umfpack` is not installed on Windows — conda-forge has no win-64
-> build. Windows uses the `spsolve` fallback: correct, but slower for
-> prospective LCA.
+> **Why `--no-deps` for `scikit-umfpack` on Windows.** conda-forge publishes
+> only 0.4.2 for win-64 (there is no 0.3.3 win-64 build), and its metadata
+> declares both the real ABI floor, `numpy >=1.23,<3`, and the numpy it was
+> built against, `numpy >=2.3.5`. conda intersects the two, so a plain
+> `conda install scikit-umfpack` insists on numpy 2 and conflicts with the
+> pinned `numpy=1.26.4`. The second constraint is a packaging artifact —
+> numpy-2-built extensions are ABI-compatible back to numpy 1.23, and this
+> build was verified on numpy 1.26.4 to produce **bit-identical** LCA scores.
+> The `--no-deps` install is therefore correct, not a workaround to be tidied
+> away later.
+>
+> Do **not** raise numpy to 2.x to make the solve succeed: `bw2data 3.6.6`
+> uses the removed `np.NaN`, `brightway2 2.4.7` declares `numpy <2`, and
+> `premise 2.1.3` hard-pins `numpy <2.0.0`.
+>
+> Verify with:
+>
+> ```bat
+> python -c "from mapper.core.bw2_wrapper import _UMFPACK_OK; print(_UMFPACK_OK)"
+> ```
+>
+> Skipping it is supported: MApper falls back to `spsolve` per call, which is
+> correct but turns a sub-minute prospective run into tens of minutes.
 
 ## First Run
 

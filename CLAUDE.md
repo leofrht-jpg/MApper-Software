@@ -1361,13 +1361,67 @@ never depletes, depletes-then-replenishes).
 - **Net-negative emissions in late-century scenarios (SSP1-1.9,
   some SSP1-2.6 variants) replenish the budget in depletion
   math.** This is correct per the formula `remaining = max(0,
-  B - Σ)` but counterintuitive on first read. If a future patch
-  changes the formula to be "stays at 0 once depleted"
-  (sticky-depletion semantics), update both the backend
-  `remaining_budget()` and the frontend `CarbonBudgetInset`'s
-  `remaining` calculation in lockstep — they currently share
-  the same math and any divergence would surface as a
-  chart/data inconsistency.
+  B - Σ)` but counterintuitive on first read. The formula now
+  lives in ONE place — `CarbonBudgetConfig.remaining_budget()` —
+  so a change to it (e.g. sticky-depletion semantics, "stays at
+  0 once depleted") propagates to the chart automatically.
+- **The `CarbonBudgetInset` READS `remaining_budget_gt` off the SR
+  rows; it does not compute a remaining-budget curve.** Earlier
+  revisions of this file claimed the frontend and backend "share
+  the same math". They did not, and saying so is what let the
+  divergence persist: the inset accumulated INCLUSIVELY
+  (`cum += E[y]; remaining = initial − cum`) while
+  `remaining_budget(year)` sums `range(start_year, year)`,
+  EXCLUDING the current year. The chart was drawing
+  `remaining_budget(year + 1)` — 37 Gt low at 2025, 32 at 2030,
+  22 at 2040 on the shipped 2°C/50 × SSP1-2.6 default — and
+  annotated depletion ONE YEAR EARLY on every depleting
+  configuration (1.5°C/50 × SSP2-4.5: chart 2032, engine 2033).
+  `SustainabilityRatioResult.remaining_budget_gt` and
+  `.global_allocation_gt` are on the very result the page
+  renders; the helpers are `budgetSeriesFromResults` /
+  `depletionYearFromSeries` in `TimelineView.tsx`. Locked by
+  `tests/carbonBudgetReadsEngine.test.tsx` (frontend, against a
+  backend-generated fixture) + `test_carbon_budget_series_fixture.py`
+  (backend, keeps that fixture in sync with the engine and fails
+  if the depleting case stops depleting, which would make the
+  frontend gate vacuous).
+- **When no SR row carries `remaining_budget_gt`, the inset draws
+  NOTHING** (a note naming the cause: budget configured, no
+  cumulative boundary mapped). It does not fall back to a
+  frontend projection — a curve that agrees with Compute only by
+  coincidence, with no way for a reader to tell which number is
+  authoritative, is the thing that was removed.
+- **The "System allocated share" line is NOT the SR denominator,
+  though it shares the axes.** It samples ONE year's chain factor
+  and holds it flat, and multiplies the REMAINING budget rather
+  than the per-year allocation (`global_allocation_gt`). The SR
+  divides by the year-by-year allocated SOS. Deliberate
+  approximation kept for shape; don't read a value off it, and
+  don't "reconcile" it by making the SR use it.
+
+#### What NOT to do (any UI that shows a number the backend also computes)
+
+- **If the backend already emits the number, READ it.** Don't
+  re-derive it in the frontend "to avoid a round-trip" — the
+  result is already in hand. A second implementation agrees only
+  until one side changes, and the disagreement is silent because
+  both look authoritative. This has now bitten three times: the
+  chain editor's Total-factor preview (hand-rolled year resolver
+  vs. the one Compute uses), `interpolateKeyframes` (mirrors
+  `_interpolate_keyframes`, but returns 0 where the backend
+  raises), and this inset.
+- **If a preview genuinely must exist before Compute has run,
+  label it as a projection or don't draw it** — and never let it
+  occupy the same visual slot as the computed value with no
+  distinction.
+- **A frontend type missing a backend field is a cause, not a
+  detail.** `remaining_budget_gt` had been on the API response
+  since the carbon-budget path shipped; `SustainabilityRatioResult`
+  in `client.ts` never declared it, so the only way to get the
+  number appeared to be recomputation. When adding a computed
+  field to a result model, add it to the TS interface in the same
+  patch.
 
 ### SharingPreset is the Carrying-Capacity template (Patch 2a)
 

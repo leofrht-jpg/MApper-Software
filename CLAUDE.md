@@ -378,6 +378,23 @@ selector, superseding the Patch-2C placement:
   on Base: `selectedParamSetId = BASE_SCENARIO` and `effectiveSelected = []`
   (no fan-out branch), byte-equivalent to the pre-removal N=1 default. The
   parameter (sensitivity) axis lives on the **Prospective** tab only.
+- **The AESA sharing-principle sweep is "Sharing sensitivity" — a DIFFERENT
+  axis, and the two labels must stay distinct (Patch 5AS).** The toggle in the
+  AESA Configuration header (`aesa-run-sensitivity-toggle`, `runSensitivity` →
+  `run_sensitivity`) makes Compute ALSO evaluate the Sustainability Ratio under
+  each uniform sharing principle (EpC, IN, AGR, LA, AR) — the spread the
+  box-plot view draws. It varies the **sharing principle**, not parameter
+  cases. It was previously an unlabelled checkbox + "σ" glyph, whose accessible
+  name was literally "σ"; the obvious replacement, "Sensitivity analysis",
+  would have reintroduced one axis over exactly the collision the "Scenarios" →
+  "Sensitivity cases" rename removed — a user who has just picked
+  Base/Optimistic/Pessimistic on Impact Assessment reads a bare "Sensitivity …"
+  on the next tab as the same axis carried forward. **Name the axis, not the
+  technique.** Three distinct axis labels, none interchangeable: **LCI
+  Scenarios** (IAM/SSP background), **Sensitivity cases** (parameter values),
+  **Sharing sensitivity** (AESA sharing principles). Locked by
+  `tests/aesaSensitivityToggleLabel.test.tsx`, which asserts the label contains
+  "sharing" and does NOT match `/sensitivity (analysis|cases)/i`.
 - Locked by `tests/impactSensitivityCasesLabel.test.tsx` (Static renders no box;
   Prospective label is "Sensitivity cases").
 

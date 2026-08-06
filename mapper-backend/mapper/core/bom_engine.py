@@ -27,6 +27,7 @@ from mapper.models.bom_schemas import (
     BOMNode,
     FlattenedMaterial,
 )
+from mapper.models.interpolation import interpolate_anchors
 
 
 KG_UNITS = {"kg", "kgs", "kilogram", "kilograms"}
@@ -371,19 +372,21 @@ def resolve_quantity(
         q = base * (1.0 + float(ev.rebound_rate)) ** (int(year) - int(ev.base_year))
         return _apply_global_levers(node, q, lever_values)
     if ev.method == "milestones" and ev.milestones:
-        ms = sorted(ev.milestones, key=lambda m: m.year)
-        if year <= ms[0].year:
-            return _apply_global_levers(node, float(ms[0].quantity), lever_values)
-        if year >= ms[-1].year:
-            return _apply_global_levers(node, float(ms[-1].quantity), lever_values)
-        for a, b in zip(ms, ms[1:]):
-            if a.year <= year <= b.year:
-                span = b.year - a.year
-                if span == 0:
-                    return _apply_global_levers(node, float(a.quantity), lever_values)
-                t = (year - a.year) / span
-                q = float(a.quantity) + t * (float(b.quantity) - float(a.quantity))
-                return _apply_global_levers(node, q, lever_values)
+        # `interpolate_anchors` is the single implementation of MApper's
+        # year-anchor rule — linear between anchors, clamped at both ends,
+        # never extrapolated — shared with Parameter.keyframes and the AESA
+        # per-principle sharing series. This branch used to be a fourth
+        # hand-written copy of the same arithmetic.
+        #
+        # The `and ev.milestones` guard above is load-bearing and must stay:
+        # an empty milestone list falls through to `base` (node.quantity),
+        # whereas the helper raises on an empty anchor list — "no anchors" is
+        # a caller bug there, not a value. Guarding here keeps the empty case
+        # on its original fallback.
+        q = interpolate_anchors(
+            [(m.year, m.quantity) for m in ev.milestones], year,
+        )
+        return _apply_global_levers(node, q, lever_values)
     return _apply_global_levers(node, base, lever_values)
 
 

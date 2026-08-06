@@ -10,7 +10,9 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/Button'
-import type { DownscalingLayer, LayerData, PrincipleDefinition, PrincipleMode } from '../../api/client'
+import type {
+  DownscalingLayer, LayerData, PrincipleDefinition, PrincipleMode, ResolutionMode,
+} from '../../api/client'
 
 interface Props {
   layer: DownscalingLayer
@@ -45,6 +47,19 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
       if (Object.keys(years).length === 0) delete nextData[principleId]
       else nextData[principleId] = years
       return { ...d, data: nextData }
+    })
+  }
+
+  // Only NON-DEFAULT entries are stored, mirroring the backend validator that
+  // drops an explicit "step": one behaviour, one representation. Writing
+  // "step" would give the default a second spelling and make round-trip
+  // equality depend on which one a configuration happened to take.
+  const handleResolutionChange = (principleId: string, mode: ResolutionMode) => {
+    setDraft((d) => {
+      const next = { ...(d.resolution ?? {}) }
+      if (mode === 'step') delete next[principleId]
+      else next[principleId] = mode
+      return { ...d, resolution: next }
     })
   }
 
@@ -157,8 +172,10 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
                 key={p.id}
                 principle={p}
                 years={draft.data[p.id] ?? {}}
+                resolution={draft.resolution?.[p.id] ?? 'step'}
                 readOnly={readOnly}
                 onChange={(years) => handleDataChange(p.id, years)}
+                onResolutionChange={(mode) => handleResolutionChange(p.id, mode)}
               />
             ))}
           </section>
@@ -166,7 +183,7 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
 
         <footer style={footer}>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={readOnly}>Apply</Button>
+          <Button onClick={handleSave} disabled={readOnly} data-testid="layer-edit-apply">Apply</Button>
         </footer>
       </div>
     </div>
@@ -176,12 +193,14 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
 // ── PrincipleDataCard ────────────────────────────────────────────────────────
 
 function PrincipleDataCard({
-  principle, years, readOnly, onChange,
+  principle, years, resolution, readOnly, onChange, onResolutionChange,
 }: {
   principle: PrincipleDefinition
   years: Record<number, [number, number]>
+  resolution: ResolutionMode
   readOnly?: boolean
   onChange: (years: Record<number, [number, number]>) => void
+  onResolutionChange: (mode: ResolutionMode) => void
 }) {
   const entries = Object.entries(years)
     .map(([y, v]) => [Number(y), v] as [number, [number, number]])
@@ -250,6 +269,46 @@ function PrincipleDataCard({
             />
             Time-varying
           </label>
+
+          {/* How the years BETWEEN the supplied ones are read. Only shown for
+              a real series: with one value the mode cannot change anything,
+              and offering it there would imply otherwise. Which one is right
+              is a methodological question per principle — a population-based
+              share (EpC) is a curve; one anchored to a historical period (AR)
+              may be correct held flat. */}
+          {timeVarying && (
+            <div
+              data-testid={`resolution-control-${principle.id}`}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}
+            >
+              <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                Between years
+              </span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <ModeOption
+                  active={resolution === 'step'}
+                  disabled={readOnly}
+                  onClick={() => onResolutionChange('step')}
+                  title="Each value holds until the next year you supply. Default."
+                  testId={`resolution-step-${principle.id}`}
+                >
+                  Step
+                </ModeOption>
+                <ModeOption
+                  active={resolution === 'interpolate'}
+                  disabled={readOnly}
+                  onClick={() => onResolutionChange('interpolate')}
+                  title="A straight line is drawn between the years you supply."
+                  testId={`resolution-interpolate-${principle.id}`}
+                >
+                  Interpolate
+                </ModeOption>
+              </div>
+              <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                Both clamp at the ends — nothing is extrapolated.
+              </span>
+            </div>
+          )}
 
           {!timeVarying && (
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
@@ -365,19 +424,21 @@ function FieldRow({ label, children }: { label: string; children: React.ReactNod
 }
 
 function ModeOption({
-  active, disabled, onClick, title, children,
+  active, disabled, onClick, title, children, testId,
 }: {
   active: boolean
   disabled?: boolean
   onClick: () => void
   title?: string
   children: React.ReactNode
+  testId?: string
 }) {
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       title={title}
+      data-testid={testId}
       style={{
         flex: 1, padding: '6px 8px', fontSize: 11,
         fontWeight: active ? 600 : 500,

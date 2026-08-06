@@ -83,6 +83,48 @@ describe('section (2) workbook buttons', () => {
     await waitFor(() => expect(exportAESAConfig).toHaveBeenCalledWith(CONFIG))
   })
 
+  it('Export posts the live draft — no id, no created_at', async () => {
+    // The endpoint takes AESAConfigurationCreate. It previously took
+    // AESAConfiguration, which requires `id` and `created_at`, so every
+    // unsaved configuration 422'd and the button looked dead. A frontend
+    // `as unknown as AESAConfiguration` cast hid the mismatch from tsc; that
+    // cast is gone, so this asserts the shape actually sent.
+    const { ConfigWorkbookButtons } = await import('../src/components/aesa/ConfigWorkbookButtons')
+    const draft = {
+      name: 'Unsaved config',
+      boundary_set_id: 'Sala2020_EF',
+      sharing_preset_id: null,
+      carbon_budget: null,
+      method_mapping: [],
+      impact_mode: 'static' as const,
+      dsm_scenario_id: null,
+    }
+    const { container } = render(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <ConfigWorkbookButtons config={draft as any} onApply={vi.fn()} />,
+    )
+    fireEvent.click(container.querySelector('[data-testid="aesa-config-export"]')!)
+    await waitFor(() => expect(exportAESAConfig).toHaveBeenCalled())
+
+    // Forwarded verbatim — no id/created_at synthesised, no cast, no reshaping.
+    const sent = exportAESAConfig.mock.calls[0][0] as Record<string, unknown>
+    expect(sent).toEqual(draft)
+    expect(sent.id).toBeUndefined()
+    expect(sent.created_at).toBeUndefined()
+  })
+
+  it('Export works with no sharing preset selected', async () => {
+    const { ConfigWorkbookButtons } = await import('../src/components/aesa/ConfigWorkbookButtons')
+    const draft = { name: 'Unsaved', boundary_set_id: 'Sala2020_EF',
+                    sharing_preset_id: null, carbon_budget: null, method_mapping: [] }
+    const { container } = render(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      <ConfigWorkbookButtons config={draft as any} onApply={vi.fn()} />,
+    )
+    fireEvent.click(container.querySelector('[data-testid="aesa-config-export"]')!)
+    await waitFor(() => expect(exportAESAConfig).toHaveBeenCalledWith(draft))
+  })
+
   it('a valid import asks before replacing anything', async () => {
     importAESAConfig.mockResolvedValue(BUNDLE)
     const { container, onApply } = await renderButtons()

@@ -16,7 +16,7 @@ import {
   importAESAConfig,
   type AESAConfigBundle,
   type AESAConfigImportError,
-  type AESAConfiguration,
+  type AESAConfigExportInput,
 } from '../../api/client'
 
 /**
@@ -35,8 +35,8 @@ export function ConfigWorkbookButtons({
   config,
   onApply,
 }: {
-  /** The live configuration to export. */
-  config: AESAConfiguration
+  /** The live configuration to export — the draft, saved or not. */
+  config: AESAConfigExportInput
   /** Apply an imported bundle to the active configuration. */
   onApply: (bundle: AESAConfigBundle) => void
 }) {

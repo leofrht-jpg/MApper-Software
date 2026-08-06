@@ -480,3 +480,99 @@ def test_instructions_explain_time_varying_shares_with_a_worked_example():
     assert "clamp" in text.lower()          # both ends held, no extrapolation
     assert "Worked example" in text
     assert "2037" in text                   # the example resolves a real year
+# ── Export must work for an UNSAVED configuration ───────────────────────────
+
+
+def _draft_body() -> dict:
+    """Exactly what the sidebar posts: AESAConfigDraft, with no server fields."""
+    import json as _json
+
+    from mapper.core.aesa_engine import build_carbon_budget, build_default_sharing_preset
+
+    return {
+        "name": "My AESA config",
+        "boundary_set_id": "Sala2020_EF",
+        "sharing": _json.loads(build_default_sharing_preset().model_dump_json()),
+        "sharing_preset_id": None,          # no preset selected
+        "carbon_budget": _json.loads(build_carbon_budget().model_dump_json()),
+        "method_mapping": [],
+        "impact_mode": "static",
+        "dsm_scenario_id": None,
+    }
+
+
+def test_export_accepts_an_unsaved_draft():
+    """The Export settings button posts the live draft, which has no id.
+
+    The endpoint took ``AESAConfiguration``, which requires ``id`` and
+    ``created_at`` — fields the server only assigns on save — so the button
+    returned 422 for every unsaved configuration. A frontend
+    ``as unknown as`` cast hid the mismatch from the type checker.
+    """
+    from fastapi.testclient import TestClient
+
+    from mapper.main import app
+
+    with TestClient(app) as c:
+        r = c.post("/api/aesa/config/export", json=_draft_body())
+        assert r.status_code == 200, r.text
+        assert r.content[:2] == b"PK", "not a valid xlsx"
+        assert "My_AESA_config_AESACFG.xlsx" in r.headers["content-disposition"]
+
+
+def test_export_needs_nothing_but_a_name():
+    """Minimal body: no preset, no budget, no mapping, no system."""
+    from fastapi.testclient import TestClient
+
+    from mapper.main import app
+
+    with TestClient(app) as c:
+        r = c.post("/api/aesa/config/export", json={"name": "bare"})
+        assert r.status_code == 200, r.text
+        assert r.content[:2] == b"PK"
+
+
+def test_export_endpoint_does_not_require_server_assigned_fields():
+    """Structural: `id` / `created_at` must stay out of the export body model.
+
+    Re-introducing AESAConfiguration here would restore the 422 for every
+    unsaved draft, and the frontend cast that hid it is gone, so nothing else
+    would catch it.
+    """
+    import typing
+
+    from mapper.api import aesa
+    from mapper.models.aesa_schemas import AESAConfigurationCreate
+
+    # aesa.py uses `from __future__ import annotations`, so the raw annotation
+    # is a string — resolve it rather than comparing text.
+    hints = typing.get_type_hints(aesa.post_config_export)
+    assert hints["body"] is AESAConfigurationCreate
+    required = {n for n, f in AESAConfigurationCreate.model_fields.items() if f.is_required()}
+    assert required == {"name"}, required
+
+
+def test_unsaved_draft_export_still_round_trips():
+    """The acceptance criterion, driven through the real endpoints."""
+    from fastapi.testclient import TestClient
+
+    from mapper.main import app
+
+    body = _draft_body()
+    with TestClient(app) as c:
+        exported = c.post("/api/aesa/config/export", json=body)
+        assert exported.status_code == 200, exported.text
+
+        back = c.post(
+            "/api/aesa/config/import",
+            files={"file": ("cfg.xlsx", exported.content,
+                            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+        assert back.status_code == 200, back.text
+        got = back.json()
+
+    assert got["boundary_set_id"] == body["boundary_set_id"]
+    assert got["sharing"]["name"] == body["sharing"]["name"]
+    assert len(got["sharing"]["principles"]) == len(body["sharing"]["principles"])
+    assert got["carbon_budget"] is not None
+    assert got["carbon_budget"]["budget_source"] == body["carbon_budget"]["budget_source"]

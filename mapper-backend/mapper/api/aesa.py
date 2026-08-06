@@ -589,8 +589,17 @@ async def get_config_template() -> Response:
 
 
 @router.post("/config/export")
-async def post_config_export(body: AESAConfiguration) -> Response:
-    """Write the CURRENT configuration out, ready to re-import or hand on."""
+async def post_config_export(body: AESAConfigurationCreate) -> Response:
+    """Write the CURRENT configuration out, ready to re-import or hand on.
+
+    Takes ``AESAConfigurationCreate``, not ``AESAConfiguration``: the latter
+    requires ``id`` and ``created_at``, which the server assigns when a config
+    is SAVED. The sidebar exports the live draft, which has neither — so
+    requiring them made the button 422 for every unsaved configuration, which
+    is most of them. Nothing in the workbook derives from either field; the
+    export reads name, boundary set, sharing snapshot, method mapping and
+    carbon budget only.
+    """
     preset = body.sharing or build_default_sharing_preset()
     bundle = AESAConfigBundle(
         boundary_set_id=body.boundary_set_id,

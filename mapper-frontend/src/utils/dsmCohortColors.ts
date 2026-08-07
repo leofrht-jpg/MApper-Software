@@ -13,10 +13,12 @@ import {
   CHART_PALETTE,
   clearLabelColor,
   colorFor,
+  getOverriddenLabels,
   getStoredLabelColor,
   setLabelColor,
   useChartColors,
 } from './chartColors'
+import { useProjectStore } from '../stores/projectStore'
 
 // Patch 4N — shared cohort-color utility.
 //
@@ -81,9 +83,21 @@ export function groupKeyForDim(
  * override is derived for that value. Per-row overrides still apply
  * in cohort-key stacked charts.
  *
- * **One-way at upload only.** Do NOT call this from the in-app per-row
- * picker — the runtime architectural separation between per-row and
- * per-dim is preserved everywhere except the import boundary.
+ * Two callers, doing different things with the result:
+ *
+ *   1. The Excel upload boundary PERSISTS it, via
+ *      ``reconcileUploadDerivedDimColors`` → ``setLabelColor``.
+ *   2. ``useDSMSystemColors`` applies it READ-ONLY, per render, to fill dim
+ *      values that have no explicit per-dim color — so a color assigned in the
+ *      in-app per-row picker reaches charts that paint merged dim bands.
+ *
+ * The old warning here — "one-way at upload only, do NOT call this from the
+ * in-app per-row picker" — was guarding against (1) from the picker, i.e.
+ * WRITING per-dim overrides whenever a row color changes. That would collapse
+ * the per-row / per-dim separation: a single row's color would silently
+ * repaint every cohort sharing its dim value, and clearing the row would not
+ * restore the previous per-dim color. Usage (2) writes nothing and is scoped
+ * to one render, so it does not.
  */
 export function deriveDimColorsFromRowColors(
   rowColors: Record<string, string>,
@@ -117,6 +131,70 @@ export function deriveDimColorsFromRowColors(
     if (colors.size === 1) {
       out[value] = Array.from(colors)[0]
     }
+  }
+  return out
+}
+
+/**
+ * Band colors derived from per-cohort assignments, for RUNTIME use — stricter
+ * than {@link deriveDimColorsFromRowColors}.
+ *
+ * A dim value's band color is derived only when EVERY cohort carrying that
+ * value has an assignment and they all agree. Partial assignment derives
+ * nothing: the band keeps its algorithmic color.
+ *
+ * The two rules differ deliberately, because the inputs mean different things:
+ *
+ *   - At the Excel UPLOAD boundary, the file is a complete statement of intent
+ *     that the user authored wholesale. A blank cell there reads as "no
+ *     opinion", so a fuel with two rows colored and one blank still means
+ *     "this fuel is blue". `deriveDimColorsFromRowColors` implements that.
+ *
+ *   - At RUNTIME we are inferring from a live, partially-colored table. One
+ *     row colored red out of three does not mean "the whole family is red" —
+ *     it means one row is red. Repainting its siblings would take a color the
+ *     user gave to a single cohort and apply it to cohorts they left alone,
+ *     and "any cohort without an assignment keeps the deterministic palette"
+ *     is the contract.
+ *
+ * Needs the system to know the full cohort space: `rowColorOverrides` contains
+ * only assigned cohorts, so completeness cannot be judged from it alone.
+ */
+export function deriveCompleteDimColors(
+  rowColors: Record<string, string>,
+  activeSystem: SystemDefinition | null,
+): Record<string, string> {
+  const dims = (activeSystem?.dimensions ?? []).filter((d) => !d.is_age)
+  if (dims.length === 0) return {}
+
+  // How many cohorts in the full cartesian space carry each dim value.
+  const expected: Record<string, number> = {}
+  let totalCohorts = 1
+  for (const d of dims) totalCohorts *= Math.max((d.labels ?? []).length, 1)
+  for (const d of dims) {
+    const n = Math.max((d.labels ?? []).length, 1)
+    for (const label of d.labels ?? []) expected[label] = totalCohorts / n
+  }
+
+  // Colors actually assigned, per dim value.
+  const observed: Record<string, Set<string>> = {}
+  const counted: Record<string, number> = {}
+  for (const [ck, color] of Object.entries(rowColors)) {
+    const trimmed = (color ?? '').trim()
+    if (!trimmed || trimmed.toLowerCase() === 'auto') continue
+    const parsed = parseCohortKey(ck, dims)
+    for (const value of Object.values(parsed)) {
+      if (!value) continue
+      ;(observed[value] ??= new Set<string>()).add(trimmed.toLowerCase())
+      counted[value] = (counted[value] ?? 0) + 1
+    }
+  }
+
+  const out: Record<string, string> = {}
+  for (const [value, colors] of Object.entries(observed)) {
+    if (colors.size !== 1) continue                      // ambiguous
+    if (counted[value] !== expected[value]) continue     // partial
+    out[value] = Array.from(colors)[0]
   }
   return out
 }
@@ -448,7 +526,47 @@ export function useDSMSystemColors(
     [activeSystem, stackKeys],
   )
 
-  const colorMap = useChartColors(chartLabels)
+  const rawColorMap = useChartColors(chartLabels)
+  const currentProject = useProjectStore((s) => s.currentProject)
+
+  // Fold the user's per-cohort assignments into the per-DIM map, so charts that
+  // paint merged dim bands off `colorMap` see them.
+  //
+  // This closes a gap that was twice documented as intentional. DSM Stock
+  // Composition reads `colorMap` directly and never calls `colorForCohort`,
+  // which is CORRECT — a stacked band is one band per dim value, not per
+  // cohort, so it needs one color per band. The wrong inference was that it
+  // therefore had nothing to do with per-cohort assignments. It does: when
+  // every cohort sharing a dim value carries the SAME assigned color (which is
+  // what the cohort-mapping table produces when a user colors by fuel), that
+  // band's color is unambiguously determined. `deriveDimColorsFromRowColors`
+  // already computes exactly that — it was only ever wired at the Excel upload
+  // boundary, so colors assigned through the in-app picker, or loaded from the
+  // server without an upload in this browser, never reached the chart.
+  //
+  // Precedence — explicit beats inferred:
+  //   1. an explicit per-dim color (the picker's "All {label}" mode, or an
+  //      upload-derived color, both written via setLabelColor)
+  //   2. a color DERIVED here from unambiguous per-cohort assignments
+  //   3. the deterministic algorithm
+  //
+  // Ambiguous bands (cohorts under one dim value carrying different colors)
+  // derive nothing and keep the algorithmic color — the resolver's existing
+  // rule, unchanged. That is why per-fuel consistency in the mapping table is
+  // load-bearing rather than merely tidy.
+  const colorMap = useMemo(() => {
+    const derived = deriveCompleteDimColors(rowColorOverrides, activeSystem)
+    if (Object.keys(derived).length === 0) return rawColorMap
+    // Re-read on every color-change event: `rawColorMap`'s identity advances on
+    // the COLOR_CHANGE_EVENT tick, so listing it in deps refreshes this too.
+    const explicit = getOverriddenLabels(currentProject)
+    const merged = { ...rawColorMap }
+    for (const [dimValue, hex] of Object.entries(derived)) {
+      if (explicit.has(dimValue)) continue
+      merged[dimValue] = hex
+    }
+    return merged
+  }, [rawColorMap, rowColorOverrides, activeSystem, currentProject])
 
   return useMemo<DSMSystemColors>(() => {
     const dims = activeSystem?.dimensions ?? []

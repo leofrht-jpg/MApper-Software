@@ -1139,9 +1139,27 @@ Corrected bundled values (AR6 50 GtCO2 rounding convention):
 | 2.0°C / 67% | 600 | 600 | **950** (orig 1150) |
 
 The depletion year visible on the AESA Timeline shifts by ~1 year
-for the 1.5°C / 50% × SSP2-4.5 default (was ~2031, now ~2032).
+for the 1.5°C / 50% × SSP2-4.5 pairing (was ~2031, then ~2032).
 Patch X1++ shifts the 2°C depletion years substantially (2°C / 50%
 ×SSP2-4.5: ~2052 → ~2061; 2°C / 67% ×SSP2-4.5: ~2042 → ~2052).
+
+**These depletion years were all read off the CHART before the
+inclusive-accumulation fix, so each is ~1 year EARLY.** The chart was
+drawing `remaining_budget(year + 1)` and annotating depletion one year
+ahead of the engine on every depleting configuration (see the
+"chart 2032, engine 2033" note further down). Post-fix the sparkline and
+the Timeline read the engine's series, so **1.5°C / 50% × SSP2-4.5 is
+~2033** — verified in the installed v0.1.6 build (2026-08-07), which
+renders "Cumulative emissions vs 300 Gt budget · depleted ~2033". The
+2°C figures above have NOT been re-measured; treat them as ~1 year early
+until someone checks them the same way, and don't quote them as engine
+values.
+
+**Depletion year is budget × pathway — always state both.** The same
+300 Gt budget reads ~2033 on SSP2-4.5 but **~2035 on SSP1-2.6**, which
+is the fresh-config DEFAULT pathway. So "the 1.5°C/50 default depletes
+~2033" is only true for the SSP2-4.5 (mitigation-gap) pairing, not for
+what a new config actually opens on.
 
 **Patch X1++ — 2°C re-sourcing.** Patch X1+ explicitly deferred
 the 2°C `original_gt_from_2020` values pending methodological
@@ -7103,6 +7121,123 @@ distinct slots before wrap.
   invariant should be enforced at the boundary, not relied on at
   every call site. If a future store action persists colors, it
   MUST call `normalizeHex` first.
+
+## Project-scoped stores must reset on project change (Database Explorer staleness)
+
+Found 2026-08-07 verifying the Windows v0.1.6 installer; **fixed before
+v0.1.6 shipped** (Cause B sat on the licence-free demo path a JOSS reviewer
+follows). Kept here because it is a two-part failure that a green test suite
+actively concealed.
+
+**Symptom.** Switching projects leaves the Database Explorer rendering the
+PREVIOUS project's database list and activity table. Switch to a project the
+backend reports as having 0 databases and the page still shows the old
+project's activity count (e.g. "4,362 activities") with the database
+`<select>` gone; the `hasDatabases === false` empty state — and with it the
+**"Load demo project" button, which only renders inside that empty state** —
+never appears. Symmetric in the other direction: right after the demo button
+switches projects, the explorer says "No databases in this project yet" while
+`GET /api/databases` returns two.
+
+**Not a backend bug.** `GET /api/databases` is correct throughout; only the
+frontend view is stale. A webview reload (Ctrl+R) fixes it every time, which
+is the tell: the data is refetched on mount but not on project change.
+
+**Reproduced** from both Settings and the Database Explorer itself, before
+and after an app restart. A **cold boot into a database-less project renders
+correctly**, so a genuinely new user (fresh install, empty project) is NOT
+affected — this bites mid-session project switching, which includes anyone
+demoing MApper by hopping between projects.
+
+**Root cause — TWO independent bugs that produce the same symptom.** Diagnosed
+2026-08-07; both are small fixes, but fixing only one leaves half the symptom.
+
+*Cause A — switching TO a project (stale activity table).*
+`projectStore.switchProject` is fine: it calls `refreshProjectsAndDatabases`,
+so `projectStore.databases` DOES update. The stale data lives in the OTHER
+store — **`useActivityStore` is never reset on project change**.
+`selectedDatabase` keeps pointing at the previous project's db (e.g.
+`biosphere3`) and `activities` keeps the previous page. The initialise effect
+(`DatabaseExplorer.tsx` ~line 687) is guarded by `!selectedDatabase`:
+
+```ts
+useEffect(() => {
+  if (databases.length > 0 && !selectedDatabase) setDatabase(databases[0].name)
+}, [databases, selectedDatabase, setDatabase])
+```
+
+With a stale-but-truthy `selectedDatabase` it does nothing — no re-select, no
+refetch, no clear. Two knock-on effects: the db `<select>`'s value is no longer
+in `databases`, so the picker renders no matching option (looks like it
+"disappeared"); and `<EmptyState>` is gated on `activities.length === 0`
+(`DatabaseExplorer.tsx` ~line 937), so a stale NON-empty `activities` means the
+empty state — **and the "Load demo project" button inside it** — can never
+render even though `databases.length === 0` is correct.
+
+*Cause B — the demo button (says "No databases" when there are two).*
+`DemoLoadButton` calls `useProjectStore.fetchProjects`, and **`fetchProjects`
+sets only `{projects, currentProject}` — it never calls `getDatabases()`.**
+Only `refreshProjectsAndDatabases` (used by `switchProject` / `createProject`)
+refreshes both. So after the demo builds and switches, `databases` is still the
+previous project's `[]` → `hasDatabases === false` → "No databases in this
+project yet", while the backend already has `biosphere3` +
+`demo-synthetic-technosphere`.
+
+**The fix.**
+
+*A* — `useActivityStore` gained the standard project-change reset. **Every
+project-scoped store ends with the same block** (`bomStore`, `dsmStore`,
+`aesaStore`, `impactStore`, `plcaStore`, `parameterStore`, `subsystemStore`
+already had it; `activityStore` was the ONLY one missing it):
+
+```ts
+let _lastProject: string | null = useProjectStore.getState().currentProject
+useProjectStore.subscribe((state) => {
+  if (state.currentProject === _lastProject) return
+  _lastProject = state.currentProject
+  useXStore.getState().reset()
+})
+```
+
+It resets ONLY — the explorer's own effect re-selects `databases[0]` once
+`selectedDatabase` is null, so selection logic stays in one place. **When you
+add a new project-scoped store, add this block.**
+
+*B* — new `projectStore.resyncAfterProjectChange()` (project list + databases,
+refreshed atomically). `DemoLoadButton` and App's project-guard 409 handler now
+call it instead of `fetchProjects`.
+
+**Do NOT make `fetchProjects` fetch databases.** It is the cold-boot mount
+fetch with a deliberately tuned ~22.5 s retry budget; awaiting a second request
+inside it changes its timing contract and took down all 4 `projectColdBoot`
+tests (which drive it under fake timers). That was tried and reverted — use
+`resyncAfterProjectChange` from callers that know the project changed.
+`tests/databaseExplorerProjectSwitch.test.tsx` B3 guards this.
+
+**Publish the project and its databases in ONE `set()`.** The first attempt set
+`currentProject` then `databases` separately; the intermediate render held the
+NEW project with the OLD database list, and the explorer's initialise effect
+ran in that window and re-selected a database from the old project — undoing
+the reset. `refreshProjectsAndDatabases` is now atomic.
+
+**Why the existing tests didn't catch it:** `projectSwitcherRefetch.test.tsx`
+and `projectColdBoot.test.ts` are both green and both are about **`fetchProjects`
+resilience only** — cold-boot retry, not clobbering on persistent failure, and
+re-fetching the PROJECT LIST when the dropdown opens. Neither asserts anything
+downstream of a project *change*, and neither renders `DatabaseExplorer`. The
+area looks covered and isn't.
+
+**The regression test must switch project on an ALREADY-MOUNTED explorer** — a
+mount-time-only test passes against the bug. `tests/databaseExplorerProjectSwitch.test.tsx`
+renders `<DatabaseExplorer>`, then switches in BOTH directions (has-dbs →
+no-dbs, and no-dbs → has-dbs via the demo path) without unmounting, asserting
+the picker AND the activity table follow. Both halves were verified
+load-bearing by disabling each fix in turn and watching the suite go red.
+
+**Seeding order gotcha for other tests:** set `useProjectStore.currentProject`
+BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
+activities (this is why `multiProductActivityVintage.test.tsx` reorders its
+`beforeEach`). Same hazard already applied to `bomStore`.
 
 ## Client-server project state desync — `X-Mapper-Project` guard (Patch X1+++)
 

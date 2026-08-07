@@ -46,13 +46,17 @@ function App() {
   // sends X-Mapper-Project on every request; if the backend's bw2
   // project differs (most commonly after a backend restart that
   // reset bw2 to "default"), it 409s and we trigger an immediate
-  // re-sync via fetchProjects(). Avoids silent write misrouting.
+  // re-sync. Avoids silent write misrouting.
+  //
+  // Uses `resyncAfterProjectChange`, not `fetchProjects`: a 409 means the
+  // backend is on a DIFFERENT project than we thought, so the project-scoped
+  // `databases` list is stale too and must be refetched alongside the project.
   useEffect(() => {
     configureProjectGuard(
       () => useProjectStore.getState().currentProject,
       (detail) => {
         console.warn('[project-guard] mismatch detected, re-syncing:', detail)
-        void useProjectStore.getState().fetchProjects()
+        void useProjectStore.getState().resyncAfterProjectChange()
       },
     )
   }, [])

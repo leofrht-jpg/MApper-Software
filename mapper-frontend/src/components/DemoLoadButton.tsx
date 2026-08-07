@@ -27,7 +27,14 @@ import { useProjectStore } from '../stores/projectStore'
 export function DemoLoadButton({ onLoaded }: { onLoaded?: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const refreshProjects = useProjectStore((s) => s.fetchProjects)
+  // `resyncAfterProjectChange`, NOT `fetchProjects`: the demo builds its own
+  // bw2 project and switches to it SERVER-SIDE, so the project-scoped
+  // `databases` list must be refetched too. `fetchProjects` only updates the
+  // project list, which left `databases` holding the previous project's (often
+  // empty) list — so the licence-free path showed "No databases in this project
+  // yet" on a project that had just been populated with biosphere3 +
+  // demo-synthetic-technosphere.
+  const refreshProjects = useProjectStore((s) => s.resyncAfterProjectChange)
 
   const handleClick = async () => {
     setBusy(true)

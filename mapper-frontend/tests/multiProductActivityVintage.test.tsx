@@ -58,12 +58,15 @@ beforeEach(() => {
   // fetchArchetypes returns a promise: bomStore subscribes to currentProject
   // and calls fetchArchetypes().catch(...) when it changes.
   useBOMStore.setState({ archetypes: [], fetchArchetypes: vi.fn(() => Promise.resolve()) } as any)
+  // Set the project BEFORE seeding activityStore. activityStore now subscribes
+  // to currentProject and resets on change (project-scoped state), so seeding
+  // activities first would have them wiped by the very next line.
+  useProjectStore.setState({ databases: [{ name: BASE_DB } as any], currentProject: 'test-proj' } as any)
   useActivityStore.setState({
     activities: [ELEC], selectedDatabase: BASE_DB,
     searchActivities: vi.fn(), setDatabase: vi.fn(), setLocations: vi.fn(), setUnits: vi.fn(),
     distinctValues: { locations: ['DK'], units: ['kWh'] },
   } as any)
-  useProjectStore.setState({ databases: [{ name: BASE_DB } as any], currentProject: 'test-proj' } as any)
   usePLCAStore.setState({ databases: PLCA_DBS, fetchDatabases: vi.fn() } as any)
   useMultiProductLCAStore.getState().reset()
 })

@@ -39,6 +39,22 @@ interface ProjectStore {
   importProject: (file: File) => Promise<void>
 }
 
+// Cold-boot retry budget for the initial project fetch. Exported so a test can
+// assert the window actually covers a slow sidecar rather than just asserting
+// that the retry helper is wired up.
+export const PROJECT_FETCH_ATTEMPTS = 10
+export const PROJECT_FETCH_BASE_DELAY_MS = 500
+
+/** Total time `withTransientRetry` will wait across its (linear) backoff. */
+export function projectFetchRetryWindowMs(
+  attempts = PROJECT_FETCH_ATTEMPTS,
+  baseDelayMs = PROJECT_FETCH_BASE_DELAY_MS,
+): number {
+  let total = 0
+  for (let i = 0; i < attempts - 1; i++) total += baseDelayMs * (i + 1)
+  return total
+}
+
 async function refreshProjectsAndDatabases(
   set: (partial: Partial<ProjectStore>) => void,
   currentOverride?: string,
@@ -63,9 +79,17 @@ export const useProjectStore = create<ProjectStore>((set) => ({
       // not be fully reachable the instant the SPA mounts (cold-boot / onefile
       // re-bind window). Without this a single early failure would leave the
       // project list empty forever ("No projects found") with no re-fetch.
+      //
+      // The window has to cover a real cold boot. `withTransientRetry` backs off
+      // LINEARLY (baseDelayMs × attempt), so 6 × 400 ms was only
+      // 400+800+1200+1600+2000 = 6.0 s of waiting. Measured time-to-first-200 on
+      // the packaged macOS build is 5–15 s (bw2 + scipy imports, and a one-off
+      // matplotlib font-cache rebuild on a fresh install), so the old window
+      // expired before a slow-but-healthy sidecar answered. 10 × 500 ms gives
+      // 500+1000+…+4500 = 22.5 s.
       const projects = await withTransientRetry(() => getProjects(), {
-        attempts: 6,
-        baseDelayMs: 400,
+        attempts: PROJECT_FETCH_ATTEMPTS,
+        baseDelayMs: PROJECT_FETCH_BASE_DELAY_MS,
       })
       const current = projects.find((p) => p.is_current)?.name ?? null
       set({ projects, currentProject: current })

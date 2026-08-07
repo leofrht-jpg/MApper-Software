@@ -14,7 +14,14 @@ import { buildExportFilename } from '../utils/exportFilename'
 // `npm run dev` sets no env). The packaged desktop (Tauri) build sets
 // VITE_API_BASE to the sidecar origin (http://127.0.0.1:8765) at build time, so
 // the same code drives both. WS base is derived by swapping the scheme.
-const API_ORIGIN = (import.meta.env.VITE_API_BASE ?? 'http://localhost:8000').replace(/\/$/, '')
+// `__API_ORIGIN_DEFAULT__` is baked in per build mode by vite.config.ts —
+// :8765 for `--mode desktop` (the sidecar serves the SPA same-origin), :8000
+// for dev. It replaces a hardcoded dev-origin fallback that made a desktop
+// build with no VITE_API_BASE silently ship pointing at the dev port: the build
+// succeeded, and the packaged app then called a port nothing was listening on,
+// so every request failed and the UI came up empty. VITE_API_BASE still wins
+// when set.
+const API_ORIGIN = (import.meta.env.VITE_API_BASE ?? __API_ORIGIN_DEFAULT__).replace(/\/$/, '')
 const API_BASE = `${API_ORIGIN}/api`
 const WS_BASE = `${API_ORIGIN.replace(/^http/, 'ws')}/api`
 

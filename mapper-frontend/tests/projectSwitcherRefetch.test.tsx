@@ -54,10 +54,23 @@ describe('project list resilience', () => {
     useProjectStore.setState({ projects: PROJECTS as never, currentProject: 'default' })
     vi.mocked(client.getProjects).mockRejectedValue(new TypeError('Failed to fetch'))
 
-    // Must resolve (not reject) so App's mount chain isn't broken.
-    await expect(useProjectStore.getState().fetchProjects()).resolves.toBeUndefined()
+    // Fake timers: this exhausts the FULL retry budget, which is now ~22.5 s of
+    // wall-clock (widened to cover the packaged build's 5-15 s cold boot).
+    // Waiting it out for real made the test's runtime a hostage to the retry
+    // constants — it started failing on a 10 s timeout the moment the budget
+    // grew. What is under test is the behaviour after the budget is spent, not
+    // how long spending it takes.
+    vi.useFakeTimers()
+    try {
+      const p = useProjectStore.getState().fetchProjects()
+      await vi.runAllTimersAsync()
+      // Must resolve (not reject) so App's mount chain isn't broken.
+      await expect(p).resolves.toBeUndefined()
+    } finally {
+      vi.useRealTimers()
+    }
     expect(useProjectStore.getState().projects).toHaveLength(2) // not clobbered to []
-  }, 10000)
+  })
 
   it('B: opening the dropdown re-fetches fresh (closing does not)', async () => {
     const fetchProjects = vi.fn().mockResolvedValue(undefined)

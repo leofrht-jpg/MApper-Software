@@ -31,6 +31,18 @@ interface ProjectStore {
   fetchProjects: () => Promise<void>
   switchProject: (name: string) => Promise<void>
   fetchDatabases: () => Promise<void>
+  /**
+   * Re-sync after the BACKEND's project changed underneath us (the demo
+   * builder switches server-side; the project-guard 409 means bw2 is on a
+   * different project than we thought). Refreshes the project list AND the
+   * project-scoped `databases` atomically.
+   *
+   * Deliberately separate from `fetchProjects`, which must stay a
+   * project-list-only call: it is the cold-boot mount fetch with a tuned
+   * ~22.5 s retry budget, and awaiting a second request inside it changes its
+   * timing contract.
+   */
+  resyncAfterProjectChange: () => Promise<void>
 
   createProject: (name: string) => Promise<void>
   duplicateProject: (sourceName: string, newName: string) => Promise<void>
@@ -61,9 +73,14 @@ async function refreshProjectsAndDatabases(
 ) {
   const projects = await getProjects()
   const current = currentOverride ?? projects.find((p) => p.is_current)?.name ?? null
-  set({ projects, currentProject: current })
+  // Publish the project and its databases in ONE set(). Two sets left an
+  // intermediate render holding the NEW currentProject with the PREVIOUS
+  // project's `databases`; DatabaseExplorer's initialise effect ran in that
+  // window and re-selected a database belonging to the old project (which the
+  // activity-store reset had just cleared), reinstating the stale view it was
+  // supposed to fix. Keep this atomic.
   const databases = await getDatabases()
-  set({ databases })
+  set({ projects, currentProject: current, databases })
 }
 
 export const useProjectStore = create<ProjectStore>((set) => ({
@@ -118,6 +135,17 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     try {
       const databases = await getDatabases()
       set({ databases })
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  resyncAfterProjectChange: async () => {
+    set({ isLoading: true })
+    try {
+      await refreshProjectsAndDatabases(set)
+    } catch {
+      // Never rethrow — callers are fire-and-forget (demo load, guard re-sync).
     } finally {
       set({ isLoading: false })
     }

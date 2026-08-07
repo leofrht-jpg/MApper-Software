@@ -17,6 +17,7 @@ import {
   getActivityDetail,
   getActivityDistinctValues,
 } from '../api/client'
+import { useProjectStore } from './projectStore'
 
 interface ActivityStore {
   selectedDatabase: string | null
@@ -61,6 +62,9 @@ interface ActivityStore {
   closeDetail: () => void
 
   loadMore: () => Promise<void>
+
+  /** Clear every project-scoped slot. Fired when the bw2 project changes. */
+  reset: () => void
 }
 
 const PAGE_SIZE = 50
@@ -243,4 +247,47 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     if (isLoading || activities.length >= totalActivities) return
     await get().fetchActivities(true)
   },
+
+  reset: () => set({
+    selectedDatabase: null,
+    activities: [],
+    totalActivities: 0,
+    offset: 0,
+    searchQuery: '',
+    selectedLocations: [],
+    selectedUnits: [],
+    distinctValues: INITIAL_DISTINCT,
+    isLoadingDistinct: false,
+    selectedKeys: [],
+    selectedActivitiesByKey: {},
+    lastClickIndex: null,
+    selectedActivity: null,
+    isLoadingDetail: false,
+    isLoading: false,
+  }),
 }))
+
+// Reset when project changes.
+//
+// This store is project-scoped (a database name and an activity page are only
+// meaningful within one bw2 project) but was the ONLY such store without this
+// subscription — bomStore / dsmStore / aesaStore / impactStore / plcaStore /
+// parameterStore / subsystemStore all have it.
+//
+// Without it, switching projects left `selectedDatabase` pointing at the old
+// project's db and `activities` holding the old page. DatabaseExplorer's
+// initialise effect is guarded by `!selectedDatabase`, so a stale-but-truthy
+// value made it a no-op: no re-select, no refetch, no clear. The picker then
+// rendered no matching option, and because the empty state is gated on
+// `activities.length === 0`, a stale non-empty page hid it — taking the
+// "Load demo project" button, which lives inside that empty state, with it.
+//
+// Reset only: the explorer's own effect re-selects `databases[0]` once
+// `selectedDatabase` is null and the new project's database list has landed,
+// so the selection logic stays in one place.
+let _lastProject: string | null = useProjectStore.getState().currentProject
+useProjectStore.subscribe((state) => {
+  if (state.currentProject === _lastProject) return
+  _lastProject = state.currentProject
+  useActivityStore.getState().reset()
+})

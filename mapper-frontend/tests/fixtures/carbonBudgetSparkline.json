@@ -1,0 +1,1576 @@
+{
+ "_generated_by": "mapper-backend: CarbonBudgetConfig.remaining_budget(year) \u2014 the engine's own rule, summing range(start_year, year) EXCLUSIVE of the current year",
+ "_why": "The AESA sidebar's budget sparkline renders BEFORE any compute, so it cannot read remaining_budget_gt off SR rows; it re-implements the rule in utils/carbonBudget.ts. This fixture is the cross-boundary check that the two agree. Regenerate with the snippet in test_carbon_budget_sparkline_fixture.py.",
+ "IPCC_AR6_1p5C_50__SSP2-4.5": {
+  "budget_option_id": "IPCC_AR6_1p5C_50",
+  "ssp_id": "SSP2-4.5",
+  "initial_budget_gt": 300.0,
+  "start_year": 2025,
+  "end_year": 2100,
+  "projected_emissions": {
+   "2025": 37.5,
+   "2026": 37.6,
+   "2027": 37.7,
+   "2028": 37.8,
+   "2029": 37.9,
+   "2030": 38.0,
+   "2031": 37.7,
+   "2032": 37.4,
+   "2033": 37.1,
+   "2034": 36.8,
+   "2035": 36.5,
+   "2036": 36.2,
+   "2037": 35.9,
+   "2038": 35.6,
+   "2039": 35.3,
+   "2040": 35.0,
+   "2041": 34.3,
+   "2042": 33.6,
+   "2043": 32.9,
+   "2044": 32.2,
+   "2045": 31.5,
+   "2046": 30.8,
+   "2047": 30.1,
+   "2048": 29.4,
+   "2049": 28.7,
+   "2050": 28.0,
+   "2051": 27.4,
+   "2052": 26.8,
+   "2053": 26.2,
+   "2054": 25.6,
+   "2055": 25.0,
+   "2056": 24.4,
+   "2057": 23.8,
+   "2058": 23.2,
+   "2059": 22.6,
+   "2060": 22.0,
+   "2061": 21.4,
+   "2062": 20.8,
+   "2063": 20.2,
+   "2064": 19.6,
+   "2065": 19.0,
+   "2066": 18.4,
+   "2067": 17.8,
+   "2068": 17.2,
+   "2069": 16.6,
+   "2070": 16.0,
+   "2071": 15.6,
+   "2072": 15.2,
+   "2073": 14.8,
+   "2074": 14.4,
+   "2075": 14.0,
+   "2076": 13.6,
+   "2077": 13.2,
+   "2078": 12.8,
+   "2079": 12.4,
+   "2080": 12.0,
+   "2081": 11.8,
+   "2082": 11.6,
+   "2083": 11.4,
+   "2084": 11.2,
+   "2085": 11.0,
+   "2086": 10.8,
+   "2087": 10.6,
+   "2088": 10.4,
+   "2089": 10.2,
+   "2090": 10.0,
+   "2091": 9.9,
+   "2092": 9.8,
+   "2093": 9.7,
+   "2094": 9.6,
+   "2095": 9.5,
+   "2096": 9.4,
+   "2097": 9.3,
+   "2098": 9.2,
+   "2099": 9.1,
+   "2100": 9.0
+  },
+  "rows": [
+   {
+    "year": 2025,
+    "remaining_gt": 300.0
+   },
+   {
+    "year": 2026,
+    "remaining_gt": 262.5
+   },
+   {
+    "year": 2027,
+    "remaining_gt": 224.9
+   },
+   {
+    "year": 2028,
+    "remaining_gt": 187.2
+   },
+   {
+    "year": 2029,
+    "remaining_gt": 149.4
+   },
+   {
+    "year": 2030,
+    "remaining_gt": 111.5
+   },
+   {
+    "year": 2031,
+    "remaining_gt": 73.5
+   },
+   {
+    "year": 2032,
+    "remaining_gt": 35.80000000000001
+   },
+   {
+    "year": 2033,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2034,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2035,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2036,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2037,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2038,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2039,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2040,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2041,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2042,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2043,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2044,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2045,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2046,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2047,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2048,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2049,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2050,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2051,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2052,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2053,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2054,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2055,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2056,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2057,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2058,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2059,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2060,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2061,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2062,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2063,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2064,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2065,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2066,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2067,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2068,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2069,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2070,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2071,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2072,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2073,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2074,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2075,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2076,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2077,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2078,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2079,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2080,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2081,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2082,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2083,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2084,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2085,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2086,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2087,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2088,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2089,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2090,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2091,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2092,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2093,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2094,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2095,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2096,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2097,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2098,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2099,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2100,
+    "remaining_gt": 0.0
+   }
+  ],
+  "engine_depletion_year": 2033,
+  "pre_fix_sparkline_depletion_year": 2032
+ },
+ "IPCC_AR6_1p5C_67__SSP2-4.5": {
+  "budget_option_id": "IPCC_AR6_1p5C_67",
+  "ssp_id": "SSP2-4.5",
+  "initial_budget_gt": 200.0,
+  "start_year": 2025,
+  "end_year": 2100,
+  "projected_emissions": {
+   "2025": 37.5,
+   "2026": 37.6,
+   "2027": 37.7,
+   "2028": 37.8,
+   "2029": 37.9,
+   "2030": 38.0,
+   "2031": 37.7,
+   "2032": 37.4,
+   "2033": 37.1,
+   "2034": 36.8,
+   "2035": 36.5,
+   "2036": 36.2,
+   "2037": 35.9,
+   "2038": 35.6,
+   "2039": 35.3,
+   "2040": 35.0,
+   "2041": 34.3,
+   "2042": 33.6,
+   "2043": 32.9,
+   "2044": 32.2,
+   "2045": 31.5,
+   "2046": 30.8,
+   "2047": 30.1,
+   "2048": 29.4,
+   "2049": 28.7,
+   "2050": 28.0,
+   "2051": 27.4,
+   "2052": 26.8,
+   "2053": 26.2,
+   "2054": 25.6,
+   "2055": 25.0,
+   "2056": 24.4,
+   "2057": 23.8,
+   "2058": 23.2,
+   "2059": 22.6,
+   "2060": 22.0,
+   "2061": 21.4,
+   "2062": 20.8,
+   "2063": 20.2,
+   "2064": 19.6,
+   "2065": 19.0,
+   "2066": 18.4,
+   "2067": 17.8,
+   "2068": 17.2,
+   "2069": 16.6,
+   "2070": 16.0,
+   "2071": 15.6,
+   "2072": 15.2,
+   "2073": 14.8,
+   "2074": 14.4,
+   "2075": 14.0,
+   "2076": 13.6,
+   "2077": 13.2,
+   "2078": 12.8,
+   "2079": 12.4,
+   "2080": 12.0,
+   "2081": 11.8,
+   "2082": 11.6,
+   "2083": 11.4,
+   "2084": 11.2,
+   "2085": 11.0,
+   "2086": 10.8,
+   "2087": 10.6,
+   "2088": 10.4,
+   "2089": 10.2,
+   "2090": 10.0,
+   "2091": 9.9,
+   "2092": 9.8,
+   "2093": 9.7,
+   "2094": 9.6,
+   "2095": 9.5,
+   "2096": 9.4,
+   "2097": 9.3,
+   "2098": 9.2,
+   "2099": 9.1,
+   "2100": 9.0
+  },
+  "rows": [
+   {
+    "year": 2025,
+    "remaining_gt": 200.0
+   },
+   {
+    "year": 2026,
+    "remaining_gt": 162.5
+   },
+   {
+    "year": 2027,
+    "remaining_gt": 124.9
+   },
+   {
+    "year": 2028,
+    "remaining_gt": 87.2
+   },
+   {
+    "year": 2029,
+    "remaining_gt": 49.400000000000006
+   },
+   {
+    "year": 2030,
+    "remaining_gt": 11.5
+   },
+   {
+    "year": 2031,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2032,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2033,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2034,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2035,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2036,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2037,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2038,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2039,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2040,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2041,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2042,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2043,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2044,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2045,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2046,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2047,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2048,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2049,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2050,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2051,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2052,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2053,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2054,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2055,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2056,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2057,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2058,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2059,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2060,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2061,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2062,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2063,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2064,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2065,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2066,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2067,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2068,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2069,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2070,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2071,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2072,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2073,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2074,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2075,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2076,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2077,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2078,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2079,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2080,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2081,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2082,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2083,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2084,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2085,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2086,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2087,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2088,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2089,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2090,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2091,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2092,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2093,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2094,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2095,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2096,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2097,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2098,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2099,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2100,
+    "remaining_gt": 0.0
+   }
+  ],
+  "engine_depletion_year": 2031,
+  "pre_fix_sparkline_depletion_year": 2030
+ },
+ "IPCC_AR6_2C_50__SSP2-4.5": {
+  "budget_option_id": "IPCC_AR6_2C_50",
+  "ssp_id": "SSP2-4.5",
+  "initial_budget_gt": 1150.0,
+  "start_year": 2025,
+  "end_year": 2100,
+  "projected_emissions": {
+   "2025": 37.5,
+   "2026": 37.6,
+   "2027": 37.7,
+   "2028": 37.8,
+   "2029": 37.9,
+   "2030": 38.0,
+   "2031": 37.7,
+   "2032": 37.4,
+   "2033": 37.1,
+   "2034": 36.8,
+   "2035": 36.5,
+   "2036": 36.2,
+   "2037": 35.9,
+   "2038": 35.6,
+   "2039": 35.3,
+   "2040": 35.0,
+   "2041": 34.3,
+   "2042": 33.6,
+   "2043": 32.9,
+   "2044": 32.2,
+   "2045": 31.5,
+   "2046": 30.8,
+   "2047": 30.1,
+   "2048": 29.4,
+   "2049": 28.7,
+   "2050": 28.0,
+   "2051": 27.4,
+   "2052": 26.8,
+   "2053": 26.2,
+   "2054": 25.6,
+   "2055": 25.0,
+   "2056": 24.4,
+   "2057": 23.8,
+   "2058": 23.2,
+   "2059": 22.6,
+   "2060": 22.0,
+   "2061": 21.4,
+   "2062": 20.8,
+   "2063": 20.2,
+   "2064": 19.6,
+   "2065": 19.0,
+   "2066": 18.4,
+   "2067": 17.8,
+   "2068": 17.2,
+   "2069": 16.6,
+   "2070": 16.0,
+   "2071": 15.6,
+   "2072": 15.2,
+   "2073": 14.8,
+   "2074": 14.4,
+   "2075": 14.0,
+   "2076": 13.6,
+   "2077": 13.2,
+   "2078": 12.8,
+   "2079": 12.4,
+   "2080": 12.0,
+   "2081": 11.8,
+   "2082": 11.6,
+   "2083": 11.4,
+   "2084": 11.2,
+   "2085": 11.0,
+   "2086": 10.8,
+   "2087": 10.6,
+   "2088": 10.4,
+   "2089": 10.2,
+   "2090": 10.0,
+   "2091": 9.9,
+   "2092": 9.8,
+   "2093": 9.7,
+   "2094": 9.6,
+   "2095": 9.5,
+   "2096": 9.4,
+   "2097": 9.3,
+   "2098": 9.2,
+   "2099": 9.1,
+   "2100": 9.0
+  },
+  "rows": [
+   {
+    "year": 2025,
+    "remaining_gt": 1150.0
+   },
+   {
+    "year": 2026,
+    "remaining_gt": 1112.5
+   },
+   {
+    "year": 2027,
+    "remaining_gt": 1074.9
+   },
+   {
+    "year": 2028,
+    "remaining_gt": 1037.2
+   },
+   {
+    "year": 2029,
+    "remaining_gt": 999.4
+   },
+   {
+    "year": 2030,
+    "remaining_gt": 961.5
+   },
+   {
+    "year": 2031,
+    "remaining_gt": 923.5
+   },
+   {
+    "year": 2032,
+    "remaining_gt": 885.8
+   },
+   {
+    "year": 2033,
+    "remaining_gt": 848.4000000000001
+   },
+   {
+    "year": 2034,
+    "remaining_gt": 811.3
+   },
+   {
+    "year": 2035,
+    "remaining_gt": 774.5
+   },
+   {
+    "year": 2036,
+    "remaining_gt": 738.0
+   },
+   {
+    "year": 2037,
+    "remaining_gt": 701.8
+   },
+   {
+    "year": 2038,
+    "remaining_gt": 665.9000000000001
+   },
+   {
+    "year": 2039,
+    "remaining_gt": 630.3000000000001
+   },
+   {
+    "year": 2040,
+    "remaining_gt": 595.0000000000001
+   },
+   {
+    "year": 2041,
+    "remaining_gt": 560.0000000000001
+   },
+   {
+    "year": 2042,
+    "remaining_gt": 525.7000000000002
+   },
+   {
+    "year": 2043,
+    "remaining_gt": 492.10000000000014
+   },
+   {
+    "year": 2044,
+    "remaining_gt": 459.20000000000016
+   },
+   {
+    "year": 2045,
+    "remaining_gt": 427.0000000000001
+   },
+   {
+    "year": 2046,
+    "remaining_gt": 395.5000000000001
+   },
+   {
+    "year": 2047,
+    "remaining_gt": 364.70000000000016
+   },
+   {
+    "year": 2048,
+    "remaining_gt": 334.60000000000014
+   },
+   {
+    "year": 2049,
+    "remaining_gt": 305.20000000000016
+   },
+   {
+    "year": 2050,
+    "remaining_gt": 276.5000000000001
+   },
+   {
+    "year": 2051,
+    "remaining_gt": 248.5000000000001
+   },
+   {
+    "year": 2052,
+    "remaining_gt": 221.10000000000014
+   },
+   {
+    "year": 2053,
+    "remaining_gt": 194.30000000000018
+   },
+   {
+    "year": 2054,
+    "remaining_gt": 168.10000000000014
+   },
+   {
+    "year": 2055,
+    "remaining_gt": 142.5000000000001
+   },
+   {
+    "year": 2056,
+    "remaining_gt": 117.5
+   },
+   {
+    "year": 2057,
+    "remaining_gt": 93.09999999999991
+   },
+   {
+    "year": 2058,
+    "remaining_gt": 69.29999999999995
+   },
+   {
+    "year": 2059,
+    "remaining_gt": 46.09999999999991
+   },
+   {
+    "year": 2060,
+    "remaining_gt": 23.5
+   },
+   {
+    "year": 2061,
+    "remaining_gt": 1.5
+   },
+   {
+    "year": 2062,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2063,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2064,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2065,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2066,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2067,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2068,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2069,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2070,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2071,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2072,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2073,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2074,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2075,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2076,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2077,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2078,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2079,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2080,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2081,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2082,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2083,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2084,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2085,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2086,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2087,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2088,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2089,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2090,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2091,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2092,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2093,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2094,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2095,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2096,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2097,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2098,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2099,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2100,
+    "remaining_gt": 0.0
+   }
+  ],
+  "engine_depletion_year": 2062,
+  "pre_fix_sparkline_depletion_year": 2061
+ },
+ "IPCC_AR6_2C_67__SSP2-4.5": {
+  "budget_option_id": "IPCC_AR6_2C_67",
+  "ssp_id": "SSP2-4.5",
+  "initial_budget_gt": 950.0,
+  "start_year": 2025,
+  "end_year": 2100,
+  "projected_emissions": {
+   "2025": 37.5,
+   "2026": 37.6,
+   "2027": 37.7,
+   "2028": 37.8,
+   "2029": 37.9,
+   "2030": 38.0,
+   "2031": 37.7,
+   "2032": 37.4,
+   "2033": 37.1,
+   "2034": 36.8,
+   "2035": 36.5,
+   "2036": 36.2,
+   "2037": 35.9,
+   "2038": 35.6,
+   "2039": 35.3,
+   "2040": 35.0,
+   "2041": 34.3,
+   "2042": 33.6,
+   "2043": 32.9,
+   "2044": 32.2,
+   "2045": 31.5,
+   "2046": 30.8,
+   "2047": 30.1,
+   "2048": 29.4,
+   "2049": 28.7,
+   "2050": 28.0,
+   "2051": 27.4,
+   "2052": 26.8,
+   "2053": 26.2,
+   "2054": 25.6,
+   "2055": 25.0,
+   "2056": 24.4,
+   "2057": 23.8,
+   "2058": 23.2,
+   "2059": 22.6,
+   "2060": 22.0,
+   "2061": 21.4,
+   "2062": 20.8,
+   "2063": 20.2,
+   "2064": 19.6,
+   "2065": 19.0,
+   "2066": 18.4,
+   "2067": 17.8,
+   "2068": 17.2,
+   "2069": 16.6,
+   "2070": 16.0,
+   "2071": 15.6,
+   "2072": 15.2,
+   "2073": 14.8,
+   "2074": 14.4,
+   "2075": 14.0,
+   "2076": 13.6,
+   "2077": 13.2,
+   "2078": 12.8,
+   "2079": 12.4,
+   "2080": 12.0,
+   "2081": 11.8,
+   "2082": 11.6,
+   "2083": 11.4,
+   "2084": 11.2,
+   "2085": 11.0,
+   "2086": 10.8,
+   "2087": 10.6,
+   "2088": 10.4,
+   "2089": 10.2,
+   "2090": 10.0,
+   "2091": 9.9,
+   "2092": 9.8,
+   "2093": 9.7,
+   "2094": 9.6,
+   "2095": 9.5,
+   "2096": 9.4,
+   "2097": 9.3,
+   "2098": 9.2,
+   "2099": 9.1,
+   "2100": 9.0
+  },
+  "rows": [
+   {
+    "year": 2025,
+    "remaining_gt": 950.0
+   },
+   {
+    "year": 2026,
+    "remaining_gt": 912.5
+   },
+   {
+    "year": 2027,
+    "remaining_gt": 874.9
+   },
+   {
+    "year": 2028,
+    "remaining_gt": 837.2
+   },
+   {
+    "year": 2029,
+    "remaining_gt": 799.4
+   },
+   {
+    "year": 2030,
+    "remaining_gt": 761.5
+   },
+   {
+    "year": 2031,
+    "remaining_gt": 723.5
+   },
+   {
+    "year": 2032,
+    "remaining_gt": 685.8
+   },
+   {
+    "year": 2033,
+    "remaining_gt": 648.4000000000001
+   },
+   {
+    "year": 2034,
+    "remaining_gt": 611.3
+   },
+   {
+    "year": 2035,
+    "remaining_gt": 574.5
+   },
+   {
+    "year": 2036,
+    "remaining_gt": 538.0
+   },
+   {
+    "year": 2037,
+    "remaining_gt": 501.8
+   },
+   {
+    "year": 2038,
+    "remaining_gt": 465.90000000000003
+   },
+   {
+    "year": 2039,
+    "remaining_gt": 430.30000000000007
+   },
+   {
+    "year": 2040,
+    "remaining_gt": 395.0000000000001
+   },
+   {
+    "year": 2041,
+    "remaining_gt": 360.0000000000001
+   },
+   {
+    "year": 2042,
+    "remaining_gt": 325.70000000000016
+   },
+   {
+    "year": 2043,
+    "remaining_gt": 292.10000000000014
+   },
+   {
+    "year": 2044,
+    "remaining_gt": 259.20000000000016
+   },
+   {
+    "year": 2045,
+    "remaining_gt": 227.0000000000001
+   },
+   {
+    "year": 2046,
+    "remaining_gt": 195.5000000000001
+   },
+   {
+    "year": 2047,
+    "remaining_gt": 164.70000000000016
+   },
+   {
+    "year": 2048,
+    "remaining_gt": 134.60000000000014
+   },
+   {
+    "year": 2049,
+    "remaining_gt": 105.20000000000016
+   },
+   {
+    "year": 2050,
+    "remaining_gt": 76.50000000000011
+   },
+   {
+    "year": 2051,
+    "remaining_gt": 48.500000000000114
+   },
+   {
+    "year": 2052,
+    "remaining_gt": 21.100000000000136
+   },
+   {
+    "year": 2053,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2054,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2055,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2056,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2057,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2058,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2059,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2060,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2061,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2062,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2063,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2064,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2065,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2066,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2067,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2068,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2069,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2070,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2071,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2072,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2073,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2074,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2075,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2076,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2077,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2078,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2079,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2080,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2081,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2082,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2083,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2084,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2085,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2086,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2087,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2088,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2089,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2090,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2091,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2092,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2093,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2094,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2095,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2096,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2097,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2098,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2099,
+    "remaining_gt": 0.0
+   },
+   {
+    "year": 2100,
+    "remaining_gt": 0.0
+   }
+  ],
+  "engine_depletion_year": 2053,
+  "pre_fix_sparkline_depletion_year": 2052
+ }
+}

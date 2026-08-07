@@ -14,6 +14,7 @@ import { Button } from '../ui/Button'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { NumberInput } from '../ui/NumberInput'
 import { useAESAStore, type AESAConfigLoadKind } from '../../stores/aesaStore'
+import { budgetDepletionYear, remainingBudgetSeries } from '../../utils/carbonBudget'
 import { useDSMStore } from '../../stores/dsmStore'
 import { useImpactStore } from '../../stores/impactStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
@@ -1665,20 +1666,22 @@ function CarbonBudgetEditor({
 
 function BudgetSparkline({ budget }: { budget: import('../../api/client').CarbonBudgetConfig }) {
   const W = 240, H = 48, PAD = 2
-  const years = Object.keys(budget.projected_emissions).map(Number).filter((y) => y >= budget.start_year && y <= budget.end_year).sort((a, b) => a - b)
-  if (years.length < 2) return null
-  // Cumulative usage as fraction of initial budget
-  let cum = 0
-  const points = years.map((y) => {
-    cum += budget.projected_emissions[y] ?? 0
-    return { year: y, used: cum }
-  })
+  // The arithmetic lives in utils/carbonBudget.ts, which mirrors the engine's
+  // `remaining_budget` exactly. This used to accumulate inline and INCLUSIVELY
+  // (`cum += E[y]` read at y) while the engine sums `[start_year, year)`, so
+  // the sparkline annotated depletion a year early — 2030 where the engine and
+  // the (already-fixed) timeline inset both say 2031 for 1.5 °C/67 × SSP2-4.5.
+  // Two panels of the same app, one session apart, disagreeing.
+  const points = remainingBudgetSeries(budget).map((p) => ({ year: p.year, used: p.consumed }))
+  if (points.length < 2) return null
   const maxUsed = Math.max(budget.initial_budget_gt, points[points.length - 1].used)
   const xFor = (i: number) => PAD + (i / (points.length - 1)) * (W - 2 * PAD)
   const yFor = (used: number) => H - PAD - (used / maxUsed) * (H - 2 * PAD)
   const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xFor(i).toFixed(1)} ${yFor(p.used).toFixed(1)}`).join(' ')
   const budgetY = yFor(budget.initial_budget_gt)
-  const depleted = points.find((p) => p.used >= budget.initial_budget_gt)
+  // Same source as the curve — the first year the engine's remaining budget
+  // reaches zero, not the first year inclusive-cumulative crosses the cap.
+  const depletionYear = budgetDepletionYear(budget)
 
   return (
     <div style={{ marginTop: 4 }}>
@@ -1688,7 +1691,11 @@ function BudgetSparkline({ budget }: { budget: import('../../api/client').Carbon
       </svg>
       <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
         Cumulative emissions vs {budget.initial_budget_gt} Gt budget
-        {depleted && <span style={{ color: 'var(--danger)' }}> · depleted ~{depleted.year}</span>}
+        {depletionYear !== null && (
+          <span data-testid="budget-sparkline-depletion" style={{ color: 'var(--danger)' }}>
+            {' '}· depleted ~{depletionYear}
+          </span>
+        )}
       </div>
     </div>
   )

@@ -63,7 +63,11 @@ DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "aesa"
 
 
 MULTI_D_DEFAULTS: dict[str, tuple[str, str]] = {
-    "acidification":                 ("EpC", "Global issue, equal right"),
+    # Methodological correction: acidification is driven predominantly by
+    # agricultural emissions (NH3 from livestock and fertiliser), so the
+    # agricultural-output principle allocates it, not equal-per-capita.
+    # Same rationale family as the three eutrophication boundaries below.
+    "acidification":                 ("AGR", "Driven by agricultural emissions (NH3)"),
     "climate_change":                ("EpC", "Global issue, equal right"),
     "ecotoxicity_freshwater":        ("EpC", "Equal right"),
     "resource_use_fossils":          ("IN",  "Industrial causation"),
@@ -287,6 +291,14 @@ BUILTIN_PRINCIPLES: list[PrincipleDefinition] = [
 _DEFAULT_LAYER2_AR = 0.25
 _DEFAULT_LAYER3_AR = 0.60
 _DEFAULT_BASE_YEAR = 2025
+# The ID is a stable identifier, NOT a citation, and it is deliberately left
+# alone even though the display name no longer cites a paper. Saved
+# AESAConfigurations bookmark the preset by `sharing_preset_id`, saved
+# AESASessions embed that bookmark in their frozen configuration_snapshot, and
+# exported AESACFG workbooks write it to the Configuration sheet. Renaming it
+# would orphan every one of those — the bookmark would resolve to nothing — for
+# a string no user ever sees. The display name is what users read; that is what
+# changed.
 _BUILTIN_PRESET_ID = "ferhati_2026_multi_d"
 
 
@@ -305,7 +317,7 @@ def _layer1_data_from_sharing(sharing: dict) -> dict[str, dict[int, tuple[float,
 
 
 def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
-    """Build the read-only built-in sharing preset (3-layer Ferhati et al. 2026)."""
+    """Build the read-only built-in sharing preset (3-layer Multi-D chain)."""
     data = sharing or load_sharing_data()
 
     layer1 = DownscalingLayer(
@@ -337,7 +349,7 @@ def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
     ]
     return SharingPreset(
         id=_BUILTIN_PRESET_ID,
-        name="Ferhati et al. 2026 — Multi-D",
+        name="Multi-D allocation (default)",
         description=(
             "Provisional 3-layer downscaling: Global → Country → Sector → Sub-sector. "
             "Built-in (read-only). Duplicate to customize for your case study."

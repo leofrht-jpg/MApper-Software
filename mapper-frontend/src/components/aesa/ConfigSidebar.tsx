@@ -15,6 +15,7 @@ import { ComputeProgress } from '../ui/ComputeProgress'
 import { NumberInput } from '../ui/NumberInput'
 import { useAESAStore, type AESAConfigLoadKind } from '../../stores/aesaStore'
 import { budgetDepletionYear, remainingBudgetSeries } from '../../utils/carbonBudget'
+import { computeMethodCoverage, coverageSummary } from '../../utils/aesaMethodCoverage'
 import { useDSMStore } from '../../stores/dsmStore'
 import { useImpactStore } from '../../stores/impactStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
@@ -356,6 +357,24 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
     const methods = sourceResults.map((r) => [...r.method])
     if (methods.length) void suggestMapping(methods)
   }, [draft, activeImpact, spStaticResult, isSingleProduct, isProspectiveSP, prospectivePoints, suggestMapping])
+
+  // Coverage in BOTH units — see utils/aesaMethodCoverage.ts for why the old
+  // method-only counter ("15 mapped · 10 unmapped") misread as ten errors.
+  // Uses the same method universe the auto-suggest effect uses, so the counter
+  // and the suggestion can never disagree about what was on offer.
+  const methodCoverage = useMemo(() => {
+    if (!draft) return null
+    const sourceResults = isSingleProduct
+      ? (isProspectiveSP ? prospectivePoints[0]?.result.results : spStaticResult?.results)
+      : activeImpact?.results
+    if (!sourceResults || sourceResults.length === 0) return null
+    return computeMethodCoverage(
+      sourceResults.map((r) => ({ method: r.method })),
+      draft.method_mapping,
+      Object.keys(boundarySet?.boundaries ?? {}),
+    )
+  }, [draft, activeImpact, spStaticResult, isSingleProduct, isProspectiveSP,
+      prospectivePoints, boundarySet])
 
   const handleCompute = async () => {
     if (!draft) return
@@ -886,19 +905,49 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               title="Method → PB mapping"
               openKey={collapsibleOpenKey}
               summary={
-                activeImpact
-                  ? `${draft.method_mapping.length}/${activeImpact.results.length} mapped`
+                methodCoverage
+                  ? coverageSummary(methodCoverage)
                   : `${draft.method_mapping.length} mapped`
               }
             >
-              <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                {draft.method_mapping.length} method{draft.method_mapping.length === 1 ? '' : 's'} mapped
-                {activeImpact && draft.method_mapping.length < activeImpact.results.length && (
-                  <span style={{ color: 'var(--warning)' }}>
-                    {' '}· {activeImpact.results.length - draft.method_mapping.length} unmapped
-                  </span>
-                )}
-              </div>
+              {methodCoverage ? (
+                <div data-testid="aesa-method-coverage" style={{ fontSize: 11, lineHeight: 1.5 }}>
+                  {/* Boundary coverage leads: a boundary with no method is
+                      silently absent from every SR, radar and timeline. Method
+                      count alone cannot show that. */}
+                  <div style={{ color: 'var(--text-primary)' }}>
+                    <strong>{methodCoverage.boundariesCovered}</strong> of{' '}
+                    {methodCoverage.boundariesTotal} planetary boundaries covered
+                  </div>
+                  {methodCoverage.uncoveredBoundaryIds.length > 0 && (
+                    <div data-testid="aesa-uncovered-boundaries" style={{ color: 'var(--warning)' }}>
+                      No method for: {methodCoverage.uncoveredBoundaryIds.join(', ')}
+                    </div>
+                  )}
+                  <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
+                    {methodCoverage.methodsMapped} of {methodCoverage.methodsTotal} impact
+                    methods mapped
+                  </div>
+                  {methodCoverage.expectedUnmapped.length > 0 && (
+                    <div style={{ color: 'var(--text-tertiary)' }}>
+                      {methodCoverage.expectedUnmapped.length} unmapped because they
+                      decompose an aggregate that IS mapped (e.g. “climate change:
+                      fossil”). Expected — characterising a boundary against one
+                      slice of its own aggregate would be wrong.
+                    </div>
+                  )}
+                  {methodCoverage.unrecognised.length > 0 && (
+                    <div data-testid="aesa-unrecognised-methods" style={{ color: 'var(--warning)', marginTop: 2 }}>
+                      {methodCoverage.unrecognised.length} unrecognised:{' '}
+                      {methodCoverage.unrecognised.map((u) => u.indicator).join(', ')}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                  {draft.method_mapping.length} method{draft.method_mapping.length === 1 ? '' : 's'} mapped
+                </div>
+              )}
               {activeImpact && (
                 <button
                   onClick={() => {

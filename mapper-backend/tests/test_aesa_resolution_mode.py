@@ -186,8 +186,17 @@ def test_an_unknown_mode_is_rejected_by_the_schema():
 # the shipped template produces — precisely the quantity a resolution-mode
 # regression would move. A failure here means either the engine drifted or the
 # shipped template's data changed; both need a human, not a re-baseline.
+# RE-BASELINED when acidification's default principle changed EpC -> AGR.
+# This test SHOULD have failed on that change — a hex pin whose whole purpose
+# is to catch an unintended shift in the shipped template. The shift was
+# intended, so the value was re-captured from the engine (never hand-typed) and
+# the reason recorded here. Only acidification moved; the other three are
+# byte-identical, which is the right blast radius for a single-boundary
+# principle change. new/old = 3.792713, exactly the AGR/EpC layer-1 ratio
+# (12e9/4.3e12 over 5.96e6/8.1e9) — the factor moved by precisely the amount
+# the methodology change implies and nothing else.
 SHIPPED_TOTAL_SHARING_FACTOR = {
-    "acidification": float.fromhex("0x1.ceed486562f98p-14"),
+    "acidification": float.fromhex("0x1.b6f05496504cfp-12"),
     "climate_change": float.fromhex("0x1.ceed486562f98p-14"),
     "land_use": float.fromhex("0x1.6c124a3312625p-15"),
     "water_use": float.fromhex("0x1.ceed486562f98p-14"),

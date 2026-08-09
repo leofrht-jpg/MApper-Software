@@ -98,13 +98,21 @@ def test_multi_d_defaults_cover_all_boundaries() -> None:
 
 
 def test_compute_flow_boundary_matches_hand_calc() -> None:
-    """Hand-calc for acidification (flow boundary, EpC):
+    """Hand-calc for acidification (flow boundary, AGR):
 
     PB = 1.0e12 mol H+ eq/yr   (from boundary_sets.json)
-    layer1 = Denmark pop / World pop = 5_960_000 / 8_100_000_000
+    layer1 = DK agri GVA / World agri GVA = 12e9 / 4.3e12
     layer2 = 0.15 (from sharing_data.json)
     allocated_SOS = PB × layer1 × layer2
     SR = impact / allocated_SOS
+
+    Re-baselined when acidification's default principle changed from EpC to
+    AGR: acidification is driven predominantly by agricultural NH3, so it
+    allocates on agricultural output, not population. The numbers below moved
+    because the METHODOLOGY changed, not because the engine did — layer 1 is
+    ~3.8x larger, so the allocated SOS rises and the SR falls by the same
+    factor. If this test ever fails again, check MULTI_D_DEFAULTS before
+    touching the arithmetic.
     """
     results = _fixture_impact_results()
     config = _make_config([list(r.method) for r in results], with_carbon=True)
@@ -112,13 +120,13 @@ def test_compute_flow_boundary_matches_hand_calc() -> None:
     out = AESAEngine.compute(results, config, bset)
 
     acid = next(r for r in out.results if r.pb_id == "acidification")
-    expected_l1 = 5_960_000 / 8_100_000_000
+    expected_l1 = 12_000_000_000.0 / 4_300_000_000_000.0
     expected_allocated = 1.0e12 * expected_l1 * 0.15
     expected_sr = 1.0e8 / expected_allocated
     assert abs(acid.sharing_factor_l1 - expected_l1) / expected_l1 < 1e-9
     assert abs(acid.allocated_sos - expected_allocated) / expected_allocated < 1e-9
     assert abs(acid.sr - expected_sr) / expected_sr < 1e-9
-    assert acid.sharing_principle == "EpC"
+    assert acid.sharing_principle == "AGR"
     assert acid.boundary_type == "flow"
     assert acid.zone in ("safe", "zone_of_uncertainty", "high_risk")
 
@@ -168,8 +176,10 @@ def test_zone_thresholds() -> None:
         carbon_budget=None, method_mapping=mapping,
         created_at="2025-01-01T00:00:00Z",
     )
-    l1 = 5_960_000 / 8_100_000_000
-    allocated = 1.0e12 * l1 * 0.15  # ~110e3
+    # AGR, matching acidification's default principle (see MULTI_D_DEFAULTS).
+    # Only used to size the synthetic impacts so each SR lands in a known zone.
+    l1 = 12_000_000_000.0 / 4_300_000_000_000.0
+    allocated = 1.0e12 * l1 * 0.15
 
     # Impact for SR=0.5 (safe)
     results[1].years[0].total_impact = allocated * 0.5

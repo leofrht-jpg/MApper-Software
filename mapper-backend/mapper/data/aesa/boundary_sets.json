@@ -178,7 +178,7 @@
           "id": "photochemical_ozone_formation",
           "name": "Photochemical ozone formation",
           "control_variable": "Tropospheric O3 formation",
-          "ef_indicator": "photochemical oxidant formation",
+          "ef_indicator": "photochemical oxidant formation: human health",
           "pb_value": 4.1e11,
           "unit": "kg NMVOC eq/yr",
           "zone_of_uncertainty": [4.1e11, 8.2e11],

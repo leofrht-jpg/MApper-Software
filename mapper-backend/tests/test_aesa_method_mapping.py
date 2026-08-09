@@ -35,6 +35,8 @@ Reference: Sala et al. 2020, J. Environ. Manage. 269: 110686.
 """
 from __future__ import annotations
 
+import pytest
+
 from mapper.core.aesa_engine import load_boundary_sets, suggest_method_mapping
 
 
@@ -68,7 +70,13 @@ EF_V31_METHODS: list[list[str]] = [
     ["EF v3.1", "land use", "soil quality index"],
     ["EF v3.1", "ozone depletion", "ozone depletion potential (ODP)"],
     ["EF v3.1", "particulate matter formation", "impact on human health"],
-    ["EF v3.1", "photochemical oxidant formation", "tropospheric ozone concentration increase"],
+    # NOTE the ": human health" qualifier — EF v3.1 names this category that
+    # way, and it is the ONLY photochemical ozone formation category EF
+    # defines. This fixture previously omitted it, which is why
+    # test_every_pb_in_set_receives_a_method passed while the shipped
+    # boundary set had no method for this PB: the fixture reproduced the
+    # very error the test exists to catch, so the two agreed.
+    ["EF v3.1", "photochemical oxidant formation: human health", "tropospheric ozone concentration increase"],
 ]
 
 
@@ -402,3 +410,55 @@ def test_unrelated_method_stays_unmapped() -> None:
     ]
     mapping = suggest_method_mapping(methods, bset)
     assert mapping == []
+
+
+# ── the fixture must match a REAL registry, not just itself ─────────────────
+
+
+def test_fixture_matches_a_real_ef_v31_registration():
+    """The hand-written fixture above is only as good as its fidelity.
+
+    `test_every_pb_in_set_receives_a_method` asserted full coverage and PASSED
+    while the shipped boundary set had no method for photochemical ozone
+    formation — because the fixture carried the same wrong indicator name as
+    the boundary set. Two copies of one error agreeing is not a check.
+
+    This compares the fixture against an actually-registered EF v3.1, and skips
+    where none is installed (CI, and any checkout without a licensed
+    ecoinvent/EF import). It cannot run everywhere, so it does not replace the
+    fixture — it stops the fixture drifting from reality wherever it CAN run.
+    """
+    try:
+        import bw2data as bd
+    except ImportError:  # pragma: no cover
+        pytest.skip("bw2data unavailable")
+
+    # bw2's "current project" is global mutable state that other tests read.
+    # Sweeping projects to find an EF registration MUST leave it exactly as
+    # found — the first draft of this test did not, and it silently broke two
+    # unrelated export tests that depend on the active project.
+    original = bd.projects.current
+    installed: set[str] = set()
+    try:
+        for project in list(bd.projects):
+            try:
+                bd.projects.set_current(project.name)
+            except Exception:
+                continue
+            installed |= {m[1] for m in bd.methods if m[0] == "EF v3.1"}
+    finally:
+        try:
+            bd.projects.set_current(original)
+        except Exception:  # pragma: no cover
+            pass
+
+    if not installed:
+        pytest.skip("no EF v3.1 methods registered in any bw2 project")
+
+    fixture = {m[1] for m in EF_V31_METHODS}
+    unreal = sorted(fixture - installed)
+    assert not unreal, (
+        f"fixture names no real EF v3.1 method: {unreal}. "
+        "Correct the fixture to the registered name — do not adjust the "
+        "boundary set to match a fiction."
+    )

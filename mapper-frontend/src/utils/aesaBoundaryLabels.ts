@@ -107,6 +107,21 @@ export function boundaryLabel(row: {
   return { lines: wrapBoundaryLabel(short), full: full || short }
 }
 
+/**
+ * The same label, resolved from a boundary RECORD rather than an SR row.
+ *
+ * Tables that iterate the boundary set (category assignments, method → PB
+ * mapping) have the `PlanetaryBoundary` in hand and no SR row. They must not
+ * grow their own formatting — `CategoryAssignmentsTable` had exactly that, a
+ * local `formatPbName`, which is how a second naming path starts.
+ */
+export function pbLabel(pb: {
+  short_name?: string | null
+  name?: string | null
+}): { lines: string[]; full: string } {
+  return boundaryLabel({ pb_short_name: pb.short_name, pb_name: pb.name })
+}
+
 /** Flattened single-line form, for surfaces with horizontal room. */
 export function boundaryLabelText(row: {
   pb_short_name?: string | null

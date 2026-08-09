@@ -9,7 +9,8 @@
 
 import { useMemo, useRef, useState } from 'react'
 import type { AESAComputeResult, SharingPrincipleId } from '../../api/client'
-import { PRINCIPLE_COLOR, ZONE_COLOR, shortPbName, srOrInf } from './zones'
+import { PRINCIPLE_COLOR, ZONE_COLOR, srOrInf } from './zones'
+import { boundaryLabel } from '../../utils/aesaBoundaryLabels'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { YearSlider } from '../ui/YearSlider'
@@ -141,8 +142,22 @@ export function BoxPlotView({ result }: Props) {
             return (
               <g key={row.pb_id}>
                 {/* PB label */}
-                <text x={6} y={y0 + rowH / 2} fontSize={11} fill="var(--text-primary)" dominantBaseline="middle">
-                  {shortPbName(row.pb_name)}
+                {/* Two lines on EF's comma keeps the label inside pbLabelW
+                    instead of running under the plot; <title> carries the full
+                    name and survives SVG export. */}
+                <text
+                  data-testid={`boxplot-label-${row.pb_id}`}
+                  x={6} y={y0 + rowH / 2} fontSize={11}
+                  fill="var(--text-primary)" dominantBaseline="middle"
+                >
+                  <title>{row.pb_name}</title>
+                  {(() => {
+                    const lines = boundaryLabel(row).lines
+                    const dy0 = -((lines.length - 1) * 12) / 2
+                    return lines.map((ln, li) => (
+                      <tspan key={li} x={6} dy={li === 0 ? dy0 : 12}>{ln}</tspan>
+                    ))
+                  })()}
                 </text>
                 {/* Scenarios stacked mini-rows */}
                 {scenarios.map((sc, si) => {

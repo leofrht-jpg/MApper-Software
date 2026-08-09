@@ -63,8 +63,7 @@ export function srOrInf(sr: number | null): number {
   return sr === null ? Infinity : sr
 }
 
-export function shortPbName(name: string): string {
-  const s = name.replace(/_/g, ' ')
-  if (s.length <= 18) return s
-  return s.split(' ').map((w) => (w.length > 10 ? w.slice(0, 9) + '…' : w)).join(' ')
-}
+//  removed: it truncated any word over 10 characters mid-word
+// ("Ecotoxici… freshwater"), destroying the term rather than fitting it.
+// Boundary labels now come from the boundary record via
+// utils/aesaBoundaryLabels.ts, which wraps instead of truncating.

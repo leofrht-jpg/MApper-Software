@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildExportFilename } from '../utils/exportFilename'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ChevronDown, Download, Save, Activity, BarChart3, List, Radar as RadarIcon } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Download, Save, Activity, BarChart3, Info, List, Radar as RadarIcon } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { ConfigSidebar } from '../components/aesa/ConfigSidebar'
 import { ConfigurationsDropdown } from '../components/aesa/ConfigurationsDropdown'
@@ -19,6 +19,7 @@ import { TimelineView } from '../components/aesa/TimelineView'
 import { DetailTable } from '../components/aesa/DetailTable'
 import { BoxPlotView } from '../components/aesa/BoxPlotView'
 import { IndicatorDisplayFilter } from '../components/aesa/IndicatorDisplayFilter'
+import { BoundaryGlossary } from '../components/aesa/BoundaryGlossary'
 import { YearSlider } from '../components/ui/YearSlider'
 import { ZONE_COLOR, ZONE_LABEL } from '../components/aesa/zones'
 import { useAESAStore } from '../stores/aesaStore'
@@ -26,6 +27,7 @@ import { useDSMStore } from '../stores/dsmStore'
 import { useImpactStore } from '../stores/impactStore'
 import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
 import { buildIndicatorColorMap } from '../utils/aesaIndicatorColors'
+import { resolveBoundarySet } from '../utils/aesaBoundaryLabels'
 import {
   exportAESA,
   type AESAComputeResult,
@@ -94,6 +96,16 @@ export function AESADashboard() {
   const [view, setView] = useState<ViewId>('radar')
   const [year, setYear] = useState<number | null>(null)
   const [exporting, setExporting] = useState(false)
+  const [showGlossary, setShowGlossary] = useState(false)
+
+  // The glossary describes the boundary set the CONFIGURATION points at, via
+  // the same resolver the sidebar uses — so it can never explain a set the
+  // charts are not labelled from.
+  const defaults = useAESAStore((s) => s.defaults)
+  const glossaryBoundarySet = useMemo(
+    () => resolveBoundarySet(defaults, draft?.boundary_set_id),
+    [defaults, draft?.boundary_set_id],
+  )
 
   const systemConfigs = useMemo(
     () => activeSystem ? configurations.filter((c) => c.mfa_system_id === activeSystem.id) : [],
@@ -292,6 +304,25 @@ export function AESADashboard() {
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          {/* Impact-category glossary. Top-right of the page header, the same
+              slot and treatment as Impact Assessment's Method Library button
+              (secondary variant + icon), so a tool-level reference affordance
+              sits in one predictable place across tabs.
+
+              Charts label axes with the full EF category name; this explains
+              what each category measures, in what unit, and which planetary
+              boundary it maps to — read from the ACTIVE boundary set, never a
+              second hand-written table. */}
+          <Button
+            variant="secondary"
+            onClick={() => setShowGlossary(true)}
+            data-testid="aesa-glossary-button"
+            title="Impact categories — what each one measures"
+            aria-label="Impact categories glossary"
+            style={{ padding: '0 10px' }}
+          >
+            <Info size={14} />
+          </Button>
           {/* Patch 4R — saved-session affordances. Save appears whenever
               a result is on screen (live OR loaded) but the saved
               session captures whatever the result reflects today. In
@@ -610,6 +641,13 @@ export function AESADashboard() {
           defaultName={saveDefaultName}
           onCancel={() => setSaveModalOpen(false)}
           onConfirm={handleConfirmSave}
+        />
+      )}
+
+      {showGlossary && (
+        <BoundaryGlossary
+          boundarySet={glossaryBoundarySet}
+          onClose={() => setShowGlossary(false)}
         />
       )}
 

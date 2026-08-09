@@ -16,6 +16,7 @@ import { NumberInput } from '../ui/NumberInput'
 import { useAESAStore, type AESAConfigLoadKind } from '../../stores/aesaStore'
 import { budgetDepletionYear, remainingBudgetSeries } from '../../utils/carbonBudget'
 import { computeMethodCoverage, coverageSummary } from '../../utils/aesaMethodCoverage'
+import { resolveBoundarySet } from '../../utils/aesaBoundaryLabels'
 import { useDSMStore } from '../../stores/dsmStore'
 import { useImpactStore } from '../../stores/impactStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
@@ -297,7 +298,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
   }, [loadDefaults, loadConfigurations, loadPresets])
 
   const boundarySet = useMemo(
-    () => defaults?.boundary_sets.find((b) => b.id === draft?.boundary_set_id) ?? defaults?.boundary_sets[0] ?? null,
+    () => resolveBoundarySet(defaults, draft?.boundary_set_id),
     [defaults, draft?.boundary_set_id],
   )
 

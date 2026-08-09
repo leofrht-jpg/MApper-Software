@@ -776,6 +776,7 @@ class AESAEngine:
                     year=yr.year,
                     pb_id=pb.id,
                     pb_name=pb.name,
+                    pb_short_name=pb.short_name or pb.name,
                     ef_indicator=pb.ef_indicator,
                     impact=impact,
                     allocated_sos=allocated,

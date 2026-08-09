@@ -9,7 +9,8 @@
 
 import { useMemo, useRef, useState } from 'react'
 import type { SustainabilityRatioResult } from '../../api/client'
-import { ZONE_COLOR, shortPbName, srOrInf } from './zones'
+import { ZONE_COLOR, srOrInf } from './zones'
+import { boundaryLabel, radarLabelLayout } from '../../utils/aesaBoundaryLabels'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
@@ -51,10 +52,15 @@ export function RadarView({ results, size = 480 }: Props) {
     return <EmptyBox msg={`Need at least 3 mapped boundaries for the radar view (year ${year}).`} />
   }
 
-  const pad = 80
+  // Labels come from the boundary record (pb_short_name, stamped by the
+  // engine) and wrap onto two lines on EF's own comma — never truncated
+  // mid-word, which is what produced "Ecotoxici… freshwater". The layout
+  // derives its padding from the widest line, so nothing runs off the canvas.
+  const labelInfo = yearResults.map((r) => boundaryLabel(r))
+  const layout = radarLabelLayout(labelInfo.map((l) => l.lines), size)
   const cx = size / 2
   const cy = size / 2
-  const radius = size / 2 - pad
+  const radius = layout.radius
   const n = yearResults.length
 
   const pointFor = (i: number, sr: number | null) => {
@@ -66,15 +72,6 @@ export function RadarView({ results, size = 480 }: Props) {
   const axisEnd = (i: number) => {
     const angle = -Math.PI / 2 + (i * 2 * Math.PI) / n
     return { x: cx + radius * Math.cos(angle), y: cy + radius * Math.sin(angle) }
-  }
-  const labelPos = (i: number) => {
-    const angle = -Math.PI / 2 + (i * 2 * Math.PI) / n
-    const r = radius + 20
-    return {
-      x: cx + r * Math.cos(angle),
-      y: cy + r * Math.sin(angle),
-      anchor: Math.abs(Math.cos(angle)) < 0.3 ? 'middle' : Math.cos(angle) > 0 ? 'start' : 'end',
-    }
   }
 
   const polygonPath = yearResults.map((r, i) => {
@@ -131,20 +128,29 @@ export function RadarView({ results, size = 480 }: Props) {
           )
         })}
 
-        {/* Labels */}
+        {/* Labels — real SVG <text>, with the full EF category name in a
+            <title> so hover works AND the name survives export (chart export
+            serialises this svg; an HTML overlay would be dropped). */}
         {yearResults.map((r, i) => {
-          const l = labelPos(i)
+          const box = layout.labels[i]
+          const { full } = labelInfo[i]
+          const lineH = layout.fontPx + 1
+          const firstDy = -((box.lines.length - 1) * lineH) / 2
           return (
             <text
               key={r.pb_id + '-l'}
-              x={l.x}
-              y={l.y}
-              fontSize={10}
+              data-testid={`radar-label-${r.pb_id}`}
+              x={box.x}
+              y={box.y}
+              fontSize={layout.fontPx}
               fill="var(--text-secondary)"
-              textAnchor={l.anchor as 'start' | 'middle' | 'end'}
+              textAnchor={box.anchor}
               dominantBaseline="middle"
             >
-              {shortPbName(r.pb_name)}
+              <title>{full}</title>
+              {box.lines.map((line, li) => (
+                <tspan key={li} x={box.x} dy={li === 0 ? firstDy : lineH}>{line}</tspan>
+              ))}
             </text>
           )
         })}

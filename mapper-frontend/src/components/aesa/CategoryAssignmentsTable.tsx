@@ -9,7 +9,8 @@
 
 import { useMemo } from 'react'
 import { useAESAStore } from '../../stores/aesaStore'
-import type { BoundarySet, PlanetaryBoundary } from '../../api/client'
+import { pbLabel } from '../../utils/aesaBoundaryLabels'
+import type { BoundarySet } from '../../api/client'
 
 interface Props {
   boundarySet: BoundarySet
@@ -71,8 +72,11 @@ export function CategoryAssignmentsTable({ boundarySet }: Props) {
             return (
               <tr key={pbId} style={{ borderTop: '1px solid var(--border-subtle)' }}>
                 <td style={td}>
-                  <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
-                    {formatPbName(pb)}
+                  <div
+                    title={pbLabel(pb).full}
+                    style={{ color: 'var(--text-primary)', fontWeight: 500 }}
+                  >
+                    {pbLabel(pb).lines.join(' ')}
                   </div>
                   <div style={{ color: 'var(--text-tertiary)', fontSize: 10, marginTop: 1 }}>
                     {pb.boundary_type}
@@ -97,10 +101,6 @@ export function CategoryAssignmentsTable({ boundarySet }: Props) {
       </table>
     </div>
   )
-}
-
-function formatPbName(pb: PlanetaryBoundary): string {
-  return pb.name.replace(/_/g, ' ')
 }
 
 const th: React.CSSProperties = {

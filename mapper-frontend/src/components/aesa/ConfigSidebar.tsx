@@ -23,6 +23,7 @@ import { useSingleProductImpactStore } from '../../stores/singleProductImpactSto
 import { PresetSelector } from './PresetSelector'
 import { ConfigWorkbookButtons } from './ConfigWorkbookButtons'
 import { CategoryAssignmentsTable } from './CategoryAssignmentsTable'
+import { MethodMappingTable } from './MethodMappingTable'
 import { DownscalingChainEditor } from './DownscalingChainEditor'
 import { PrinciplesEditor } from './PrinciplesEditor'
 import type {
@@ -911,8 +912,11 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                   : `${draft.method_mapping.length} mapped`
               }
             >
-              {methodCoverage ? (
-                <div data-testid="aesa-method-coverage" style={{ fontSize: 11, lineHeight: 1.5 }}>
+              {/* Headline counts, then the mapping itself. The counter alone
+                  could not be checked — by a user or a reviewer — because it
+                  never said WHICH method characterises which boundary. */}
+              {methodCoverage && (
+                <div data-testid="aesa-method-coverage" style={{ fontSize: 11, lineHeight: 1.5, marginBottom: 6 }}>
                   {/* Boundary coverage leads: a boundary with no method is
                       silently absent from every SR, radar and timeline. Method
                       count alone cannot show that. */}
@@ -920,35 +924,20 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                     <strong>{methodCoverage.boundariesCovered}</strong> of{' '}
                     {methodCoverage.boundariesTotal} planetary boundaries covered
                   </div>
-                  {methodCoverage.uncoveredBoundaryIds.length > 0 && (
-                    <div data-testid="aesa-uncovered-boundaries" style={{ color: 'var(--warning)' }}>
-                      No method for: {methodCoverage.uncoveredBoundaryIds.join(', ')}
-                    </div>
-                  )}
-                  <div style={{ color: 'var(--text-secondary)', marginTop: 4 }}>
+                  <div style={{ color: 'var(--text-secondary)' }}>
                     {methodCoverage.methodsMapped} of {methodCoverage.methodsTotal} impact
                     methods mapped
                   </div>
-                  {methodCoverage.expectedUnmapped.length > 0 && (
-                    <div style={{ color: 'var(--text-tertiary)' }}>
-                      {methodCoverage.expectedUnmapped.length} unmapped because they
-                      decompose an aggregate that IS mapped (e.g. “climate change:
-                      fossil”). Expected — characterising a boundary against one
-                      slice of its own aggregate would be wrong.
-                    </div>
-                  )}
-                  {methodCoverage.unrecognised.length > 0 && (
-                    <div data-testid="aesa-unrecognised-methods" style={{ color: 'var(--warning)', marginTop: 2 }}>
-                      {methodCoverage.unrecognised.length} unrecognised:{' '}
-                      {methodCoverage.unrecognised.map((u) => u.indicator).join(', ')}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                  {draft.method_mapping.length} method{draft.method_mapping.length === 1 ? '' : 's'} mapped
                 </div>
               )}
+              {/* The per-boundary detail — including the uncovered,
+                  unrecognised and expected-unmapped breakdowns the counters
+                  above used to summarise in prose. */}
+              <MethodMappingTable
+                mappings={draft.method_mapping}
+                boundaries={boundarySet.boundaries}
+                coverage={methodCoverage}
+              />
               {activeImpact && (
                 <button
                   onClick={() => {

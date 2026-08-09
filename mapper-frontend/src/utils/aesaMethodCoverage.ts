@@ -41,6 +41,9 @@ export interface MethodTupleLike {
 export interface MappingLike {
   method_tuple: readonly string[]
   pb_id: string
+  /** Optional on the wire; the backend defaults it to 1.0 and always writes
+   *  it to the workbook, so an absent value means 1. */
+  conversion_factor?: number
 }
 
 export interface UnmappedMethod {
@@ -116,6 +119,114 @@ export function computeMethodCoverage(
     methodsTotal: methods.length,
     expectedUnmapped,
     unrecognised,
+  }
+}
+
+// ── Expanded view ───────────────────────────────────────────────────────────
+//
+// The counter says how many; this says WHICH. A user cannot check a mapping
+// they cannot see, and neither can a reviewer.
+
+/** A boundary as the mapping table needs it — structural, so this module stays
+ *  free of API types and testable with plain objects. */
+export interface BoundaryLike {
+  name: string
+  short_name?: string | null
+  boundary_type?: string | null
+}
+
+export interface MappedMethodRow {
+  pb_id: string
+  /** The boundary this mapping targets, or `null` when the active set defines
+   *  no such id — an ORPHAN. Surfaced, never dropped: it is in the config and
+   *  in the workbook, so hiding it here would make the two disagree. */
+  boundary: BoundaryLike | null
+  tuple: readonly string[]
+  conversion_factor: number
+  /** Another mapping targets the same boundary. Both are written to the
+   *  workbook and both reach compute, where they collide on (year, pb_id) —
+   *  one silently wins. Worth flagging where it can be seen. */
+  duplicate: boolean
+}
+
+/** Sub-components of one mapped aggregate, kept under it. */
+export interface ExpectedUnmappedGroup {
+  /** The mapped aggregate indicator they decompose, e.g. "climate change". */
+  parent: string
+  members: UnmappedMethod[]
+}
+
+export interface MappingTable {
+  mapped: MappedMethodRow[]
+  expectedGroups: ExpectedUnmappedGroup[]
+  unrecognised: UnmappedMethod[]
+  /** Boundaries with no mapping — absent from every SR, radar and timeline. */
+  uncovered: Array<{ pb_id: string; boundary: BoundaryLike }>
+}
+
+/**
+ * The rows the expanded Method → PB section renders.
+ *
+ * Driven by the MAPPINGS, not by the boundary set. That ordering of concerns
+ * is the point: iterating boundaries would silently drop a mapping whose
+ * `pb_id` the active set does not define, and would show only one of two
+ * mappings competing for the same boundary — while the AESACFG workbook writes
+ * every row of `method_mapping`. The UI and the workbook must show the same
+ * facts, or editing the workbook and looking at the UI teaches the user
+ * something false.
+ *
+ * Presentation order follows the boundary set, so the table scans like the
+ * category-assignments table beneath it; orphans come last. Order is the only
+ * difference from the workbook, which preserves mapping order for round-trip
+ * stability.
+ */
+export function buildMappingTable(
+  mappings: readonly MappingLike[],
+  boundaries: Readonly<Record<string, BoundaryLike>> | null | undefined,
+  coverage: MethodCoverage | null,
+): MappingTable {
+  // A boundary set can arrive without its boundaries — a summary record from a
+  // partial payload, or a set still loading. Every mapping is then an orphan
+  // relative to it, which is the honest reading; crashing the sidebar is not.
+  const bset: Readonly<Record<string, BoundaryLike>> = boundaries ?? {}
+  const order = Object.keys(bset)
+  const perPb = new Map<string, number>()
+  for (const m of mappings) perPb.set(m.pb_id, (perPb.get(m.pb_id) ?? 0) + 1)
+
+  const rows: MappedMethodRow[] = mappings.map((m) => ({
+    pb_id: m.pb_id,
+    boundary: bset[m.pb_id] ?? null,
+    tuple: m.method_tuple,
+    conversion_factor: m.conversion_factor ?? 1,
+    duplicate: (perPb.get(m.pb_id) ?? 0) > 1,
+  }))
+
+  const rank = (r: MappedMethodRow) => {
+    const i = order.indexOf(r.pb_id)
+    return i === -1 ? Number.MAX_SAFE_INTEGER : i     // orphans last
+  }
+  rows.sort((a, b) => rank(a) - rank(b))
+
+  // Group the expected-unmapped by the aggregate they decompose. `parent` is
+  // non-null for every member of `expectedUnmapped` by construction.
+  const groups = new Map<string, UnmappedMethod[]>()
+  for (const u of coverage?.expectedUnmapped ?? []) {
+    const p = u.parent ?? ''
+    if (!groups.has(p)) groups.set(p, [])
+    groups.get(p)!.push(u)
+  }
+
+  const mappedPbs = new Set(mappings.map((m) => m.pb_id))
+
+  return {
+    mapped: rows,
+    expectedGroups: [...groups.entries()]
+      .map(([parent, members]) => ({ parent, members }))
+      .sort((a, b) => a.parent.localeCompare(b.parent)),
+    unrecognised: coverage?.unrecognised ?? [],
+    uncovered: order
+      .filter((id) => !mappedPbs.has(id))
+      .map((id) => ({ pb_id: id, boundary: bset[id] })),
   }
 }
 

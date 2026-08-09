@@ -81,6 +81,25 @@ class PlanetaryBoundary(BaseModel):
     boundary_type: BOUNDARY_TYPE                  # "cumulative" | "flow" (structural)
     status_2023: PB_STATUS_2023 | None = None     # 2023 assessment status; null when not sourced
     provisional: bool = False
+    # ── Display labelling — the SINGLE source for every consumer ────────────
+    # `short_name` is what space-constrained surfaces render (radar axes,
+    # timeline legend, box-plot rows, indicator chips). It holds the EF
+    # category name VERBATIM — no coined abbreviation. EF v3.1 does not define
+    # per-category acronyms (Zampori & Pant 2019, EUR 29682 EN, Table 2 gives
+    # names, indicators and units only), and inventing notation for a tool
+    # under JOSS review is not a trade worth making for label width. Fitting is
+    # the renderer's job: names carry EF's own comma as a natural wrap point.
+    #
+    # Defaults to None, in which case consumers fall back to `name` — so a
+    # boundary set that omits it (Ryberg's scaffold) still renders.
+    short_name: str | None = None
+    # PURELY INFORMATIONAL, for the glossary. The abbreviation LCA readers will
+    # recognise (AP, HTP-c, ODP …). These come from CML / ILCD convention, NOT
+    # from EF, which is why MApper never uses them as a label — displaying one
+    # would assert a naming EF does not define. The glossary shows it as
+    # "commonly written AP" so the familiar handle is available without the
+    # tool claiming it.
+    conventional_acronym: str | None = None
 
 
 class BoundarySet(BaseModel):
@@ -485,6 +504,13 @@ class SustainabilityRatioResult(BaseModel):
     year: int
     pb_id: str
     pb_name: str
+    # The label space-constrained surfaces render (radar axes, timeline legend,
+    # box-plot rows, indicator chips) and every export writes. Stamped from the
+    # boundary record so charts need no lookup and cannot each invent their own
+    # shortening — the whole point of putting it on the boundary. Falls back to
+    # `pb_name` when the set defines no short form (Sala's names ARE already
+    # EF's short category names, so it equals pb_name there).
+    pb_short_name: str = ""
     ef_indicator: str
     impact: float
     allocated_sos: float

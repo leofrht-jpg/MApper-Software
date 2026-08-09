@@ -3689,6 +3689,15 @@ export interface PlanetaryBoundary {
   boundary_type: PBBoundaryType
   status_2023: PBStatus2023
   provisional?: boolean
+  /** Label for space-constrained surfaces. Absent for Sala2020_EF, whose
+   *  `name` is already EF's short category name — a duplicate string would be
+   *  two copies that can drift. Consumers fall back to `name`. */
+  short_name?: string | null
+  /** GLOSSARY ONLY — the abbreviation LCA readers recognise (AP, HTP-c…),
+   *  from CML/ILCD convention. EF defines no per-category acronyms, so MApper
+   *  never renders this as a label; the glossary shows it as
+   *  "commonly written AP". */
+  conventional_acronym?: string | null
 }
 
 export interface BoundarySet {
@@ -3843,6 +3852,8 @@ export interface SustainabilityRatioResult {
   year: number
   pb_id: string
   pb_name: string
+  /** Label stamped from the boundary record — see aesaBoundaryLabels.ts. */
+  pb_short_name?: string
   ef_indicator: string
   impact: number
   allocated_sos: number

@@ -16,7 +16,8 @@
           "zone_of_uncertainty": [8.0e12, 1.6e13],
           "boundary_type": "cumulative",
           "status_2023": "exceeded",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "GWP100"
         },
         "acidification": {
           "id": "acidification",
@@ -28,7 +29,8 @@
           "zone_of_uncertainty": [1.0e12, 2.0e12],
           "boundary_type": "flow",
           "status_2023": "regional",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "AP"
         },
         "ecotoxicity_freshwater": {
           "id": "ecotoxicity_freshwater",
@@ -40,7 +42,8 @@
           "zone_of_uncertainty": [1.0e13, 2.0e13],
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "ETP-fw"
         },
         "resource_use_fossils": {
           "id": "resource_use_fossils",
@@ -52,7 +55,8 @@
           "zone_of_uncertainty": [3.0e14, 6.0e14],
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "ADP-f"
         },
         "eutrophication_freshwater": {
           "id": "eutrophication_freshwater",
@@ -64,7 +68,8 @@
           "zone_of_uncertainty": [5.8e9, 1.2e10],
           "boundary_type": "flow",
           "status_2023": "exceeded",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "EP-f"
         },
         "eutrophication_marine": {
           "id": "eutrophication_marine",
@@ -76,7 +81,8 @@
           "zone_of_uncertainty": [2.9e11, 5.8e11],
           "boundary_type": "flow",
           "status_2023": "exceeded",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "EP-m"
         },
         "eutrophication_terrestrial": {
           "id": "eutrophication_terrestrial",
@@ -88,7 +94,8 @@
           "zone_of_uncertainty": [6.1e12, 1.2e13],
           "boundary_type": "flow",
           "status_2023": "regional",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "EP-t"
         },
         "human_toxicity_cancer": {
           "id": "human_toxicity_cancer",
@@ -100,7 +107,8 @@
           "zone_of_uncertainty": [9.6e4, 1.9e5],
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "HTP-c"
         },
         "human_toxicity_non_cancer": {
           "id": "human_toxicity_non_cancer",
@@ -112,7 +120,8 @@
           "zone_of_uncertainty": [5.4e5, 1.1e6],
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "HTP-nc"
         },
         "ionising_radiation": {
           "id": "ionising_radiation",
@@ -124,7 +133,8 @@
           "zone_of_uncertainty": [5.3e13, 1.0e14],
           "boundary_type": "flow",
           "status_2023": "safe",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "IRP"
         },
         "land_use": {
           "id": "land_use",
@@ -136,7 +146,8 @@
           "zone_of_uncertainty": [1.0e14, 2.0e14],
           "boundary_type": "flow",
           "status_2023": "exceeded",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "LU"
         },
         "resource_use_minerals_metals": {
           "id": "resource_use_minerals_metals",
@@ -148,7 +159,8 @@
           "zone_of_uncertainty": [2.4e8, 4.8e8],
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "ADP-mm"
         },
         "ozone_depletion": {
           "id": "ozone_depletion",
@@ -160,7 +172,8 @@
           "zone_of_uncertainty": [5.4e7, 1.1e8],
           "boundary_type": "flow",
           "status_2023": "safe",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "ODP"
         },
         "particulate_matter": {
           "id": "particulate_matter",
@@ -172,7 +185,8 @@
           "zone_of_uncertainty": [5.0e5, 1.0e6],
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "PM"
         },
         "photochemical_ozone_formation": {
           "id": "photochemical_ozone_formation",
@@ -184,7 +198,8 @@
           "zone_of_uncertainty": [4.1e11, 8.2e11],
           "boundary_type": "flow",
           "status_2023": "regional",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "POCP"
         },
         "water_use": {
           "id": "water_use",
@@ -196,7 +211,8 @@
           "zone_of_uncertainty": [1.8e13, 3.6e13],
           "boundary_type": "flow",
           "status_2023": "regional",
-          "provisional": true
+          "provisional": true,
+          "conventional_acronym": "WU"
         }
       }
     },

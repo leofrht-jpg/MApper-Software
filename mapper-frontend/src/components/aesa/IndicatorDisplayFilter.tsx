@@ -15,7 +15,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Check, ChevronDown, ChevronUp } from 'lucide-react'
-import { shortPbName } from './zones'
+
 import { colorForIndicatorById } from '../../utils/aesaIndicatorColors'
 
 interface Props {
@@ -177,7 +177,9 @@ export function IndicatorDisplayFilter({
                   width: 8, height: 8, borderRadius: '50%', background: color,
                   flexShrink: 0,
                 }} />
-                <span style={{ flex: 1 }}>{shortPbName(ind.name)}</span>
+                {/* The popover is a vertical list with room — no shortening,
+                    and nothing truncated mid-word. */}
+                <span style={{ flex: 1 }} title={ind.name}>{ind.name}</span>
               </label>
             )
           })}

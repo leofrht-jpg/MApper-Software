@@ -14,7 +14,8 @@ import {
 } from 'recharts'
 import type { CarbonBudgetConfig, SharingPreset, SustainabilityRatioResult } from '../../api/client'
 import { computeChainFactor } from '../../stores/aesaStore'
-import { ZONE_COLOR, shortPbName } from './zones'
+import { ZONE_COLOR } from './zones'
+import { boundaryLabelText } from '../../utils/aesaBoundaryLabels'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
@@ -41,13 +42,13 @@ export function TimelineView({ results, carbonBudget, sharing }: Props) {
   const srFormat = useNumberFormatter({ notation: 'fixed', decimals: 2 })
 
   const { data, pbs } = useMemo(() => {
-    const pbMap = new Map<string, string>()
+    const pbMap = new Map<string, { full: string; short: string }>()
     const yearSet = new Set<number>()
     for (const r of results) {
-      if (!pbMap.has(r.pb_id)) pbMap.set(r.pb_id, r.pb_name)
+      if (!pbMap.has(r.pb_id)) pbMap.set(r.pb_id, { full: r.pb_name, short: boundaryLabelText(r) })
       yearSet.add(r.year)
     }
-    const pbArr = Array.from(pbMap.entries()).map(([id, name]) => ({ id, name }))
+    const pbArr = Array.from(pbMap.entries()).map(([id, v]) => ({ id, name: v.full, short: v.short }))
     const years = Array.from(yearSet).sort((a, b) => a - b)
     const byKey = new Map<string, number | null>()
     for (const r of results) byKey.set(`${r.year}|${r.pb_id}`, r.sr)
@@ -174,8 +175,11 @@ export function TimelineView({ results, carbonBudget, sharing }: Props) {
                       >
                         <rect x="1" y="1" width="12" height="12" fill={color} rx="1" />
                       </svg>
-                      <span style={{ color: 'var(--text-secondary)' }}>
-                        {shortPbName(p.name)}
+                      {/* Legend has vertical room, so the EF category name
+                          renders in full; `title` still carries it for the
+                          rare case a container clips it. */}
+                      <span style={{ color: 'var(--text-secondary)' }} title={p.name}>
+                        {p.short}
                       </span>
                     </li>
                   )

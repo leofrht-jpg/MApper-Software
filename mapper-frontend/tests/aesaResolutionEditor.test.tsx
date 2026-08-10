@@ -9,6 +9,8 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect, vi } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { render, fireEvent } from '@testing-library/react'
 import { LayerEditModal } from '../src/components/aesa/LayerEditModal'
 import type { DownscalingLayer, PrincipleDefinition } from '../src/api/client'
@@ -128,15 +130,31 @@ describe('only non-default entries are stored', () => {
   })
 })
 
-describe('read-only presets', () => {
-  it('disables the control on a built-in preset', () => {
+describe('the built-in template no longer gates editing', () => {
+  // Inverted deliberately. The layer editor used to be disabled whenever the
+  // configuration's sharing snapshot came from the shipped template, which is
+  // every fresh configuration — so the chain, principles and assignments were
+  // read-only by default and the only way to edit was to duplicate the preset
+  // first. That gate is gone with the sharing-preset section; the snapshot
+  // belongs to the configuration and is directly editable. (The shipped
+  // template is still protected where it matters: PUT/DELETE on
+  // /sharing-presets/{id} still 400 for a built-in id.)
+  it('the resolution controls are editable', () => {
     const utils = render(
       <LayerEditModal
-        layer={layer()} principles={PRINCIPLES} readOnly
+        layer={layer()} principles={PRINCIPLES}
         onClose={() => {}} onSave={vi.fn()}
       />,
     )
-    expect((utils.getByTestId('resolution-step-EpC') as HTMLButtonElement).disabled).toBe(true)
-    expect((utils.getByTestId('resolution-interpolate-EpC') as HTMLButtonElement).disabled).toBe(true)
+    expect((utils.getByTestId('resolution-step-EpC') as HTMLButtonElement).disabled).toBe(false)
+    expect((utils.getByTestId('resolution-interpolate-EpC') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('accepts no readOnly prop at all', () => {
+    // The prop is removed rather than left permanently false: a dead
+    // conditional is an invitation to re-enable the gate by accident.
+    const src = readFileSync(
+      resolve(process.cwd(), 'src/components/aesa/LayerEditModal.tsx'), 'utf-8')
+    expect(src).not.toMatch(/\breadOnly\b/)
   })
 })

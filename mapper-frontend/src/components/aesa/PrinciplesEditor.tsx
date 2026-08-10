@@ -21,7 +21,6 @@ export function PrinciplesEditor() {
   const [editing, setEditing] = useState<PrincipleDefinition | null>(null)
   const [isNew, setIsNew] = useState(false)
 
-  const readOnly = !!draft?.sharing.built_in
 
   /** principle_id → usage description (first found), used to block deletion. */
   const inUse = useMemo(() => {
@@ -112,14 +111,14 @@ export function PrinciplesEditor() {
                 )}
               </div>
               <div style={{ display: 'flex', gap: 4 }}>
-                <button onClick={() => openEdit(p)} style={iconBtn} title="Edit" disabled={readOnly}>
+                <button onClick={() => openEdit(p)} style={iconBtn} title="Edit">
                   <Pencil size={11} />
                 </button>
                 <button
                   onClick={() => remove(p.id)}
-                  style={{ ...iconBtn, color: inUse[p.id] || readOnly ? 'var(--text-tertiary)' : 'var(--danger)' }}
-                  title={readOnly ? 'Read-only preset' : inUse[p.id] ? `In use — ${inUse[p.id]}` : 'Delete'}
-                  disabled={readOnly || !!inUse[p.id]}
+                  style={{ ...iconBtn, color: inUse[p.id] ? 'var(--text-tertiary)' : 'var(--danger)' }}
+                  title={inUse[p.id] ? `In use — ${inUse[p.id]}` : 'Delete'}
+                  disabled={!!inUse[p.id]}
                 >
                   <Trash2 size={11} />
                 </button>
@@ -129,7 +128,6 @@ export function PrinciplesEditor() {
 
           <button
             onClick={openNew}
-            disabled={readOnly}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 4, alignSelf: 'flex-start',
               background: 'transparent',
@@ -137,8 +135,7 @@ export function PrinciplesEditor() {
               borderRadius: 'var(--radius-sm)',
               color: 'var(--text-secondary)',
               padding: '3px 8px', fontSize: 10,
-              cursor: readOnly ? 'not-allowed' : 'pointer',
-              opacity: readOnly ? 0.5 : 1,
+              cursor: 'pointer',
             }}
           >
             <Plus size={10} /> Add principle

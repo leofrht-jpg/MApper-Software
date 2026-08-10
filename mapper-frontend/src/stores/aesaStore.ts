@@ -23,24 +23,19 @@ import {
   type PrincipleDefinition,
   type ProspectiveSingleProductPoint,
   type SharingPreset,
-  type SharingPresetCreate,
   computeAESA,
   createAESAConfiguration,
   createAESASession,
   deleteAESASession,
   getAESASessions,
   renameAESASession,
-  createSharingPreset,
   deleteAESAConfiguration,
-  deleteSharingPreset,
-  duplicateSharingPreset,
   getAESAConfigurations,
   getAESADefaults,
   getSharingPresets,
   withTransientRetry,
   suggestAESAMethodMapping,
   updateAESAConfiguration,
-  updateSharingPreset,
 } from '../api/client'
 import { useProjectStore } from './projectStore'
 import { resolveYearPair } from '../utils/aesaSeries'
@@ -298,7 +293,6 @@ interface AESAStore {
 
   // Actions — sharing preset + chain editing
   loadPresets: () => Promise<void>
-  selectPreset: (presetId: string) => Promise<void>
   updateSharing: (patch: Partial<SharingPreset>) => void
   updateLayer: (index: number, patch: Partial<DownscalingLayer>) => void
   addLayer: (layer?: Partial<DownscalingLayer>) => void
@@ -306,10 +300,6 @@ interface AESAStore {
   moveLayer: (from: number, to: number) => void
   updatePrinciples: (principles: PrincipleDefinition[]) => void
   updateAssignment: (pbId: string, principleId: string, justification?: string) => void
-  savePreset: () => Promise<SharingPreset | null>
-  savePresetAs: (name: string) => Promise<SharingPreset | null>
-  deletePreset: (presetId: string) => Promise<void>
-  duplicatePreset: (presetId: string, newName?: string) => Promise<SharingPreset | null>
 }
 
 /** Build an editable draft from a saved configuration.
@@ -328,16 +318,32 @@ function draftFromConfig(
   const sharing = c.sharing
     ?? (c.multi_d ? migrateMultiDToPreset(c.multi_d) : fallback)
   if (!sharing) return null
+  // A config saved before this patch may carry `built_in: true` in its
+  // snapshot (it was cloned from the shipped template while the flag was the
+  // read-only gate). Such a config must load AND be editable, so the flag is
+  // normalised on the way in — same reasoning as draftFromDefaults.
   return {
     name: c.name,
     boundary_set_id: c.boundary_set_id,
-    sharing,
+    sharing: asEditableSnapshot(sharing),
     sharing_preset_id: c.sharing_preset_id ?? null,
     carbon_budget: c.carbon_budget,
     method_mapping: c.method_mapping,
     impact_mode: c.impact_mode,
     dsm_scenario_id: c.dsm_scenario_id ?? null,
   }
+}
+
+/**
+ * A sharing snapshot owned by the configuration rather than by the template.
+ *
+ * The only difference is `built_in: false`. The shipped template keeps its own
+ * flag on the server, where it still blocks PUT/DELETE on
+ * `/sharing-presets/{id}` — that protection is unchanged and still wanted.
+ * What is gone is using the flag as a UI gate.
+ */
+function asEditableSnapshot(preset: SharingPreset): SharingPreset {
+  return preset.built_in ? { ...preset, built_in: false } : preset
 }
 
 function draftFromDefaults(
@@ -349,7 +355,13 @@ function draftFromDefaults(
   return {
     name: 'New AESA configuration',
     boundary_set_id: defaults.boundary_sets[0]?.id ?? 'Sala2020_EF',
-    sharing: fallback,
+    // `built_in` false on the DRAFT copy. The flag means "this is the shipped,
+    // API-protected template"; a draft is a config-local snapshot the user may
+    // now edit freely, so carrying it over would make the flag lie the moment
+    // they touch anything. It also used to be the read-only gate on the three
+    // editors — the gate is gone, and leaving a stale true behind would let it
+    // silently return. `sharing_preset_id` still records where this came from.
+    sharing: asEditableSnapshot(fallback),
     sharing_preset_id: builtIn?.id ?? null,
     // Phase 3 — fresh configs default to the CO₂-eq budget basis (the backend
     // default budget carries the per-budget co2e_conversion factor; we flip the
@@ -365,15 +377,6 @@ function draftFromDefaults(
   }
 }
 
-function presetCreateBody(sharing: SharingPreset): SharingPresetCreate {
-  return {
-    name: sharing.name,
-    description: sharing.description,
-    principles: sharing.principles,
-    category_assignments: sharing.category_assignments,
-    chain: sharing.chain,
-  }
-}
 
 export const useAESAStore = create<AESAStore>((set, get) => ({
   defaults: null,
@@ -840,19 +843,6 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
 
   // ── Preset / chain editing ────────────────────────────────────────────────
 
-  selectPreset: async (presetId) => {
-    let preset = get().presets.find((p) => p.id === presetId) ?? null
-    if (!preset) {
-      await get().loadPresets()
-      preset = get().presets.find((p) => p.id === presetId) ?? null
-    }
-    if (!preset) return
-    set((s) => ({
-      draft: s.draft
-        ? { ...s.draft, sharing: preset!, sharing_preset_id: preset!.id }
-        : s.draft,
-    }))
-  },
 
   updateSharing: (patch) => set((s) => {
     if (!s.draft) return {}
@@ -933,70 +923,9 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     }
   }),
 
-  savePreset: async () => {
-    const { draft } = get()
-    if (!draft) return null
-    const preset = draft.sharing
-    try {
-      const saved = preset.built_in || !preset.id || preset.id === 'migrated' || preset.id === 'draft'
-        ? await createSharingPreset(presetCreateBody({ ...preset, built_in: false }))
-        : await updateSharingPreset(preset.id, presetCreateBody(preset))
-      set((s) => {
-        const others = s.presets.filter((p) => p.id !== saved.id)
-        const built = s.presets.find((p) => p.built_in)
-        const presets = [...(built ? [built] : []), saved, ...others.filter((p) => !p.built_in)]
-        return {
-          presets,
-          draft: s.draft ? { ...s.draft, sharing: saved, sharing_preset_id: saved.id } : s.draft,
-        }
-      })
-      return saved
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) })
-      return null
-    }
-  },
 
-  savePresetAs: async (name) => {
-    const { draft } = get()
-    if (!draft) return null
-    try {
-      const saved = await createSharingPreset(presetCreateBody({
-        ...draft.sharing, name, built_in: false,
-      }))
-      set((s) => ({
-        presets: [...s.presets.filter((p) => p.id !== saved.id), saved],
-        draft: s.draft ? { ...s.draft, sharing: saved, sharing_preset_id: saved.id } : s.draft,
-      }))
-      return saved
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) })
-      return null
-    }
-  },
 
-  deletePreset: async (presetId) => {
-    try {
-      await deleteSharingPreset(presetId)
-      set((s) => ({ presets: s.presets.filter((p) => p.id !== presetId) }))
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) })
-    }
-  },
 
-  duplicatePreset: async (presetId, newName) => {
-    try {
-      const dup = await duplicateSharingPreset(presetId, newName)
-      set((s) => ({
-        presets: [...s.presets, dup],
-        draft: s.draft ? { ...s.draft, sharing: dup, sharing_preset_id: dup.id } : s.draft,
-      }))
-      return dup
-    } catch (e) {
-      set({ error: e instanceof Error ? e.message : String(e) })
-      return null
-    }
-  },
 
 
 

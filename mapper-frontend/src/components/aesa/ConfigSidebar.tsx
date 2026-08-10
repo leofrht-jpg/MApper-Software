@@ -20,7 +20,6 @@ import { resolveBoundarySet } from '../../utils/aesaBoundaryLabels'
 import { useDSMStore } from '../../stores/dsmStore'
 import { useImpactStore } from '../../stores/impactStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
-import { PresetSelector } from './PresetSelector'
 import { ConfigWorkbookButtons } from './ConfigWorkbookButtons'
 import { CategoryAssignmentsTable } from './CategoryAssignmentsTable'
 import { MethodMappingTable } from './MethodMappingTable'
@@ -277,6 +276,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
 
   const [runSensitivity, setRunSensitivity] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
 
   // Patch 5AQ — which of the multi-LCI Prospective Background scenarios AESA
   // assesses. The run persists all N full ImpactAssessmentResults in
@@ -536,6 +536,37 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               >
                 {saving ? <Loader2 size={14} className="spin" /> : <Save size={14} />}
               </Button>
+              {/* Reset — the ONLY route back to the built-in defaults now that
+                  the sharing-preset section is gone. Two consequences shape
+                  this control:
+
+                  It must NAME what it restores. "Reset" beside Compute and
+                  Save reads as "reset what?" — the config? the result? the
+                  cascade? The tooltip spells out the four things it replaces
+                  and the one thing it leaves alone.
+
+                  And it must ASK. Before this patch the chain, principles and
+                  assignments were read-only unless you duplicated the preset,
+                  so there were no edits to lose. They are directly editable
+                  now, which makes a stray click on a 28px icon destructive.
+                  Hence the confirm — the same reasoning as the session-delete
+                  modal, at the same weight. */}
+              <Button
+                variant="secondary"
+                onClick={() => setConfirmReset(true)}
+                disabled={!draft}
+                data-testid="aesa-reset-defaults"
+                title={
+                  'Reset to built-in defaults — replaces the downscaling chain, '
+                  + 'sharing principles, category assignments and carbon budget '
+                  + 'with the shipped Multi-D defaults. Your saved configurations '
+                  + 'are not touched.'
+                }
+                aria-label="Reset configuration to built-in defaults"
+                style={{ padding: '0 10px', height: 28 }}
+              >
+                <RotateCcw size={14} />
+              </Button>
             </>
           ))}
           <button
@@ -792,9 +823,11 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
           >
             {/* Whole-config name (Patch 4Y). `draft.name` → `saveConfig` names
                 the entire AESAConfiguration (the Configurations pill / header
-                Save) — NOT the Stage-2 sharing template (that's the PresetSelector
-                / `draft.sharing`). Kept GLOBAL, above the three stages; stays
-                inside the fieldset so it disables in session-loaded mode. */}
+                Save). It is now the ONLY name in this sidebar: the sharing
+                snapshot's own `name` is no longer surfaced, since a template
+                the user cannot select or switch has no name worth showing.
+                Kept GLOBAL, above the stages; stays inside the fieldset so it
+                disables in session-loaded mode. */}
             <Section title="Configuration template name">
               <input
                 data-testid="aesa-config-template-name"
@@ -951,22 +984,6 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               )}
             </CollapsibleSection>
 
-            {/* Sharing preset selector — collapsible. Once chosen,
-                rarely revisited per run; collapse by default and show
-                the active preset name as the summary. */}
-            <CollapsibleSection
-              title="Sharing preset"
-              openKey={collapsibleOpenKey}
-              summary={draft.sharing?.name ?? '—'}
-            >
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 6 }}>
-                <button onClick={resetDraftToDefaults} style={ghostBtnStyle} title="Reset to defaults">
-                  <RotateCcw size={11} /> Reset
-                </button>
-              </div>
-              <PresetSelector />
-            </CollapsibleSection>
-
             {/* Downscaling chain editor — collapsible. Layer count is
                 the most useful at-a-glance summary. */}
             <CollapsibleSection
@@ -999,7 +1016,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
 
             {/* Carbon budget — collapsible. */}
             <CollapsibleSection
-              title="Carbon budget (cumulative climate)"
+              title="Carbon budget"
               openKey={collapsibleOpenKey}
               summary={
                 draft.carbon_budget
@@ -1067,9 +1084,74 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
       {/* Patch 4AC — footer removed. Compute, Save (configuration
           template), and Run-sensitivity moved to the header; the
           hint / error row above renders gating context. */}
+
+      {confirmReset && (
+        <ResetDefaultsModal
+          onCancel={() => setConfirmReset(false)}
+          onConfirm={() => { setConfirmReset(false); resetDraftToDefaults() }}
+        />
+      )}
     </aside>
   )
 
+}
+
+/**
+ * Confirm before discarding the sharing configuration.
+ *
+ * Reset used to be a low-stakes button tucked inside the sharing-preset
+ * section: the chain, principles and assignments were read-only unless the
+ * user duplicated the preset, so there was usually nothing to lose. Removing
+ * that gate made all three directly editable, which turns the same click into
+ * a destructive one — so it now asks, and names what it will replace.
+ *
+ * Portalled for the same reason as the session-delete modal (Patch 4X): the
+ * sidebar is `position: sticky`, whose stacking context traps a modal
+ * rendered inside it.
+ */
+function ResetDefaultsModal({ onCancel, onConfirm }: {
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return createPortal(
+    <div
+      data-testid="aesa-reset-confirm"
+      style={{
+        position: 'fixed', inset: 0, zIndex: 9999,
+        background: 'rgba(0,0,0,0.5)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+      }}
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel() }}
+    >
+      <div style={{
+        background: 'var(--bg-surface)', border: '1px solid var(--border-default)',
+        borderRadius: 'var(--radius-md)', maxWidth: 420, width: '100%', padding: 16,
+      }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
+          Reset to built-in defaults?
+        </div>
+        <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+          This replaces the <strong>downscaling chain</strong>,{' '}
+          <strong>sharing principles</strong>, <strong>category assignments</strong>{' '}
+          and <strong>carbon budget</strong> in the editor with the shipped
+          Multi-D defaults. Unsaved edits to them are lost.
+          <div style={{ marginTop: 6, color: 'var(--text-tertiary)' }}>
+            Saved configurations are not touched — this only affects what is
+            currently in the editor.
+          </div>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
+          <Button variant="secondary" onClick={onCancel} data-testid="aesa-reset-cancel">
+            Cancel
+          </Button>
+          <Button onClick={onConfirm} data-testid="aesa-reset-confirm-btn">
+            Reset
+          </Button>
+        </div>
+      </div>
+    </div>,
+    document.body,
+  )
 }
 
 // ── Compute Source cascade (Patch 4O) ──────────────────────────────────────

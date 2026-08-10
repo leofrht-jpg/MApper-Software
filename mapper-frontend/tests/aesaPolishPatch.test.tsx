@@ -198,9 +198,9 @@ describe('Item 1 — cascade no-run annotation suppressed in session mode', () =
 })
 
 describe('Item 2 — sidebar sections collapsible', () => {
-  it('Sharing preset section defaults to collapsed (body hidden)', () => {
+  it('the first collapsible section defaults to collapsed (body hidden)', () => {
     const { container } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
-    const sec = container.querySelector('[data-testid="aesa-collapsible-sharing-preset"]')
+    const sec = container.querySelector('[data-testid="aesa-collapsible-downscaling-chain"]')
     expect(sec).not.toBeNull()
     // Body wrapper is the second child div; with the section
     // collapsed by default, its `display` is 'none'.
@@ -218,24 +218,34 @@ describe('Item 2 — sidebar sections collapsible', () => {
     expect(container.querySelector('[data-testid="aesa-collapsible-planetary-boundary-set"]')).toBeNull()
   })
 
-  it('Five infrequent sections all render as collapsibles', () => {
+  it('the infrequent sections all render as collapsibles, in order', () => {
+    // "Sharing preset" is deliberately absent: the section was removed, and
+    // the chain / principles / assignments it wrapped are now edited directly
+    // on the configuration. Its removal is what produces this order.
     const { container } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
     const expected = [
-      'aesa-collapsible-sharing-preset',
+      'aesa-collapsible-method-pb-mapping',
       'aesa-collapsible-downscaling-chain',
       'aesa-collapsible-sharing-principles',
       'aesa-collapsible-category-assignments',
-      'aesa-collapsible-carbon-budget-cumulative-climate-',
-      'aesa-collapsible-method-pb-mapping',
+      'aesa-collapsible-carbon-budget',
     ]
     for (const id of expected) {
-      expect(container.querySelector(`[data-testid="${id}"]`)).not.toBeNull()
+      expect(container.querySelector(`[data-testid="${id}"]`), id).not.toBeNull()
     }
+    expect(container.querySelector('[data-testid="aesa-collapsible-sharing-preset"]'),
+      'the Sharing preset section should be gone').toBeNull()
+
+    // Rendered order matches the list above.
+    const rendered = [...container.querySelectorAll('[data-testid^="aesa-collapsible-"]')]
+      .map((el) => el.getAttribute('data-testid'))
+      .filter((id) => expected.includes(id!))
+    expect(rendered).toEqual(expected)
   })
 
   it('clicking the title toggles the body open and closed', () => {
     const { container } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
-    const sec = container.querySelector('[data-testid="aesa-collapsible-sharing-preset"]')!
+    const sec = container.querySelector('[data-testid="aesa-collapsible-downscaling-chain"]')!
     const toggle = sec.querySelector('button')!
     const body = sec.querySelector(':scope > div') as HTMLElement
     expect(body.style.display).toBe('none')

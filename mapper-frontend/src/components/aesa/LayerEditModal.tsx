@@ -17,7 +17,6 @@ import type {
 interface Props {
   layer: DownscalingLayer
   principles: PrincipleDefinition[]
-  readOnly?: boolean
   onClose: () => void
   onSave: (patch: Partial<DownscalingLayer>) => void
 }
@@ -26,7 +25,7 @@ interface Props {
  *  fixed-principle selector (when mode = 'fixed'), and a per-principle data
  *  table. Each principle card supports a constant pair or a year × value
  *  time-varying table. */
-export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }: Props) {
+export function LayerEditModal({ layer, principles, onClose, onSave }: Props) {
   const [draft, setDraft] = useState<DownscalingLayer>(layer)
 
   useEffect(() => setDraft(layer), [layer])
@@ -99,7 +98,6 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
             <input
               value={draft.name}
               onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-              disabled={readOnly}
               style={input}
             />
           </FieldRow>
@@ -108,7 +106,6 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
             <input
               value={draft.description ?? ''}
               onChange={(e) => setDraft({ ...draft, description: e.target.value })}
-              disabled={readOnly}
               placeholder="What does this layer downscale? e.g. Global → Country"
               style={input}
             />
@@ -118,16 +115,14 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
             <div style={{ display: 'flex', gap: 6 }}>
               <ModeOption
                 active={draft.principle_mode === 'category_specific'}
-                disabled={readOnly}
-                onClick={() => handleModeChange('category_specific')}
+                  onClick={() => handleModeChange('category_specific')}
                 title="Each impact category uses its own principle (per-category assignment)"
               >
                 Category-specific
               </ModeOption>
               <ModeOption
                 active={draft.principle_mode === 'fixed'}
-                disabled={readOnly}
-                onClick={() => handleModeChange('fixed')}
+                  onClick={() => handleModeChange('fixed')}
                 title="All categories use the same principle at this layer"
               >
                 Fixed
@@ -140,8 +135,7 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
               <select
                 value={draft.fixed_principle ?? ''}
                 onChange={(e) => setDraft({ ...draft, fixed_principle: e.target.value })}
-                disabled={readOnly}
-                style={input}
+                  style={input}
               >
                 {principles.map((p) => (
                   <option key={p.id} value={p.id}>{p.name} ({p.id})</option>
@@ -173,7 +167,6 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
                 principle={p}
                 years={draft.data[p.id] ?? {}}
                 resolution={draft.resolution?.[p.id] ?? 'step'}
-                readOnly={readOnly}
                 onChange={(years) => handleDataChange(p.id, years)}
                 onResolutionChange={(mode) => handleResolutionChange(p.id, mode)}
               />
@@ -183,7 +176,7 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
 
         <footer style={footer}>
           <Button variant="secondary" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={readOnly} data-testid="layer-edit-apply">Apply</Button>
+          <Button onClick={handleSave} data-testid="layer-edit-apply">Apply</Button>
         </footer>
       </div>
     </div>
@@ -193,12 +186,11 @@ export function LayerEditModal({ layer, principles, readOnly, onClose, onSave }:
 // ── PrincipleDataCard ────────────────────────────────────────────────────────
 
 function PrincipleDataCard({
-  principle, years, resolution, readOnly, onChange, onResolutionChange,
+  principle, years, resolution, onChange, onResolutionChange,
 }: {
   principle: PrincipleDefinition
   years: Record<number, [number, number]>
   resolution: ResolutionMode
-  readOnly?: boolean
   onChange: (years: Record<number, [number, number]>) => void
   onResolutionChange: (mode: ResolutionMode) => void
 }) {
@@ -258,7 +250,6 @@ function PrincipleDataCard({
             <input
               type="checkbox"
               checked={timeVarying}
-              disabled={readOnly}
               onChange={(e) => {
                 setTimeVarying(e.target.checked)
                 if (!e.target.checked) {
@@ -287,8 +278,7 @@ function PrincipleDataCard({
               <div style={{ display: 'flex', gap: 6 }}>
                 <ModeOption
                   active={resolution === 'step'}
-                  disabled={readOnly}
-                  onClick={() => onResolutionChange('step')}
+                      onClick={() => onResolutionChange('step')}
                   title="Each value holds until the next year you supply. Default."
                   testId={`resolution-step-${principle.id}`}
                 >
@@ -296,8 +286,7 @@ function PrincipleDataCard({
                 </ModeOption>
                 <ModeOption
                   active={resolution === 'interpolate'}
-                  disabled={readOnly}
-                  onClick={() => onResolutionChange('interpolate')}
+                      onClick={() => onResolutionChange('interpolate')}
                   title="A straight line is drawn between the years you supply."
                   testId={`resolution-interpolate-${principle.id}`}
                 >
@@ -315,14 +304,12 @@ function PrincipleDataCard({
               <NumField
                 label="System"
                 value={constPair[0]}
-                disabled={readOnly}
-                onChange={(v) => updateConst(v, constPair[1])}
+                  onChange={(v) => updateConst(v, constPair[1])}
               />
               <NumField
                 label="Global"
                 value={constPair[1]}
-                disabled={readOnly}
-                onChange={(v) => updateConst(constPair[0], v)}
+                  onChange={(v) => updateConst(constPair[0], v)}
               />
             </div>
           )}
@@ -348,8 +335,7 @@ function PrincipleDataCard({
                   <input
                     type="number"
                     value={y}
-                    disabled={readOnly}
-                    onChange={(e) => {
+                          onChange={(e) => {
                       const newY = Number(e.target.value)
                       if (newY === y) return
                       const next = { ...years }
@@ -362,21 +348,18 @@ function PrincipleDataCard({
                   <input
                     type="number"
                     value={pair[0]}
-                    disabled={readOnly}
-                    onChange={(e) => setYear(y, [Number(e.target.value), pair[1]])}
+                          onChange={(e) => setYear(y, [Number(e.target.value), pair[1]])}
                     style={miniInput}
                   />
                   <input
                     type="number"
                     value={pair[1]}
-                    disabled={readOnly}
-                    onChange={(e) => setYear(y, [pair[0], Number(e.target.value)])}
+                          onChange={(e) => setYear(y, [pair[0], Number(e.target.value)])}
                     style={miniInput}
                   />
                   <button
                     onClick={() => deleteYear(y)}
-                    disabled={readOnly}
-                    style={{
+                          style={{
                       ...iconBtn, width: 20, height: 20,
                       border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
                     }}
@@ -388,15 +371,14 @@ function PrincipleDataCard({
               ))}
               <button
                 onClick={addYear}
-                disabled={readOnly}
-                style={{
+                  style={{
                   display: 'inline-flex', alignItems: 'center', gap: 3,
                   alignSelf: 'flex-start',
                   background: 'transparent',
                   border: '1px dashed var(--border-subtle)',
                   borderRadius: 'var(--radius-sm)',
                   color: 'var(--text-secondary)',
-                  padding: '3px 8px', fontSize: 10, cursor: readOnly ? 'not-allowed' : 'pointer',
+                  padding: '3px 8px', fontSize: 10, cursor: 'pointer',
                 }}
               >
                 <Plus size={10} /> Add year

@@ -8,7 +8,7 @@
  */
 
 import { useMemo, useState } from 'react'
-import { ArrowDown, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, Pencil, Plus, Trash2 } from 'lucide-react'
 import { computeChainFactor, useAESAStore } from '../../stores/aesaStore'
 import { describeLayerSeries, resolveYearPair, seriesBadgeText } from '../../utils/aesaSeries'
 import type { SeriesShape } from '../../utils/aesaSeries'
@@ -28,7 +28,6 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
   const { draft, updateLayer, addLayer, removeLayer } = useAESAStore()
   const [editingIndex, setEditingIndex] = useState<number | null>(null)
 
-  const readOnly = !!draft?.sharing.built_in
 
   const chain = draft?.sharing.chain
   const year = previewYear ?? new Date().getFullYear()
@@ -86,7 +85,6 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
               description={layer.description ?? ''}
               series={describeLayerSeries(layer.data, layer.resolution)}
               factor={factor}
-              readOnly={readOnly}
               canDelete={chain.layers.length > 1}
               onEdit={() => setEditingIndex(i)}
               onDelete={() => removeLayer(i)}
@@ -103,7 +101,6 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
       {/* Add layer */}
       <button
         onClick={() => addLayer()}
-        disabled={readOnly}
         style={{
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 4,
           padding: '6px 10px', fontSize: 11,
@@ -111,8 +108,7 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
           background: 'transparent',
           border: '1px dashed var(--border-subtle)',
           borderRadius: 'var(--radius-sm)',
-          cursor: readOnly ? 'not-allowed' : 'pointer',
-          opacity: readOnly ? 0.5 : 1,
+          cursor: 'pointer',
         }}
       >
         <Plus size={12} /> Add layer
@@ -150,7 +146,6 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
         <LayerEditModal
           layer={chain.layers[editingIndex]}
           principles={draft.sharing.principles}
-          readOnly={readOnly}
           onClose={() => setEditingIndex(null)}
           onSave={(patch) => updateLayer(editingIndex, patch)}
         />
@@ -161,7 +156,7 @@ export function DownscalingChainEditor({ previewYear, previewPbId }: Props) {
 
 function LayerCard({
   index, name, mode, fixedPrinciple, description, series, factor,
-  readOnly, canDelete, onEdit, onDelete,
+  canDelete, onEdit, onDelete,
 }: {
   index: number
   name: string
@@ -170,7 +165,6 @@ function LayerCard({
   description: string
   series: SeriesShape[]
   factor: number
-  readOnly: boolean
   canDelete: boolean
   onEdit: () => void
   onDelete: () => void
@@ -186,7 +180,6 @@ function LayerCard({
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{name}</span>
-            {readOnly && <Lock size={10} color="var(--text-tertiary)" />}
           </div>
           <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
             {modeBadge}
@@ -230,10 +223,10 @@ function LayerCard({
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-          <button onClick={onEdit} style={iconBtn} title={readOnly ? 'View layer (read-only)' : 'Edit layer'}>
+          <button onClick={onEdit} style={iconBtn} title="Edit layer">
             <Pencil size={12} />
           </button>
-          {!readOnly && canDelete && (
+          {canDelete && (
             <button
               onClick={() => { if (confirm(`Delete "${name}"?`)) onDelete() }}
               style={{ ...iconBtn, color: 'var(--danger)' }}

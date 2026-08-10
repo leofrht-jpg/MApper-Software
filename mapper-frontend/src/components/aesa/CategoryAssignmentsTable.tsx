@@ -30,7 +30,6 @@ export function CategoryAssignmentsTable({ boundarySet }: Props) {
 
   const principles = draft.sharing.principles
   const assignments = new Map(draft.sharing.category_assignments.map((a) => [a.pb_id, a]))
-  const readOnly = draft.sharing.built_in
 
   if (!hasCategoryLayer) {
     return (
@@ -86,7 +85,6 @@ export function CategoryAssignmentsTable({ boundarySet }: Props) {
                   <select
                     value={current}
                     onChange={(e) => updateAssignment(pbId, e.target.value)}
-                    disabled={readOnly}
                     style={select}
                   >
                     {principles.map((p) => (

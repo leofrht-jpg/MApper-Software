@@ -569,23 +569,17 @@ def _config_filename(name: str) -> str:
     return build_export_filename(name or "AESA", [], "AESACFG")
 
 
-@router.get("/config/template")
-async def get_config_template() -> Response:
-    """Blank-but-complete workbook: every field present, seeded with defaults.
-
-    Defaults are real values (the built-in template + the default budget) and
-    are labelled as such on the Configuration sheet, so the file doubles as the
-    "what can I configure?" artefact.
-    """
-    preset = build_default_sharing_preset()
-    bundle = AESAConfigBundle(
-        boundary_set_id=preset.boundary_set_id,
-        sharing=preset,
-        method_mapping=[],
-        carbon_budget=build_carbon_budget(),
-    )
-    wb = _build_sharing_workbook(preset, include_instructions=True, bundle=bundle)
-    return excel_response(wb, _config_filename("AESA_configuration_template"), kind="round_trip")
+# GET /config/template was removed once the export stopped requiring a saved
+# configuration (its body is AESAConfigurationCreate, so an unsaved draft
+# exports fine). A fresh draft is seeded from the built-in defaults, so
+# exporting from a clean start yields what the template was for: the two files
+# were built by the SAME `_build_sharing_workbook(..., include_instructions=True)`
+# call and differed in exactly two cells — the export additionally recording
+# `sharing_preset_id` provenance, and carrying `budget_basis = CO2e_GHG` where
+# the template still said CO2. The CO2e basis is the correct one: it keeps the
+# budget (denominator) scope-consistent with the all-GHG GWP100 numerator,
+# which is the reason the conversion exists at all. Instructions and Reference
+# are byte-identical in both, so nothing was lost with the route.
 
 
 @router.post("/config/export")

@@ -9,6 +9,8 @@
 
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, waitFor } from '@testing-library/react'
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join, relative, resolve } from 'node:path'
 
 // Section (2)'s Template / Export settings / Import settings trio. Import
 // replaces the ACTIVE configuration, so it is destructive and must go through
@@ -17,7 +19,6 @@ import { fireEvent, render, waitFor } from '@testing-library/react'
 
 const importAESAConfig = vi.fn()
 const exportAESAConfig = vi.fn(async () => {})
-const downloadAESAConfigTemplate = vi.fn(async () => {})
 
 vi.mock('../src/api/client', async () => {
   const actual = await vi.importActual<typeof import('../src/api/client')>('../src/api/client')
@@ -25,7 +26,6 @@ vi.mock('../src/api/client', async () => {
     ...actual,
     importAESAConfig: (...a: unknown[]) => importAESAConfig(...a),
     exportAESAConfig: (...a: unknown[]) => exportAESAConfig(...a),
-    downloadAESAConfigTemplate: (...a: unknown[]) => downloadAESAConfigTemplate(...a),
   }
 })
 
@@ -60,25 +60,25 @@ function pickFile(container: HTMLElement) {
 beforeEach(() => {
   importAESAConfig.mockReset()
   exportAESAConfig.mockClear()
-  downloadAESAConfigTemplate.mockClear()
 })
 
 describe('section (2) workbook buttons', () => {
-  it('renders all three, labelled for the whole configuration not just a preset', async () => {
+  it('renders two, labelled for the whole configuration not just a preset', async () => {
     const { container } = await renderButtons()
     const text = container.textContent ?? ''
-    expect(text).toContain('Template')
     expect(text).toContain('Export settings')
     expect(text).toContain('Import settings')
     // The old preset-only framing must be gone.
     expect(text).not.toContain('Export preset')
     expect(text).not.toContain('Import preset')
+    // And the Template button with it: an export from a fresh draft IS the
+    // template, so a third button would be a second artefact to keep in step.
+    expect(text).not.toContain('Template')
+    expect(container.querySelector('[data-testid="aesa-config-template"]')).toBeNull()
   })
 
-  it('Template and Export call through without a confirm', async () => {
+  it('Export calls through without a confirm', async () => {
     const { container } = await renderButtons()
-    fireEvent.click(container.querySelector('[data-testid="aesa-config-template"]')!)
-    await waitFor(() => expect(downloadAESAConfigTemplate).toHaveBeenCalled())
     fireEvent.click(container.querySelector('[data-testid="aesa-config-export"]')!)
     await waitFor(() => expect(exportAESAConfig).toHaveBeenCalledWith(CONFIG))
   })
@@ -177,11 +177,71 @@ describe('section (2) workbook buttons', () => {
     expect(container.querySelector('[data-testid="aesa-config-import-confirm"]')).toBeNull()
   })
 
-  it('offers to also save the preset half', async () => {
+  it('no longer offers to save a preset half — it would be unreachable', async () => {
+    // The option persisted a SharingPreset server-side. With the selector
+    // gone, nothing can ever select it again, so offering it would create
+    // invisible state.
     importAESAConfig.mockResolvedValue(BUNDLE)
     const { container } = await renderButtons()
     pickFile(container)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-save-preset"]')).not.toBeNull())
+      expect(container.querySelector('[data-testid="aesa-config-confirm-apply"]')).not.toBeNull())
+    expect(container.querySelector('[data-testid="aesa-config-save-preset"]')).toBeNull()
+  })
+
+  it('applies the import with a single argument — no save_as_preset', async () => {
+    importAESAConfig.mockResolvedValue(BUNDLE)
+    const { container } = await renderButtons()
+    pickFile(container)
+    await waitFor(() =>
+      expect(container.querySelector('[data-testid="aesa-config-confirm-apply"]')).not.toBeNull())
+    fireEvent.click(container.querySelector('[data-testid="aesa-config-confirm-apply"]')!)
+    await waitFor(() => expect(importAESAConfig).toHaveBeenCalled())
+    for (const call of importAESAConfig.mock.calls) {
+      expect(call.length, 'importAESAConfig must be called with the file alone').toBe(1)
+    }
+  })
+})
+
+// ── the template route is gone, everywhere ──────────────────────────────────
+
+describe('nothing references the removed template endpoint', () => {
+  const SRC = resolve(process.cwd(), 'src')
+
+  function walk(dir: string, out: string[] = []): string[] {
+    for (const name of readdirSync(dir)) {
+      const full = join(dir, name)
+      if (statSync(full).isDirectory()) walk(full, out)
+      else if (/\.(ts|tsx)$/.test(name)) out.push(full)
+    }
+    return out
+  }
+
+  it('no client function or route string survives', () => {
+    const offenders: string[] = []
+    for (const f of walk(SRC)) {
+      const src = readFileSync(f, 'utf-8')
+      if (/downloadAESAConfigTemplate|aesa\/config\/template/.test(src)) {
+        offenders.push(relative(SRC, f))
+      }
+    }
+    expect(offenders, 'still reference GET /aesa/config/template, which no '
+      + 'longer exists — an export from a fresh draft is the template now')
+      .toEqual([])
+  })
+
+  it('importAESAConfig no longer accepts a save-as-preset argument', () => {
+    // The server still accepts `?save_as_preset=` and that surface is tested
+    // backend-side; the client simply stops offering it, because a preset
+    // created that way would be unreachable.
+    const src = readFileSync(join(SRC, 'api/client.ts'), 'utf-8')
+    const body = src.slice(src.indexOf('export async function importAESAConfig'))
+      .slice(0, 600)
+      // Strip comments: the function documents WHY it stops passing the
+      // parameter, and that prose must not read as a breach of the rule.
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    expect(body, 'the client must not take or send a save-as-preset argument')
+      .not.toMatch(/saveAsPreset|save_as_preset/)
   })
 })

@@ -4472,10 +4472,6 @@ async function _downloadPreferringServerName(
   URL.revokeObjectURL(url)
 }
 
-export async function downloadAESAConfigTemplate(): Promise<void> {
-  return _downloadPreferringServerName(
-    '/aesa/config/template', { method: 'GET' }, 'AESA_configuration_template_AESACFG.xlsx')
-}
 
 /**
  * What POST /aesa/config/export accepts — the server's AESAConfigurationCreate.
@@ -4517,14 +4513,13 @@ export async function exportAESAConfig(config: AESAConfigExportInput): Promise<v
  * Throws with `.errors` populated when the workbook is rejected, so the caller
  * can list every failing sheet/field rather than just the first.
  */
-export async function importAESAConfig(
-  file: File,
-  saveAsPreset?: string,
-): Promise<AESAConfigBundle> {
+export async function importAESAConfig(file: File): Promise<AESAConfigBundle> {
+  // The server still accepts `?save_as_preset=` — that API surface is tested
+  // and stays — but nothing calls it: with the sharing-preset selector gone,
+  // a preset created this way would be unreachable.
   const form = new FormData()
   form.append('file', file)
-  const qs = saveAsPreset ? `?save_as_preset=${encodeURIComponent(saveAsPreset)}` : ''
-  const res = await fetch(`${API_BASE}/aesa/config/import${qs}`, { method: 'POST', body: form })
+  const res = await fetch(`${API_BASE}/aesa/config/import`, { method: 'POST', body: form })
   if (!res.ok) {
     let errors: AESAConfigImportError[] = []
     try {

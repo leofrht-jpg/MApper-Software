@@ -11,7 +11,6 @@ import { useRef, useState } from 'react'
 import { Download, Upload } from 'lucide-react'
 import { Button } from '../ui/Button'
 import {
-  downloadAESAConfigTemplate,
   exportAESAConfig,
   importAESAConfig,
   type AESAConfigBundle,
@@ -20,7 +19,15 @@ import {
 } from '../../api/client'
 
 /**
- * Template / Export / Import for the WHOLE of AESA section (2).
+ * Export / Import for the WHOLE of AESA section (2).
+ *
+ * Two buttons, not three. The Template button was removed once export stopped
+ * requiring a saved configuration: a fresh draft is seeded from the built-in
+ * defaults, so exporting from a clean start IS the template — the two routes
+ * called the same builder and differed in two cells. Keeping a separate
+ * "blank scaffold" download would have meant maintaining a second artefact
+ * that drifts (it already had: it still wrote budget_basis = CO2 while a
+ * fresh draft seeds CO2e_GHG).
  *
  * These replace the preset-only trio that used to sit inside the "Sharing
  * preset" collapsible. They now cover the boundary set, method→PB mapping and
@@ -41,13 +48,11 @@ export function ConfigWorkbookButtons({
   onApply: (bundle: AESAConfigBundle) => void
 }) {
   const fileRef = useRef<HTMLInputElement>(null)
-  const [busy, setBusy] = useState<'template' | 'export' | 'import' | null>(null)
+  const [busy, setBusy] = useState<'export' | 'import' | null>(null)
   const [pending, setPending] = useState<{ bundle: AESAConfigBundle; filename: string } | null>(null)
   const [errors, setErrors] = useState<AESAConfigImportError[]>([])
-  const [savePreset, setSavePreset] = useState(false)
-  const [presetName, setPresetName] = useState('')
 
-  const run = async (kind: 'template' | 'export', fn: () => Promise<void>) => {
+  const run = async (kind: 'export', fn: () => Promise<void>) => {
     setBusy(kind)
     setErrors([])
     try { await fn() } finally { setBusy(null) }
@@ -59,7 +64,6 @@ export function ConfigWorkbookButtons({
     try {
       // Parse + validate only. Nothing is applied until the user confirms.
       const bundle = await importAESAConfig(file)
-      setPresetName(bundle.sharing?.name ?? 'Imported configuration')
       setPending({ bundle, filename: file.name })
     } catch (e) {
       const err = e as Error & { errors?: AESAConfigImportError[] }
@@ -73,15 +77,8 @@ export function ConfigWorkbookButtons({
     if (!pending) return
     setBusy('import')
     try {
-      if (savePreset && presetName.trim()) {
-        // Re-post so the server persists the preset half. method_mapping is
-        // NOT written to it — that field is config-level only.
-        const input = fileRef.current?.files?.[0]
-        if (input) await importAESAConfig(input, presetName.trim())
-      }
       onApply(pending.bundle)
       setPending(null)
-      setSavePreset(false)
     } finally {
       setBusy(null)
     }
@@ -101,16 +98,6 @@ export function ConfigWorkbookButtons({
           e.target.value = '' // allow re-selecting the same file
         }}
       />
-
-      <Button
-        variant="secondary"
-        onClick={() => void run('template', downloadAESAConfigTemplate)}
-        disabled={busy !== null}
-        data-testid="aesa-config-template"
-        title="Blank workbook with every configurable field and a Reference sheet of valid values"
-      >
-        <Download size={14} /> Template
-      </Button>
 
       <Button
         variant="secondary"
@@ -194,37 +181,15 @@ export function ConfigWorkbookButtons({
             </h4>
             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
               <b>{pending.filename}</b> validated cleanly. Applying it replaces the
-              boundary set, method → PB mapping, sharing preset, downscaling chain,
-              principles, category assignments and carbon budget of the configuration
-              you are editing. Saved sessions are not affected.
+              boundary set, method → PB mapping, downscaling chain, sharing
+              principles, category assignments and carbon budget of the
+              configuration you are editing. Saved sessions are not affected.
             </p>
-            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-xs)' }}>
-              <input
-                type="checkbox"
-                checked={savePreset}
-                data-testid="aesa-config-save-preset"
-                onChange={(e) => setSavePreset(e.target.checked)}
-              />
-              Also save the sharing preset half as a reusable template
-            </label>
-            {savePreset && (
-              <input
-                value={presetName}
-                onChange={(e) => setPresetName(e.target.value)}
-                placeholder="Preset name"
-                style={{
-                  width: '100%', marginTop: 6, height: 28, padding: '0 8px',
-                  background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
-                  borderRadius: 'var(--radius-md)', color: 'var(--text-primary)',
-                  fontSize: 'var(--text-sm)',
-                }}
-              />
-            )}
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
               <Button
                 variant="secondary"
                 data-testid="aesa-config-confirm-cancel"
-                onClick={() => { setPending(null); setSavePreset(false) }}
+                onClick={() => setPending(null)}
               >
                 Cancel
               </Button>

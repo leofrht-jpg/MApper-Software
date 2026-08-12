@@ -33,9 +33,9 @@ from pathlib import Path
 import pytest
 
 from mapper.core.aesa_engine import (
-    AR6_C3C4_2C,
-    BJORN_2023_1P5C,
-    CO2E_2020_2024_GT,
+    CO2E_FIT_1P5C,
+    CO2E_FIT_2C,
+    TILSTED_BJORN_2023_PUBLISHED,
 )
 
 DATA = Path(__file__).resolve().parents[1] / "mapper" / "data" / "aesa" / "co2e_ratio"
@@ -78,7 +78,7 @@ def readme() -> str:
 
 
 def test_code_coefficients_equal_the_fitted_artefact(fit):
-    m, b = AR6_C3C4_2C
+    m, b = CO2E_FIT_2C.slope, CO2E_FIT_2C.intercept
     assert m == fit["slope"]
     assert b == fit["intercept"]
 
@@ -136,7 +136,7 @@ def test_readme_no_longer_says_the_offset_set_is_unshipped(readme):
 
 
 def test_offset_constant_is_documented_with_its_n_and_its_file(readme):
-    assert str(CO2E_2020_2024_GT) in readme
+    assert str(CO2E_FIT_2C.offset_2020_2024_gt) in readme
     assert f"{OFFSET_N} rows" in readme
     # It must name the file the median is taken over, not just the count —
     # that pointer is what makes the number checkable.
@@ -213,7 +213,7 @@ def test_the_1p5c_affine_cites_tilsted_bjorn_with_a_doi():
         )
 
     # The coefficients the citation belongs to are unchanged.
-    assert BJORN_2023_1P5C == (1.1614, 157.27)
+    assert TILSTED_BJORN_2023_PUBLISHED == (1.1614, 157.27)
 
 
 def test_the_1p5c_domain_is_recorded_wherever_the_leg_is_described():
@@ -246,3 +246,144 @@ def test_the_persisted_source_label_names_the_right_authors():
          "remaining_gt_from_2025": 300})
     assert "Tilsted" in conv.source
     assert "Bjorn et al. 2023" not in conv.source
+
+
+# ── both legs are treated alike ─────────────────────────────────────────────
+#
+# The 1.5 C leg used to pair Tilsted & Bjorn's sub-1.5 C affine with an offset
+# whose median was taken over C3+C4 — a 2 C ensemble. It is now refitted over
+# AR6 C1+C2 so affine and offset come from the same scenarios, as the 2 C leg
+# already did. These tests hold the symmetry.
+
+ALL_FITS = (CO2E_FIT_1P5C, CO2E_FIT_2C)
+
+
+def _rows(name: str) -> list[dict]:
+    with (DATA / name).open(encoding="utf-8") as fh:
+        return list(csv.DictReader(fh))
+
+
+@pytest.mark.parametrize("fit", ALL_FITS, ids=lambda f: f.ensemble)
+def test_no_target_mixes_ensembles(fit):
+    """A fit's affine and offset must come from the SAME category set.
+
+    Checked against the DATA, not the label: both of a fit's files must contain
+    only the categories it declares. Adding a third target without supplying a
+    matching pair — or pointing one file at the wrong ensemble — fails here.
+    """
+    for attr in ("pairs_file", "offset_file"):
+        rows = _rows(getattr(fit, attr))
+        cats = {r["category"] for r in rows}
+        assert cats <= set(fit.categories), (
+            f"{fit.ensemble}: {attr} contains {cats - set(fit.categories)}, which "
+            f"is outside the declared ensemble {fit.categories}"
+        )
+        assert cats == set(fit.categories), (
+            f"{fit.ensemble}: {attr} is missing {set(fit.categories) - cats}"
+        )
+
+
+def test_the_two_fits_use_disjoint_ensembles():
+    assert set(CO2E_FIT_1P5C.categories).isdisjoint(CO2E_FIT_2C.categories)
+    assert CO2E_FIT_1P5C.offset_2020_2024_gt != CO2E_FIT_2C.offset_2020_2024_gt, (
+        "a shared offset is exactly the mismatch this refit removed"
+    )
+
+
+@pytest.mark.parametrize("fit", ALL_FITS, ids=lambda f: f.ensemble)
+def test_each_fit_refits_from_its_own_shipped_rows(fit):
+    """Both legs independently reproducible — the reviewer's first move."""
+    rows = _rows(fit.pairs_file)
+    xs = [float(r["cum_co2_gt"]) for r in rows]
+    ys = [float(r["cum_co2e_gt"]) for r in rows]
+    n = len(xs)
+    mx, my = sum(xs) / n, sum(ys) / n
+    sxx = sum((x - mx) ** 2 for x in xs)
+    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
+    m = sxy / sxx
+    b = my - m * mx
+    # Compare at each fit's OWN published precision: the 2C intercept is
+    # published to 2 dp (218.41, historical and frozen), the C1+C2 one to 4 dp.
+    def dp(v: float) -> int:
+        txt = repr(float(v))
+        return len(txt.split(".")[1]) if "." in txt else 0
+
+    assert round(m, dp(fit.slope)) == fit.slope, f"{fit.ensemble} refit slope {m}"
+    assert round(b, dp(fit.intercept)) == fit.intercept, (
+        f"{fit.ensemble} refit intercept {b} != published {fit.intercept}"
+    )
+    assert (round(min(xs), 1), round(max(xs), 1)) == fit.domain_gt
+
+
+@pytest.mark.parametrize("fit", ALL_FITS, ids=lambda f: f.ensemble)
+def test_each_offset_is_the_median_of_its_own_shipped_rows(fit):
+    vals = sorted(float(r["cum_co2e_2020_2024_gt"]) for r in _rows(fit.offset_file))
+    n = len(vals)
+    median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
+    assert round(median, 1) == round(fit.offset_2020_2024_gt, 1)
+
+
+@pytest.mark.parametrize("fit", ALL_FITS, ids=lambda f: f.ensemble)
+def test_offset_set_is_a_superset_of_the_regression_set(fit):
+    reg = {(r["model"], r["scenario"]) for r in _rows(fit.pairs_file)}
+    off = {(r["model"], r["scenario"]) for r in _rows(fit.offset_file)}
+    assert reg < off
+    blank = {(r["model"], r["scenario"]) for r in _rows(fit.offset_file)
+             if not r["netzero_co2_year"].strip()}
+    assert blank.isdisjoint(reg)
+
+
+@pytest.mark.parametrize("fit", ALL_FITS, ids=lambda f: f.ensemble)
+def test_both_legs_share_the_same_columns(fit):
+    """Mirrored files: a reader learns one shape, not two."""
+    assert list(_rows(fit.pairs_file)[0]) == [
+        "model", "scenario", "category", "netzero_co2_year",
+        "cum_co2_gt", "cum_co2e_gt", "ratio"]
+    assert list(_rows(fit.offset_file)[0]) == [
+        "model", "scenario", "category", "netzero_co2_year",
+        "cum_co2_2020_2024_gt", "cum_co2e_2020_2024_gt", "ratio_2020_2024"]
+
+
+# ── the 2 C leg is the regression gate ──────────────────────────────────────
+
+
+def test_the_2c_leg_did_not_move():
+    """Byte-identical: the refit touches the 1.5 C target only."""
+    from mapper.core.aesa_engine import co2e_factor_for_budget
+
+    assert (CO2E_FIT_2C.slope, CO2E_FIT_2C.intercept,
+            CO2E_FIT_2C.offset_2020_2024_gt) == (1.2935, 218.41, 257.4)
+    for bid, x20, x25, expected in (
+        ("IPCC_AR6_2C_50", 1350, 1150, (1.2935 * 1350 + 218.41 - 257.4) / 1150),
+        ("IPCC_AR6_2C_67", 1150, 950, (1.2935 * 1150 + 218.41 - 257.4) / 950),
+    ):
+        got = co2e_factor_for_budget(
+            {"id": bid, "original_gt_from_2020": x20, "remaining_gt_from_2025": x25})
+        assert got == expected, f"{bid} moved: {got} != {expected}"
+
+
+def test_the_1p5c_budgets_are_inside_the_c1c2_domain():
+    """The out-of-domain problem the refit removes, asserted rather than argued."""
+    lo, hi = CO2E_FIT_1P5C.domain_gt
+    for x in (500, 400, 300, 200):
+        assert lo <= x <= hi, f"x={x} outside the C1+C2 fitted domain"
+    # Tilsted & Bjorn's published domain excluded x20=500; recorded for contrast.
+    assert not (223 <= 500 <= 427)
+
+
+def test_the_persisted_source_names_the_right_ensemble_per_target():
+    """Written into every config and every exported workbook."""
+    from mapper.core.aesa_engine import co2e_conversion_for_budget
+
+    c15 = co2e_conversion_for_budget(
+        {"id": "IPCC_AR6_1p5C_50", "original_gt_from_2020": 500,
+         "remaining_gt_from_2025": 300}).source
+    c2 = co2e_conversion_for_budget(
+        {"id": "IPCC_AR6_2C_50", "original_gt_from_2020": 1350,
+         "remaining_gt_from_2025": 1150}).source
+    assert "AR6 C1+C2" in c15 and "C3+C4" not in c15, (
+        "a 1.5C budget must not claim the C3+C4 offset"
+    )
+    assert "AR6 C3+C4" in c2 and "C1+C2" not in c2
+    for src in (c15, c2):
+        assert "Tilsted & Bjorn" in src and "10.1007/s10584-023-03583-4" in src

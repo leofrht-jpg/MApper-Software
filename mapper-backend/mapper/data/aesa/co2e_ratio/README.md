@@ -1,13 +1,20 @@
-# CO₂ → CO₂e (Kyoto-gases) conversion data — PROVISIONAL
+# CO₂ → CO₂e (Kyoto-gases) conversion data
 
-**Status: PROVISIONAL data backing a NOW-WIRED conversion.** These files are the
-sourced inputs for the AESA carbon-budget `budget_basis = "CO2e_GHG"` path
-(`CarbonBudgetConfig.co2e_conversion`). As of the CO₂e-basis wiring, a per-budget
-`RatioCO2eConversion` factor IS computed in `build_carbon_budget` and the basis
-is user-selectable (default CO₂-eq). **See "WIRED per-budget factors" at the
-bottom for the live factors + arithmetic.** The numbers below document the
-derivation/exploration that led to the wired factors; the data + coefficients
-remain provisional pending a publication-time refresh.
+**Status: the derivation sets are REPRODUCED and ship in full; the underlying
+budget data remains provisional.** These files are the sourced inputs for the
+AESA carbon-budget `budget_basis = "CO2e_GHG"` path
+(`CarbonBudgetConfig.co2e_conversion`). A per-budget `RatioCO2eConversion`
+factor IS computed in `build_carbon_budget` and the basis is user-selectable
+(default CO₂-eq). **See "WIRED per-budget factors" at the bottom for the live
+factors + arithmetic.**
+
+Both derivation sets are now verifiable from the bundled CSVs: the 343-row
+regression set (`ar6_2c_analog_pairs.csv`) regresses to the published
+coefficients, and the 427-row offset set (`ar6_c34_offset_2020_2024.csv`) has
+**C** as the median of a column. What remains provisional is
+`carbon_budgets.json` (AR6 WG1 values + the −200 GtCO₂ deduction), a separate
+AR6/GCB question, and the incomplete Bjørn et al. 2023 citation. See "Pull
+dates" for the two extractions and the reproduction evidence.
 
 > Historical note: the "Open decision" / "candidate factor" / Bjørn-extrapolation
 > sections below were the pre-wiring exploration. The decisions were resolved as:
@@ -49,6 +56,7 @@ is the nearest proxy** (900/1300 included to bracket budget-sensitivity).
 | `premise_vs_ar6_co2_crosscheck.csv` | premise `Emi|CO2` (PkBudg1150) vs AR6 `Emissions|CO2` (PkBudg1100), World, 2025/30/50/70. |
 | `ar6_2c_analog_pairs.csv` | Per-scenario (cum CO₂, cum CO₂e, ratio) pairs for the AR6 C3+C4 (~2°C) ensemble, all models — the regression inputs (Step 5). |
 | `ar6_2c_analog_fit.json` | The fitted 2°C-analog of the Bjørn formula (slope, intercept, R, N, x-range, implied ratio at 1150). |
+| `ar6_c34_offset_2020_2024.csv` | The **427**-scenario offset set: per-scenario 2020–2024 cumulative CO₂ and CO₂e that **C** is the median of. Superset of the 343 pairs; rows with a blank `netzero_co2_year` are the 84 excluded from the regression. |
 
 ## 2°C-analog of the Bjørn formula (Step 5)
 
@@ -91,11 +99,12 @@ So `427 = 343 + 84` (the no-net-zero scenarios, usable for C but not for the
 fit), and `465 = 427 + 38` C3+C4 scenarios were retrieved in total, 38 of which
 were missing one of the two variables and are excluded from both.
 
-⚠️ **Only the 343-scenario regression set ships** (`ar6_2c_analog_pairs.csv`,
-verifiable: 343 rows, 232 C3 + 111 C4, x ∈ [292.9, 1568.2]). The 427-scenario
-set behind C = 257.4 (IQR [250.5, 271.0]) and its CO₂ companion median 193.2 is
-**not reproducible from the bundled files** — those numbers appear only in this
-README. Re-export it at the publication-time refresh.
+**Both sets ship.** `ar6_2c_analog_pairs.csv` is the 343-row regression set
+(232 C3 + 111 C4, x ∈ [292.9, 1568.2]); `ar6_c34_offset_2020_2024.csv` is the
+427-row offset set, of which the 343 are a strict subset — the 84 rows with a
+blank `netzero_co2_year` are exactly those the regression drops. **C**, its IQR
+and the CO₂ companion are the medians of that file's columns, not prose (locked
+by `tests/test_aesa_co2e_ratio_provenance.py`).
 
 - **vs Bjørn 1.5°C extrapolated to 1150:** ratio 1.298 (out-of-range,
   unreliable). The proper in-range 2°C analog gives **1.483** — higher.
@@ -206,8 +215,55 @@ The factor depends on choices that are methodological, not mechanical:
 - Cross-check: premise `remind_SSPx-PkBudg1150.csv` (Fernet-decrypted via the
   installed premise key) `Emi|CO2` World vs the AR6 long file.
 
-**Pull date:** 2026-06-19. **Flagged provisional** pending the open decision and a
-publication-time refresh.
+### Pull dates — TWO extractions, not one
+
+The files are **not** a single extraction, and should not be cited as one:
+
+| File(s) | Pulled | pyam | API |
+|---|---|---|---|
+| `ar6_remind_*`, `premise_vs_ar6_*`, `ar6_2c_analog_pairs.csv`, `ar6_2c_analog_fit.json` | **2026-06-19** | 3.4.0 | (not recorded) |
+| `ar6_c34_offset_2020_2024.csv` | **2026-08-12** | 3.4.0 | `db1.ene.iiasa.ac.at/ar6-public-api/rest/v2.1` |
+
+The offset set was re-derived in **August 2026** because the June extraction was
+not retained — only its summary statistics had been written into this README.
+The re-derivation **reproduced the June values**, which is a stronger statement
+than a single-pull claim because it is independently checkable:
+
+| Quantity | June (this README) | August re-derivation | Δ |
+|---|---|---|---|
+| scenarios present in pull | 465 | 465 | 0 |
+| missing a variable | 38 | 38 | 0 |
+| **offset N** | **427** | **427** | **0** |
+| **median C** | **257.4** | **257.449** | +0.05 (0.02 %) |
+| IQR | [250.5, 271.0] | [250.460, 271.003] | ≈0 |
+| CO₂ companion | 193.2 | 193.217 | +0.02 (0.01 %) |
+| no-net-zero | 84 | 84 | 0 |
+| **regression N** | **343** (232 C3 + 111 C4) | **343** (232 C3 + 111 C4) | **0** |
+
+**Scenario identity, not just counts:** the 343 model/scenario identifier pairs
+in the August pull are **identical name-for-name** to those in the June
+`ar6_2c_analog_pairs.csv` — 343/343, none on either side only. Since the June
+pull recorded no API version, this identity is the strongest available evidence
+that the underlying scenario population is unchanged between the two dates.
+
+Two caveats, stated rather than smoothed over:
+
+- The August re-derivation's own OLS gave m=1.2942, b=218.0024 (R=0.9444,
+  identical) — a 0.05 % / 0.19 % difference from the shipped coefficients. That
+  is **an artefact of the re-derivation's interpolate-and-integrate code**, not a
+  data change: regressing the *shipped* `ar6_2c_analog_pairs.csv` reproduces
+  **m=1.293507, b=218.411131, R=0.944374** → exactly the published 1.2935 /
+  218.41 / 0.9444. The shipped file and these coefficients are internally
+  consistent; the August coefficients were **not** adopted.
+- `ar6_c34_offset_2020_2024.csv` carries **3 decimal places** on the
+  cumulatives, unlike the pairs file's 2. At 2 dp the median lands on exactly
+  257.45 — a rounding knife-edge that could be read as either 257.4 or 257.5.
+  The extra digit removes the ambiguity.
+
+**Status:** the regression set and the offset set are **no longer provisional** —
+both reproduced. The **budget data itself** (`carbon_budgets.json`: AR6 WG1
+values, the −200 GtCO₂ deduction) remains provisional pending a separate
+AR6/GCB review, as does the incomplete Bjørn et al. 2023 citation (no DOI).
 
 ## WIRED per-budget factors (Phase 2/3 — now live)
 
@@ -224,11 +280,11 @@ where x = from-2020 CO₂ budget, y = from-2020 CO₂e (GWP100) budget.
 (`remaining_gt_from_2025`); the fits are from-2020. So subtract the cumulative
 CO₂e emitted over the same 2020–2024 block as the budgets' −200 GtCO₂ deduction:
 
-- **C = 257.4 GtCO₂e** — median `Emissions|Kyoto Gases` 2020–2024 over the AR6
-  C3+C4 ensemble (427 scenarios; IQR [250.5, 271.0]).
-- **CO₂ companion cross-check:** the same ensemble's median `Emissions|CO2`
-  2020–2024 = **193.2 GtCO₂**, agreeing with the budgets' −200 deduction
-  (Δ −6.8 Gt, ~3%) — confirming window/source consistency.
+- **C = 257.4 GtCO₂e** — median `cum_co2e_2020_2024_gt` over the 427 rows of
+  `ar6_c34_offset_2020_2024.csv` (exactly **257.449**; IQR [250.460, 271.003]).
+- **CO₂ companion cross-check:** the same file's median `cum_co2_2020_2024_gt`
+  = **193.217 GtCO₂**, agreeing with the budgets' −200 deduction (Δ −6.8 Gt,
+  ~3%) — confirming window/source consistency.
 
 Then `x25 = remaining_gt_from_2025`, `y25 = (m·x20 + b) − C`, **`f = y25 / x25`**.
 The factor is recomputed from these stored inputs (no magic number;
@@ -263,5 +319,8 @@ CO₂-eq**, sets `budget_basis` and re-runs the compute under the new basis.
   So applying Bjørn to `1.5C_50` is interpolation, not extrapolation. (The 2°C
   analog's range [293,1568] covers all 2°C x.)
 
-**Provisional** — coefficients (Bjørn 2023, AR6-analog), C, and the budget data
-itself all remain provisional pending publication-time refresh.
+**Status recap** — the AR6-analog coefficients and **C** are reproduced from the
+shipped CSVs and are no longer flagged provisional. Still open: the **budget
+data** (`carbon_budgets.json`) pending an AR6/GCB review, and the **Bjørn et al.
+2023 citation**, which exists in this repository only as a truncated title with
+no DOI.

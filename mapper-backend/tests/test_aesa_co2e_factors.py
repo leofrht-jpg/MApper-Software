@@ -8,7 +8,7 @@
 
 """Phase 2 — per-budget CO2→CO2e conversion factors wired into build_carbon_budget.
 
-Two affine fits (Bjorn 2023 for 1.5C / AR6 C3+C4 analog for 2C) map the from-2020
+Two affine fits (Tilsted & Bjorn 2023 for 1.5C / AR6 C3+C4 analog for 2C) map the from-2020
 CO2 budget to a from-2020 CO2e budget; C re-baselines to from-2025; f = y25/x25.
 These tests LOCK the arithmetic (recompute from stored coefficients + C — no magic
 number), confirm the CO2e basis is now selectable for every budget (no 400), and
@@ -60,7 +60,8 @@ EXPECTED_F = {
 # ── factor arithmetic lock (pure) ────────────────────────────────────────────
 
 def test_coefficients_match_sources():
-    assert BJORN_2023_1P5C == (1.1614, 157.27)   # Bjorn et al. 2023
+    # Tilsted & Bjorn (2023), Climatic Change 176:103, doi:10.1007/s10584-023-03583-4
+    assert BJORN_2023_1P5C == (1.1614, 157.27)
     assert AR6_C3C4_2C == (1.2935, 218.41)        # ar6_2c_analog_fit.json
     assert CO2E_2020_2024_GT == 257.4             # AR6 C3+C4 2020-2024 median
 
@@ -85,7 +86,7 @@ def test_factor_values_in_sanity_band():
 
 def test_15C_uses_bjorn_2C_uses_ar6():
     opts = {o["id"]: o for o in load_carbon_budget_options()}
-    # 1.5C/67 (x20=400) via Bjorn:
+    # 1.5C/67 (x20=400) via Tilsted & Bjorn:
     assert co2e_factor_for_budget(opts["IPCC_AR6_1p5C_67"]) == pytest.approx(
         (1.1614 * 400 + 157.27 - 257.4) / 200, rel=1e-12)
     # 2C/67 (x20=1150) via AR6 analog:

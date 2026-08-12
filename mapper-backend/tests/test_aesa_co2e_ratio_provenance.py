@@ -166,135 +166,83 @@ def test_flags_lifted_only_where_the_data_was_reproduced(readme):
     low = readme.lower()
     assert "provisional" in low
     assert "carbon_budgets.json" in readme, "the budget data must stay named"
-    assert "no doi" in low, "the citation gap must stay recorded"
+    # The 1.5 C citation gap is CLOSED (Tilsted & Bjorn 2023), so it is no
+    # longer part of this invariant — see
+    # test_the_1p5c_affine_cites_tilsted_bjorn_with_a_doi. What must not happen
+    # is the budget data being upgraded along with it.
 
 
-# ── the citation, as it actually stands ─────────────────────────────────────
+# ── the 1.5 °C citation ─────────────────────────────────────────────────────
 
 
-def test_the_1p5c_affine_has_no_doi_anywhere_in_the_repo():
-    """Documents a KNOWN GAP so it is not mistaken for a sourced value.
+def test_the_1p5c_affine_cites_tilsted_bjorn_with_a_doi():
+    """The affine's source, asserted where it is used.
 
-    The 1.5C leg cites Bjorn et al. 2023 by a truncated title in a code comment,
-    with no DOI, volume or pages. Until that is completed, the repo must not
-    read as though the citation were complete. This test fails once a DOI is
-    added — at which point delete it and cite properly.
+    Supersedes a test that recorded the ABSENCE of a DOI. That test's premise is
+    gone, and it was worse than a gap: the repository attributed the 1.5 C affine
+    to "Bjorn et al. 2023, 'Standardised carbon-budget-based ...', Environ. Sci.
+    Technol." — a paper that does not exist. The coefficients were always
+    Tilsted & Bjorn's; only the attribution was invented. A phantom citation in
+    shipped provenance is the failure mode this asserts against.
     """
-    root = Path(__file__).resolve().parents[1] / "mapper"
-    hits = [
-        p for p in root.rglob("*")
-        if p.is_file() and p.suffix in {".py", ".md", ".json"}
-        and "Bj" in p.read_text(encoding="utf-8", errors="ignore")
-        and "10.1021" in p.read_text(encoding="utf-8", errors="ignore")
-    ]
-    assert hits == [], (
-        "a DOI now appears alongside the Bjorn citation — good; replace this "
-        "known-gap test with a real citation assertion"
+    DOI = "10.1007/s10584-023-03583-4"
+    engine = (Path(__file__).resolve().parents[1]
+              / "mapper" / "core" / "aesa_engine.py").read_text(encoding="utf-8")
+    readme = README.read_text(encoding="utf-8")
+
+    for name, src in (("aesa_engine.py", engine), ("README.md", readme)):
+        assert DOI in src, f"{name} must carry the DOI"
+        assert "Tilsted" in src, f"{name} must name the first author"
+        assert "Climatic Change" in src, f"{name} must name the journal"
+
+    # The phantom must not survive as an ATTRIBUTION. The code carries no trace
+    # of it; the README quotes it exactly once, inside the correction note, so a
+    # future reader learns what was wrong rather than finding it silently gone.
+    assert "Standardised carbon-budget-based" not in engine
+    assert "Environ. Sci. Technol" not in engine
+
+    # Strip blockquote markers before flattening: the correction note is a
+    # markdown quote, so "> " lands mid-sentence when lines are joined.
+    flat = " ".join(readme.replace("\n>", "\n").split())
+    assert flat.count("Standardised carbon-budget-based") <= 1, (
+        "the phantom title should appear at most once, in the correction note"
     )
-    # The coefficients are still the ones the comment attributes.
+    if "Standardised carbon-budget-based" in flat:
+        assert "Corrected attribution" in flat and "no such paper exists" in flat, (
+            "if the phantom title is quoted, it must be marked as corrected"
+        )
+
+    # The coefficients the citation belongs to are unchanged.
     assert BJORN_2023_1P5C == (1.1614, 157.27)
 
 
-# ── the offset set, now shipped ─────────────────────────────────────────────
+def test_the_1p5c_domain_is_recorded_wherever_the_leg_is_described():
+    """[223, 427] is the reason the C3+C4 refit exists, so it must be stated.
 
-
-def test_offset_file_holds_the_427(offset):
-    assert len(offset) == OFFSET_N
-    assert Counter(r["category"] for r in offset) == {"C3": 279, "C4": 148}
-
-
-def test_median_of_the_shipped_rows_reproduces_C(offset):
-    """C is pinned to the data, not to a comment.
-
-    Asserted to 1 d.p. rather than by equality: the shipped rows give 257.449,
-    which is the stated 257.4 at the precision the constant is published to.
-    Equality would fail on the third decimal for no methodological reason.
+    It excludes both 2 C budgets (x20 = 1150 and 1350) outright. Previously
+    mis-stated as [223, 440].
     """
-    vals = sorted(float(r["cum_co2e_2020_2024_gt"]) for r in offset)
-    n = len(vals)
-    median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
-    assert round(median, 1) == round(CO2E_2020_2024_GT, 1), (
-        f"median of the shipped offset rows is {median}, which does not round to "
-        f"the constant {CO2E_2020_2024_GT} used by co2e_factor_for_budget"
-    )
+    engine = (Path(__file__).resolve().parents[1]
+              / "mapper" / "core" / "aesa_engine.py").read_text(encoding="utf-8")
+    readme = README.read_text(encoding="utf-8")
+    for name, src in (("aesa_engine.py", engine), ("README.md", readme)):
+        assert "427" in src, f"{name} must record the 427 GtCO2 domain bound"
+    # The published R and scenario count belong with it.
+    assert "0.80" in readme and "80" in readme
+    assert "IAMC" in readme and "Huppmann" in readme
+    assert "Meinshausen" in readme
 
 
-def test_co2_companion_median_agrees_with_the_budget_deduction(offset):
-    """~193 GtCO2 vs the budgets' -200 Gt: the window/source consistency check."""
-    vals = sorted(float(r["cum_co2_2020_2024_gt"]) for r in offset)
-    n = len(vals)
-    median = vals[n // 2] if n % 2 else (vals[n // 2 - 1] + vals[n // 2]) / 2
-    assert 190.0 < median < 196.0
-    assert abs(median - 200.0) < 10.0, "should agree with the -200 Gt deduction"
+def test_the_persisted_source_label_names_the_right_authors():
+    """The label is written into every config and every exported workbook.
 
-
-def test_offset_set_is_a_strict_superset_of_the_regression_set(offset, pairs):
-    """One pull, two filters — the relation must be visible in the files."""
-    off_ids = {(r["model"], r["scenario"]) for r in offset}
-    reg_ids = {(r["model"], r["scenario"]) for r in pairs}
-    assert reg_ids < off_ids
-    assert len(off_ids - reg_ids) == NO_NETZERO
-
-
-def test_the_84_extra_rows_are_exactly_those_without_a_net_zero(offset, pairs):
-    reg_ids = {(r["model"], r["scenario"]) for r in pairs}
-    blank = {(r["model"], r["scenario"]) for r in offset
-             if not r["netzero_co2_year"].strip()}
-    assert len(blank) == NO_NETZERO
-    assert blank.isdisjoint(reg_ids), (
-        "a scenario with no net-zero year must not appear in the regression set"
-    )
-
-
-def test_both_files_share_their_provenance_columns(offset, pairs):
-    shared = ["model", "scenario", "category", "netzero_co2_year"]
-    for col in shared:
-        assert col in offset[0], f"offset file missing {col}"
-        assert col in pairs[0], f"pairs file missing {col}"
-
-
-# ── what a reviewer checks first ────────────────────────────────────────────
-
-
-def test_shipped_pairs_regress_to_the_published_coefficients(pairs, fit):
-    """The first thing anyone will do with the CSV: refit it.
-
-    Guards the case where the file and the README describe different fits — the
-    coefficients must be recoverable FROM the shipped data, not merely asserted
-    next to it. Tolerances are the published precision (4 dp on m/R, 2 dp on b).
+    A wrong label there propagates into user data and into files attached to
+    papers, which is why it is asserted rather than left to the comment.
     """
-    xs = [float(r["cum_co2_gt"]) for r in pairs]
-    ys = [float(r["cum_co2e_gt"]) for r in pairs]
-    n = len(xs)
-    mx, my = sum(xs) / n, sum(ys) / n
-    sxx = sum((x - mx) ** 2 for x in xs)
-    sxy = sum((x - mx) * (y - my) for x, y in zip(xs, ys))
-    syy = sum((y - my) ** 2 for y in ys)
-    m = sxy / sxx
-    b = my - m * mx
-    r = sxy / (sxx * syy) ** 0.5
+    from mapper.core.aesa_engine import co2e_conversion_for_budget
 
-    assert round(m, 4) == fit["slope"], f"refit slope {m}"
-    assert round(b, 2) == fit["intercept"], f"refit intercept {b}"
-    assert round(r, 4) == fit["R"], f"refit R {r}"
-    # And the code uses exactly those.
-    assert AR6_C3C4_2C == (fit["slope"], fit["intercept"])
-
-
-def test_readme_states_both_pull_dates_and_does_not_imply_one_extraction(readme):
-    assert "2026-06-19" in readme and "2026-08-12" in readme
-    assert "TWO extractions, not one" in readme
-
-
-def test_readme_records_the_identifier_identity_evidence(readme):
-    # The vintage claim rests on this, since the June pull recorded no API
-    # version. It must be stated as evidence, not asserted as fact.
-    assert "identical name-for-name" in readme
-
-
-def test_provisional_flags_lifted_only_for_what_was_reproduced(readme):
-    assert "no longer flagged provisional" in readme
-    # The budget data and the citation gap must NOT be silently upgraded.
-    low = readme.lower()
-    assert "carbon_budgets.json" in readme and "provisional" in low
-    assert "no doi" in low
+    conv = co2e_conversion_for_budget(
+        {"id": "IPCC_AR6_1p5C_50", "original_gt_from_2020": 500,
+         "remaining_gt_from_2025": 300})
+    assert "Tilsted" in conv.source
+    assert "Bjorn et al. 2023" not in conv.source

@@ -122,8 +122,17 @@ def load_carbon_budget_options() -> list[dict]:
 # Two affine fits map a CUMULATIVE-FROM-2020 CO2 budget x (GtCO2) to the
 # cumulative-from-2020 CO2e budget y (GtCO2e), branched by the budget's
 # temperature target:
-#   1.5C → Bjorn et al. 2023, "Standardised carbon-budget-based ...", Environ.
-#          Sci. Technol.:                 y = 1.1614·x + 157.27   (fitted x∈[223,440])
+#   1.5C → Tilsted, J.P. & Bjorn, A. (2023) "Green frontrunner or indebted
+#          culprit? Assessing Denmark's climate targets in light of fair
+#          contributions under the Paris Agreement", Climatic Change 176:103,
+#          doi:10.1007/s10584-023-03583-4, section 2:
+#                                          y = 1.1614·x + 157.27
+#          fitted over 80 scenarios labelled "Below 1.5C" / "1.5C low overshoot"
+#          / "1.5C high overshoot" from the IAMC 1.5C Scenario Explorer
+#          (Huppmann et al. 2019), cumulative 2020 -> net-zero CO2, R=0.80,
+#          DOMAIN x in [223, 427] GtCO2 — following Meinshausen et al. (2018;
+#          2019). That domain is why the 2C leg needed its own fit: it excludes
+#          the 2C-scale budgets (x20 = 1150 and 1350) entirely.
 #   2C   → AR6 C3+C4 ("(likely) below 2C") ensemble analog, regressed in-repo
 #          over 343 AR6 scenarios (all models): y = 1.2935·x + 218.41
 #          (mapper/data/aesa/co2e_ratio/ar6_2c_analog_fit.json; R=0.9444, x∈[293,1568]).
@@ -160,7 +169,7 @@ def co2e_conversion_for_budget(option: dict) -> RatioCO2eConversion:
     path (budget×f, pathway×f → climate SR ÷f)."""
     f = co2e_factor_for_budget(option)
     is_15 = "1p5C" in option.get("id", "")
-    formula = "Bjorn et al. 2023 (1.5C)" if is_15 else "AR6 C3+C4 2C-analog"
+    formula = "Tilsted & Bjorn 2023 (1.5C)" if is_15 else "AR6 C3+C4 2C-analog"
     return RatioCO2eConversion(
         factor=f,
         source=(

@@ -25,9 +25,9 @@ from fastapi import HTTPException
 from mapper.api.aesa import post_compute
 from mapper.core.aesa_engine import (
     AESAEngine,
-    AR6_C3C4_2C,
-    BJORN_2023_1P5C,
-    CO2E_2020_2024_GT,
+    CO2E_FIT_1P5C,
+    CO2E_FIT_2C,
+    TILSTED_BJORN_2023_PUBLISHED,
     build_carbon_budget,
     build_default_sharing_preset,
     co2e_conversion_for_budget,
@@ -50,8 +50,8 @@ METHODS = [["EF v3.1", "climate change", "global warming potential (GWP100)"],
 
 # Expected factors recomputed independently here from the published inputs.
 EXPECTED_F = {
-    "IPCC_AR6_1p5C_50": (1.1614 * 500 + 157.27 - 257.4) / 300,
-    "IPCC_AR6_1p5C_67": (1.1614 * 400 + 157.27 - 257.4) / 200,
+    "IPCC_AR6_1p5C_50": (1.3142 * 500 + 149.1242 - 250.665) / 300,
+    "IPCC_AR6_1p5C_67": (1.3142 * 400 + 149.1242 - 250.665) / 200,
     "IPCC_AR6_2C_50":   (1.2935 * 1350 + 218.41 - 257.4) / 1150,
     "IPCC_AR6_2C_67":   (1.2935 * 1150 + 218.41 - 257.4) / 950,
 }
@@ -60,10 +60,15 @@ EXPECTED_F = {
 # ── factor arithmetic lock (pure) ────────────────────────────────────────────
 
 def test_coefficients_match_sources():
+    # 1.5C — refitted over AR6 C1+C2 (ar6_c1c2_pairs.csv / ..._offset_2020_2024.csv)
+    assert (CO2E_FIT_1P5C.slope, CO2E_FIT_1P5C.intercept) == (1.3142, 149.1242)
+    assert CO2E_FIT_1P5C.offset_2020_2024_gt == 250.665
+    # 2C — UNCHANGED (ar6_2c_analog_fit.json / ar6_c34_offset_2020_2024.csv)
+    assert (CO2E_FIT_2C.slope, CO2E_FIT_2C.intercept) == (1.2935, 218.41)
+    assert CO2E_FIT_2C.offset_2020_2024_gt == 257.4
+    # The methodological precedent, recorded but never used to compute.
     # Tilsted & Bjorn (2023), Climatic Change 176:103, doi:10.1007/s10584-023-03583-4
-    assert BJORN_2023_1P5C == (1.1614, 157.27)
-    assert AR6_C3C4_2C == (1.2935, 218.41)        # ar6_2c_analog_fit.json
-    assert CO2E_2020_2024_GT == 257.4             # AR6 C3+C4 2020-2024 median
+    assert TILSTED_BJORN_2023_PUBLISHED == (1.1614, 157.27)
 
 
 def test_factor_recomputes_from_inputs_per_budget():
@@ -79,17 +84,18 @@ def test_factor_values_in_sanity_band():
          for bid, o in {x["id"]: x for x in load_carbon_budget_options()}.items()}
     # Stricter (smaller from-2025 budget) → higher factor.
     assert f["IPCC_AR6_2C_50"] < f["IPCC_AR6_2C_67"] < f["IPCC_AR6_1p5C_50"] < f["IPCC_AR6_1p5C_67"]
-    # All within a generous correctness band (1.5C_67 sits just above 1.80).
+    # All within a generous correctness band. The 1.5C leg moved up on the
+    # C1+C2 refit (1.85 / 2.12), so the upper bound is wider than pre-refit.
     for v in f.values():
-        assert 1.45 <= v <= 1.85
+        assert 1.45 <= v <= 2.20
 
 
-def test_15C_uses_bjorn_2C_uses_ar6():
+def test_each_target_uses_its_own_ensemble_end_to_end():
     opts = {o["id"]: o for o in load_carbon_budget_options()}
-    # 1.5C/67 (x20=400) via Tilsted & Bjorn:
+    # 1.5C/67 (x20=400) via the C1+C2 refit — affine AND offset:
     assert co2e_factor_for_budget(opts["IPCC_AR6_1p5C_67"]) == pytest.approx(
-        (1.1614 * 400 + 157.27 - 257.4) / 200, rel=1e-12)
-    # 2C/67 (x20=1150) via AR6 analog:
+        (1.3142 * 400 + 149.1242 - 250.665) / 200, rel=1e-12)
+    # 2C/67 (x20=1150) via the C3+C4 analog — byte-identical to pre-refit:
     assert co2e_factor_for_budget(opts["IPCC_AR6_2C_67"]) == pytest.approx(
         (1.2935 * 1150 + 218.41 - 257.4) / 950, rel=1e-12)
 

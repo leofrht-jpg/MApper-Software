@@ -23,6 +23,8 @@ SSP trajectories, carbon budgets, default sharing values).
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
+
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -119,47 +121,95 @@ def load_carbon_budget_options() -> list[dict]:
 
 
 # ── CO2 → CO2e (Kyoto-gases, GWP100) budget-basis conversion (sourced) ───────
-# Two affine fits map a CUMULATIVE-FROM-2020 CO2 budget x (GtCO2) to the
-# cumulative-from-2020 CO2e budget y (GtCO2e), branched by the budget's
-# temperature target:
-#   1.5C → Tilsted, J.P. & Bjorn, A. (2023) "Green frontrunner or indebted
-#          culprit? Assessing Denmark's climate targets in light of fair
-#          contributions under the Paris Agreement", Climatic Change 176:103,
-#          doi:10.1007/s10584-023-03583-4, section 2:
-#                                          y = 1.1614·x + 157.27
-#          fitted over 80 scenarios labelled "Below 1.5C" / "1.5C low overshoot"
-#          / "1.5C high overshoot" from the IAMC 1.5C Scenario Explorer
-#          (Huppmann et al. 2019), cumulative 2020 -> net-zero CO2, R=0.80,
-#          DOMAIN x in [223, 427] GtCO2 — following Meinshausen et al. (2018;
-#          2019). That domain is why the 2C leg needed its own fit: it excludes
-#          the 2C-scale budgets (x20 = 1150 and 1350) entirely.
-#   2C   → AR6 C3+C4 ("(likely) below 2C") ensemble analog, regressed in-repo
-#          over 343 AR6 scenarios (all models): y = 1.2935·x + 218.41
-#          (mapper/data/aesa/co2e_ratio/ar6_2c_analog_fit.json; R=0.9444, x∈[293,1568]).
-# C re-baselines y from the from-2020 framing to AESA's from-2025 framing by
-# subtracting cumulative CO2e over the SAME 2020-2024 block as the budgets'
-# -200 GtCO2 deduction: the median Kyoto-Gases of the same AR6 C3+C4 ensemble
-# (257.4 GtCO2e over 427 scenarios; its CO2 companion median 193 Gt agrees with
-# the -200). NOTE the two Ns differ by filter: the regression uses 343 scenarios
-# (those reaching net-zero CO2, which the 2020->net-zero integration requires),
-# C uses 427 (same pull, no net-zero requirement -- a fixed 2020-2024 window). See
-# mapper/data/aesa/co2e_ratio/README.md. NOT per-SSP — an ensemble regression.
-BJORN_2023_1P5C = (1.1614, 157.27)
-AR6_C3C4_2C = (1.2935, 218.41)
-CO2E_2020_2024_GT = 257.4
+# One METHOD, refitted per temperature target: map a CUMULATIVE-FROM-2020 CO2
+# budget x (GtCO2) to the cumulative-from-2020 CO2e budget y (GtCO2e) with an
+# affine y = m·x + b regressed over the AR6 scenario category that MATCHES the
+# target, then re-baseline to AESA's from-2025 framing by subtracting C, the
+# 2020-2024 cumulative CO2e of THAT SAME category set.
+#
+# The approach is Meinshausen et al. (2018; 2019) as applied by Tilsted, J.P. &
+# Bjorn, A. (2023) "Green frontrunner or indebted culprit? ...", Climatic Change
+# 176:103, doi:10.1007/s10584-023-03583-4, section 2. Their published 1.5C fit
+# (m=1.1614, b=157.27, R=0.80, N=80, domain x∈[223,427]) is recorded below as
+# TILSTED_BJORN_2023_PUBLISHED for comparison; it is NOT used in compute. Their
+# fit is over the SR15-era IAMC 1.5C Scenario Explorer (Huppmann et al. 2019);
+# both legs here are refitted over AR6 so the two targets are treated alike.
+#
+# THE AFFINE AND THE OFFSET MUST COME FROM THE SAME CATEGORY SET. They used to
+# be separate module constants — two affines branched by target, but ONE
+# unconditional offset taken over C3+C4 — so 1.5C budgets were re-baselined with
+# a 2C ensemble's five years of emissions. Binding them into one object per
+# target makes that mismatch unrepresentable: a third target cannot be added
+# without supplying both, and `test_no_target_mixes_ensembles` fails if a fit's
+# declared ensemble disagrees with the categories in its own data files.
+
+
+@dataclass(frozen=True)
+class CO2eBudgetFit:
+    """One temperature target's complete CO2→CO2e mapping.
+
+    Affine AND offset together, with the ensemble they were both derived from
+    and the shipped files they are reproducible from. Every field is recomputed
+    by tests from `pairs_file` / `offset_file` — none is a magic number.
+    """
+    slope: float                 # m, GtCO2e per GtCO2
+    intercept: float             # b, GtCO2e
+    offset_2020_2024_gt: float   # C, GtCO2e — the SAME ensemble as the affine
+    ensemble: str                # human label, e.g. "AR6 C1+C2"
+    categories: tuple[str, ...]  # the AR6 category codes, for the mixing guard
+    pairs_file: str              # regression inputs (2020 → net-zero)
+    offset_file: str             # offset inputs (2020-2024)
+    domain_gt: tuple[float, float]
+
+    def y20(self, x20: float) -> float:
+        return self.slope * x20 + self.intercept
+
+
+# 1.5C — AR6 C1+C2 ("1.5C with no/limited overshoot" + "return to 1.5C after
+# high overshoot"). N=214 regression / N=217 offset; R=0.9565.
+CO2E_FIT_1P5C = CO2eBudgetFit(
+    slope=1.3142, intercept=149.1242, offset_2020_2024_gt=250.665,
+    ensemble="AR6 C1+C2", categories=("C1", "C2"),
+    pairs_file="ar6_c1c2_pairs.csv",
+    offset_file="ar6_c1c2_offset_2020_2024.csv",
+    domain_gt=(196.3, 1036.2),
+)
+
+# 2C — AR6 C3+C4 ("(likely) below 2C"). N=343 regression / N=427 offset;
+# R=0.9444. UNCHANGED: these are the shipped values and must stay byte-identical.
+CO2E_FIT_2C = CO2eBudgetFit(
+    slope=1.2935, intercept=218.41, offset_2020_2024_gt=257.4,
+    ensemble="AR6 C3+C4", categories=("C3", "C4"),
+    pairs_file="ar6_2c_analog_pairs.csv",
+    offset_file="ar6_c34_offset_2020_2024.csv",
+    domain_gt=(292.9, 1568.2),
+)
+
+# Tilsted & Bjorn's PUBLISHED 1.5C parameters — the methodological precedent,
+# kept for comparison in the README and tests. Never used to compute a factor.
+TILSTED_BJORN_2023_PUBLISHED = (1.1614, 157.27)
+
+
+def co2e_fit_for_budget(option: dict) -> CO2eBudgetFit:
+    """The (affine + offset) pair for a budget's temperature target.
+
+    Selecting a FIT rather than coefficients is the point: there is no way to
+    take the affine from one ensemble and the offset from another.
+    """
+    return CO2E_FIT_1P5C if "1p5C" in option.get("id", "") else CO2E_FIT_2C
 
 
 def co2e_factor_for_budget(option: dict) -> float:
-    """Per-budget CO2→CO2e scaling factor ``f = y25 / x25`` recomputed from the
-    stored affine coefficients + C (no magic number; a test re-derives this).
+    """Per-budget CO2→CO2e scaling factor ``f = y25 / x25``.
 
-    ``x20`` = from-2020 CO2 budget; ``x25`` = from-2025 CO2 budget; the
-    temperature target (1.5C vs 2C, read from the option id) selects the formula.
-    ``y20 = m·x20 + b``; ``y25 = y20 − C``; ``f = y25 / x25``."""
+    ``x20`` = from-2020 CO2 budget; ``x25`` = from-2025 CO2 budget.
+    ``y20 = m·x20 + b``; ``y25 = y20 − C``; ``f = y25 / x25`` — with m, b and C
+    all drawn from the one fit the target selects.
+    """
+    fit = co2e_fit_for_budget(option)
     x20 = float(option["original_gt_from_2020"])
     x25 = float(option["remaining_gt_from_2025"])
-    m, b = BJORN_2023_1P5C if "1p5C" in option.get("id", "") else AR6_C3C4_2C
-    return ((m * x20 + b) - CO2E_2020_2024_GT) / x25
+    return (fit.y20(x20) - fit.offset_2020_2024_gt) / x25
 
 
 def co2e_conversion_for_budget(option: dict) -> RatioCO2eConversion:
@@ -167,16 +217,18 @@ def co2e_conversion_for_budget(option: dict) -> RatioCO2eConversion:
     The intercept of the affine is absorbed into the per-budget scalar f by
     construction, so ``with_basis_applied`` can reuse the uniform-scaling ratio
     path (budget×f, pathway×f → climate SR ÷f)."""
+    fit = co2e_fit_for_budget(option)
     f = co2e_factor_for_budget(option)
-    is_15 = "1p5C" in option.get("id", "")
-    formula = "Tilsted & Bjorn 2023 (1.5C)" if is_15 else "AR6 C3+C4 2C-analog"
     return RatioCO2eConversion(
         factor=f,
         source=(
-            f"CO2→CO2e GWP100 budget factor f={f:.4f} = (formula(x20)−C)/x25; "
-            f"formula={formula}; x20={option.get('original_gt_from_2020')} GtCO2, "
-            f"x25={option.get('remaining_gt_from_2025')} GtCO2, "
-            f"C={CO2E_2020_2024_GT} GtCO2e (AR6 C3+C4 2020-2024 median). "
+            f"CO2→CO2e GWP100 budget factor f={f:.4f} = (m·x20+b−C)/x25; "
+            f"m={fit.slope}, b={fit.intercept}, C={fit.offset_2020_2024_gt} GtCO2e "
+            f"— all refitted over {fit.ensemble} "
+            f"(method: Meinshausen et al. 2018/2019 as applied by Tilsted & Bjorn "
+            f"2023, doi:10.1007/s10584-023-03583-4). "
+            f"x20={option.get('original_gt_from_2020')} GtCO2, "
+            f"x25={option.get('remaining_gt_from_2025')} GtCO2. "
             f"See mapper/data/aesa/co2e_ratio/README.md"
         ),
     )

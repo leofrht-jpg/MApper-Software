@@ -1629,12 +1629,23 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
 
 #### What NOT to do
 
-- **Don't invent a CO2→CO2e factor.** It is DERIVED, never fabricated:
+- **Don't invent a CO2→CO2e factor, and never mix ensembles.** It is DERIVED:
   `co2e_factor_for_budget` computes `f = ((m·x20 + b) − C) / x25` from the
-  budget's own `original_gt_from_2020` / `remaining_gt_from_2025` plus two
-  affines branched by temperature target (Tilsted & Bjørn 2023,
-  doi:10.1007/s10584-023-03583-4, domain x∈[223,427] for 1.5C; an in-repo AR6
-  C3+C4 regression for 2C) and the offset `C = 257.4 GtCO2e`. Provenance and the
+  budget's own `original_gt_from_2020` / `remaining_gt_from_2025` plus a
+  **`CO2eBudgetFit` selected by temperature target** — which carries the affine
+  AND the offset AND the ensemble they were both fitted over:
+  **1.5C → AR6 C1+C2** (m=1.3142, b=149.1242, C=250.665) and
+  **2C → AR6 C3+C4** (m=1.2935, b=218.41, C=257.4). They travel together on one
+  frozen dataclass precisely so a third target cannot inherit another
+  ensemble's offset — which is exactly what happened before: two affines
+  branched, one unconditional C=257.4 (a C3+C4 median) applied to both, so 1.5C
+  budgets were re-baselined with 2C scenarios. `test_no_target_mixes_ensembles`
+  checks each fit's declared categories against the rows of its own two files.
+  The method is Meinshausen et al. (2018; 2019) as applied by Tilsted & Bjørn
+  (2023), doi:10.1007/s10584-023-03583-4 — cited as the PRECEDENT; their
+  published coefficients live in `TILSTED_BJORN_2023_PUBLISHED` and are never
+  used to compute. MApper's default budget (2C/50) is unaffected by the 1.5C
+  refit; every 2C `f` is byte-identical. Provenance and the
   two DIFFERENT scenario counts (343 regression / 427 offset — different
   filters, see below) live in `mapper/data/aesa/co2e_ratio/README.md`. The 2C
   affine is an **unpublished in-repo regression** — cite it as an original

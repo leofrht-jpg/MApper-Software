@@ -1590,11 +1590,17 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
 {"CO2","CO2e_GHG"}` (default **"CO2"** = today, byte-identical, **no drift**).
 
 - **Numerator is unchanged** (EF GWP100 CO2e). Fix is denominator-only.
-- **CO2e_GHG is opt-in and INERT** until a sourced `co2e_conversion` is supplied.
-  Compute (`post_compute` guard, beside the Ryberg 2c guard) **rejects** a CO2e
-  basis with no usable conversion — *"Carbon budget set to CO2e/GHG basis but no
+- **A CO2e basis is INERT without a usable `co2e_conversion`.** Compute
+  (`post_compute` guard, beside the Ryberg 2c guard) **rejects** a CO2e basis
+  with no usable conversion — *"Carbon budget set to CO2e/GHG basis but no
   sourced CO2→CO2e conversion supplied …"* — never computes on the CO2 budget
   (wrong scope) or a fabricated factor. Mirrors the Ryberg scaffold.
+  **Since the CO2e wiring the factor IS populated for every budget** by
+  `build_carbon_budget` → `co2e_conversion_for_budget`, so the guard now fires
+  mainly on a **workbook import that left `co2e_factor` blank** (the import path
+  reads the sheet value verbatim and never recomputes). Note the two defaults
+  differ deliberately: the SCHEMA defaults `budget_basis="CO2"`, the UI seeds a
+  fresh draft with `"CO2e_GHG"`.
 - **Mechanism (b) "ratio" only** (`RatioCO2eConversion{kind:"ratio", factor,
   source}`): `with_basis_applied()` scales BOTH `initial_budget_gt` and
   `projected_emissions` by the per-scenario `factor` *before* the existing
@@ -1603,10 +1609,13 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
   whole climate SR timeline scales by **1/factor** (CO2e budget larger → SR
   lower). `(end_year − year)` is basis-independent; flow boundaries are
   unaffected.
-- **Conversion is per-scenario and SOURCED separately** — defaults/data carry
-  **no** example ratio; tests use an obvious placeholder (1.3) marked as such.
-  The `factor` and `source` are user/data-supplied; a non-positive factor is
-  inert. The `CO2eConversion` union is designed so "linear" (mechanism a) and
+- **Conversion is per-TEMPERATURE-TARGET and DERIVED** (not per-SSP, and not a
+  hand-entered constant): `build_carbon_budget` populates every budget via
+  `co2e_conversion_for_budget`, which recomputes `f` from the budget's own
+  from-2020 / from-2025 numbers. `carbon_budgets.json` itself carries **no**
+  `co2e_conversion` block — the factor is computed, not bundled. A workbook
+  import instead uses the sheet's `co2e_factor` verbatim; a non-positive or
+  absent factor is inert. The `CO2eConversion` union is designed so "linear" (mechanism a) and
   "pathway" (mechanism c) can be added later as `kind`s — **their compute is NOT
   implemented in 2d** (the inert guard rejects any non-ratio CO2e basis).
 - **Where it lives**: `CarbonBudgetConfig` rides on the 2a Carrying-Capacity
@@ -1620,10 +1629,16 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
 
 #### What NOT to do
 
-- **Don't invent a CO2→CO2e factor.** Default is None (inert); no bundled
-  example ratio. The real per-SSP, target-specific factor is sourced and dropped
-  in later. A missing/non-positive factor must stay inert (graceful reject),
-  never silently compute.
+- **Don't invent a CO2→CO2e factor.** It is DERIVED, never fabricated:
+  `co2e_factor_for_budget` computes `f = ((m·x20 + b) − C) / x25` from the
+  budget's own `original_gt_from_2020` / `remaining_gt_from_2025` plus two
+  affines branched by temperature target (Bjørn 2023 for 1.5C; an in-repo AR6
+  C3+C4 regression for 2C) and the offset `C = 257.4 GtCO2e`. Provenance and the
+  two DIFFERENT scenario counts (343 regression / 427 offset — different
+  filters, see below) live in `mapper/data/aesa/co2e_ratio/README.md`. The 2C
+  affine is an **unpublished in-repo regression** — cite it as an original
+  derivation, not as a sourced value. A missing/non-positive factor must stay
+  inert (graceful reject), never silently compute.
 - **Don't change the numerator.** This is denominator-only; the EF GWP100 CO2e
   impact is untouched.
 - **Don't scale only the budget scalar without the pathway.** The "ratio"

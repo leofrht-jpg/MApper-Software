@@ -69,12 +69,33 @@ Derived here by the same procedure over the AR6 ~2°C ensemble.
   |---|---|
   | slope m | **1.2935** |
   | intercept b | **218.41 GtCO₂e** |
-  | R | **0.944** |
+  | R | **0.9444** (as recorded in `ar6_2c_analog_fit.json`) |
   | N scenarios | **343** (232 C3 + 111 C4; dropped 84 no-net-zero, 38 missing a variable) |
   | fitted x-range | **[292.9, 1568.2] GtCO₂** |
   | **x = 1150 in range?** | **✅ yes** (unlike Bjørn's [223,440]) |
   | implied CO₂e at x=1150 | **1705.9 GtCO₂e** |
   | implied ratio y/x at 1150 | **1.483** |
+
+### Two scenario counts, two filters — 343 vs 427
+
+The regression and the re-baselining offset **C** are computed over *different
+subsets of the same C3+C4 pull*, because they need different things from a
+scenario. Stating one count for both would be wrong:
+
+| Quantity | N | Filter |
+|---|---|---|
+| regression (m, b) | **343** | has BOTH `Emissions|CO2` and `Emissions|Kyoto Gases`, **AND** reaches net-zero CO₂ — the fit integrates 2020 → net-zero, so a scenario with no crossing has no defined window |
+| offset **C** | **427** | has both variables; **no net-zero requirement**, since C only needs the cumulative over the fixed 2020–2024 block |
+
+So `427 = 343 + 84` (the no-net-zero scenarios, usable for C but not for the
+fit), and `465 = 427 + 38` C3+C4 scenarios were retrieved in total, 38 of which
+were missing one of the two variables and are excluded from both.
+
+⚠️ **Only the 343-scenario regression set ships** (`ar6_2c_analog_pairs.csv`,
+verifiable: 343 rows, 232 C3 + 111 C4, x ∈ [292.9, 1568.2]). The 427-scenario
+set behind C = 257.4 (IQR [250.5, 271.0]) and its CO₂ companion median 193.2 is
+**not reproducible from the bundled files** — those numbers appear only in this
+README. Re-export it at the publication-time refresh.
 
 - **vs Bjørn 1.5°C extrapolated to 1150:** ratio 1.298 (out-of-range,
   unreliable). The proper in-range 2°C analog gives **1.483** — higher.
@@ -162,8 +183,17 @@ The factor depends on choices that are methodological, not mechanical:
    budgets.
 3. **Scenario substitution** — PkBudg1100 (AR6) as proxy for premise's PkBudg1150.
 
-Until resolved, `CarbonBudgetConfig.co2e_conversion` stays `None` (inert) and the
-compute guard rejects a CO2e basis with no sourced conversion.
+> ~~Until resolved, `CarbonBudgetConfig.co2e_conversion` stays `None` (inert) and
+> the compute guard rejects a CO2e basis with no sourced conversion.~~
+>
+> **SUPERSEDED.** The decisions above were resolved and the conversion is wired:
+> `build_carbon_budget` now populates a per-budget `RatioCO2eConversion` for
+> EVERY budget (`co2e_conversion_for_budget`), so `co2e_conversion` is **not**
+> `None` on a freshly built budget. The compute guard still stands, but it now
+> only fires for a config that reaches it WITHOUT a factor — in practice a
+> workbook import whose Carbon Budget sheet leaves `co2e_factor` blank, since
+> the import path uses the sheet value verbatim and never recomputes. See
+> "WIRED per-budget factors" below.
 
 ## Provenance / reproduction
 

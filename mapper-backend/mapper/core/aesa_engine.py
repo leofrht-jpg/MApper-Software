@@ -126,11 +126,14 @@ def load_carbon_budget_options() -> list[dict]:
 #          Sci. Technol.:                 y = 1.1614·x + 157.27   (fitted x∈[223,440])
 #   2C   → AR6 C3+C4 ("(likely) below 2C") ensemble analog, regressed in-repo
 #          over 343 AR6 scenarios (all models): y = 1.2935·x + 218.41
-#          (mapper/data/aesa/co2e_ratio/ar6_2c_analog_fit.json; R=0.944, x∈[293,1568]).
+#          (mapper/data/aesa/co2e_ratio/ar6_2c_analog_fit.json; R=0.9444, x∈[293,1568]).
 # C re-baselines y from the from-2020 framing to AESA's from-2025 framing by
 # subtracting cumulative CO2e over the SAME 2020-2024 block as the budgets'
 # -200 GtCO2 deduction: the median Kyoto-Gases of the same AR6 C3+C4 ensemble
-# (257.4 GtCO2e; its CO2 companion median 193 Gt agrees with the -200). See
+# (257.4 GtCO2e over 427 scenarios; its CO2 companion median 193 Gt agrees with
+# the -200). NOTE the two Ns differ by filter: the regression uses 343 scenarios
+# (those reaching net-zero CO2, which the 2020->net-zero integration requires),
+# C uses 427 (same pull, no net-zero requirement -- a fixed 2020-2024 window). See
 # mapper/data/aesa/co2e_ratio/README.md. NOT per-SSP — an ensemble regression.
 BJORN_2023_1P5C = (1.1614, 157.27)
 AR6_C3C4_2C = (1.2935, 218.41)

@@ -394,9 +394,14 @@ class RatioCO2eConversion(BaseModel):
     factor scales the budget AND the depletion pathway), so the whole climate SR
     timeline scales by ``1/factor`` — internally consistent, no pathway wrinkle.
 
-    ``factor`` and ``source`` are SOURCED inputs (per-SSP, target-specific) —
-    NEVER a bundled default or a fabricated number. A non-positive factor is
-    treated as "no usable conversion" (inert)."""
+    ``factor`` and ``source`` are SOURCED inputs — never fabricated. They are
+    now DERIVED per budget by ``co2e_conversion_for_budget`` from two published/
+    regressed affines plus a re-baselining offset (see
+    ``mapper/data/aesa/co2e_ratio/README.md``), so a freshly built budget
+    carries one; the derivation is per TEMPERATURE TARGET over an AR6 ensemble,
+    NOT per SSP. A workbook import uses the sheet's ``co2e_factor`` verbatim and
+    does not recompute. A non-positive factor is treated as "no usable
+    conversion" (inert)."""
     kind: Literal["ratio"] = "ratio"
     factor: float
     source: str
@@ -419,11 +424,14 @@ class CarbonBudgetConfig(BaseModel):
     annual_global_allocation(t) = remaining_budget(t) / (end_year - t)
 
     Patch 2d — ``budget_basis`` selects the GHG scope of the DENOMINATOR so it
-    matches the EF GWP100 (CO2e) numerator. ``"CO2"`` (default) is today's
-    behaviour, byte-identical (no drift). ``"CO2e_GHG"`` is opt-in and INERT
-    until a sourced ``co2e_conversion`` is supplied — compute rejects a CO2e
-    basis with no usable conversion rather than fabricating a factor. The fix is
-    denominator-only; the numerator (EF GWP100 CO2e) is unchanged.
+    matches the EF GWP100 (CO2e) numerator. ``"CO2"`` is the SCHEMA default and
+    is byte-identical to the pre-2d behaviour (no drift); note the UI seeds a
+    fresh draft with ``"CO2e_GHG"``, so the two defaults differ deliberately.
+    A CO2e basis is INERT without a usable ``co2e_conversion`` — compute rejects
+    it rather than fabricating a factor. Since the CO2e wiring, every budget
+    built by ``build_carbon_budget`` carries a derived conversion, so that guard
+    fires mainly on a workbook import that left ``co2e_factor`` blank. The fix
+    is denominator-only; the numerator (EF GWP100 CO2e) is unchanged.
     """
     initial_budget_gt: float              # Gt CO2 (or Gt CO2e once basis-applied)
     budget_source: str                    # "IPCC AR6 1.5C 67th pct"

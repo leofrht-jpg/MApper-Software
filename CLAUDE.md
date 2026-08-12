@@ -1632,7 +1632,8 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
 - **Don't invent a CO2→CO2e factor.** It is DERIVED, never fabricated:
   `co2e_factor_for_budget` computes `f = ((m·x20 + b) − C) / x25` from the
   budget's own `original_gt_from_2020` / `remaining_gt_from_2025` plus two
-  affines branched by temperature target (Bjørn 2023 for 1.5C; an in-repo AR6
+  affines branched by temperature target (Tilsted & Bjørn 2023,
+  doi:10.1007/s10584-023-03583-4, domain x∈[223,427] for 1.5C; an in-repo AR6
   C3+C4 regression for 2C) and the offset `C = 257.4 GtCO2e`. Provenance and the
   two DIFFERENT scenario counts (343 regression / 427 offset — different
   filters, see below) live in `mapper/data/aesa/co2e_ratio/README.md`. The 2C

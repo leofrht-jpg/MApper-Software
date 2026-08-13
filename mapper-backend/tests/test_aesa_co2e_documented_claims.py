@@ -36,6 +36,17 @@ from mapper.core.aesa_engine import (
 DATA = Path(__file__).resolve().parents[1] / "mapper" / "data" / "aesa" / "co2e_ratio"
 README = (DATA / "README.md").read_text(encoding="utf-8")
 
+#: The README with every run of whitespace collapsed to one space.
+#:
+#: Assert prose against THIS, not the raw text. A multi-token claim is split by
+#: whatever line the paragraph happens to wrap on, so a purely cosmetic reflow
+#: breaks the test and says nothing useful — and on a CRLF checkout every `\n`
+#: in an assertion is a `\r\n` that matches nothing. Numbers and single tokens
+#: can use either; the flat form is never wrong.
+README_FLAT = " ".join(README.split())
+#: Minus sign normalised too: the tables use U+2212, f-strings produce U+002D.
+README_FLAT_ASCII_MINUS = README_FLAT.replace("\u2212", "-")
+
 #: The band `test_factor_values_in_sanity_band` enforces.
 BAND = (1.45, 2.20)
 #: The observed 2020-2024 deduction the budgets use (GtCO2, GCB 2024).
@@ -81,10 +92,10 @@ def options() -> dict:
 def test_the_leg_table_numbers_are_the_data(fit):
     """N, IQR and the CO2 companion in the symmetric table are column stats."""
     pairs, offset = _rows(fit.pairs_file), _rows(fit.offset_file)
-    assert f"**{len(pairs)}**" in README, f"regression N={len(pairs)} not stated"
-    assert f"**{len(offset)}**" in README, f"offset N={len(offset)} not stated"
+    assert f"**{len(pairs)}**" in README_FLAT, f"regression N={len(pairs)} not stated"
+    assert f"**{len(offset)}**" in README_FLAT, f"offset N={len(offset)} not stated"
     # `offset N = regression N + no-net-zero` — the relation, stated per leg.
-    assert f"**{len(offset) - len(pairs)}**" in README
+    assert f"**{len(offset) - len(pairs)}**" in README_FLAT
 
     ce = sorted(float(r["cum_co2e_2020_2024_gt"]) for r in offset)
 
@@ -94,9 +105,9 @@ def test_the_leg_table_numbers_are_the_data(fit):
         hi = min(lo + 1, len(ce) - 1)
         return ce[lo] + (ce[hi] - ce[lo]) * (i - lo)
 
-    assert f"{q(0.25):.3f}" in README, "IQR lower bound not stated"
-    assert f"{q(0.75):.3f}" in README, "IQR upper bound not stated"
-    assert f"{_co2_companion(fit):.3f}" in README, "CO2 companion not stated"
+    assert f"{q(0.25):.3f}" in README_FLAT, "IQR lower bound not stated"
+    assert f"{q(0.75):.3f}" in README_FLAT, "IQR upper bound not stated"
+    assert f"{_co2_companion(fit):.3f}" in README_FLAT, "CO2 companion not stated"
 
 
 # ── A1 ───────────────────────────────────────────────────────────────────────
@@ -111,8 +122,8 @@ def test_a1_alternative_deltas_are_recomputed(options):
         c_obs = fit.offset_2020_2024_gt * (OBSERVED_DEDUCTION_GT / _co2_companion(fit))
         now, alt = _f(bid, opt), _f(bid, opt, offset=c_obs)
         seen[bid] = (now, alt, 100 * (alt - now) / now)
-        assert f"{c_obs:.3f}" in README, f"{bid}: C_obs {c_obs:.3f} not stated"
-        assert f"{100 * (alt - now) / now:.2f} %" in README.replace("−", "-"), (
+        assert f"{c_obs:.3f}" in README_FLAT, f"{bid}: C_obs {c_obs:.3f} not stated"
+        assert f"{100 * (alt - now) / now:.2f} %" in README_FLAT_ASCII_MINUS, (
             f"{bid}: delta {100 * (alt - now) / now:.2f}% not stated"
         )
     # The alternative always LOWERS f (C_obs > C), so it RAISES the climate SR.
@@ -125,10 +136,10 @@ def test_a1_alternative_deltas_are_recomputed(options):
 def test_a1_states_that_no_option_is_pure(options):
     """The argument, not just the number: x20 is AR6-ASSESSED, so an
     all-modelled f is not available."""
-    assert "No option is pure" in README
-    assert "AR6-ASSESSED" in README
+    assert "No option is pure" in README_FLAT
+    assert "AR6-ASSESSED" in README_FLAT
     # Both provenance kinds are named where the terms are tabulated.
-    assert "MODELLED" in README and "OBSERVED" in README
+    assert "MODELLED" in README_FLAT and "OBSERVED" in README_FLAT
 
 
 # ── A2 ───────────────────────────────────────────────────────────────────────
@@ -183,20 +194,20 @@ def test_a2_pathway_drift_matches_the_shipped_ar6_series():
 
     # "~1.37 at 2025 (range 1.34-1.39)"
     assert f"{min(inst_2025):.2f}" == "1.34" and f"{max(inst_2025):.2f}" == "1.39"
-    assert "1.34–1.39" in README or "1.34-1.39" in README
+    assert "1.34–1.39" in README_FLAT or "1.34-1.39" in README_FLAT
     # "1.74-5.53 cumulative-to-2100" over the scenarios whose cumulative CO2
     # stays positive; the ninth has a pole and is called out separately.
     pos = [v for v in cum_2100 if v > 0]
     assert f"{min(pos):.2f}" == "1.74" and f"{max(pos):.2f}" == "5.53"
-    assert "1.74–5.53" in README or "1.74-5.53" in README
+    assert "1.74–5.53" in README_FLAT or "1.74-5.53" in README_FLAT
     # The pole is stated rather than dropped.
     assert len(pos) == len(cum_2100) - 1
-    assert "pole" in README
+    assert "pole" in README_FLAT
 
 
 def test_a2_records_that_mechanism_c_is_deliberately_unimplemented():
-    assert "deliberately\nunimplemented" in README or "deliberately unimplemented" in README
-    assert "anchors_gt_co2" in README, "the reason must name the missing data"
+    assert "deliberately unimplemented" in README_FLAT
+    assert "anchors_gt_co2" in README_FLAT, "the reason must name the missing data"
 
 
 # ── the sanity band's reach ──────────────────────────────────────────────────
@@ -261,15 +272,15 @@ def test_the_band_does_catch_gross_structural_errors(options, label, kwargs):
 
 
 def test_the_readme_names_the_guard_that_does_catch_mix_ups():
-    assert "test_no_target_mixes_ensembles" in README
-    assert "0.001" in README, "the 1.449-vs-1.45 margin must be stated"
+    assert "test_no_target_mixes_ensembles" in README_FLAT
+    assert "0.001" in README_FLAT, "the 1.449-vs-1.45 margin must be stated"
 
 
 def test_the_readme_no_longer_quotes_the_superseded_band():
     """A stale '~1.45-1.80 sanity band' flag survived the band moving to 2.20,
     contradicting the bullet immediately below it."""
-    assert "1.45–1.80" not in README and "1.45-1.80" not in README
-    assert f"[{BAND[0]}, {BAND[1]}]" in README or f"[{BAND[0]:.2f}, {BAND[1]:.2f}]" in README
+    assert "1.45–1.80" not in README_FLAT and "1.45-1.80" not in README_FLAT
+    assert f"[{BAND[0]:.2f}, {BAND[1]:.2f}]" in README_FLAT
 
 
 # ── reverse-orphan sources (B8) ──────────────────────────────────────────────
@@ -289,6 +300,6 @@ def test_the_reverse_orphan_sources_are_documented_as_intentional():
     assert set(orphans) == {"AR6_BUDGET_CALC", "HAUSFATHER_2023_CLIMATE_BRINK"}, (
         f"the reverse-orphan set changed: {orphans} — update the README note"
     )
-    assert "reverse" in README.lower()
+    assert "reverse" in README_FLAT.lower()
     for o in orphans:
-        assert o in README, f"{o} must be named as an intentional cross-check"
+        assert o in README_FLAT, f"{o} must be named as an intentional cross-check"

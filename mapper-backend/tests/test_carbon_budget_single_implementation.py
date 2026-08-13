@@ -87,9 +87,17 @@ ENGINE = "core/aesa_engine.py"
 
 
 def _sources() -> list[tuple[str, str]]:
+    """(POSIX-relative path, source) for every module under ``mapper/``.
+
+    ``as_posix()``, not ``str()``: on Windows the latter yields ``api\\aesa.py``
+    while every allowlist here is written with forward slashes, so no file
+    matched its allowlist and the sweep flagged the entire package. Caught by
+    Windows CI on the first run — and by ``test_the_sweep_finds_the_package``,
+    which is why that test exists.
+    """
     out = []
     for f in sorted(PKG.rglob("*.py")):
-        out.append((str(f.relative_to(PKG)), f.read_text(encoding="utf-8")))
+        out.append((f.relative_to(PKG).as_posix(), f.read_text(encoding="utf-8")))
     return out
 
 
@@ -174,11 +182,25 @@ ENUMERATES_FOR_DISPLAY = {"api/aesa.py"}
 
 
 def test_the_sweep_finds_the_package():
-    """A guard that scans nothing passes forever."""
+    """A guard that scans nothing passes forever.
+
+    Every path this module names must RESOLVE against the sweep — not just the
+    two module constants but each allowlist entry too. A path-separator
+    mismatch makes them all miss silently, which on Windows turned the
+    allowlists into no-ops and flagged the whole package.
+    """
     srcs = _sources()
     assert len(srcs) > 20
-    assert any(rel == SCHEMA for rel, _ in srcs)
-    assert any(rel == ENGINE for rel, _ in srcs)
+    found = {rel for rel, _ in srcs}
+    assert SCHEMA in found
+    assert ENGINE in found
+    for rel in WHOLE_VALUE_OK | ENUMERATES_FOR_DISPLAY:
+        assert rel in found, (
+            f"allowlist entry {rel!r} matches no swept file — the allowlist is "
+            "a no-op (check path separators: paths are compared as POSIX)"
+        )
+    # And no swept path may carry a backslash, whatever platform this runs on.
+    assert not any("\\" in rel for rel in found)
 
 
 def test_the_rules_match_the_constructs_they_name():

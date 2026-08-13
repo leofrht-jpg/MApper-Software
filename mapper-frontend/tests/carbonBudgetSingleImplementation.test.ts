@@ -9,7 +9,7 @@
 
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { join, relative, resolve, sep } from 'node:path'
 
 // There have been FOUR copies of the carbon-budget depletion arithmetic: the
 // engine, the timeline inset, the sidebar sparkline, and the shared helper that
@@ -88,6 +88,20 @@ const WHOLE_VALUE_OK = new Set([
   'components/aesa/ConfigSidebar.tsx',
 ])
 
+/**
+ * Path relative to `root`, ALWAYS with forward slashes.
+ *
+ * `node:path`'s `relative()` yields `components\\aesa\\ConfigSidebar.tsx` on
+ * Windows, while every allowlist below is written with forward slashes — so no
+ * file would match its allowlist and the sweep would flag everything. The
+ * sibling Python guard shipped exactly that bug and Windows CI caught it; this
+ * side has the same shape and no Windows job to catch it, so it is normalised
+ * here rather than left to be discovered.
+ */
+function rel(root: string, file: string): string {
+  return relative(root, file).split(sep).join('/')
+}
+
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
     const full = join(dir, name)
@@ -155,11 +169,11 @@ function offenders(files: string[], root: string, allow: (rel: string) => boolea
                    rules: Array<[string, RegExp]>): string[] {
   const out: string[] = []
   for (const f of files) {
-    const rel = relative(root, f)
-    if (allow(rel)) continue
+    const r = rel(root, f)
+    if (allow(r)) continue
     const src = stripComments(readFileSync(f, 'utf-8'))
     for (const [label, re] of rules) {
-      if (re.test(src)) out.push(`${rel} (${label})`)
+      if (re.test(src)) out.push(`${r} (${label})`)
     }
   }
   return out
@@ -172,7 +186,15 @@ describe('the carbon-budget rule has exactly one frontend implementation', () =>
   it('finds both trees (guards against a silently empty sweep)', () => {
     expect(srcFiles.length).toBeGreaterThan(50)
     expect(testFiles.length).toBeGreaterThan(20)
-    expect(srcFiles.some((f) => relative(SRC, f) === CARBON_BUDGET_UTIL)).toBe(true)
+    const found = new Set(srcFiles.map((f) => rel(SRC, f)))
+    expect(found.has(CARBON_BUDGET_UTIL)).toBe(true)
+    // Every allowlist entry must RESOLVE, or the allowlist is a silent no-op —
+    // the failure mode a path-separator mismatch produces.
+    for (const entry of WHOLE_VALUE_OK) {
+      expect(found.has(entry), `allowlist entry ${entry} matches no swept file`).toBe(true)
+    }
+    // And no swept path carries a backslash, on any platform.
+    expect([...found].some((r) => r.includes('\\'))).toBe(false)
   })
 
   it('the rules actually match the constructs they name', () => {
@@ -262,11 +284,11 @@ describe('the carbon-budget rule has exactly one frontend implementation', () =>
     const flat = (src: string) => src.replace(/\s+/g, ' ')
     const bad: string[] = []
     for (const f of testFiles) {
-      const rel = relative(TESTS, f)
-      if (rel.startsWith('fixtures/') || rel === 'carbonBudgetSingleImplementation.test.ts') continue
+      const r = rel(TESTS, f)
+      if (r.startsWith('fixtures/') || r === 'carbonBudgetSingleImplementation.test.ts') continue
       const src = flat(stripComments(readFileSync(f, 'utf-8')))
       for (const [label, re] of [...ACCUMULATION, ['cap compare', CAP_COMPARE] as [string, RegExp]]) {
-        if (re.test(src)) bad.push(`${rel} (${label})`)
+        if (re.test(src)) bad.push(`${r} (${label})`)
       }
     }
     expect(bad, 'a test re-implements the carbon-budget arithmetic; import the '

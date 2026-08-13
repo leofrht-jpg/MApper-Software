@@ -27,6 +27,48 @@ What is being protected:
 
 Everything else calls those. The export builders, the compute engine and the
 API handlers currently do exactly that; this test keeps it that way.
+
+WHAT THIS GUARD COVERS
+----------------------
+Every ``*.py`` under ``mapper/``, comments and docstrings stripped:
+
+* element-wise reads of ``projected_emissions`` — indexing, ``.get``/``.items``/
+  ``.values``/``.keys``, ``for … in``. Forbidding ACCESS rather than
+  enumerating accumulation idioms is the point: ``+=``, ``sum()``, a
+  comprehension, ``functools.reduce`` and a ``for`` loop are five spellings of
+  one mistake, and none can be written without reaching individual years first.
+* accumulation across years — ``sum()``, ``+=``, ``reduce`` — enforced
+  EVERYWHERE, including ``api/aesa.py``, which is exempt from the access rules
+  because writing a per-year table is legitimate enumeration.
+* comparing a running total to ``initial_budget_gt``, in either direction, on
+  any operator (``>``, ``>=``, ``<``, ``<=``, ``==``, ``!=``).
+* re-deriving ``remaining / (end_year - year)`` instead of calling
+  ``annual_global_allocation`` (which floors the divisor at 1).
+* applying the CO2->CO2e factor by hand instead of ``with_basis_applied``,
+  INCLUDING as a hard-coded literal (``* 1.4846``) — the worse version.
+* reading the budget vintage outside ``carbon_budget_vintage()``.
+
+Each rule is asserted against a synthetic corpus by
+``test_the_rules_match_the_constructs_they_name``, so the sweep cannot pass
+vacuously if a regex stops matching real code.
+
+WHAT IT CANNOT COVER
+--------------------
+It is text matching, not analysis. It will NOT catch:
+
+* **an indirection.** A helper that takes ``dict[int, float]`` and sums it never
+  names ``projected_emissions``, so nothing here fires. Same for a copy that
+  operates on a local alias assigned in a whole-value pass-through.
+* **anything outside ``mapper/``** — scripts, notebooks, ad-hoc analysis, and
+  the backend test tree itself. (The FRONTEND guard does sweep its tests,
+  because a copy was found there. No equivalent copy exists on this side yet.)
+* **misuse of a correct call.** Calling ``remaining_budget(year + 1)`` is the
+  original bug's shape and passes every rule here — the caller used the helper,
+  just with the wrong argument. Only the fixture tests
+  (``test_carbon_budget_series_fixture.py``, ``..._sparkline_fixture.py``) catch
+  that class.
+* **a NEW field.** If a second pathway or budget field is added, these rules do
+  not extend to it automatically; add it to the patterns above.
 """
 from __future__ import annotations
 

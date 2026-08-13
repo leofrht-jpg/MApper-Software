@@ -25,6 +25,48 @@ import { join, relative, resolve } from 'node:path'
 // Post-compute surfaces must read `remaining_budget_gt` off the SR rows
 // (`budgetSeriesFromResults`); pre-compute previews call
 // `utils/carbonBudget.ts`. Neither needs to accumulate inline.
+//
+// WHAT THIS GUARD COVERS
+// ----------------------
+// Every .ts/.tsx under src/ AND under tests/, comments stripped:
+//
+//  * src/ — element-wise access to `projected_emissions`: indexing, a method
+//    chain (`.reduce`/`.map`/…), `Object.entries|keys|values`, `for…of`, and
+//    destructuring the field out. Forbidding ACCESS rather than enumerating
+//    accumulation idioms is the point — you cannot sum what you cannot reach,
+//    whichever loop you reach for. Two files may reference the field as a
+//    WHOLE VALUE (`api/client.ts` declares its type, ConfigSidebar passes the
+//    SSP's record to `onPatch`); both are still run through every rule, so
+//    allowlisting a file cannot smuggle an accumulation in beside the
+//    pass-through.
+//  * tests/ — the narrower ACCUMULATION rules (`+=` on an element, `.reduce`
+//    over the field) instead, because a test may legitimately marshal a
+//    fixture's string-keyed record or assert one year's value. Summing across
+//    years is never legitimate there. This scope is not theoretical: it found
+//    `carbonBudgetPanelAgreement` re-deriving the sum inline and asserting the
+//    ENGINE against it — "the engine agrees with a copy in this file".
+//  * both — comparing a running total to `initial_budget_gt` in either
+//    direction on any operator (`>`, `>=`, `<`, `<=`, `===`, `!==`, `==`,
+//    `!=`). The original rule matched only `>` and `>=`.
+//
+// Every rule is asserted against a synthetic corpus by "the rules actually
+// match the constructs they name", so the sweep cannot pass vacuously if a
+// regex stops matching real code.
+//
+// WHAT IT CANNOT COVER
+// --------------------
+// It is text matching, not analysis. It will NOT catch:
+//
+//  * an INDIRECTION — a helper taking `Record<number, number>` and summing it
+//    never names `projected_emissions`, so nothing fires. Same for a copy
+//    operating on a local alias bound in a whole-value pass-through.
+//  * MISUSE of a correct call — `remainingBudgetAt(budget, year + 1)` is the
+//    original bug's shape and passes every rule; the caller did use the helper.
+//    Only the engine-generated fixtures (`carbonBudgetSparkline.json`,
+//    `carbonBudgetEngineSeries.json`) catch that class.
+//  * anything outside src/ and tests/ — scripts, config, the Tauri shell.
+//  * a NEW field. These rules are written for `projected_emissions` and
+//    `initial_budget_gt`; a second pathway field would need adding by hand.
 
 const SRC = resolve(process.cwd(), 'src')
 const TESTS = resolve(process.cwd(), 'tests')

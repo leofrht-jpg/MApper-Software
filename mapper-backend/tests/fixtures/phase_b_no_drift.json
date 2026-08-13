@@ -357,6 +357,36 @@
    0.00011037037037037037
   ],
   [
+   2025,
+   "ozone_depletion",
+   1.8645502645502645,
+   11812.5,
+   22025.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2025,
+   "particulate_matter",
+   19.428571428571427,
+   109.375,
+   2125.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2025,
+   "photochemical_ozone_formation",
+   557.4913117770035,
+   89687500.0,
+   50000002025.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
    2030,
    "acidification",
    2.3888937383333335,
@@ -375,6 +405,36 @@
    975.0,
    13.928571428571429,
    0.00011037037037037037
+  ],
+  [
+   2030,
+   "ozone_depletion",
+   1.864973544973545,
+   11812.5,
+   22030.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2030,
+   "particulate_matter",
+   19.474285714285713,
+   109.375,
+   2130.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2030,
+   "photochemical_ozone_formation",
+   557.4913118327526,
+   89687500.0,
+   50000002030.0,
+   null,
+   null,
+   0.00021875
   ],
   [
    2035,
@@ -397,6 +457,36 @@
    0.00011037037037037037
   ],
   [
+   2035,
+   "ozone_depletion",
+   1.8653968253968254,
+   11812.5,
+   22035.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2035,
+   "particulate_matter",
+   19.52,
+   109.375,
+   2135.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2035,
+   "photochemical_ozone_formation",
+   557.4913118885017,
+   89687500.0,
+   50000002035.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
    2040,
    "acidification",
    2.3888937622222226,
@@ -415,6 +505,36 @@
    700.0,
    11.666666666666666,
    0.00011037037037037037
+  ],
+  [
+   2040,
+   "ozone_depletion",
+   1.8658201058201058,
+   11812.5,
+   22040.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2040,
+   "particulate_matter",
+   19.565714285714286,
+   109.375,
+   2140.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2040,
+   "photochemical_ozone_formation",
+   557.4913119442509,
+   89687500.0,
+   50000002040.0,
+   null,
+   null,
+   0.00021875
   ]
  ],
  "SR|CO2e_GHG": [
@@ -439,6 +559,36 @@
    0.00011037037037037037
   ],
   [
+   2025,
+   "ozone_depletion",
+   1.8645502645502645,
+   11812.5,
+   22025.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2025,
+   "particulate_matter",
+   19.428571428571427,
+   109.375,
+   2125.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2025,
+   "photochemical_ozone_formation",
+   557.4913117770035,
+   89687500.0,
+   50000002025.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
    2030,
    "acidification",
    2.3888937383333335,
@@ -457,6 +607,36 @@
    1447.4383695652175,
    20.677690993788822,
    0.00011037037037037037
+  ],
+  [
+   2030,
+   "ozone_depletion",
+   1.864973544973545,
+   11812.5,
+   22030.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2030,
+   "particulate_matter",
+   19.474285714285713,
+   109.375,
+   2130.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2030,
+   "photochemical_ozone_formation",
+   557.4913118327526,
+   89687500.0,
+   50000002030.0,
+   null,
+   null,
+   0.00021875
   ],
   [
    2035,
@@ -479,6 +659,36 @@
    0.00011037037037037037
   ],
   [
+   2035,
+   "ozone_depletion",
+   1.8653968253968254,
+   11812.5,
+   22035.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2035,
+   "particulate_matter",
+   19.52,
+   109.375,
+   2135.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2035,
+   "photochemical_ozone_formation",
+   557.4913118885017,
+   89687500.0,
+   50000002035.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
    2040,
    "acidification",
    2.3888937622222226,
@@ -497,9 +707,39 @@
    1039.1865217391305,
    17.319775362318843,
    0.00011037037037037037
+  ],
+  [
+   2040,
+   "ozone_depletion",
+   1.8658201058201058,
+   11812.5,
+   22040.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2040,
+   "particulate_matter",
+   19.565714285714286,
+   109.375,
+   2140.0,
+   null,
+   null,
+   0.00021875
+  ],
+  [
+   2040,
+   "photochemical_ozone_formation",
+   557.4913119442509,
+   89687500.0,
+   50000002040.0,
+   null,
+   null,
+   0.00021875
   ]
  ],
- "_generated_from": "git main @ aa4453b, BEFORE the Phase B changes, via the probe reproduced in test_phase_b_no_drift.py",
+ "_generated_from": "git main @ a7254a3. Regenerated deliberately to EXTEND COVERAGE, not because a number moved: the SR set now includes the three AR-allocated boundaries (ozone_depletion, particulate_matter, photochemical_ozone_formation), which no previous row depended on. Every value carried over from the previous fixture is unchanged; the sharing data is main's, untouched. Captured from the probe in test_phase_b_no_drift.py, never typed.",
  "factors": {
   "IPCC_AR6_1p5C_50": 1.8518640000000002,
   "IPCC_AR6_1p5C_67": 2.1206960000000006,

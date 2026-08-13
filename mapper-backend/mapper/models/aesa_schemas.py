@@ -646,6 +646,17 @@ class AESAConfiguration(BaseModel):
     carbon_budget: CarbonBudgetConfig | None = None
     method_mapping: list[MethodPBMapping] = Field(default_factory=list)
     created_at: str
+    # Set once by ``aesa_storage``'s one-time migration. Configurations written
+    # before it eagerly persisted a COPY of whatever the built-in defaults were
+    # on the day they were created -- the sharing chain, the legacy multi_d
+    # shape and the auto-suggested method mapping -- so a methodology fix to
+    # the defaults (acidification EpC -> AGR, the Patch 4W exact-match mapping)
+    # never reached them. Both fields already resolve live when absent
+    # (``resolve_sharing`` -> ``build_default_sharing_preset``; ``compute`` and
+    # the sidebar both auto-suggest an empty mapping), so the migration clears
+    # the derived copies and lets the live path run. The flag is what stops it
+    # running twice and wiping a genuine customisation on the second load.
+    derived_defaults_migrated: bool = False
 
 
 class AESAConfigBundle(BaseModel):

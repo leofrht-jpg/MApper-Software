@@ -1655,6 +1655,68 @@ explicitly, so the default was never exercised — but it was `False`, meaning a
 object built in code without the flag came out silently NON-provisional and
 would render without the caveat. A safety flag must fail closed.
 
+### A configuration follows the current defaults — it does not freeze them
+
+`AESAConfiguration.sharing` and `.method_mapping` are **derived** unless the
+user authored them, and a derived value is **not persisted**. Both already
+resolve live when absent:
+
+- `sharing` → `resolve_sharing()` falls through to
+  `build_default_sharing_preset()`;
+- `method_mapping` → `AESAEngine.compute` auto-suggests when it is empty, and
+  the sidebar's auto-suggest effect fires on an empty mapping, so the table
+  fills in with no Re-suggest click.
+
+The bug was that the UI **eagerly** wrote a copy of both at creation time, so a
+configuration carried whatever the defaults were on the day it was made,
+forever. When `acidification` moved EpC → AGR and the Patch 4W exact-match
+mapping took coverage 15 → 16, an existing configuration kept computing the old
+way beside a fresh one computing the new way, with nothing on screen to explain
+the disagreement.
+
+**Reproducibility is satisfied one level up.** `AESASession.configuration_snapshot`
+is the authoritative immutable record for compute — the schema docstring has
+said so since sessions shipped — and it freezes at compute time. The
+config-level copy was never what made a published result reproducible.
+
+**Two halves:**
+
+- **Frontend** — `AESAConfigDraft.sharingCustomized` / `.mappingCustomized`.
+  `saveConfig` sends `sharing: null` / `method_mapping: []` unless one is set.
+  They are set by the sidebar's sharing editors, by picking a preset, and by
+  applying an AESACFG workbook (which comes through `updateDraft`). They are
+  **not** set by `suggestMapping` — that is derivation, not authorship, which
+  is why it writes the draft directly instead of going through `updateDraft`.
+- **Backend** — `aesa_storage._migrate_derived_defaults`, a one-time pass at the
+  read boundary that clears `sharing`, `multi_d` and `method_mapping` on any
+  configuration written before the marker, then records
+  `derived_defaults_migrated: true` and re-saves. `multi_d` is cleared TOO:
+  `resolve_sharing` prefers migrating the legacy 2-layer shape over falling
+  through to the defaults, so leaving it would resurrect the old chain.
+
+**`carbon_budget` is NOT cleared.** A budget option is a methodological CHOICE
+(which temperature target, which percentile); silently moving someone's 1.5 °C
+budget would be a worse bug than the one being fixed. A configuration carrying
+a superseded budget value keeps it, visibly. The line is derivation vs choice,
+not staleness.
+
+#### What NOT to do
+
+- **Don't eagerly persist a default.** If a field has a live-resolution path
+  when absent, absent is the correct stored state until the user diverges. The
+  same shape is already used for `projectedCustomizedByArc` (Patch 4D/4F).
+- **Don't remove the config-level `sharing` field** on the argument that the
+  session snapshot makes it redundant. It is not only a frozen copy — it is the
+  **editable working document** the sidebar's chain / principles / category
+  editors write to (`asEditableSnapshot`). Removing it would delete the
+  per-configuration sharing editor.
+- **Don't drop the `derived_defaults_migrated` flag** or run the migration
+  unconditionally. Without it, a genuine customisation saved after the
+  migration is wiped on the very next load.
+- **Don't extend the migration to `carbon_budget`, `boundary_set_id`,
+  `impact_mode` or `dsm_scenario_id`.** Those are choices the user made, not
+  defaults they never touched.
+
 ### UNRESOLVED: what the AR principle is defined as
 
 **Do not "fix" this by making one end match the other. The definition is an

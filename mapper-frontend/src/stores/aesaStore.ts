@@ -143,6 +143,25 @@ export interface AESAConfigDraft {
   // drafts; `ConfigSidebar` resolves it to the system's active
   // scenario id at render time).
   dsm_scenario_id: string | null
+  /**
+   * Has the user authored `sharing` / `method_mapping`, or are they still the
+   * derived defaults?
+   *
+   * Both fields resolve live when absent — `resolve_sharing` falls through to
+   * `build_default_sharing_preset()`, and compute plus the sidebar's
+   * auto-suggest effect both fill an empty mapping. Persisting a copy that was
+   * never diverged from is what froze existing configurations against a later
+   * methodology fix (acidification EpC -> AGR; the Patch 4W mapping). So a copy
+   * is written ONLY when one of these is true; otherwise the config is saved
+   * with `sharing: null` / `method_mapping: []` and follows the defaults.
+   *
+   * Set by the sidebar's sharing editors, by picking a preset, and by applying
+   * an AESACFG workbook. NOT set by `suggestMapping`, which is derivation, not
+   * authorship — that is why it writes the draft directly instead of going
+   * through `updateDraft`.
+   */
+  sharingCustomized: boolean
+  mappingCustomized: boolean
 }
 
 // Patch 5AM — which mount-time config load failed (drives the retry banner's
@@ -331,6 +350,10 @@ function draftFromConfig(
     method_mapping: c.method_mapping,
     impact_mode: c.impact_mode,
     dsm_scenario_id: c.dsm_scenario_id ?? null,
+    // A stored copy survived the storage-layer migration, so it is authored,
+    // not derived: keep it and keep writing it.
+    sharingCustomized: c.sharing != null,
+    mappingCustomized: c.method_mapping.length > 0,
   }
 }
 
@@ -374,6 +397,8 @@ function draftFromDefaults(
     method_mapping: [],
     impact_mode: 'static',
     dsm_scenario_id: null,
+    sharingCustomized: false,
+    mappingCustomized: false,
   }
 }
 
@@ -497,7 +522,22 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   },
 
   setDraft: (d) => set({ draft: d }),
-  updateDraft: (patch) => set((s) => ({ draft: s.draft ? { ...s.draft, ...patch } : s.draft })),
+  updateDraft: (patch) => set((s) => {
+    if (!s.draft) return { draft: s.draft }
+    // Applying an AESACFG workbook comes through here with `sharing` and
+    // `method_mapping` in the patch. That is a deliberate authored override —
+    // a file the user edited — so it must be persisted rather than resolved
+    // from defaults. Derivation (`suggestMapping`) deliberately does not use
+    // this action.
+    return {
+      draft: {
+        ...s.draft,
+        ...patch,
+        sharingCustomized: s.draft.sharingCustomized || 'sharing' in patch,
+        mappingCustomized: s.draft.mappingCustomized || 'method_mapping' in patch,
+      },
+    }
+  }),
 
   updateCarbonBudget: (patch) => set((s) => {
     if (!s.draft) return {}
@@ -531,10 +571,14 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       dsm_scenario_id: draft.dsm_scenario_id,
       impact_mode: draft.impact_mode,
       boundary_set_id: draft.boundary_set_id,
-      sharing: draft.sharing,
+      // Derived-by-default: a config that has not been edited is saved WITHOUT
+      // a sharing snapshot or a mapping, so it resolves from the built-in
+      // defaults every time it is opened and can never go stale against a
+      // later methodology fix. See AESAConfigDraft.sharingCustomized.
+      sharing: draft.sharingCustomized ? draft.sharing : null,
       sharing_preset_id: draft.sharing_preset_id,
       carbon_budget: draft.carbon_budget,
-      method_mapping: draft.method_mapping,
+      method_mapping: draft.mappingCustomized ? draft.method_mapping : [],
     }
     try {
       const saved = activeConfigId
@@ -846,7 +890,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
 
   updateSharing: (patch) => set((s) => {
     if (!s.draft) return {}
-    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, ...patch } } }
+    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, ...patch }, sharingCustomized: true } }
   }),
 
   updateLayer: (index, patch) => set((s) => {
@@ -857,6 +901,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       draft: {
         ...s.draft,
         sharing: { ...s.draft.sharing, chain: { layers } },
+        sharingCustomized: true,
       },
     }
   }),
@@ -874,7 +919,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       data: layer?.data ?? {},
     }
     const layers = [...existing, newLayer]
-    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, chain: { layers } } } }
+    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, chain: { layers } }, sharingCustomized: true } }
   }),
 
   removeLayer: (index) => set((s) => {
@@ -883,7 +928,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     if (existing.length <= 1) return {} // Min 1 layer
     const layers = existing.filter((_, i) => i !== index)
       .map((ly, i) => ({ ...ly, layer_number: i + 1 }))
-    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, chain: { layers } } } }
+    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, chain: { layers } }, sharingCustomized: true } }
   }),
 
   moveLayer: (from, to) => set((s) => {
@@ -893,7 +938,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     const [moved] = layers.splice(from, 1)
     layers.splice(to, 0, moved)
     const renumbered = layers.map((ly, i) => ({ ...ly, layer_number: i + 1 }))
-    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, chain: { layers: renumbered } } } }
+    return { draft: { ...s.draft, sharing: { ...s.draft.sharing, chain: { layers: renumbered } }, sharingCustomized: true } }
   }),
 
   updatePrinciples: (principles) => set((s) => {
@@ -902,6 +947,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       draft: {
         ...s.draft,
         sharing: { ...s.draft.sharing, principles },
+        sharingCustomized: true,
       },
     }
   }),
@@ -919,6 +965,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       draft: {
         ...s.draft,
         sharing: { ...s.draft.sharing, category_assignments: assignments },
+        sharingCustomized: true,
       },
     }
   }),

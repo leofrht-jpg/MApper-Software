@@ -25,7 +25,15 @@ logging.basicConfig(
 )
 configure_logging()
 
-app = FastAPI(title="MApper API")
+# `version` is load-bearing for release verification, not decoration: it makes
+# /openapi.json echo the version the RUNNING process was built from. Without it
+# FastAPI reports its own default ("0.1.0") and the only way to check a frozen
+# desktop build is to read the pyproject.toml bundled beside it — which is
+# inference from a file on disk, not an answer from the process. Sourced from
+# `mapper.__version__`, so it stays on the single version source.
+from mapper import __version__  # noqa: E402
+
+app = FastAPI(title="MApper API", version=__version__)
 
 
 @app.on_event("startup")

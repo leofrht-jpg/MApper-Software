@@ -1655,6 +1655,89 @@ explicitly, so the default was never exercised — but it was `False`, meaning a
 object built in code without the flag came out silently NON-provisional and
 would render without the caveat. A safety flag must fail closed.
 
+### UNRESOLVED: what the AR principle is defined as
+
+**Do not "fix" this by making one end match the other. The definition is an
+open methodological decision, not a code inconsistency to tidy.**
+
+The built-in Multi-D chain uses `AR` as two different kinds of quantity:
+
+| where | what it holds | basis |
+|---|---|---|
+| layer 1 (`sharing_data.json` `layer1_defaults.AR`) | cumulative CO2, **1850–2020** | **cumulative** |
+| layer 2 — *"Grandfathering: sector share of the national environmental burden"* | 0.25, transport's share of the national total **today** | **current-year** |
+| layer 3 — *"Grandfathering: sub-sector share of the sector"* | 0.60, passenger cars' share of transport **today** | **current-year** |
+
+The prose is split the same way. `BUILTIN_PRINCIPLES` names both at once
+(*"Acquired Rights" / "Historical / grandfathered emissions or activity
+share"*); `MULTI_D_DEFAULTS` justifies its three assignments as *"Legacy
+responsibility"*; the layer 2/3 descriptions say *"Grandfathering"*. The
+boundary sets carry no principle field at all, and the frontend has only the
+label. Nothing outside the layer-1 data entry independently establishes that
+layer 1 should be cumulative.
+
+Four facts a future session needs before touching any of this:
+
+1. **Direction.** A larger `system_value` gives the entity a LARGER share of
+   the safe operating space and therefore a LOWER SR. Allocation is
+   `allocated_SOS = pb_value × Π(sys/glob)`, `SR = impact / allocated_SOS`.
+   For an early-industrialised entity a cumulative basis exceeds a current-year
+   one, so the cumulative reading is the flattering one.
+2. **AR is the only cumulative principle.** EpC (population), IN (annual
+   industrial GVA), AGR (annual agricultural GVA) and LA (land area) are all
+   current-state snapshots, and the file declares `year_base: 2025`.
+3. **The data model is built for snapshots.** `data[principle][year] =
+   (sys, glob)` with `resolution ∈ {step, interpolate}` exists so a principle
+   can carry a series that moves across the study years. A 171-year integral
+   parked at key 2025 cannot use that machinery.
+4. **The basis is worth ~3×.** Denmark / World territorial fossil + cement,
+   GCB 2024, same scope, only the temporal basis differing: cumulative
+   1850–2020 = 0.2411%, single-year 2022 = 0.0766% — a factor of 3.15, which
+   divides straight into every AR-allocated SR.
+
+AR allocates `ozone_depletion`, `particulate_matter` and
+`photochemical_ozone_formation` in the default preset, and — via
+`compute_with_sensitivity` — the AR whisker of the sharing-sensitivity box plot
+for all 16 boundaries.
+
+The values are being settled for the paper; they will arrive as a data change
+with the basis stated. Until then `sharing_data.json`'s AR pair is untouched,
+and **no guard should pin it**: a published-source invariant written against
+the current pair would lock in whichever reading turns out to be wrong.
+
+### `DownscalingLayer.sources` is display-only
+
+`sources: dict[principle_id, str]` carries provenance per (layer, principle),
+keyed the same way as `data` because layer 1's AR series and its EpC series
+come from different places. The exported AESACFG **Sharing Data** sheet has had
+a `Source` column since the sheet existed and wrote `""` into it, so a reader of
+an exported configuration could not tell where any number came from. It now
+writes `layer.sources`, and the import reads the column back (optional — older
+workbooks import unchanged, yielding empty provenance).
+
+**Nothing in the engine reads it**, so a wrong or missing source can never
+change an SR — locked by a test that mutates every source to garbage and
+asserts every chain factor is unmoved. Unlike `Resolution`, a row that
+disagrees with an earlier row for the same principle is **not** rejected: the
+first non-blank wins, because provenance is a comment field and failing an
+import over a typo in one would be worse than the disagreement.
+
+### The Phase B golden covers the AR-allocated boundaries
+
+`tests/fixtures/phase_b_no_drift.json` covered `climate_change` (EpC) and
+`acidification` (AGR) only, so layer 1's AR pair was the one sharing value no
+golden row depended on — it could be re-sourced (scope, vintage, window and
+all) with the file still green. It now also covers `ozone_depletion`,
+`particulate_matter` and `photochemical_ozone_formation`, and the vacuity test
+asserts that coverage **by name**, not by row count, so the next boundary added
+to the AR set cannot silently fall outside it.
+
+**Regenerate it by running the probe, never by hand**:
+`python -m tests.test_phase_b_no_drift '<why these numbers moved>'`. The
+provenance argument is required and lands in `_generated_from` next to the
+numbers it explains. The module docstring claimed a probe was "reproduced
+below" for a whole patch cycle while there was only prose describing one.
+
 ### AESA compute source toggle — Fleet (DSM) vs Single-product (LCA) (Part C1)
 
 The AESA compute path is **source-agnostic**. A toggle at the top of the

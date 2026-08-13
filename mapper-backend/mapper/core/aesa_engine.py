@@ -456,9 +456,27 @@ def _layer1_data_from_sharing(sharing: dict) -> dict[str, dict[int, tuple[float,
     return out
 
 
+def _layer1_sources_from_sharing(sharing: dict) -> dict[str, str]:
+    """Build {principle → source string} from sharing_data.json defaults.
+
+    Provenance is per PRINCIPLE, not per layer: layer 1's AR series is a Global
+    Carbon Budget cumulative while its EpC series is a population statistic.
+    Missing or blank sources are dropped rather than stored as "", so a preset
+    that has no provenance dumps ``{}``.
+    """
+    return {pid: str(d["source"]).strip()
+            for pid, d in sharing.get("layer1_defaults", {}).items()
+            if str(d.get("source", "")).strip()}
+
+
 def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
     """Build the read-only built-in sharing preset (3-layer Multi-D chain)."""
     data = sharing or load_sharing_data()
+    # Layers 2 and 3 are the two factors of `layer2.sector_share`: 0.25 x 0.60
+    # = 0.15. The one source string in the data file explains both halves
+    # ("transport ~25% of national total", "passenger cars ~60% of transport"),
+    # so it is attached to both rather than to whichever one it names first.
+    layer23_source = str(data.get("layer2", {}).get("source", "")).strip()
 
     layer1 = DownscalingLayer(
         layer_number=1,
@@ -466,6 +484,7 @@ def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
         principle_mode="category_specific",
         description="Allocates each PB category via its assigned principle.",
         data=_layer1_data_from_sharing(data),
+        sources=_layer1_sources_from_sharing(data),
     )
     layer2 = DownscalingLayer(
         layer_number=2,
@@ -474,6 +493,7 @@ def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
         fixed_principle="AR",
         description="Grandfathering: sector share of the national environmental burden.",
         data={"AR": {_DEFAULT_BASE_YEAR: (_DEFAULT_LAYER2_AR, 1.0)}},
+        sources={"AR": layer23_source} if layer23_source else {},
     )
     layer3 = DownscalingLayer(
         layer_number=3,
@@ -482,6 +502,7 @@ def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
         fixed_principle="AR",
         description="Grandfathering: sub-sector share of the sector.",
         data={"AR": {_DEFAULT_BASE_YEAR: (_DEFAULT_LAYER3_AR, 1.0)}},
+        sources={"AR": layer23_source} if layer23_source else {},
     )
     assignments = [
         CategoryAssignment(pb_id=pb_id, principle_id=principle, justification=just)

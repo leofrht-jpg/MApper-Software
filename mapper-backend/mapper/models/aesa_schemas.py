@@ -271,6 +271,18 @@ class DownscalingLayer(BaseModel):
     # built before the field existed, parsed from a workbook with the column
     # blank, or parsed from one with the column filled in with "step".
     resolution: dict[str, RESOLUTION_MODE] = Field(default_factory=dict)
+    # Principle id -> free-text provenance for that principle's series on this
+    # layer. Keyed the same way as ``data`` because provenance belongs to the
+    # (layer, principle) pair: layer 1's AR series comes from the Global Carbon
+    # Budget while its EpC series comes from a population statistic.
+    #
+    # Display and round-trip only -- NOTHING in the engine reads it, so a wrong
+    # or missing source can never change an SR. It exists because the exported
+    # AESACFG workbook has always had a Source column and always wrote "" into
+    # it, which meant a reader of an exported configuration could not tell
+    # where any number came from. Empty is a valid state: the built-in layer 3
+    # carries a source, but a user-authored layer need not.
+    sources: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="after")
     def _normalise_resolution(self) -> DownscalingLayer:

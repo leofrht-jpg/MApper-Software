@@ -88,3 +88,64 @@ export function remainingBudgetSeries(
 export function budgetDepletionYear(budget: CarbonBudgetConfig): number | null {
   return remainingBudgetSeries(budget).find((p) => p.remaining <= 0)?.year ?? null
 }
+
+/**
+ * ── Budget basis (CO₂ vs CO₂-eq) ────────────────────────────────────────────
+ *
+ * Mirrors `CarbonBudgetConfig.co2e_ratio` / `with_basis_applied` in
+ * `mapper/models/aesa_schemas.py`. Same reason as the depletion arithmetic
+ * above: the sidebar sparkline renders BEFORE any compute, so there is no
+ * engine output to read — and, as there, the fix is ONE copy that every
+ * pre-compute surface calls, not a scaling expression inlined per component.
+ *
+ * The stored `initial_budget_gt` is always the PRE-basis CO₂ figure; the CO₂-eq
+ * basis is applied at compute time. A caption that prints the stored number
+ * beside a CO₂-eq basis therefore states a CO₂ magnitude and calls it the
+ * budget — the frontend half of the same defect as the workbook's
+ * "Initial budget (Gt CO2) = 1150" sitting next to "Remaining Budget
+ * (Gt CO2e) = 1707.2".
+ */
+
+/** The usable CO₂-eq factor, or null (inert). Mirrors `co2e_ratio()`: a factor
+ *  only under the CO₂-eq basis with a positive "ratio" conversion. Never
+ *  fabricates. */
+export function co2eRatio(budget: CarbonBudgetConfig): number | null {
+  if ((budget.budget_basis ?? 'CO2') !== 'CO2e_GHG') return null
+  const conv = budget.co2e_conversion
+  if (conv && conv.kind === 'ratio' && conv.factor > 0) return conv.factor
+  return null
+}
+
+/**
+ * The budget as compute will see it: budget AND pathway scaled by the same
+ * factor, or the input unchanged when the basis is CO₂ / the conversion is
+ * inert.
+ *
+ * Because ONE factor scales both terms, `remaining(y)` scales uniformly and the
+ * DEPLETION YEAR IS INVARIANT under the basis — the curve keeps its shape and
+ * only its magnitude moves. That is a property of mechanism (b), not an
+ * accident: see `mapper/data/aesa/co2e_ratio/README.md`, "A2".
+ */
+export function withBasisApplied(budget: CarbonBudgetConfig): CarbonBudgetConfig {
+  const f = co2eRatio(budget)
+  if (f === null) return budget
+  const scaled: Record<number, number> = {}
+  for (const [y, v] of Object.entries(budget.projected_emissions)) {
+    scaled[Number(y)] = v * f
+  }
+  return { ...budget, initial_budget_gt: budget.initial_budget_gt * f, projected_emissions: scaled }
+}
+
+/** The unit a basis-applied magnitude is in — "Gt CO₂" or "Gt CO₂-eq". Any
+ *  surface printing a budget magnitude labels it with this, so no caption can
+ *  state a CO₂ unit over a CO₂-eq number. */
+export function budgetUnitLabel(budget: CarbonBudgetConfig): string {
+  return co2eRatio(budget) === null ? 'Gt CO₂' : 'Gt CO₂-eq'
+}
+
+/** A budget magnitude as a caption prints it: integers bare, converted values to
+ *  1 dp. Scaling by the CO₂-eq factor turns 1150 into 1707.2350000000001, and a
+ *  caption is not the place to show float noise. */
+export function formatBudgetGt(gt: number): string {
+  return Number.isInteger(gt) ? String(gt) : gt.toFixed(1)
+}

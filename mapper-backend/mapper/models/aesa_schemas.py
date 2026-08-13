@@ -80,7 +80,13 @@ class PlanetaryBoundary(BaseModel):
     zone_of_uncertainty: tuple[float, float] | None = None  # (lower, upper); null when SOS absent
     boundary_type: BOUNDARY_TYPE                  # "cumulative" | "flow" (structural)
     status_2023: PB_STATUS_2023 | None = None     # 2023 assessment status; null when not sourced
-    provisional: bool = False
+    # FAIL-PROVISIONAL. Every boundary in every shipped set (Sala2020_EF,
+    # Ryberg2018_PBLCIA) is provisional: true, so the default was never
+    # exercised — but a boundary constructed in code without the flag came out
+    # silently NON-provisional, which is a fail-OPEN default on a flag whose
+    # whole job is to stop an unverified number being presented as settled.
+    # Defaulting True means the only way to assert "verified" is to say so.
+    provisional: bool = True
     # ── Display labelling — the SINGLE source for every consumer ────────────
     # `short_name` is what space-constrained surfaces render (radar axes,
     # timeline legend, box-plot rows, indicator chips). It holds the EF
@@ -389,19 +395,36 @@ class SharingPreset(BaseModel):
 
 
 class RatioCO2eConversion(BaseModel):
-    """Patch 2d — CO2→CO2e conversion, mechanism (b): a single per-scenario
-    ratio. ``budget_e = factor·budget`` and ``pe_e[y] = factor·pe[y]`` (the same
-    factor scales the budget AND the depletion pathway), so the whole climate SR
-    timeline scales by ``1/factor`` — internally consistent, no pathway wrinkle.
+    """CO2→CO2e conversion, mechanism (b): a single per-BUDGET ratio.
+
+    ``budget_e = factor·budget`` and ``pe_e[y] = factor·pe[y]`` — the same factor
+    scales the budget AND the depletion pathway, so the whole climate SR timeline
+    scales by ``1/factor`` and **the depletion year is invariant** under the
+    basis. That invariance is a property of scaling both terms, not a
+    coincidence, and the UI relies on it (a CO2-eq sparkline is the CO2 one with
+    a different y-scale).
+
+    The cost of a single scalar is that a real pathway's CO2e/CO2 ratio DRIFTS —
+    upward and steeply, as CO2 approaches net-zero while non-CO2 forcers persist.
+    ``f`` is a BUDGET-level quantity (the ratio of two cumulative budgets over
+    the whole window), so it is not meant to equal any single year's ratio; what
+    the constant does approximate away is the year-by-year split of the CO2e
+    budget across the horizon. Mechanism "pathway" (c) would fix that and is
+    DELIBERATELY not implemented: the SSP trajectories store CO2 only, and a
+    year-varying ratio moves the depletion year, which is a methodological
+    change rather than a refinement. Quantified in README "A2".
 
     ``factor`` and ``source`` are SOURCED inputs — never fabricated. They are
-    now DERIVED per budget by ``co2e_conversion_for_budget`` from two published/
-    regressed affines plus a re-baselining offset (see
-    ``mapper/data/aesa/co2e_ratio/README.md``), so a freshly built budget
-    carries one; the derivation is per TEMPERATURE TARGET over an AR6 ensemble,
-    NOT per SSP. A workbook import uses the sheet's ``co2e_factor`` verbatim and
+    DERIVED per budget by ``co2e_conversion_for_budget`` from an affine plus a
+    re-baselining offset drawn from the SAME AR6 ensemble, selected by
+    TEMPERATURE TARGET (not per SSP). The factor mixes provenance by
+    construction — an observed deduction in the denominator, a modelled offset
+    in the numerator — which is a documented decision, not an oversight; see
+    README "A1". A workbook import uses the sheet's ``co2e_factor`` verbatim and
     does not recompute. A non-positive factor is treated as "no usable
-    conversion" (inert)."""
+    conversion" (inert).
+
+    Full account: ``mapper/data/aesa/co2e_ratio/README.md``."""
     kind: Literal["ratio"] = "ratio"
     factor: float
     source: str
@@ -439,7 +462,16 @@ class CarbonBudgetConfig(BaseModel):
     end_year: int
     projected_emissions: dict[int, float] # Gt CO2/yr, year → global emissions
     ssp_scenario: str                     # e.g. "SSP2-4.5"
-    provisional: bool = False
+    # FAIL-PROVISIONAL, matching the data path. `build_carbon_budget` computes
+    #     provisional = budget.provisional OR ssp.provisional
+    # and every bundled budget option and SSP trajectory carries
+    # `provisional: true`, so it always resolves True. The schema default said
+    # False, so a CarbonBudgetConfig built directly — a test fixture, an
+    # importer, a future caller that skips the builder — came out silently
+    # NON-provisional and would render without the caveat. Nothing reaches that
+    # today; "nothing reaches it today" was also true of the boundary that
+    # eventually did. A safety flag must fail closed.
+    provisional: bool = True
     # Patch 2d — CO2 vs CO2e/GHG basis. Default "CO2" → no drift. Back-compat:
     # configs saved before 2d lack these and default to CO2 / None (per the 2a
     # snapshot model). The conversion is per-scenario and sourced separately.
@@ -463,7 +495,17 @@ class CarbonBudgetConfig(BaseModel):
         Scales ``initial_budget_gt`` + ``projected_emissions`` by the sourced
         ratio so ``remaining_budget`` / ``annual_global_allocation`` /
         ``annual_system_allocation`` run UNCHANGED on the CO2e pair. (Mechanism
-        (b) ratio only; linear/pathway are not implemented here.)"""
+        (b) ratio only; linear/pathway are not implemented here.)
+
+        THE ONLY PLACE THE FACTOR IS APPLIED. Anything that needs a budget
+        magnitude in the basis it will be computed in — the SR pipeline, the
+        Excel export's Carbon Budget sheet, the frontend's pre-compute
+        sparkline — calls this rather than multiplying by ``co2e_ratio()``
+        itself. Scaling one term and not the other is the failure mode: the
+        export used to print the raw CO2 ``initial_budget_gt`` beside the
+        engine's CO2e remaining series, which read as a remaining budget larger
+        than its own initial budget. Enforced by
+        ``tests/test_carbon_budget_single_implementation.py``."""
         f = self.co2e_ratio()
         if f is None:
             return self

@@ -9,7 +9,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { describe, it, expect } from 'vitest'
-import { budgetDepletionYear } from '../src/utils/carbonBudget'
+import { budgetDepletionYear, remainingBudgetAt } from '../src/utils/carbonBudget'
 import {
   budgetSeriesFromResults, depletionYearFromSeries,
 } from '../src/components/aesa/TimelineView'
@@ -111,15 +111,13 @@ describe('the panels agree on the whole curve, not just the depletion year', () 
     for (const point of timelineSeries) {
       // The sidebar recomputes; the inset reads. Same number, every year — a
       // shared depletion year with diverging curves would still mislead.
-      const fromSidebar = budgetDepletionYear    // referenced for intent
-      void fromSidebar
-      const sidebarRemaining = Math.max(
-        0,
-        budget.initial_budget_gt
-          - Object.entries(budget.projected_emissions)
-            .filter(([y]) => Number(y) >= budget.start_year && Number(y) < point.year)
-            .reduce((s, [, v]) => s + v, 0),
-      )
+      // Call the SHIPPED helper. This used to re-derive the sum inline with
+      // its own Object.entries/reduce — a fifth copy of the arithmetic, living
+      // in the very test that exists because copies diverge. It asserted "the
+      // engine agrees with a copy in this file", not "the engine agrees with
+      // what the sidebar actually renders", and it would have kept passing
+      // against a helper that had drifted.
+      const sidebarRemaining = remainingBudgetAt(budget, point.year)
       expect(point.remaining).toBeCloseTo(sidebarRemaining, 9)
     }
   })

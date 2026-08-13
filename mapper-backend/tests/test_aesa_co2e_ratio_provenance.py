@@ -387,3 +387,34 @@ def test_the_persisted_source_names_the_right_ensemble_per_target():
     assert "AR6 C3+C4" in c2 and "C1+C2" not in c2
     for src in (c15, c2):
         assert "Tilsted & Bjorn" in src and "10.1007/s10584-023-03583-4" in src
+
+
+def test_the_source_names_the_affine_AND_the_offset_set_per_target():
+    """Both derivation sets, each with the file it is reproducible from.
+
+    The label is written into every saved config and every exported workbook,
+    which is where a reader meets it. Naming the ensemble ONCE for m, b and C
+    together left them unable to tell which of the two shipped sets a given
+    coefficient came from — and an affine paired with the wrong ensemble's
+    offset is exactly the defect the per-target `CO2eBudgetFit` exists to make
+    unrepresentable.
+    """
+    from mapper.core.aesa_engine import co2e_conversion_for_budget
+
+    for bid, x20, x25, fit in (
+        ("IPCC_AR6_1p5C_50", 500, 300, CO2E_FIT_1P5C),
+        ("IPCC_AR6_2C_50", 1350, 1150, CO2E_FIT_2C),
+    ):
+        src = co2e_conversion_for_budget(
+            {"id": bid, "original_gt_from_2020": x20,
+             "remaining_gt_from_2025": x25}).source
+        assert fit.pairs_file in src, f"{bid}: source omits the regression file"
+        assert fit.offset_file in src, f"{bid}: source omits the offset file"
+        # And it says the two share an ensemble, rather than leaving it implied.
+        assert "SAME ensemble" in src
+        assert src.count(fit.ensemble) >= 2, (
+            "the ensemble must be attached to the affine AND to the offset"
+        )
+        # The other leg's files must not appear.
+        other = CO2E_FIT_2C if fit is CO2E_FIT_1P5C else CO2E_FIT_1P5C
+        assert other.pairs_file not in src and other.offset_file not in src

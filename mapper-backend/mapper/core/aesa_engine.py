@@ -120,6 +120,48 @@ def load_carbon_budget_options() -> list[dict]:
     return raw.get("options", [])
 
 
+@dataclass(frozen=True)
+class CarbonBudgetVintage:
+    """The budget data's baseline years, read from ``carbon_budgets.json``.
+
+    The AR6 budgets are published "from the beginning of 2020"
+    (``reference_year``); MApper ships them re-baselined to the start of
+    ``base_year`` by deducting the cumulative emissions of
+    ``reference_year..deduction_end_year``.
+
+    ONE place writes this vintage down: the data file. Everything that used to
+    hardcode "2025" now derives it from here — ``build_carbon_budget``'s
+    ``start_year`` default and the config-workbook Reference sheet's
+    "N Gt from YYYY" detail. A re-baselining (say to 2030) is then a data edit
+    that moves every dependent surface, and fails
+    ``test_carbon_budget_vintage_is_read_from_the_data_file`` if a consumer is
+    left behind — where previously the test asserted 2025 against the same 2025
+    it was derived from and would have stayed green.
+    """
+    reference_year: int       # AR6's own baseline (budgets "from 2020")
+    deduction_end_year: int   # last year covered by the deduction
+    consumed_gt: float        # the deduction itself, Gt CO2
+
+    @property
+    def base_year(self) -> int:
+        """The year MApper's budgets are counted from — start of the first year
+        NOT covered by the deduction."""
+        return self.deduction_end_year + 1
+
+    @property
+    def deducted_years(self) -> int:
+        return self.deduction_end_year - self.reference_year + 1
+
+
+def carbon_budget_vintage() -> CarbonBudgetVintage:
+    raw = _read_json("carbon_budgets.json")
+    return CarbonBudgetVintage(
+        reference_year=int(raw["start_year_reference"]),
+        deduction_end_year=int(raw["deduction_end_year"]),
+        consumed_gt=float(raw["consumed_2020_2024_gt"]),
+    )
+
+
 # ── CO2 → CO2e (Kyoto-gases, GWP100) budget-basis conversion (sourced) ───────
 # One METHOD, refitted per temperature target: map a CUMULATIVE-FROM-2020 CO2
 # budget x (GtCO2) to the cumulative-from-2020 CO2e budget y (GtCO2e) with an
@@ -142,6 +184,26 @@ def load_carbon_budget_options() -> list[dict]:
 # target makes that mismatch unrepresentable: a third target cannot be added
 # without supplying both, and `test_no_target_mixes_ensembles` fails if a fit's
 # declared ensemble disagrees with the categories in its own data files.
+#
+# THAT DATA CHECK IS THE MIX-UP GUARD, NOT THE SANITY BAND. The band in
+# `test_factor_values_in_sanity_band` ([1.45, 2.20] + the budget ordering)
+# catches gross STRUCTURAL errors — a dropped or sign-flipped term, a unit
+# error, conflated baselines — but it does NOT catch an ensemble mix-up: the
+# mismatch that actually shipped before the refit lands every factor inside the
+# band with the ordering intact. Measured, with the full injected-error table,
+# in the README's "What the sanity band does and does not catch".
+#
+# TWO PROPERTIES OF f WORTH KNOWING BEFORE CHANGING ANY OF THIS (README A1/A2):
+#   A1  f mixes provenance by construction — x25 carries the OBSERVED 200 GtCO2
+#       deduction (GCB 2024) while C is a MODELLED ensemble median. No option is
+#       pure, because x20 is an AR6-ASSESSED budget rather than an ensemble
+#       statistic. Keeping the ensemble median is a decision; the alternative is
+#       quantified (0.53% on the shipped default).
+#   A2  `with_basis_applied` scales the budget AND the pathway by the same f, so
+#       SR_CO2e = SR_CO2 / f exactly and THE DEPLETION YEAR IS INVARIANT. A true
+#       per-year CO2e pathway (mechanism "c") is deliberately unimplemented: the
+#       SSP trajectories store CO2 only, and a year-varying ratio would move the
+#       depletion year — a methodological change, not a refinement.
 
 
 @dataclass(frozen=True)
@@ -222,11 +284,20 @@ def co2e_conversion_for_budget(option: dict) -> RatioCO2eConversion:
     return RatioCO2eConversion(
         factor=f,
         source=(
-            f"CO2→CO2e GWP100 budget factor f={f:.4f} = (m·x20+b−C)/x25; "
-            f"m={fit.slope}, b={fit.intercept}, C={fit.offset_2020_2024_gt} GtCO2e "
-            f"— all refitted over {fit.ensemble} "
-            f"(method: Meinshausen et al. 2018/2019 as applied by Tilsted & Bjorn "
-            f"2023, doi:10.1007/s10584-023-03583-4). "
+            # Names the affine AND the offset set explicitly, each with the file
+            # it is reproducible from. The ensemble label alone left a reader of
+            # an exported workbook unable to tell WHICH of the two derivation
+            # sets a coefficient came from — and pairing an affine with the
+            # wrong ensemble's offset is precisely the defect this shape exists
+            # to make visible.
+            f"CO2→CO2e GWP100 budget factor f={f:.4f} = (m·x20+b−C)/x25. "
+            f"Affine m={fit.slope}, b={fit.intercept} — OLS over {fit.ensemble} "
+            f"(2020→net-zero CO2), {fit.pairs_file}. "
+            f"Offset C={fit.offset_2020_2024_gt} GtCO2e — median 2020-2024 "
+            f"cumulative CO2e over the SAME ensemble {fit.ensemble}, "
+            f"{fit.offset_file}. "
+            f"Method: Meinshausen et al. 2018/2019 as applied by Tilsted & Bjorn "
+            f"2023, doi:10.1007/s10584-023-03583-4. "
             f"x20={option.get('original_gt_from_2020')} GtCO2, "
             f"x25={option.get('remaining_gt_from_2025')} GtCO2. "
             f"See mapper/data/aesa/co2e_ratio/README.md"
@@ -305,9 +376,14 @@ def build_carbon_budget(
     # per-year safe allocation and collapsing the climate-change SR (5AR fix).
     budget_option_id: str = "IPCC_AR6_2C_50",
     ssp_id: str = "SSP1-2.6",
-    start_year: int = 2025,
+    # None => the budget data's own base year (`carbon_budget_vintage()`), i.e.
+    # the first year NOT covered by the 2020-2024 deduction. DERIVED, not a
+    # literal 2025: the vintage is written down once, in carbon_budgets.json.
+    start_year: int | None = None,
     end_year: int = 2100,
 ) -> CarbonBudgetConfig:
+    if start_year is None:
+        start_year = carbon_budget_vintage().base_year
     opts = {o["id"]: o for o in load_carbon_budget_options()}
     ssps = {s["id"]: s for s in load_ssp_trajectories()}
     budget = opts.get(budget_option_id)

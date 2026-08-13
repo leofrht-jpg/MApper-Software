@@ -576,3 +576,60 @@ def test_unsaved_draft_export_still_round_trips():
     assert len(got["sharing"]["principles"]) == len(body["sharing"]["principles"])
     assert got["carbon_budget"] is not None
     assert got["carbon_budget"]["budget_source"] == body["carbon_budget"]["budget_source"]
+
+
+# ── Phase B — the template DESCRIBES the conversion correctly ────────────────
+#
+# The AESACFG workbook is what a user edits and what a reviewer reads. Two of
+# its notes were wrong or absent: `initial_budget_gt` was annotated
+# "Gt CO2 (or CO2e once basis-applied)", which is not true of the STORED value
+# (it is always the pre-basis CO2 figure; the basis is applied at compute), and
+# nothing on the sheet or in the Instructions said the factor is derived per
+# TEMPERATURE TARGET rather than per SSP — the single most misreadable thing
+# about it.
+
+
+def _cb_notes(wb) -> dict:
+    ws = wb["Carbon Budget"]
+    return {str(r[0]): str(r[2] or "") for r in ws.iter_rows(values_only=True) if r[0]}
+
+
+def _instructions(wb) -> str:
+    return "\n".join(
+        str(r[0] or "") for r in wb["Instructions"].iter_rows(values_only=True))
+
+
+def test_initial_budget_note_says_the_stored_value_is_pre_basis():
+    notes = _cb_notes(_build_sharing_workbook(_bundle().sharing, bundle=_bundle()))
+    note = notes["initial_budget_gt"]
+    assert "pre-basis" in note or "ALWAYS the pre-basis" in note
+    assert "co2e_factor" in note or "applied at compute" in note
+    # The old note claimed the cell might already be CO2e. It never is.
+    assert "or CO2e once basis-applied" not in note
+
+
+def test_co2e_factor_note_states_the_derivation_and_its_axis():
+    notes = _cb_notes(_build_sharing_workbook(_bundle().sharing, bundle=_bundle()))
+    note = notes["co2e_factor"]
+    assert "PER TEMPERATURE TARGET" in note, "the per-target axis must be explicit"
+    assert "not per SSP" in note, "the misreading must be named"
+    assert "(m*x20 + b - C) / x25" in note, "the formula must be stated"
+    assert "inert" in note and "reject" in note
+
+
+def test_instructions_describe_the_conversion_and_the_invariance():
+    text = _instructions(_build_sharing_workbook(_bundle().sharing, bundle=_bundle()))
+    assert "f = (m*x20 + b - C) / x25" in text
+    assert "PER TEMPERATURE TARGET" in text and "not per SSP" in text
+    assert "C1+C2" in text and "C3+C4" in text
+    # The two consequences a user needs: SR divided by f, depletion year fixed.
+    assert "depletion year does not move" in text
+    assert "divided by that factor" in text
+    # And the pointer to the full derivation.
+    assert "co2e_ratio/README.md" in text
+
+
+def test_reference_sheet_still_locked_and_data_driven():
+    """Phase B derived the base year here (B7); the sheet must stay read-only."""
+    wb = _build_sharing_workbook(_bundle().sharing, bundle=_bundle())
+    assert wb["Reference"].protection.sheet is True

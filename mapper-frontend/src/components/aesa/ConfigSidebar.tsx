@@ -14,7 +14,10 @@ import { Button } from '../ui/Button'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { NumberInput } from '../ui/NumberInput'
 import { useAESAStore, type AESAConfigLoadKind } from '../../stores/aesaStore'
-import { budgetDepletionYear, remainingBudgetSeries } from '../../utils/carbonBudget'
+import {
+  budgetDepletionYear, budgetUnitLabel, formatBudgetGt, remainingBudgetSeries,
+  withBasisApplied,
+} from '../../utils/carbonBudget'
 import { computeMethodCoverage, coverageSummary } from '../../utils/aesaMethodCoverage'
 import { resolveBoundarySet } from '../../utils/aesaBoundaryLabels'
 import { useDSMStore } from '../../stores/dsmStore'
@@ -1753,10 +1756,14 @@ function CarbonBudgetEditor({
         }}
         style={inputStyle}
       >
+        {/* These are the PUBLISHED AR6 CO2 budgets — the input to the
+            conversion, not the budget in effect. They stay labelled CO2 on
+            either basis; what follows the basis is the sparkline below and
+            everything downstream of compute. */}
         {options.map((o) => (
-          <option key={o.id} value={o.id}>{o.name} — {o.remaining_gt_from_2025} Gt</option>
+          <option key={o.id} value={o.id}>{o.name} — {o.remaining_gt_from_2025} Gt CO₂</option>
         ))}
-        {selectedOption === 'custom' && <option value="custom">Custom ({budget.initial_budget_gt} Gt)</option>}
+        {selectedOption === 'custom' && <option value="custom">Custom ({budget.initial_budget_gt} Gt CO₂)</option>}
       </select>
 
       <label style={labelStyle}>SSP trajectory</label>
@@ -1785,8 +1792,19 @@ function CarbonBudgetEditor({
   )
 }
 
-function BudgetSparkline({ budget }: { budget: import('../../api/client').CarbonBudgetConfig }) {
+function BudgetSparkline({ budget: rawBudget }: { budget: import('../../api/client').CarbonBudgetConfig }) {
   const W = 240, H = 48, PAD = 2
+  // B2 — draw and label the budget the way COMPUTE will see it. The stored
+  // `initial_budget_gt` is always the pre-basis CO2 figure, so the caption used
+  // to read "vs 1150 Gt" on a CO2-eq config: a CO2 magnitude presented as the
+  // budget, and the sidebar half of the workbook's "initial 1150 / remaining
+  // 1707" artefact.
+  //
+  // Basis-applying scales the budget AND the pathway by the same factor, so the
+  // CURVE AND THE DEPLETION YEAR ARE UNCHANGED — only the magnitude in the
+  // caption moves. Nothing computed shifts here (see README "A2").
+  const budget = withBasisApplied(rawBudget)
+  const unit = budgetUnitLabel(rawBudget)
   // The arithmetic lives in utils/carbonBudget.ts, which mirrors the engine's
   // `remaining_budget` exactly. This used to accumulate inline and INCLUSIVELY
   // (`cum += E[y]` read at y) while the engine sums `[start_year, year)`, so
@@ -1811,7 +1829,7 @@ function BudgetSparkline({ budget }: { budget: import('../../api/client').Carbon
         <path d={path} fill="none" stroke="var(--mod-aesa)" strokeWidth={1.5} />
       </svg>
       <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
-        Cumulative emissions vs {budget.initial_budget_gt} Gt budget
+        Cumulative emissions vs {formatBudgetGt(budget.initial_budget_gt)} {unit} budget
         {depletionYear !== null && (
           <span data-testid="budget-sparkline-depletion" style={{ color: 'var(--danger)' }}>
             {' '}· depleted ~{depletionYear}

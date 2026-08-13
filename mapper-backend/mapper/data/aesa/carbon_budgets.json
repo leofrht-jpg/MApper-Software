@@ -1,6 +1,7 @@
 {
   "_notice": "Remaining global CO2 budgets from 2025, derived from IPCC AR6 WG1 SPM Table SPM.2 ('Estimates of remaining carbon budgets from the beginning of 2020', Climate Change 2021: The Physical Science Basis, IPCC, 2021), adjusted by -200 Gt CO2 for cumulative 2020-2024 emissions per Global Carbon Budget 2024 (Friedlingstein et al. 2024, Earth System Science Data, 16, 2625-2659, https://doi.org/10.5194/essd-16-2625-2024). Values follow IPCC Table SPM.2 rounding convention (nearest 50 GtCO2); the 200 Gt deduction is itself rounded from the GCB 2024 ~209-225 Gt range at AR6 granularity for citation-chain consistency. All four `original_gt_from_2020` values verified against AR6 SPM Table SPM.2 published values as of Patch X1++ (cross-checked against Climate Brink's Hausfather 2023 comparison of AR6 vs Forster 2023 budgets, and the AR6CarbonBudgetCalc reference implementation; see sources[]). Values flagged provisional pending pre-publication refresh against the latest IPCC synthesis.",
   "start_year_reference": 2020,
+  "deduction_end_year": 2024,
   "consumed_2020_2024_gt": 200,
   "sources": [
     {

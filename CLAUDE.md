@@ -1663,6 +1663,109 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
   shift). The downward SR shift fires only on an explicit CO2e_GHG + sourced
   ratio.
 
+#### Phase B — what the conversion is, and what it is not
+
+The full account is `mapper/data/aesa/co2e_ratio/README.md`. Four things that
+have already been misread once and are worth carrying here:
+
+- **`f` is per TEMPERATURE TARGET, not per SSP.** It converts a budget, not a
+  pathway. The AR6 ensemble supplying `(m, b)` and `C` is chosen by the budget's
+  temperature (C1+C2 for 1.5 °C, C3+C4 for 2 °C); the SSP the user picks does
+  not enter `f` at all.
+- **The mix-up guard is `test_no_target_mixes_ensembles`, NOT the sanity band.**
+  The band (`[1.45, 2.20]` + the budget ordering) catches gross STRUCTURAL
+  errors — a dropped or sign-flipped term, a unit error, conflated baselines.
+  It does **not** catch an ensemble mix-up: swapping the two legs' offsets
+  leaves every factor inside the band with the ordering intact, and so does the
+  exact mismatch that shipped before the refit. Where it does catch a swap the
+  margin is 0.001. Full injected-error table in the README. Don't treat a green
+  band as evidence the ensembles are paired correctly.
+- **A1 — `f` mixes observed and modelled provenance, deliberately.** `x₂₅`
+  carries the OBSERVED −200 GtCO₂ (GCB 2024); `C` is a MODELLED ensemble median.
+  No option is pure, because `x₂₀` is an AR6-ASSESSED budget rather than an
+  ensemble statistic. Decision: keep the ensemble median, so `y₂₅` stays
+  internally consistent with the `y₂₀` the affine produced. The alternative
+  (rescaling `C` to the observed window) is quantified: it moves `f` by
+  −0.53 % at 2 °C/50 and −4.18 % at 1.5 °C/67 — below the budget data's own
+  50 GtCO₂ rounding on the default. Don't "fix" the mixture without reading A1.
+- **A2 — the depletion year is INVARIANT under the basis.** One `f` scales the
+  budget AND the pathway, so `SR_CO2e = SR_CO2 / f` exactly and `remaining`
+  scales uniformly. That is what makes every basis-following label safe. The
+  price is that a real pathway's CO₂e/CO₂ ratio drifts (≈1.37 instantaneous at
+  2025 → 1.74–5.53 cumulative-to-2100 across the AR6 REMIND PkBudg scenarios)
+  while `f` is constant. Mechanism (c), a true per-year CO₂e pathway, is
+  DELIBERATELY unimplemented: `ssp_trajectories.json` stores `anchors_gt_co2`
+  only, the AR6 CO₂e series are a different model/scenario set, and a
+  year-varying ratio would move the depletion year — a methodological change,
+  not a refinement.
+
+Every quantity above is recomputed from the shipped CSVs and asserted against
+the README by `tests/test_aesa_co2e_documented_claims.py`, so none of it can go
+stale silently.
+
+#### Budget labels follow the basis, in BOTH label and value (Phase B, B1/B2)
+
+The stored `initial_budget_gt` is ALWAYS the pre-basis CO₂ figure. Any surface
+that prints a budget magnitude must first put it in the basis compute will use —
+`CarbonBudgetConfig.with_basis_applied()` on the backend,
+`withBasisApplied()` in `src/utils/carbonBudget.ts` on the frontend — and label
+it accordingly.
+
+The defect this fixes: the exported workbook wrote "Initial budget (Gt CO2) =
+1150.0" on its Carbon Budget sheet while the Impacts-vs-SOS chain columns, from
+the same run, wrote "Remaining Budget (Gt CO2e) = 1707.2" — reading as a
+remaining budget exceeding its own initial budget, in files that get attached to
+papers. The sidebar sparkline had the same shape ("vs 1150 Gt" under a CO₂-eq
+config), and the timeline inset had it PLUS an arithmetic error: `totalAllocated
+= initial_budget_gt − last engine remaining` subtracted a CO₂-eq remaining from a
+CO₂ initial.
+
+The one thing that legitimately stays labelled CO₂ on a CO₂-eq run is the
+conversion's INPUT: the published AR6 budgets in the option dropdown, the
+`Source` citation prose, and the explicit "Initial budget before conversion
+(Gt CO2)" row. Locked by `tests/test_aesa_budget_basis_labels.py`,
+`tests/carbonBudgetBasisLabels.test.tsx` and the sidebar render tests in
+`tests/aesaConfigBudgetBasis.test.tsx`.
+
+#### One implementation, enforced on BOTH sides (Phase B, item 5)
+
+The depletion arithmetic has had five copies (the engine, the timeline inset,
+the sidebar sparkline, the shared helper, and one in a TEST that asserted the
+engine against itself). `tests/carbonBudgetSingleImplementation.test.ts` and
+`mapper-backend/tests/test_carbon_budget_single_implementation.py` now guard
+both trees.
+
+They forbid **element-wise access** to `projected_emissions` rather than
+enumerating accumulation idioms — you cannot sum what you cannot reach, so
+`+=`, `reduce`, a `for…of`, a comprehension and destructuring are all covered by
+one rule. Where enumeration is legitimate (`api/aesa.py` writes a per-year
+table; tests marshal fixtures) the narrower **accumulation** rule applies
+instead. Also guarded: comparing a running total to `initial_budget_gt` (any
+operator), re-deriving `remaining / (end_year − year)`, applying the CO₂e factor
+by hand (including as a hard-coded literal), and reading the budget vintage
+outside `carbon_budget_vintage()`. Both guards assert their own regexes against
+a synthetic corpus, so the sweep cannot pass vacuously.
+
+#### The budget vintage is written down ONCE (Phase B, B4/B7)
+
+`carbon_budgets.json` carries `start_year_reference` (2020),
+`deduction_end_year` (2024) and `consumed_2020_2024_gt` (200);
+`carbon_budget_vintage()` in `aesa_engine.py` is the only reader. The
+`build_carbon_budget` `start_year` default and the locked Reference sheet's
+"N Gt from YYYY" detail both DERIVE from it — previously both said 2025 as a
+literal, and the test asserted `cfg.start_year == 2025` against the same literal
+it came from, verifying nothing. The −200 deduction's prose (the `_notice` and
+all four per-option `source` strings) is now checked against the numeric field,
+so a revised deduction cannot leave four stale sentences behind.
+
+#### `provisional` fails CLOSED (Phase B, item 7)
+
+`CarbonBudgetConfig.provisional` and `PlanetaryBoundary.provisional` default to
+**True**. Every shipped budget option, SSP trajectory and boundary sets it
+explicitly, so the default was never exercised — but it was `False`, meaning an
+object built in code without the flag came out silently NON-provisional and
+would render without the caveat. A safety flag must fail closed.
+
 ### AESA compute source toggle — Fleet (DSM) vs Single-product (LCA) (Part C1)
 
 The AESA compute path is **source-agnostic**. A toggle at the top of the

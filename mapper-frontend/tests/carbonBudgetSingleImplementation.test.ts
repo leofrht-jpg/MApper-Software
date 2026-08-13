@@ -27,9 +27,24 @@ import { join, relative, resolve } from 'node:path'
 // `utils/carbonBudget.ts`. Neither needs to accumulate inline.
 
 const SRC = resolve(process.cwd(), 'src')
+const TESTS = resolve(process.cwd(), 'tests')
 
-/** The one module allowed to accumulate projected_emissions. */
+/** The one module allowed to implement the rule. */
 const CARBON_BUDGET_UTIL = 'utils/carbonBudget.ts'
+
+/**
+ * Files that may reference `projected_emissions` as a WHOLE VALUE.
+ *
+ * Referencing the field is not the offence — indexing it, iterating it or
+ * summing it is. These two do neither: `client.ts` declares its type, and
+ * ConfigSidebar hands the SSP's whole record to `onPatch`. The rules below
+ * distinguish the two cases structurally, so this list stays short and a new
+ * entry has to be argued for.
+ */
+const WHOLE_VALUE_OK = new Set([
+  'api/client.ts',
+  'components/aesa/ConfigSidebar.tsx',
+])
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const name of readdirSync(dir)) {
@@ -47,39 +62,173 @@ function stripComments(src: string): string {
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
 }
 
-describe('the carbon-budget rule has exactly one frontend implementation', () => {
-  const files = walk(SRC)
+/**
+ * Every way we know of to walk `projected_emissions` element by element.
+ *
+ * The 2026-08 review's point: matching `+=` alone would miss `reduce`, a
+ * `for…of` accumulator and destructuring, and the codebase had ALREADY grown
+ * five copies of this arithmetic — four in src, one in tests. So the rule is
+ * inverted: instead of enumerating accumulation idioms, forbid ELEMENT ACCESS.
+ * You cannot sum what you cannot reach, whatever loop you reach for.
+ */
+const ELEMENT_ACCESS: Array<[string, RegExp]> = [
+  // b.projected_emissions[y] — indexing
+  ['index', /\.projected_emissions\s*\[/],
+  // b.projected_emissions.reduce/map/forEach/filter/… — method chain
+  ['method chain', /\.projected_emissions\s*\??\.\s*[A-Za-z_$]/],
+  // Object.entries/keys/values(b.projected_emissions) — the destructuring route
+  ['Object.entries/keys/values', /Object\s*\.\s*(entries|keys|values)\s*\([^)]*projected_emissions/],
+  // for (const … of … projected_emissions …) — the for…of accumulator
+  ['for…of', /\bfor\s*\([^)]*\bof\b[^)]*projected_emissions/],
+  // const { projected_emissions } = budget — destructuring the field out
+  ['destructuring', /\{[^{}]*\bprojected_emissions\b[^{}]*\}\s*=[^=]/],
+]
 
-  it('finds the source tree (guards against a silently empty sweep)', () => {
-    expect(files.length).toBeGreaterThan(50)
-    expect(files.some((f) => relative(SRC, f) === CARBON_BUDGET_UTIL)).toBe(true)
+/**
+ * ACCUMULATION — the narrower rule, used where element access is legitimate.
+ *
+ * In `tests/` the strict rule above is the wrong tool: a test may marshal a
+ * fixture's string-keyed record into a number-keyed one, or assert that
+ * `withBasisApplied` scaled year 2050. Neither is a copy of the rule. What IS a
+ * copy is SUMMING ACROSS YEARS, so that is what these match. Applied to
+ * whitespace-flattened source, because the copy that existed spanned four lines
+ * as an `Object.entries(...).filter(...).reduce(...)` chain.
+ */
+const ACCUMULATION: Array<[string, RegExp]> = [
+  // cum += b.projected_emissions[y]
+  ['+= accumulator', /\+=\s*[\w$.[\]'"]*projected_emissions\s*[[.]/],
+  // …projected_emissions… .reduce( — including via Object.entries/filter
+  ['reduce over the field', /projected_emissions[^;]{0,200}?\.reduce\s*\(/],
+]
+
+/**
+ * Comparing a running total against the cap — the other half of the bug.
+ * Widened from `>|>=` to EVERY comparison operator: `<=` inverted is the same
+ * mistake, and `===` on a float cap is a bug of its own.
+ */
+const CAP_COMPARE =
+  /(>=|<=|>|<|===|!==|==|!=)\s*[A-Za-z_$][\w$]*\.initial_budget_gt|[A-Za-z_$][\w$]*\.initial_budget_gt\s*(>=|<=|>|<|===|!==|==|!=)/
+
+function offenders(files: string[], root: string, allow: (rel: string) => boolean,
+                   rules: Array<[string, RegExp]>): string[] {
+  const out: string[] = []
+  for (const f of files) {
+    const rel = relative(root, f)
+    if (allow(rel)) continue
+    const src = stripComments(readFileSync(f, 'utf-8'))
+    for (const [label, re] of rules) {
+      if (re.test(src)) out.push(`${rel} (${label})`)
+    }
+  }
+  return out
+}
+
+describe('the carbon-budget rule has exactly one frontend implementation', () => {
+  const srcFiles = walk(SRC)
+  const testFiles = walk(TESTS)
+
+  it('finds both trees (guards against a silently empty sweep)', () => {
+    expect(srcFiles.length).toBeGreaterThan(50)
+    expect(testFiles.length).toBeGreaterThan(20)
+    expect(srcFiles.some((f) => relative(SRC, f) === CARBON_BUDGET_UTIL)).toBe(true)
   })
 
-  it('no component accumulates projected_emissions itself', () => {
-    // The construct that shipped the bug, twice:
-    //   cum += budget.projected_emissions[y] ?? 0
-    const accumulation = /\+=\s*[A-Za-z_$][\w$]*\.projected_emissions\s*\[/
-    const offenders = files.filter((f) => {
-      if (relative(SRC, f) === CARBON_BUDGET_UTIL) return false
-      return accumulation.test(stripComments(readFileSync(f, 'utf-8')))
-    }).map((f) => relative(SRC, f))
+  it('the rules actually match the constructs they name', () => {
+    // A guard whose regexes silently stop matching is worse than no guard, and
+    // this one is pure text matching over a moving codebase. Assert against a
+    // synthetic corpus of every shape, so the sweep can never pass vacuously.
+    const corpus: Record<string, string> = {
+      'index': 'cum += b.projected_emissions[y] ?? 0',
+      'method chain': 'const t = b.projected_emissions.reduce((s, v) => s + v, 0)',
+      'Object.entries/keys/values': 'for (const [y, v] of Object.entries(b.projected_emissions)) t += v',
+      'for…of': 'for (const y of Object.keys(b.projected_emissions)) t += y',
+      'destructuring': 'const { projected_emissions } = budget',
+    }
+    for (const [label, re] of ELEMENT_ACCESS) {
+      expect(re.test(corpus[label]), `${label} rule no longer matches its own example`).toBe(true)
+    }
+    // The legitimate whole-value pass-through must NOT match any of them.
+    const passthrough = 'onPatch({ ssp_scenario: s.id, projected_emissions: s.projected_emissions })'
+    for (const [label, re] of ELEMENT_ACCESS) {
+      expect(re.test(passthrough), `${label} rule flags a whole-value pass-through`).toBe(false)
+    }
+    const accCorpus: Record<string, string> = {
+      '+= accumulator': 'cum += b.projected_emissions[y] ?? 0',
+      // The exact shape that lived in carbonBudgetPanelAgreement, flattened.
+      'reduce over the field':
+        'budget.initial_budget_gt - Object.entries(budget.projected_emissions)'
+        + '.filter(([y]) => Number(y) < point.year).reduce((s, [, v]) => s + v, 0)',
+    }
+    for (const [label, re] of ACCUMULATION) {
+      expect(re.test(accCorpus[label]), `${label} rule no longer matches its own example`).toBe(true)
+    }
+    // Fixture marshalling and per-year assertions are NOT accumulation.
+    for (const [label, re] of ACCUMULATION) {
+      expect(re.test('for (const [y, v] of Object.entries(fx.projected_emissions)) out[Number(y)] = v'),
+        `${label} rule flags fixture marshalling`).toBe(false)
+      expect(re.test('expect(applied.projected_emissions[2050]).toBeCloseTo(40 * F, 9)'),
+        `${label} rule flags a per-year assertion`).toBe(false)
+    }
+    for (const op of ['>=', '<=', '>', '<', '===', '!==']) {
+      expect(CAP_COMPARE.test(`if (used ${op} budget.initial_budget_gt) return y`)).toBe(true)
+      expect(CAP_COMPARE.test(`if (budget.initial_budget_gt ${op} used) return y`)).toBe(true)
+    }
+  })
 
-    expect(offenders, `accumulate projected_emissions outside ${CARBON_BUDGET_UTIL}; `
-      + 'call budgetDepletionYear/remainingBudgetSeries instead, or read '
-      + 'remaining_budget_gt off the SR rows if a compute has already run')
+  it('no source file walks projected_emissions element by element', () => {
+    const bad = offenders(
+      srcFiles, SRC,
+      (rel) => rel === CARBON_BUDGET_UTIL || WHOLE_VALUE_OK.has(rel),
+      ELEMENT_ACCESS,
+    )
+    expect(bad, `walk projected_emissions outside ${CARBON_BUDGET_UTIL}; call `
+      + 'remainingBudgetAt/remainingBudgetSeries/budgetDepletionYear instead, or '
+      + 'read remaining_budget_gt off the SR rows if a compute has already run')
       .toEqual([])
   })
 
-  it('no component derives a depletion year by comparing a running total to the cap', () => {
-    // The other half of the bug: `.find((p) => p.used >= initial_budget_gt)`.
-    const capCompare = /(>=|>)\s*[A-Za-z_$][\w$]*\.initial_budget_gt/
-    const offenders = files.filter((f) => {
-      if (relative(SRC, f) === CARBON_BUDGET_UTIL) return false
-      return capCompare.test(stripComments(readFileSync(f, 'utf-8')))
-    }).map((f) => relative(SRC, f))
+  it('the whole-value allowlist really only passes the whole value', () => {
+    // Allowlisting a FILE would let a future accumulation slip in beside the
+    // pass-through, so each allowlisted file is still checked by the rules —
+    // this asserts the allowlist is about the construct, not the filename.
+    for (const rel of WHOLE_VALUE_OK) {
+      const src = stripComments(readFileSync(join(SRC, rel), 'utf-8'))
+      for (const [label, re] of ELEMENT_ACCESS) {
+        expect(re.test(src), `${rel} now does more than pass the value through (${label})`)
+          .toBe(false)
+      }
+    }
+  })
 
-    expect(offenders, 'compare a cumulative total against initial_budget_gt; '
+  it('no source file derives a depletion year by comparing a total to the cap', () => {
+    const bad = offenders(srcFiles, SRC, (rel) => rel === CARBON_BUDGET_UTIL,
+                          [['cap compare', CAP_COMPARE]])
+    expect(bad, 'compare a cumulative total against initial_budget_gt; '
       + 'use budgetDepletionYear() so the exclusive-sum rule is applied')
+      .toEqual([])
+  })
+
+  it('no TEST file re-implements the rule either', () => {
+    // A copy in tests is not harmless: `carbonBudgetPanelAgreement` used to
+    // re-derive the sum inline with Object.entries + reduce and assert the
+    // ENGINE against it — so it verified "the engine agrees with a copy in this
+    // file", and would have kept passing against a drifted helper.
+    //
+    // The ACCUMULATION rules, not the strict element-access ones: tests
+    // legitimately marshal fixtures and assert individual years. Fixtures are
+    // data, and this guard file quotes the constructs by name, so both are out.
+    const flat = (src: string) => src.replace(/\s+/g, ' ')
+    const bad: string[] = []
+    for (const f of testFiles) {
+      const rel = relative(TESTS, f)
+      if (rel.startsWith('fixtures/') || rel === 'carbonBudgetSingleImplementation.test.ts') continue
+      const src = flat(stripComments(readFileSync(f, 'utf-8')))
+      for (const [label, re] of [...ACCUMULATION, ['cap compare', CAP_COMPARE] as [string, RegExp]]) {
+        if (re.test(src)) bad.push(`${rel} (${label})`)
+      }
+    }
+    expect(bad, 'a test re-implements the carbon-budget arithmetic; import the '
+      + 'helper from src/utils/carbonBudget so the test asserts what ships')
       .toEqual([])
   })
 
@@ -90,10 +239,14 @@ describe('the carbon-budget rule has exactly one frontend implementation', () =>
   })
 
   it('the post-compute inset still reads the engine rather than the helper', () => {
-    // TimelineView must NOT be migrated onto utils/carbonBudget — once a
+    // TimelineView must NOT be migrated onto the depletion helpers — once a
     // compute exists, the engine's own numbers are available and authoritative.
+    // It MAY use the basis helpers (`withBasisApplied` is a unit conversion,
+    // not a re-derivation of the series).
     const timeline = readFileSync(join(SRC, 'components/aesa/TimelineView.tsx'), 'utf-8')
     expect(timeline).toContain('remaining_budget_gt')
-    expect(stripComments(timeline)).not.toContain('budgetDepletionYear')
+    const stripped = stripComments(timeline)
+    expect(stripped).not.toContain('budgetDepletionYear')
+    expect(stripped).not.toContain('remainingBudgetSeries')
   })
 })

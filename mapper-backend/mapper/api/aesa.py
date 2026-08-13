@@ -1065,10 +1065,17 @@ def _build_sharing_workbook(
     for layer in preset.chain.layers:
         for principle_id, years in layer.data.items():
             mode = layer.resolution_for(principle_id)
+            # The Source column has existed since this sheet did, and was
+            # written as "" until provenance was carried on the layer. It is
+            # per (layer, principle) and repeated on every year row of that
+            # series, for the same reason Resolution is: the sheet is
+            # row-shaped, and a user reading one row should not have to find
+            # the first row of the series to learn where the number came from.
+            src = layer.sources.get(principle_id, "")
             for year, pair in sorted(years.items()):
                 sys_val, glob_val = pair
                 ws.append([layer.layer_number, principle_id, sys_val, glob_val,
-                           year, mode, ""])
+                           year, mode, src])
     _autosize_sharing(ws)
 
     # Sheet: Method -> PB mapping. CONFIG-LEVEL — this has no home on
@@ -1599,6 +1606,7 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
             "description": str(r[i_cdesc] or "").strip() if i_cdesc >= 0 else "",
             "data": {},
             "resolution": {},
+            "sources": {},
         }
     if not layers_meta:
         raise ValueError("Downscaling Chain sheet is empty.")
@@ -1613,6 +1621,10 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
     # Optional: workbooks exported before the per-principle resolution mode
     # existed have no such column, and must keep importing unchanged.
     i_res = _col(d_headers, "resolution", "resolution mode")
+    # Optional for the same reason: workbooks exported while the column was
+    # written blank, and workbooks from before it carried anything, must keep
+    # importing unchanged.
+    i_src = _col(d_headers, "source")
     if min(i_dl, i_dp, i_sv, i_gv, i_yr) < 0:
         raise ValueError(
             "Sharing Data sheet requires Layer, Principle, System Value, Global Value, Year columns.",
@@ -1635,6 +1647,13 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
         if pid not in principle_ids:
             raise ValueError(f"Sharing Data row references unknown principle '{pid}'.")
         layers_meta[num]["data"].setdefault(pid, {})[year] = (sys_v, glob_v)
+
+        # Source is per (layer, principle) but repeated per row. Unlike
+        # Resolution, a row that disagrees is NOT rejected: provenance is
+        # display-only and cannot change a ratio, so the first non-blank value
+        # is kept rather than failing an import over a typo in a comment field.
+        if i_src >= 0 and r[i_src] is not None and str(r[i_src]).strip():
+            layers_meta[num]["sources"].setdefault(pid, str(r[i_src]).strip())
 
         # Resolution is a property of the (layer, principle) series, but it is
         # carried on every row of that series because the sheet is row-shaped.
@@ -1672,6 +1691,7 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
             description=meta["description"],
             data=meta["data"],
             resolution=meta["resolution"],
+            sources=meta["sources"],
         ))
 
     return SharingPreset(

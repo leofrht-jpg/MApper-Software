@@ -1766,6 +1766,83 @@ explicitly, so the default was never exercised — but it was `False`, meaning a
 object built in code without the flag came out silently NON-provisional and
 would render without the caveat. A safety flag must fail closed.
 
+### Layer-1 AR is fossil-only on BOTH sides (GCB 2024)
+
+`sharing_data.json`'s `layer1_defaults.AR` — the acquired-rights pair — is
+**Denmark / World cumulative territorial fossil fuel + cement CO2, 1850–2020,
+Global Carbon Budget 2024**, stored to 9 significant figures:
+`4.08169775e9 / 1.69321002e12 t` (share 2.4106e-3). Derived from
+`National_Carbon_Emissions_2024v1.01.xlsx`, sheet `Territorial Emissions`, as
+the sum of annual MtC × 3.664; the World column includes bunker fuels.
+
+**Land-use change is excluded on both sides, deliberately.** Layer-1 AR
+allocates exactly three boundaries — `ozone_depletion`, `particulate_matter`,
+`photochemical_ozone_formation` — all combustion- and industry-driven, none
+produced by land conversion. `climate_change` is allocated by **EpC** in this
+preset, which is where a net-CO2 ("a tonne is a tonne") basis would belong. A
+GCB 2024 net-CO2 world total for the same window is ~2504 GtCO2 against this
+~1693 GtCO2, so mixing scopes moves every AR-allocated SR by tens of percent.
+Corroborating but NOT the deciding argument: the three bookkeeping models
+disagree 5.8× on Denmark's cumulative LUC (0.24 / 0.64 / 1.38 GtCO2 for
+H&C2023 / OSCAR / BLUE).
+
+**What the previous values were.** `3.5e9 / 2.4e12 t`, cited to *Global Carbon
+Budget 2023*, at 2 s.f. The denominator was in fact AR6's assessed 1850–2019
+**net** CO2 (2390 ± 240 GtCO2); the numerator was fossil-ish and ~14% below the
+fossil-only figure — Denmark's cumulative territorial fossil crossed 3.5 GtCO2
+in **2006**. So it was a scope mismatch, and the 2-s.f. rounding is what hid
+it. **Store sharing values to full precision** for that reason.
+
+**Window is 1850–2020 and stays there.** It is the window the principle
+declares, and extending to GCB's 2023 coverage would mix a grandfathering
+window with the carbon budget's own 2025 baseline for no methodological gain.
+Consumption-based accounting is not an option at all: GCB's `Consumption
+Emissions` sheet starts in **1990**.
+
+**Saved configurations do NOT pick this up.** Per the Patch 2a
+snapshot-authoritative model, an `AESAConfiguration` carries its own frozen
+`sharing` snapshot; only a fresh/reset config seeded from
+`build_default_sharing_preset()` gets the new pair. Re-source a saved config by
+re-applying the template.
+
+Locked by `tests/test_aesa_sharing_data_provenance.py` — the structural checks
+plus a **published-source invariant** that re-derives both sides from the GCB
+2024 MtC subtotals, because the structural layer alone cannot notice both sides
+being replaced in lockstep from a different scope.
+
+#### `DownscalingLayer.sources` is display-only
+
+`sources: dict[principle_id, str]` carries provenance per (layer, principle),
+keyed the same way as `data` because layer 1's AR series comes from the Global
+Carbon Budget while its EpC series comes from a population statistic. The
+exported AESACFG **Sharing Data** sheet has always had a `Source` column and
+wrote `""` into it, so a reader of an exported configuration could not tell
+where any number came from; it now writes `layer.sources`, and the import reads
+the column back (optional — older workbooks import unchanged).
+
+**Nothing in the engine reads it**, so a wrong or missing source can never
+change an SR — locked by a test that mutates every source to garbage and
+asserts every chain factor is unmoved. Unlike `Resolution`, a row that
+disagrees with an earlier row for the same principle is **not** rejected: the
+first non-blank wins, because provenance is a comment field and failing an
+import over a typo in one would be worse than the disagreement.
+
+#### The Phase B golden covers the AR-allocated boundaries
+
+`tests/fixtures/phase_b_no_drift.json` originally covered `climate_change`
+(EpC) and `acidification` (AGR) only — so the layer-1 AR pair was the one
+sharing value no golden row depended on, and it could be re-sourced (scope,
+vintage, window and all) with the file still green. It now also covers the
+three AR-allocated boundaries, and the vacuity test asserts that coverage by
+name rather than by row count.
+
+**Regenerate it by running the probe, never by hand**:
+`python -m tests.test_phase_b_no_drift '<why these numbers moved>'`. The
+provenance argument is a required argument and lands in `_generated_from` next
+to the numbers it explains. The module docstring claimed a probe was
+"reproduced below" for a whole patch cycle while there was only prose
+describing one.
+
 ### AESA compute source toggle — Fleet (DSM) vs Single-product (LCA) (Part C1)
 
 The AESA compute path is **source-agnostic**. A toggle at the top of the

@@ -1,5 +1,5 @@
 {
-  "_notice": "Default values for Multi-D sharing factors. Denmark / world values are provisional estimates — refine with Eurostat, World Bank, FAOSTAT, Global Carbon Budget, and Danish EPA (Miljøstyrelsen) before publication.",
+  "_notice": "Default values for Multi-D sharing factors. Entries flagged provisional:true are estimates — refine with Eurostat, World Bank, FAOSTAT and Danish EPA (Miljøstyrelsen) before publication. Entries flagged provisional:false name a dataset and a vintage in their own source field. AR was moved onto Global Carbon Budget 2024 (territorial fossil + cement, 1850-2020, fossil-only on both sides) and is no longer an estimate; its previous 2-significant-figure values mixed a fossil-only numerator with a net-CO2 denominator, which is why values here are stored to full precision.",
   "entity": "Denmark",
   "sector": "passenger cars",
   "year_base": 2025,
@@ -37,11 +37,11 @@
     },
     "AR": {
       "description": "Acquired rights — historical cumulative CO2 emissions share",
-      "system_value": 3.5e9,
-      "global_value": 2.4e12,
-      "unit": "t CO2 cumulative (1850-2020)",
-      "source": "Global Carbon Budget 2023, provisional",
-      "provisional": true
+      "system_value": 4.08169775e9,
+      "global_value": 1.69321002e12,
+      "unit": "t CO2 cumulative 1850-2020, territorial fossil fuel + cement, land-use change EXCLUDED on both sides",
+      "source": "Global Carbon Budget 2024 (Friedlingstein et al. 2024, doi:10.5194/essd-17-965-2025), file National_Carbon_Emissions_2024v1.01.xlsx, sheet 'Territorial Emissions': sum of annual values 1850-2020 x 3.664 MtCO2/MtC. Denmark 1114.0005 MtC = 4081.6977 MtCO2; World 462120.6397 MtC = 1693210.0239 MtCO2 (the World column includes bunker fuels). SCOPE: fossil + cement on BOTH sides. The AR principle allocates ozone depletion, particulate matter and photochemical ozone formation - all combustion- and industry-driven, none produced by land conversion - so land-use change is a different physical process here, not a missing term; climate change is allocated by EpC in this preset, which is where a net-CO2 basis would belong. WINDOW: 1850-2020 is the window this principle declares, and is deliberately NOT extended to GCB's 2023 coverage, which would mix a grandfathering window with the carbon budget's own 2025 baseline for no methodological gain. Both values are stored to 9 significant figures: the previous 2-s.f. rounding is part of why a scope mismatch went unnoticed.",
+      "provisional": false
     }
   },
   "layer2": {

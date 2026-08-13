@@ -1122,9 +1122,26 @@ Corrected bundled values (AR6 50 GtCO2 rounding convention):
 | 2.0°C / 67% | 600 | 600 | **950** (orig 1150) |
 
 The depletion year visible on the AESA Timeline shifts by ~1 year
-for the 1.5°C / 50% × SSP2-4.5 default (was ~2031, now ~2032).
+for the 1.5°C / 50% × SSP2-4.5 pairing (was ~2031, then ~2032).
 Patch X1++ shifts the 2°C depletion years substantially (2°C / 50%
 ×SSP2-4.5: ~2052 → ~2061; 2°C / 67% ×SSP2-4.5: ~2042 → ~2052).
+
+**These depletion years were all read off the CHART before the
+inclusive-accumulation fix, so each is ~1 year EARLY.** The chart was
+drawing `remaining_budget(year + 1)` and annotating depletion one year
+ahead of the engine on every depleting configuration — the chart said
+2032 where the engine said 2033. Post-fix the sparkline and the Timeline
+read the engine's series, so **1.5°C / 50% × SSP2-4.5 is ~2033** —
+verified in the installed v0.1.6 build (2026-08-07), which renders
+"Cumulative emissions vs 300 Gt budget · depleted ~2033". The 2°C figures
+above have NOT been re-measured; treat them as ~1 year early until
+someone checks them the same way, and don't quote them as engine values.
+
+**Depletion year is budget × pathway — always state both.** The same
+300 Gt budget reads ~2033 on SSP2-4.5 but **~2035 on SSP1-2.6**, which
+is the fresh-config DEFAULT pathway. So "the 1.5°C/50 default depletes
+~2033" is only true for the SSP2-4.5 (mitigation-gap) pairing, not for
+what a new config actually opens on.
 
 **Patch X1++ — 2°C re-sourcing.** Patch X1+ explicitly deferred
 the 2°C `original_gt_from_2020` values pending methodological
@@ -1361,13 +1378,27 @@ never depletes, depletes-then-replenishes).
 - **Net-negative emissions in late-century scenarios (SSP1-1.9,
   some SSP1-2.6 variants) replenish the budget in depletion
   math.** This is correct per the formula `remaining = max(0,
-  B - Σ)` but counterintuitive on first read. If a future patch
-  changes the formula to be "stays at 0 once depleted"
-  (sticky-depletion semantics), update both the backend
-  `remaining_budget()` and the frontend `CarbonBudgetInset`'s
-  `remaining` calculation in lockstep — they currently share
-  the same math and any divergence would surface as a
-  chart/data inconsistency.
+  B - Σ)` but counterintuitive on first read. The formula now
+  lives in ONE place — `CarbonBudgetConfig.remaining_budget()` —
+  so a change to it (e.g. sticky-depletion semantics, "stays at
+  0 once depleted") propagates to the chart automatically.
+- **The `CarbonBudgetInset` READS `remaining_budget_gt` off the SR
+  rows; it does not compute a remaining-budget curve.** Earlier
+  revisions of this file claimed the frontend and backend "share
+  the same math". They did not, and saying so is what let the
+  divergence persist: the inset accumulated INCLUSIVELY
+  (`cum += E[y]; remaining = initial − cum`) while
+  `remaining_budget(year)` sums `range(start_year, year)`,
+  EXCLUDING the current year — so the chart drew
+  `remaining_budget(year + 1)` and annotated depletion one year
+  early on every depleting configuration.
+  `SustainabilityRatioResult.remaining_budget_gt` and
+  `.global_allocation_gt` are on the very result the page renders;
+  the helpers are `budgetSeriesFromResults` /
+  `depletionYearFromSeries` in `TimelineView.tsx`. Locked by
+  `tests/carbonBudgetReadsEngine.test.tsx` (frontend, against a
+  backend-generated fixture) + `test_carbon_budget_series_fixture.py`
+  (backend, keeps that fixture in sync with the engine).
 
 ### SharingPreset is the Carrying-Capacity template (Patch 2a)
 
@@ -6877,16 +6908,39 @@ different resolution rules, side by side:
 
 Two distinct chart contexts, two distinct rules:
 
-| Chart context             | Resolution priority                                  |
-|---------------------------|------------------------------------------------------|
-| Cohort-key stacking       | Row override → algorithm modulo fallback             |
-| Single-dim stacking       | Per-dim override (Patch 4AJ) → algorithm fallback    |
+| Chart context             | Resolution priority                                              |
+|---------------------------|-----------------------------------------------------------------|
+| Cohort-key stacking       | Row override → algorithm modulo fallback                        |
+| Single-dim stacking       | Row override → per-dim override (Patch 4AJ) → algorithm fallback |
 
 `useDSMSystemColors(activeSystem, stackByDimension, { rowColorOverrides })`
-is the single source of truth. When `stackByDimension` is non-null,
-the single-dim branch fires; row overrides are deliberately IGNORED.
-When `stackByDimension` is null, the cohort-key branch fires and
-row overrides win.
+is the single source of truth.
+
+**An EXPLICIT per-cohort override always wins — in BOTH cohort-key and
+single-dim stacking (colour-fix, supersedes the original Patch 4AK
+"single-dim ignores row overrides" rule).** `colorForCohort` is only
+ever called with full cohort KEYS by "by-cohort" charts (Impact-over-time
+by cohort, `ExpandedCohortChart`, multi-scenario facets), where each
+series is exactly ONE cohort — so a per-cohort colour is well-defined
+regardless of the Stack-by grouping. Because `stackByDimension` defaults
+to the first non-age dimension on every system load (`dsmStore`), the
+old "single-dim ignores row overrides" rule silently dropped every
+user-assigned primary `CohortMapping.row_colors` AND subsystem
+`SubsystemCohortMapping.color` to the algorithmic palette on the
+"Impact over time, by cohort" chart — the reported "chart ignores my
+assigned colours" bug. The refined rule: **row override first (both
+modes); a cohort WITHOUT an override still groups under its dim value in
+single-dim mode** (per-dim colour → Patch 4N/5AG cross-chart fuel-colour
+consistency preserved), or gets the deterministic palette in cohort-key
+mode.
+
+This does **NOT** affect DSM Stock Composition: that chart reads
+`colorMap` directly (one colour per merged dim band) and never calls
+`colorForCohort`. Locked by `tests/byCohortAssignedColors.test.tsx`
+(assigned primary + subsystem colours resolve under the DEFAULT non-null
+`stackByDimension`; both bare and `<system_id>::`-prefixed key formats
+resolve; unassigned cohorts unaffected by the override map) and the
+updated `tests/patch4ak.test.tsx`.
 
 ### Storage models, deliberately different
 

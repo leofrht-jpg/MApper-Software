@@ -16,6 +16,7 @@ import type { CarbonBudgetConfig, SharingPreset, SustainabilityRatioResult } fro
 import { computeChainFactor } from '../../stores/aesaStore'
 import { ZONE_COLOR } from './zones'
 import { boundaryLabelText } from '../../utils/aesaBoundaryLabels'
+import { budgetUnitLabel, formatBudgetGt, withBasisApplied } from '../../utils/carbonBudget'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
@@ -330,11 +331,25 @@ export function depletionYearFromSeries(
   return series.find((p) => p.remaining <= 0)?.year ?? null
 }
 
-function CarbonBudgetInset({ budget, sharing, results }: {
+function CarbonBudgetInset({ budget: rawBudget, sharing, results }: {
   budget: CarbonBudgetConfig
   sharing: SharingPreset | null
   results: SustainabilityRatioResult[]
 }) {
+  // B2 — the series here is the ENGINE's `remaining_budget_gt`, which compute
+  // produced from the BASIS-APPLIED budget. `rawBudget.initial_budget_gt` is
+  // the pre-basis CO2 scalar. Pairing them was two separate defects on a
+  // CO2-eq run: the "{N} Gt" caption stated a CO2 magnitude as the budget, and
+  // `totalAllocated = initial - last` SUBTRACTED A CO2-eq REMAINING FROM A CO2
+  // INITIAL — a mixed-basis figure, not just a mislabelled one.
+  //
+  // Basis-applying the scalar (the engine's own `with_basis_applied`, identity
+  // under the CO2 basis) puts both terms in one unit. The SERIES is untouched:
+  // it is still read from the SR rows, never recomputed here.
+  // Memoised: `withBasisApplied` returns a NEW object under the CO2-eq basis,
+  // and it feeds the dep array of the series memo below.
+  const budget = useMemo(() => withBasisApplied(rawBudget), [rawBudget])
+  const budgetUnit = budgetUnitLabel(rawBudget)
   const carbonRef = useRef<HTMLDivElement>(null)
   // Carbon budget Gt CO₂ — Fixed-only (typical range ~100s of Gt).
   const cbFormat = useNumberFormatter({ notation: 'fixed', decimals: 1 })
@@ -360,6 +375,8 @@ function CarbonBudgetInset({ budget, sharing, results }: {
 
     // Cumulative emissions consumed by the end of the horizon, derived from the
     // engine's own endpoint rather than re-summed: initial − last remaining.
+    // Both terms are in the SAME basis now — `budget` is basis-applied and
+    // `pts` comes from the engine, which computed on the basis-applied pair.
     const last = pts.length > 0 ? pts[pts.length - 1].remaining : null
     return {
       depletionYear: depletionYearFromSeries(pts),
@@ -421,7 +438,7 @@ function CarbonBudgetInset({ budget, sharing, results }: {
         </span>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-            {budget.initial_budget_gt} Gt · {budget.ssp_scenario}
+            {formatBudgetGt(budget.initial_budget_gt)} {budgetUnit} · {budget.ssp_scenario}
             {depletionYear ? (
               <span
                 data-testid="carbon-budget-depletion-year"
@@ -439,7 +456,7 @@ function CarbonBudgetInset({ budget, sharing, results }: {
               <span
                 data-testid="carbon-budget-not-depleted"
                 style={{ color: 'var(--success)', marginLeft: 6 }}
-                title={`Cumulative emissions under ${budget.ssp_scenario} stay below the ${budget.initial_budget_gt} Gt budget for the full horizon (${budget.start_year}-${budget.end_year}); late-century net-negative emissions in this scenario replenish the budget.`}
+                title={`Cumulative emissions under ${budget.ssp_scenario} stay below the ${formatBudgetGt(budget.initial_budget_gt)} ${budgetUnit} budget for the full horizon (${budget.start_year}-${budget.end_year}); late-century net-negative emissions in this scenario replenish the budget.`}
               >
                 not depleted within horizon
               </span>
@@ -509,7 +526,7 @@ function CarbonBudgetInset({ budget, sharing, results }: {
       </ChartExportContainer>
       <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 2 }}>
         {totalAllocated !== null && (
-          <>Total global emissions over horizon: {totalAllocated.toFixed(1)} Gt · </>
+          <>Total global emissions over horizon: {totalAllocated.toFixed(1)} {budgetUnit} · </>
         )}
         {budget.budget_source}
         {fleetShareFrac !== null && (

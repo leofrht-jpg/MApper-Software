@@ -378,23 +378,6 @@ selector, superseding the Patch-2C placement:
   on Base: `selectedParamSetId = BASE_SCENARIO` and `effectiveSelected = []`
   (no fan-out branch), byte-equivalent to the pre-removal N=1 default. The
   parameter (sensitivity) axis lives on the **Prospective** tab only.
-- **The AESA sharing-principle sweep is "Sharing sensitivity" — a DIFFERENT
-  axis, and the two labels must stay distinct (Patch 5AS).** The toggle in the
-  AESA Configuration header (`aesa-run-sensitivity-toggle`, `runSensitivity` →
-  `run_sensitivity`) makes Compute ALSO evaluate the Sustainability Ratio under
-  each uniform sharing principle (EpC, IN, AGR, LA, AR) — the spread the
-  box-plot view draws. It varies the **sharing principle**, not parameter
-  cases. It was previously an unlabelled checkbox + "σ" glyph, whose accessible
-  name was literally "σ"; the obvious replacement, "Sensitivity analysis",
-  would have reintroduced one axis over exactly the collision the "Scenarios" →
-  "Sensitivity cases" rename removed — a user who has just picked
-  Base/Optimistic/Pessimistic on Impact Assessment reads a bare "Sensitivity …"
-  on the next tab as the same axis carried forward. **Name the axis, not the
-  technique.** Three distinct axis labels, none interchangeable: **LCI
-  Scenarios** (IAM/SSP background), **Sensitivity cases** (parameter values),
-  **Sharing sensitivity** (AESA sharing principles). Locked by
-  `tests/aesaSensitivityToggleLabel.test.tsx`, which asserts the label contains
-  "sharing" and does NOT match `/sensitivity (analysis|cases)/i`.
 - Locked by `tests/impactSensitivityCasesLabel.test.tsx` (Static renders no box;
   Prospective label is "Sensitivity cases").
 
@@ -1139,27 +1122,9 @@ Corrected bundled values (AR6 50 GtCO2 rounding convention):
 | 2.0°C / 67% | 600 | 600 | **950** (orig 1150) |
 
 The depletion year visible on the AESA Timeline shifts by ~1 year
-for the 1.5°C / 50% × SSP2-4.5 pairing (was ~2031, then ~2032).
+for the 1.5°C / 50% × SSP2-4.5 default (was ~2031, now ~2032).
 Patch X1++ shifts the 2°C depletion years substantially (2°C / 50%
 ×SSP2-4.5: ~2052 → ~2061; 2°C / 67% ×SSP2-4.5: ~2042 → ~2052).
-
-**These depletion years were all read off the CHART before the
-inclusive-accumulation fix, so each is ~1 year EARLY.** The chart was
-drawing `remaining_budget(year + 1)` and annotating depletion one year
-ahead of the engine on every depleting configuration (see the
-"chart 2032, engine 2033" note further down). Post-fix the sparkline and
-the Timeline read the engine's series, so **1.5°C / 50% × SSP2-4.5 is
-~2033** — verified in the installed v0.1.6 build (2026-08-07), which
-renders "Cumulative emissions vs 300 Gt budget · depleted ~2033". The
-2°C figures above have NOT been re-measured; treat them as ~1 year early
-until someone checks them the same way, and don't quote them as engine
-values.
-
-**Depletion year is budget × pathway — always state both.** The same
-300 Gt budget reads ~2033 on SSP2-4.5 but **~2035 on SSP1-2.6**, which
-is the fresh-config DEFAULT pathway. So "the 1.5°C/50 default depletes
-~2033" is only true for the SSP2-4.5 (mitigation-gap) pairing, not for
-what a new config actually opens on.
 
 **Patch X1++ — 2°C re-sourcing.** Patch X1+ explicitly deferred
 the 2°C `original_gt_from_2020` values pending methodological
@@ -1396,67 +1361,13 @@ never depletes, depletes-then-replenishes).
 - **Net-negative emissions in late-century scenarios (SSP1-1.9,
   some SSP1-2.6 variants) replenish the budget in depletion
   math.** This is correct per the formula `remaining = max(0,
-  B - Σ)` but counterintuitive on first read. The formula now
-  lives in ONE place — `CarbonBudgetConfig.remaining_budget()` —
-  so a change to it (e.g. sticky-depletion semantics, "stays at
-  0 once depleted") propagates to the chart automatically.
-- **The `CarbonBudgetInset` READS `remaining_budget_gt` off the SR
-  rows; it does not compute a remaining-budget curve.** Earlier
-  revisions of this file claimed the frontend and backend "share
-  the same math". They did not, and saying so is what let the
-  divergence persist: the inset accumulated INCLUSIVELY
-  (`cum += E[y]; remaining = initial − cum`) while
-  `remaining_budget(year)` sums `range(start_year, year)`,
-  EXCLUDING the current year. The chart was drawing
-  `remaining_budget(year + 1)` — 37 Gt low at 2025, 32 at 2030,
-  22 at 2040 on the shipped 2°C/50 × SSP1-2.6 default — and
-  annotated depletion ONE YEAR EARLY on every depleting
-  configuration (1.5°C/50 × SSP2-4.5: chart 2032, engine 2033).
-  `SustainabilityRatioResult.remaining_budget_gt` and
-  `.global_allocation_gt` are on the very result the page
-  renders; the helpers are `budgetSeriesFromResults` /
-  `depletionYearFromSeries` in `TimelineView.tsx`. Locked by
-  `tests/carbonBudgetReadsEngine.test.tsx` (frontend, against a
-  backend-generated fixture) + `test_carbon_budget_series_fixture.py`
-  (backend, keeps that fixture in sync with the engine and fails
-  if the depleting case stops depleting, which would make the
-  frontend gate vacuous).
-- **When no SR row carries `remaining_budget_gt`, the inset draws
-  NOTHING** (a note naming the cause: budget configured, no
-  cumulative boundary mapped). It does not fall back to a
-  frontend projection — a curve that agrees with Compute only by
-  coincidence, with no way for a reader to tell which number is
-  authoritative, is the thing that was removed.
-- **The "System allocated share" line is NOT the SR denominator,
-  though it shares the axes.** It samples ONE year's chain factor
-  and holds it flat, and multiplies the REMAINING budget rather
-  than the per-year allocation (`global_allocation_gt`). The SR
-  divides by the year-by-year allocated SOS. Deliberate
-  approximation kept for shape; don't read a value off it, and
-  don't "reconcile" it by making the SR use it.
-
-#### What NOT to do (any UI that shows a number the backend also computes)
-
-- **If the backend already emits the number, READ it.** Don't
-  re-derive it in the frontend "to avoid a round-trip" — the
-  result is already in hand. A second implementation agrees only
-  until one side changes, and the disagreement is silent because
-  both look authoritative. This has now bitten three times: the
-  chain editor's Total-factor preview (hand-rolled year resolver
-  vs. the one Compute uses), `interpolateKeyframes` (mirrors
-  `_interpolate_keyframes`, but returns 0 where the backend
-  raises), and this inset.
-- **If a preview genuinely must exist before Compute has run,
-  label it as a projection or don't draw it** — and never let it
-  occupy the same visual slot as the computed value with no
-  distinction.
-- **A frontend type missing a backend field is a cause, not a
-  detail.** `remaining_budget_gt` had been on the API response
-  since the carbon-budget path shipped; `SustainabilityRatioResult`
-  in `client.ts` never declared it, so the only way to get the
-  number appeared to be recomputation. When adding a computed
-  field to a result model, add it to the TS interface in the same
-  patch.
+  B - Σ)` but counterintuitive on first read. If a future patch
+  changes the formula to be "stays at 0 once depleted"
+  (sticky-depletion semantics), update both the backend
+  `remaining_budget()` and the frontend `CarbonBudgetInset`'s
+  `remaining` calculation in lockstep — they currently share
+  the same math and any divergence would surface as a
+  chart/data inconsistency.
 
 ### SharingPreset is the Carrying-Capacity template (Patch 2a)
 
@@ -1590,17 +1501,11 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
 {"CO2","CO2e_GHG"}` (default **"CO2"** = today, byte-identical, **no drift**).
 
 - **Numerator is unchanged** (EF GWP100 CO2e). Fix is denominator-only.
-- **A CO2e basis is INERT without a usable `co2e_conversion`.** Compute
-  (`post_compute` guard, beside the Ryberg 2c guard) **rejects** a CO2e basis
-  with no usable conversion — *"Carbon budget set to CO2e/GHG basis but no
+- **CO2e_GHG is opt-in and INERT** until a sourced `co2e_conversion` is supplied.
+  Compute (`post_compute` guard, beside the Ryberg 2c guard) **rejects** a CO2e
+  basis with no usable conversion — *"Carbon budget set to CO2e/GHG basis but no
   sourced CO2→CO2e conversion supplied …"* — never computes on the CO2 budget
   (wrong scope) or a fabricated factor. Mirrors the Ryberg scaffold.
-  **Since the CO2e wiring the factor IS populated for every budget** by
-  `build_carbon_budget` → `co2e_conversion_for_budget`, so the guard now fires
-  mainly on a **workbook import that left `co2e_factor` blank** (the import path
-  reads the sheet value verbatim and never recomputes). Note the two defaults
-  differ deliberately: the SCHEMA defaults `budget_basis="CO2"`, the UI seeds a
-  fresh draft with `"CO2e_GHG"`.
 - **Mechanism (b) "ratio" only** (`RatioCO2eConversion{kind:"ratio", factor,
   source}`): `with_basis_applied()` scales BOTH `initial_budget_gt` and
   `projected_emissions` by the per-scenario `factor` *before* the existing
@@ -1629,28 +1534,12 @@ SR. Patch 2d adds a **denominator-only** fix: `CarbonBudgetConfig.budget_basis �
 
 #### What NOT to do
 
-- **Don't invent a CO2→CO2e factor, and never mix ensembles.** It is DERIVED:
-  `co2e_factor_for_budget` computes `f = ((m·x20 + b) − C) / x25` from the
-  budget's own `original_gt_from_2020` / `remaining_gt_from_2025` plus a
-  **`CO2eBudgetFit` selected by temperature target** — which carries the affine
-  AND the offset AND the ensemble they were both fitted over:
-  **1.5C → AR6 C1+C2** (m=1.3142, b=149.1242, C=250.665) and
-  **2C → AR6 C3+C4** (m=1.2935, b=218.41, C=257.4). They travel together on one
-  frozen dataclass precisely so a third target cannot inherit another
-  ensemble's offset — which is exactly what happened before: two affines
-  branched, one unconditional C=257.4 (a C3+C4 median) applied to both, so 1.5C
-  budgets were re-baselined with 2C scenarios. `test_no_target_mixes_ensembles`
-  checks each fit's declared categories against the rows of its own two files.
-  The method is Meinshausen et al. (2018; 2019) as applied by Tilsted & Bjørn
-  (2023), doi:10.1007/s10584-023-03583-4 — cited as the PRECEDENT; their
-  published coefficients live in `TILSTED_BJORN_2023_PUBLISHED` and are never
-  used to compute. MApper's default budget (2C/50) is unaffected by the 1.5C
-  refit; every 2C `f` is byte-identical. Provenance and the
-  two DIFFERENT scenario counts (343 regression / 427 offset — different
-  filters, see below) live in `mapper/data/aesa/co2e_ratio/README.md`. The 2C
-  affine is an **unpublished in-repo regression** — cite it as an original
-  derivation, not as a sourced value. A missing/non-positive factor must stay
-  inert (graceful reject), never silently compute.
+- **Don't invent a CO2→CO2e factor.** It is DERIVED, never fabricated:
+  `co2e_factor_for_budget` computes `f = ((m·x20 + b) − C) / x25`. The 2C affine
+  is an unpublished in-repo regression — cite it as an original derivation.
+  Provenance and the two DIFFERENT scenario counts (343 regression / 427 offset)
+  live in `mapper/data/aesa/co2e_ratio/README.md`. A missing/non-positive factor must stay inert (graceful reject),
+  never silently compute.
 - **Don't change the numerator.** This is denominator-only; the EF GWP100 CO2e
   impact is untouched.
 - **Don't scale only the budget scalar without the pathway.** The "ratio"
@@ -3803,7 +3692,7 @@ exposed for the Settings → "Restart tour" button.
 
 **When adding new tabs or major features, the tour does NOT automatically
 need updating** — only update if the new feature changes the canonical
-research workflow itself. New features get documented in CLAUDE.md and/or
+research workflow itself. New features get documented in AGENTS.md and/or
 in-app tooltips, not the tour.
 
 #### What NOT to do
@@ -3816,7 +3705,7 @@ in-app tooltips, not the tour.
   append.
 - **Don't add per-feature deep-dive steps** ("here's the multi-LCI chip,
   here's the format control, here's how to export charts"). Those belong
-  in tooltips, the Help/Settings panels, or CLAUDE.md — not the tour.
+  in tooltips, the Help/Settings panels, or AGENTS.md — not the tour.
 - **Don't remove the `data-tour` attributes** on sidebar tabs without
   updating the corresponding step's `target` selector. Joyride silently
   drops steps with missing targets, which leaves users mid-tour at a
@@ -6988,39 +6877,16 @@ different resolution rules, side by side:
 
 Two distinct chart contexts, two distinct rules:
 
-| Chart context             | Resolution priority                                              |
-|---------------------------|-----------------------------------------------------------------|
-| Cohort-key stacking       | Row override → algorithm modulo fallback                        |
-| Single-dim stacking       | Row override → per-dim override (Patch 4AJ) → algorithm fallback |
+| Chart context             | Resolution priority                                  |
+|---------------------------|------------------------------------------------------|
+| Cohort-key stacking       | Row override → algorithm modulo fallback             |
+| Single-dim stacking       | Per-dim override (Patch 4AJ) → algorithm fallback    |
 
 `useDSMSystemColors(activeSystem, stackByDimension, { rowColorOverrides })`
-is the single source of truth.
-
-**An EXPLICIT per-cohort override always wins — in BOTH cohort-key and
-single-dim stacking (colour-fix, supersedes the original Patch 4AK
-"single-dim ignores row overrides" rule).** `colorForCohort` is only
-ever called with full cohort KEYS by "by-cohort" charts (Impact-over-time
-by cohort, `ExpandedCohortChart`, multi-scenario facets), where each
-series is exactly ONE cohort — so a per-cohort colour is well-defined
-regardless of the Stack-by grouping. Because `stackByDimension` defaults
-to the first non-age dimension on every system load (`dsmStore`), the
-old "single-dim ignores row overrides" rule silently dropped every
-user-assigned primary `CohortMapping.row_colors` AND subsystem
-`SubsystemCohortMapping.color` to the algorithmic palette on the
-"Impact over time, by cohort" chart — the reported "chart ignores my
-assigned colours" bug. The refined rule: **row override first (both
-modes); a cohort WITHOUT an override still groups under its dim value in
-single-dim mode** (per-dim colour → Patch 4N/5AG cross-chart fuel-colour
-consistency preserved), or gets the deterministic palette in cohort-key
-mode.
-
-This does **NOT** affect DSM Stock Composition: that chart reads
-`colorMap` directly (one colour per merged dim band) and never calls
-`colorForCohort`. Locked by `tests/byCohortAssignedColors.test.tsx`
-(assigned primary + subsystem colours resolve under the DEFAULT non-null
-`stackByDimension`; both bare and `<system_id>::`-prefixed key formats
-resolve; unassigned cohorts unaffected by the override map) and the
-updated `tests/patch4ak.test.tsx`.
+is the single source of truth. When `stackByDimension` is non-null,
+the single-dim branch fires; row overrides are deliberately IGNORED.
+When `stackByDimension` is null, the cohort-key branch fires and
+row overrides win.
 
 ### Storage models, deliberately different
 
@@ -7251,123 +7117,6 @@ distinct slots before wrap.
   invariant should be enforced at the boundary, not relied on at
   every call site. If a future store action persists colors, it
   MUST call `normalizeHex` first.
-
-## Project-scoped stores must reset on project change (Database Explorer staleness)
-
-Found 2026-08-07 verifying the Windows v0.1.6 installer; **fixed before
-v0.1.6 shipped** (Cause B sat on the licence-free demo path a JOSS reviewer
-follows). Kept here because it is a two-part failure that a green test suite
-actively concealed.
-
-**Symptom.** Switching projects leaves the Database Explorer rendering the
-PREVIOUS project's database list and activity table. Switch to a project the
-backend reports as having 0 databases and the page still shows the old
-project's activity count (e.g. "4,362 activities") with the database
-`<select>` gone; the `hasDatabases === false` empty state — and with it the
-**"Load demo project" button, which only renders inside that empty state** —
-never appears. Symmetric in the other direction: right after the demo button
-switches projects, the explorer says "No databases in this project yet" while
-`GET /api/databases` returns two.
-
-**Not a backend bug.** `GET /api/databases` is correct throughout; only the
-frontend view is stale. A webview reload (Ctrl+R) fixes it every time, which
-is the tell: the data is refetched on mount but not on project change.
-
-**Reproduced** from both Settings and the Database Explorer itself, before
-and after an app restart. A **cold boot into a database-less project renders
-correctly**, so a genuinely new user (fresh install, empty project) is NOT
-affected — this bites mid-session project switching, which includes anyone
-demoing MApper by hopping between projects.
-
-**Root cause — TWO independent bugs that produce the same symptom.** Diagnosed
-2026-08-07; both are small fixes, but fixing only one leaves half the symptom.
-
-*Cause A — switching TO a project (stale activity table).*
-`projectStore.switchProject` is fine: it calls `refreshProjectsAndDatabases`,
-so `projectStore.databases` DOES update. The stale data lives in the OTHER
-store — **`useActivityStore` is never reset on project change**.
-`selectedDatabase` keeps pointing at the previous project's db (e.g.
-`biosphere3`) and `activities` keeps the previous page. The initialise effect
-(`DatabaseExplorer.tsx` ~line 687) is guarded by `!selectedDatabase`:
-
-```ts
-useEffect(() => {
-  if (databases.length > 0 && !selectedDatabase) setDatabase(databases[0].name)
-}, [databases, selectedDatabase, setDatabase])
-```
-
-With a stale-but-truthy `selectedDatabase` it does nothing — no re-select, no
-refetch, no clear. Two knock-on effects: the db `<select>`'s value is no longer
-in `databases`, so the picker renders no matching option (looks like it
-"disappeared"); and `<EmptyState>` is gated on `activities.length === 0`
-(`DatabaseExplorer.tsx` ~line 937), so a stale NON-empty `activities` means the
-empty state — **and the "Load demo project" button inside it** — can never
-render even though `databases.length === 0` is correct.
-
-*Cause B — the demo button (says "No databases" when there are two).*
-`DemoLoadButton` calls `useProjectStore.fetchProjects`, and **`fetchProjects`
-sets only `{projects, currentProject}` — it never calls `getDatabases()`.**
-Only `refreshProjectsAndDatabases` (used by `switchProject` / `createProject`)
-refreshes both. So after the demo builds and switches, `databases` is still the
-previous project's `[]` → `hasDatabases === false` → "No databases in this
-project yet", while the backend already has `biosphere3` +
-`demo-synthetic-technosphere`.
-
-**The fix.**
-
-*A* — `useActivityStore` gained the standard project-change reset. **Every
-project-scoped store ends with the same block** (`bomStore`, `dsmStore`,
-`aesaStore`, `impactStore`, `plcaStore`, `parameterStore`, `subsystemStore`
-already had it; `activityStore` was the ONLY one missing it):
-
-```ts
-let _lastProject: string | null = useProjectStore.getState().currentProject
-useProjectStore.subscribe((state) => {
-  if (state.currentProject === _lastProject) return
-  _lastProject = state.currentProject
-  useXStore.getState().reset()
-})
-```
-
-It resets ONLY — the explorer's own effect re-selects `databases[0]` once
-`selectedDatabase` is null, so selection logic stays in one place. **When you
-add a new project-scoped store, add this block.**
-
-*B* — new `projectStore.resyncAfterProjectChange()` (project list + databases,
-refreshed atomically). `DemoLoadButton` and App's project-guard 409 handler now
-call it instead of `fetchProjects`.
-
-**Do NOT make `fetchProjects` fetch databases.** It is the cold-boot mount
-fetch with a deliberately tuned ~22.5 s retry budget; awaiting a second request
-inside it changes its timing contract and took down all 4 `projectColdBoot`
-tests (which drive it under fake timers). That was tried and reverted — use
-`resyncAfterProjectChange` from callers that know the project changed.
-`tests/databaseExplorerProjectSwitch.test.tsx` B3 guards this.
-
-**Publish the project and its databases in ONE `set()`.** The first attempt set
-`currentProject` then `databases` separately; the intermediate render held the
-NEW project with the OLD database list, and the explorer's initialise effect
-ran in that window and re-selected a database from the old project — undoing
-the reset. `refreshProjectsAndDatabases` is now atomic.
-
-**Why the existing tests didn't catch it:** `projectSwitcherRefetch.test.tsx`
-and `projectColdBoot.test.ts` are both green and both are about **`fetchProjects`
-resilience only** — cold-boot retry, not clobbering on persistent failure, and
-re-fetching the PROJECT LIST when the dropdown opens. Neither asserts anything
-downstream of a project *change*, and neither renders `DatabaseExplorer`. The
-area looks covered and isn't.
-
-**The regression test must switch project on an ALREADY-MOUNTED explorer** — a
-mount-time-only test passes against the bug. `tests/databaseExplorerProjectSwitch.test.tsx`
-renders `<DatabaseExplorer>`, then switches in BOTH directions (has-dbs →
-no-dbs, and no-dbs → has-dbs via the demo path) without unmounting, asserting
-the picker AND the activity table follow. Both halves were verified
-load-bearing by disabling each fix in turn and watching the suite go red.
-
-**Seeding order gotcha for other tests:** set `useProjectStore.currentProject`
-BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
-activities (this is why `multiProductActivityVintage.test.tsx` reorders its
-`beforeEach`). Same hazard already applied to `bomStore`.
 
 ## Client-server project state desync — `X-Mapper-Project` guard (Patch X1+++)
 

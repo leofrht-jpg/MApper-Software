@@ -1,74 +1,127 @@
 # CO₂ → CO₂e (Kyoto-gases) conversion data
 
-**Status: the derivation sets are REPRODUCED and ship in full; the underlying
+**Status: both derivation sets are REPRODUCED and ship in full; the underlying
 budget data remains provisional.** These files are the sourced inputs for the
 AESA carbon-budget `budget_basis = "CO2e_GHG"` path
 (`CarbonBudgetConfig.co2e_conversion`). A per-budget `RatioCO2eConversion`
 factor IS computed in `build_carbon_budget` and the basis is user-selectable
-(default CO₂-eq). **See "WIRED per-budget factors" at the bottom for the live
+(fresh drafts default to CO₂-eq). **See "WIRED per-budget factors" for the live
 factors + arithmetic.**
 
-Both derivation sets are now verifiable from the bundled CSVs: the 343-row
-regression set (`ar6_2c_analog_pairs.csv`) regresses to the published
-coefficients, and the 427-row offset set (`ar6_c34_offset_2020_2024.csv`) has
-**C** as the median of a column. What remains provisional is
-`carbon_budgets.json` (AR6 WG1 values + the −200 GtCO₂ deduction), a separate
-AR6/GCB question. The 1.5 °C affine is fully cited (Tilsted & Bjørn 2023,
-doi:10.1007/s10584-023-03583-4); see "Pull dates" for the two extractions and
-the reproduction evidence.
+This file is the primary account of the conversion. Everything else — the
+docstrings in `aesa_engine.py` and `aesa_schemas.py`, `CLAUDE.md`, the workbook
+Instructions sheet — points here rather than restating it.
 
-## The 1.5 °C leg — precedent, and the refit
+## The method, in one paragraph
 
-### Methodological precedent (not the coefficients in use)
+Map a **cumulative-from-2020 CO₂ budget** `x₂₀` (GtCO₂) to the corresponding
+**cumulative-from-2020 CO₂e budget** `y₂₀` (GtCO₂e, GWP100 Kyoto gases) with an
+affine `y = m·x + b` regressed over the AR6 scenario category that matches the
+temperature target, then re-baseline to AESA's from-2025 framing by subtracting
+**C**, the 2020–2024 cumulative CO₂e **of that same category set**:
+
+```
+y₂₀ = m·x₂₀ + b
+y₂₅ = y₂₀ − C
+ f  = y₂₅ / x₂₅            (x₂₅ = remaining_gt_from_2025)
+```
+
+The approach is **Meinshausen et al. (2018; 2019) as applied by Tilsted &
+Bjørn (2023)**, refitted here over AR6 for each target. Both legs do the same
+thing; neither takes coefficients from the published paper.
+
+## The two legs, symmetrically
+
+|  | **1.5 °C** | **2 °C** |
+|---|---|---|
+| AR6 ensemble | **C1 + C2** ("1.5 °C, no/limited overshoot" + "return to 1.5 °C after high overshoot") | **C3 + C4** ("(likely) below 2 °C") |
+| slope **m** | **1.3142** | **1.2935** |
+| intercept **b** (GtCO₂e) | **149.1242** | **218.41** |
+| **R** | **0.9565** | **0.9444** |
+| **N**, regression | **214** (C1 91, C2 123) | **343** (C3 232, C4 111) |
+| **N**, offset | **217** (C1 94, C2 123) | **427** (C3 279, C4 148) |
+| no-net-zero (offset − regression) | **3** | **84** |
+| fitted domain (GtCO₂) | **[196.3, 1036.2]** | **[292.9, 1568.2]** |
+| **offset C** (GtCO₂e) | **250.665** | **257.449 → 257.4** |
+| C IQR | **[239.579, 265.000]** | **[250.460, 271.003]** |
+| CO₂ companion (median 2020–24 cum. CO₂) | **186.776** | **193.217** |
+| pairs file | `ar6_c1c2_pairs.csv` | `ar6_2c_analog_pairs.csv` |
+| offset file | `ar6_c1c2_offset_2020_2024.csv` | `ar6_c34_offset_2020_2024.csv` |
+| fit JSON | *(none — see below)* | `ar6_2c_analog_fit.json` |
+| pull date | **2026-08-12** | 2026-06-19 (pairs) / 2026-08-12 (offset) |
+
+Every one of those numbers is recomputed from the shipped CSVs by
+`tests/test_aesa_co2e_ratio_provenance.py`; none is prose.
+
+### Why the two Ns differ within a leg
+
+The regression and the offset are computed over **different subsets of the same
+pull**, because they need different things from a scenario:
+
+| quantity | filter |
+|---|---|
+| regression (m, b) | has BOTH `Emissions|CO2` and `Emissions|Kyoto Gases`, **AND** reaches net-zero CO₂ — the fit integrates 2020 → net-zero, so a scenario with no crossing has no defined window |
+| offset **C** | has both variables; **no net-zero requirement**, since C is a cumulative over the fixed 2020–2024 block |
+
+So for the 2 °C leg `427 = 343 + 84`, and 465 C3+C4 scenarios were retrieved in
+total, 38 missing a variable and excluded from both. For 1.5 °C the gap is much
+smaller — `217 = 214 + 3` — because sub-1.5 °C scenarios almost all reach
+net-zero CO₂ by construction. Quoting one N for both would misstate the method.
+
+### The fit-JSON asymmetry is a DECISION, not an omission
+
+The 2 °C leg ships `ar6_2c_analog_fit.json`; the 1.5 °C leg deliberately ships
+no equivalent, and none will be added. The reason is that the JSON is a
+**historical artefact of the June 2026 extraction**, not a source of truth: it
+records coefficients produced by a script that no longer exists (see
+"Procedural asymmetry"), and it is kept only so those coefficients can be
+compared against the rows that ship. The 1.5 °C leg has no such history — its
+coefficients were derived by the current code from the CSVs in this directory,
+so a JSON restating them would add a third place to keep in sync and no
+checkable fact. **The pairs and offset CSVs are the source of truth for both
+legs**, and both legs are asserted against them identically
+(`test_each_fit_refits_from_its_own_shipped_rows`,
+`test_each_offset_is_the_median_of_its_own_shipped_rows`). The 2 °C JSON is
+additionally cross-checked against the code
+(`test_code_coefficients_equal_the_fitted_artefact`) — an extra check the
+1.5 °C leg does not need rather than one it lacks.
+
+### The methodological precedent (not the coefficients in use)
 
 **Tilsted, J. P. & Bjørn, A. (2023).** *Green frontrunner or indebted culprit?
 Assessing Denmark's climate targets in light of fair contributions under the
 Paris Agreement.* **Climatic Change 176:103.**
 <https://doi.org/10.1007/s10584-023-03583-4>
 
-Their §2 regresses a CO₂ budget `x` (GtCO₂) onto the corresponding CO₂e budget
-`y`, giving **y = 1.1614·x + 157.27** over **80** scenarios labelled "Below
-1.5 °C", "1.5 °C low overshoot" or "1.5 °C high overshoot" from the **IAMC
-1.5 °C Scenario Explorer** (Huppmann et al. 2019), cumulative **2020 →
-net-zero CO₂**, **R = 0.80**, domain **x ∈ [223, 427] GtCO₂**, following
-**Meinshausen et al. (2018; 2019)**. Those parameters are kept in the code as
+Their §2 regresses a CO₂ budget `x` onto the corresponding CO₂e budget `y`,
+giving **y = 1.1614·x + 157.27** over **80** scenarios labelled "Below 1.5 °C",
+"1.5 °C low overshoot" or "1.5 °C high overshoot" from the **IAMC 1.5 °C
+Scenario Explorer** (Huppmann et al. 2019), cumulative **2020 → net-zero CO₂**,
+**R = 0.80**, domain **x ∈ [223, 427] GtCO₂**, following **Meinshausen et al.
+(2018; 2019)**. Those parameters are kept in the code as
 `TILSTED_BJORN_2023_PUBLISHED` for comparison; **they are not used to compute a
 factor.**
 
-### What MApper uses: the same approach, refitted over AR6 C1+C2
+The 2 °C affine has no published counterpart — no off-the-shelf 2 °C version of
+this formula exists, and Tilsted & Bjørn's is sub-1.5 °C with a domain that
+excludes 2 °C-scale budgets outright. **It is an original in-repo regression and
+must be cited as such**, not as a sourced value.
 
-| | 1.5 °C (AR6 **C1+C2**) | 2 °C (AR6 **C3+C4**) |
-|---|---|---|
-| slope m | **1.3142** | 1.2935 |
-| intercept b | **149.1242** | 218.41 |
-| R | **0.9565** | 0.9444 |
-| regression N | **214** (C1 91, C2 123) | 343 (C3 232, C4 111) |
-| domain | **[196.3, 1036.2]** | [292.9, 1568.2] |
-| **offset C** | **250.665 GtCO₂e** (N=217) | 257.449 → 257.4 (N=427) |
-| files | `ar6_c1c2_pairs.csv`, `ar6_c1c2_offset_2020_2024.csv` | `ar6_2c_analog_pairs.csv`, `ar6_c34_offset_2020_2024.csv` |
+### Why the 1.5 °C leg was refitted
 
-Both legs now do the same thing: **one method — Meinshausen et al. (2018; 2019)
-as applied by Tilsted & Bjørn (2023) — refitted over the AR6 category that
-matches the temperature target**, with the affine and the 2020–2024 offset drawn
-from the *same* scenario set. Tilsted & Bjørn are the precedent, not a
-coefficient supplier.
-
-### This is a deliberate methodological choice, not a correction
-
-Nothing was wrong with Tilsted & Bjørn's numbers. Four grounds for refitting:
+Nothing was wrong with Tilsted & Bjørn's numbers. Four grounds:
 
 1. **Symmetry.** The 2 °C leg was already an AR6 refit. Leaving 1.5 °C on a
    published SR15-era fit meant the two targets were derived differently.
-2. **AR6 vs SR15.** Their fit predates AR6; the IAMC 1.5 °C Scenario Explorer
-   (Huppmann et al. 2019) is a different database and vintage from the AR6
-   Scenario Database used here.
+2. **AR6 vs SR15.** Their fit predates AR6; the IAMC 1.5 °C Scenario Explorer is
+   a different database and vintage from the AR6 Scenario Database used here.
 3. **Fit quality.** R = **0.9565** over 214 scenarios versus **0.80** over 80.
 4. **Domain.** `IPCC_AR6_1p5C_50` enters at x₂₀ = 500, **outside** their
    published [223, 427]. It sits **inside** [196.3, 1036.2] — at the 17th
-   percentile of the fitted scenarios (37/214 fall below 500). The refit
-   removes the out-of-domain problem instead of arguing around it.
+   percentile (37/214 fitted scenarios fall below 500). The refit removes the
+   out-of-domain problem instead of arguing around it.
 
-Comparison at the same x — the refit implies a **larger** CO₂e budget throughout:
+At the same x the refit implies a **larger** CO₂e budget throughout:
 
 | x₂₀ | Tilsted & Bjørn y₂₀ | C1+C2 y₂₀ | Δ |
 |---|---|---|---|
@@ -77,17 +130,15 @@ Comparison at the same x — the refit implies a **larger** CO₂e budget throug
 | 427 | 653.2 | 710.3 | +8.7 % |
 | 500 | 738.0 | 806.2 | **+9.3 %** |
 
-**Direction of the effect: the 1.5 °C factors rise ~16 %, so the 1.5 °C
-climate-change Sustainability Ratios FALL by ~14 %.**
+**Effect: the 1.5 °C factors rose ~16 %, so the 1.5 °C climate-change
+Sustainability Ratios FELL by ~14 %.**
 
 | budget | f before | f after | Δf | climate SR |
 |---|---|---|---|---|
 | 1.5 °C / 50 | 1.6019 | **1.8519** | +15.60 % | **−13.50 %** |
 | 1.5 °C / 67 | 1.8222 | **2.1207** | +16.38 % | **−14.08 %** |
 
-### What drove it: the database, not the offset mismatch
-
-The refit fixes two things at once, but they are not equal in size:
+The database change, not the offset mismatch, drove it:
 
 | contribution | 1.5 °C / 50 | 1.5 °C / 67 |
 |---|---|---|
@@ -96,19 +147,186 @@ The refit fixes two things at once, but they are not equal in size:
 | total | +15.60 % | +16.38 % |
 
 So the offset mismatch — pairing a sub-1.5 °C affine with a 2 °C ensemble's
-2020–2024 median — was real and is now fixed, but it accounts for only about a
-tenth of the change. **The refit's primary justification is the SR15 → AR6
-database change.** That matters for how it is described: this is a
-re-derivation on newer data, not a bug fix.
+2020–2024 median — was real and is now fixed, but it accounts for about a tenth
+of the change. **This is a re-derivation on newer data, not a bug fix.**
 
-### MApper's default is unaffected
+**MApper's default is unaffected.** The shipped default is **2 °C / 50th
+percentile** (`IPCC_AR6_2C_50`), whose factor **f = 1.484552 is unchanged**, as
+is `IPCC_AR6_2C_67` at 1.524774. A user who has never changed the budget sees no
+difference.
 
-The shipped default budget is **2 °C / 50th percentile** (`IPCC_AR6_2C_50`,
-1150 Gt from 2025), whose factor **f = 1.484552 is unchanged**, as is
-`IPCC_AR6_2C_67` at 1.524774. This refit moves the 1.5 °C targets only. A user
-who has never changed the budget sees no difference.
+## A1 — the factor mixes observed and modelled provenance
 
-### Procedural asymmetry between the two legs — stated, not hidden
+**Decision: keep the ensemble-median C. This section documents the mixture
+rather than hiding it.**
+
+`f = (m·x₂₀ + b − C) / x₂₅` is assembled from inputs of three different kinds:
+
+| term | provenance |
+|---|---|
+| `x₂₀`, `x₂₅` | **AR6-ASSESSED**, then re-baselined with an **OBSERVED** deduction: `x₂₅ = x₂₀ − 200 GtCO₂`, the 2020–2024 cumulative from **Global Carbon Budget 2024** (Friedlingstein et al.), rounded to AR6's 50 Gt granularity |
+| `m`, `b` | **MODELLED** — an OLS fit over an AR6 scenario ensemble |
+| `C` | **MODELLED** — the median 2020–2024 cumulative CO₂e of that same ensemble |
+
+So the numerator's re-baselining (`−C`) is modelled while the denominator's
+(`−200`) is observed. The two disagree about the same five years: the ensembles'
+median 2020–2024 **CO₂** is **193.217** GtCO₂ (2 °C) / **186.776** (1.5 °C)
+against the observed **200**, i.e. the scenarios under-run reality by 3.4 % and
+6.6 %.
+
+**No option is pure.** An "all-modelled" f would have to replace `x₂₀` with an
+ensemble median too — but `x₂₀` is an **AR6-ASSESSED** budget (SPM Table SPM.2,
+a synthesis across lines of evidence), not an ensemble statistic, and swapping
+it out would stop the factor converting the budget MApper actually ships.
+An "all-observed" f is impossible: there is no observed CO₂e budget to convert
+to. The mixture is inherent to converting an assessed CO₂ budget onto a
+modelled CO₂e relation.
+
+**The alternative, quantified.** The nearest observation-consistent variant
+rescales C by the observed/modelled CO₂ ratio for the same window —
+`C_obs = C · (200 / CO₂ companion)`, equivalently `200 ×` the ensemble's median
+2020–2024 CO₂e/CO₂ ratio:
+
+| budget | C | C_obs | f now | f alt | Δf |
+|---|---|---|---|---|---|
+| `IPCC_AR6_1p5C_50` | 250.665 | 268.412 | 1.8519 | 1.7927 | **−3.19 %** |
+| `IPCC_AR6_1p5C_67` | 250.665 | 268.412 | 2.1207 | 2.0320 | **−4.18 %** |
+| `IPCC_AR6_2C_50` (default) | 257.400 | 266.436 | 1.4846 | 1.4767 | **−0.53 %** |
+| `IPCC_AR6_2C_67` | 257.400 | 266.436 | 1.5248 | 1.5153 | **−0.62 %** |
+
+A lower f means a smaller CO₂e budget and therefore a **higher** climate SR, by
+the same percentages. **On the shipped default the whole question is worth
+0.53 % of the climate SR** — below the provisional budget data's own 50 GtCO₂
+rounding granularity (±4.3 % on a 1150 Gt budget). It matters more at 1.5 °C/67,
+where the smallest x₂₅ makes every term in the numerator count for more.
+
+**Why the ensemble median was kept:** C's job is to remove, from `y₂₀`, the
+CO₂e the *affine's own scenarios* emit over 2020–2024. Taking it from the same
+ensemble makes `y₂₅` internally consistent with `y₂₀`; substituting an
+observation-anchored figure would re-baseline the numerator against a different
+population from the one that produced m and b. The mixture is between numerator
+and denominator, which the section above makes explicit, rather than inside the
+numerator, which would be harder to reason about. Revisit at the
+publication-time refresh, alongside `carbon_budgets.json` itself.
+
+## A2 — the basis scales the pathway too, so the depletion year is invariant
+
+**Decision: no code change. This section documents the invariance and the
+approximation it rests on.**
+
+`with_basis_applied()` multiplies **both** `initial_budget_gt` **and** every
+year of `projected_emissions` by the same `f`. Therefore, exactly:
+
+```
+remaining_e(y)  = f·B − Σ f·pe[t]  = f · remaining(y)
+allocation_e(y) = remaining_e(y) / (end_year − y) = f · allocation(y)
+SR_e(y)         = impact(y) / (f · allocated_sos(y)) = SR_CO2(y) / f
+```
+
+Three consequences, all asserted (`tests/test_aesa_co2e_basis.py`,
+`tests/carbonBudgetBasisLabels.test.tsx`):
+
+* the whole climate SR timeline is the CO₂ timeline divided by a constant;
+* **the depletion year cannot move** — `remaining` scales uniformly, so the year
+  it reaches zero is basis-independent;
+* nothing but the climate-change SR responds; flow boundaries are untouched.
+
+That invariance is what makes the B1/B2 relabelling safe: the CO₂-eq sparkline
+and the CO₂ one are the same curve with a different y-scale.
+
+**The approximation being made.** A constant `f` is *not* what a real pathway
+does. The scenarios' own cumulative CO₂e/CO₂ ratio **drifts upward
+monotonically** as CO₂ approaches and crosses net-zero while non-CO₂ forcers
+persist — from **~1.37 at 2025** (instantaneous; range 1.34–1.39 across the nine
+AR6 REMIND PkBudg scenarios) to **1.74–5.53 cumulative-to-2100**, e.g. **5.12**
+for `SSP2-PkBudg900`:
+
+| scenario (AR6 REMIND 2.1) | 2025 (inst.) | cum→2050 | cum→2075 | cum→2100 |
+|---|---|---|---|---|
+| SSP1-PkBudg1100 | 1.37 | 1.47 | 1.71 | 2.13 |
+| SSP1-PkBudg1300 | 1.37 | 1.43 | 1.55 | 1.74 |
+| SSP1-PkBudg900 | 1.39 | 1.62 | 2.31 | **5.53** |
+| SSP2-PkBudg1100 | 1.37 | 1.51 | 1.86 | 2.35 |
+| SSP2-PkBudg1300 | 1.36 | 1.46 | 1.67 | 1.92 |
+| SSP2-PkBudg900 | 1.39 | 1.68 | 2.55 | **5.12** |
+| SSP5-PkBudg1100 | 1.35 | 1.46 | 1.81 | 2.22 |
+| SSP5-PkBudg1300 | 1.34 | 1.39 | 1.61 | 1.85 |
+| SSP5-PkBudg900 | 1.36 | 1.66 | 3.20 | *−10.16* |
+
+(The last cell is not an error: `SSP5-PkBudg900`'s cumulative CO₂ from 2025
+crosses zero before 2100, so the ratio has a pole and changes sign. A per-year
+CO₂e pathway has to handle that; a constant `f` never encounters it. Another
+reason mechanism (c) is not a small change.)
+
+The shipped `f` is a **budget-level** quantity — the ratio of two cumulative
+budgets over the whole window — so it is not meant to equal the instantaneous
+ratio at any particular year, and the drift above is not an error in `f`. What
+it does mean is that **the year-by-year split of a fixed CO₂e budget across the
+horizon is approximate**: the true CO₂e-basis pathway consumes proportionally
+more of its budget late than `f · pe[y]` implies.
+
+**Mechanism (c) — a true per-year CO₂e pathway — is deliberately
+unimplemented.** It needs a CO₂e trajectory per SSP, and `ssp_trajectories.json`
+stores `anchors_gt_co2` only; the AR6 REMIND CO₂e series above are a *different
+model and scenario set* from the SSP markers AESA's pathways come from, and
+pairing them would be exactly the source-mixing that
+"premise vs AR6 CO₂ cross-check" below warns against. It would also break the
+invariance the UI now relies on: with a year-varying ratio the depletion year
+DOES move with the basis, which is a methodological change, not a refinement.
+The `CO2eConversion` union is shaped so `"pathway"` can be added as a `kind`
+without touching call sites; the inert guard rejects any CO₂e basis whose
+conversion is not a usable ratio, so a half-built mechanism (c) cannot compute.
+
+Mechanism (a), "linear", is deferred for a related reason: its intercept is a
+one-time cumulative offset, not a per-year quantity, so applying it to a pathway
+is not a scaling and has no single correct spelling.
+
+## What the sanity band does and does not catch
+
+`test_factor_values_in_sanity_band` asserts every f lands in **[1.45, 2.20]**
+and that the four budgets keep their ordering (2/50 < 2/67 < 1.5/50 < 1.5/67).
+It is worth being precise about its reach, because a band that looks like a
+correctness check but only catches gross errors is worse than one nobody trusts.
+
+Errors injected into `f = (m·x₂₀ + b − C)/x₂₅`, and whether the band notices:
+
+| injected error | 1.5/50 | 1.5/67 | 2/50 | 2/67 | band | ordering |
+|---|---|---|---|---|---|---|
+| *(none — shipped)* | 1.852 | 2.121 | 1.485 | 1.525 | passes | ok |
+| **offset swapped only** | 1.829 | 2.087 | 1.490 | 1.532 | **PASSES (0/4)** | ok |
+| **the actual pre-refit 1.5 °C leg** (T&B affine + C3+C4 offset) | 1.602 | 1.822 | 1.485 | 1.525 | **PASSES (0/4)** | ok |
+| A1 alternative (observation-consistent C) | 1.793 | 2.032 | 1.477 | 1.515 | **PASSES (0/4)** | ok |
+| affine swapped only | 2.048 | 2.426 | 1.449 | 1.477 | caught (2/4) | ok |
+| both swapped (whole ensemble) | 2.026 | 2.392 | 1.454 | 1.484 | caught (1/4) | ok |
+| T&B published affine on both legs | 1.624 | 1.856 | 1.276 | 1.301 | caught (2/4) | ok |
+| offset sign flipped (+C) | 3.523 | 4.627 | 1.932 | 2.067 | caught (2/4) | ok |
+| offset dropped (no re-baselining) | 2.687 | 3.374 | 1.708 | 1.796 | caught (2/4) | ok |
+| intercept dropped (b = 0) | 1.355 | 1.375 | 1.295 | 1.295 | caught (4/4) | ok |
+| x₂₅ fed into the affine | 0.976 | 0.806 | 1.260 | 1.252 | caught (4/4) | caught |
+| x₂₀/x₂₅ swapped | 0.585 | 0.403 | 1.073 | 1.035 | caught (4/4) | caught |
+| slope/intercept transposed | 248 | 297 | 256 | 264 | caught (4/4) | caught |
+| C in Mt not Gt (×1000) | −833 | −1250 | −222 | −269 | caught (4/4) | caught |
+
+**Read the first three rows.** The band catches gross STRUCTURAL errors — a
+dropped or sign-flipped term, a unit error, conflated baselines — and catches
+them loudly. It does **not** catch **ensemble mix-ups**: swapping the offset
+between the two legs leaves every factor comfortably inside the band with the
+ordering intact, and so does **the mismatch that actually shipped** before the
+refit. It also does not distinguish the A1 alternative from the shipped choice,
+which is another way of saying that question is below the band's resolution.
+
+Where the band does catch an ensemble swap it is marginal — the "affine swapped"
+row is caught by 2/50 landing at **1.449** against a lower bound of **1.45**,
+a margin of 0.001. That is not a check anyone should rely on.
+
+**The mix-up guard is `test_no_target_mixes_ensembles`**, which checks each
+fit's declared `categories` against the actual `category` column of **both** its
+own files. That is a structural check on data, not a plausibility check on
+output, and it is the one that would have caught the pre-refit state. The band's
+job is to catch the arithmetic going wrong; the ensemble's job belongs to the
+data check. Neither substitutes for the other.
+
+## Procedural asymmetry between the two legs — stated, not hidden
 
 The two pairs files were produced by **different code**, and the original was
 not kept:
@@ -123,16 +341,30 @@ f**. So the C1+C2 coefficients carry that same ~0.1 % procedural signature
 relative to whatever produced the C3+C4 ones.
 
 This is tolerable because **each shipped CSV refits its own published
-coefficients exactly** (asserted by `test_each_fit_refits_from_its_own_shipped_rows`):
-both legs are independently reproducible from the rows that ship, whichever code
+coefficients exactly** (`test_each_fit_refits_from_its_own_shipped_rows`): both
+legs are independently reproducible from the rows that ship, whichever code
 wrote them. Unifying the implementation is **deferred** — it would move
 already-published 2 °C figures for a sub-0.1 % gain. Revisit at the
 publication-time refresh, when both legs can be re-pulled together.
 
+## Provenance guards — what they check, and what they don't
+
+`tests/test_aesa_co2e_ratio_provenance.py` checks **options → sources**: every
+budget option names a `source_budget` and a `source_deduction` that exist in the
+top-level `sources[]` array of `carbon_budgets.json`. It deliberately does **not**
+check the reverse. Two entries in `sources[]` are therefore referenced by no
+option — `AR6_BUDGET_CALC` (Lamboll's AR6CarbonBudgetCalc) and
+`HAUSFATHER_2023_CLIMATE_BRINK`. **That is intentional**: they are cross-check
+references, the two things a future maintainer should consult when verifying the
+budget values without re-reading the IPCC PDF. A reverse-orphan check would flag
+them and the natural "fix" would be deleting the most useful pointers in the
+file. If one is ever removed, it should be because it stopped being a useful
+cross-check, not because a guard called it unused.
+
 > Historical note: the "Open decision" / "candidate factor" / Bjørn-extrapolation
 > sections below were the pre-wiring exploration. The decisions were resolved as:
-> **per-temperature affine** (Bjørn 1.5°C / AR6-analog 2°C) on the **from-2020**
-> budget x20, re-baselined to from-2025 by subtracting **C** (2020–2024 CO₂e),
+> **per-temperature affine** (now AR6-refit on both legs) on the **from-2020**
+> budget x₂₀, re-baselined to from-2025 by subtracting **C** (2020–2024 CO₂e),
 > giving the per-budget `f` in the final table. Kept for provenance.
 
 ## Why this exists
@@ -433,14 +665,20 @@ The factor is recomputed from these stored inputs (no magic number;
 budget + depletion pathway by f → the climate-change SR is divided by f
 (uniform, single-scalar Route B; the affine intercept is absorbed into the
 per-budget f). The numerator (EF v3.1 GWP100) is unchanged; only the
-climate-change SR responds; other planetary-boundary SRs are untouched.
+climate-change SR responds; other planetary-boundary SRs are untouched. Because
+the SAME f scales budget and pathway, **the depletion year does not move** —
+see "A2" above for the exact algebra and for the approximation it rests on.
 
-**Frontend:** an AESA SR-view toggle ("CO₂ budget" / "CO₂-eq budget"), **default
-CO₂-eq**, sets `budget_basis` and re-runs the compute under the new basis.
+**Frontend:** the basis is set in the AESA carbon-budget configuration
+(`aesa-config-budget-basis`, "CO₂ budget" / "CO₂-eq budget"), visible before any
+compute; a fresh draft defaults to **CO₂-eq**. It is a pre-compute setting —
+flipping it changes `budget_basis` on the draft and applies on the next Compute.
+Every surface that prints a budget magnitude follows the basis in BOTH label and
+value (the sidebar sparkline, the timeline inset, and every carbon-budget cell
+of the exported workbook); the published AR6 CO₂ budgets in the option dropdown
+stay labelled CO₂, because they are the conversion's INPUT.
 
-### Flags (carried from Phase 1)
-- `1.5C_67` f=**1.822** sits marginally above the ~1.45–1.80 sanity band — expected
-  (smallest x25=200; the intercept dominates at low x). Not an error.
+### Flags
 - **`1.5C_50` (x20=500): the out-of-domain problem is GONE.** It was outside
   Tilsted & Bjørn's published [223, 427], which previously required an argument
   (that the quoted range is the budget-*insertion* range, not the regression's
@@ -464,8 +702,18 @@ CO₂-eq**, sets `budget_basis` and re-runs the compute under the new basis.
   from-2025 budget (x₂₅ = 200) makes the intercept dominate, and the C1+C2
   affine implies a larger CO₂e budget throughout. Expected, not an error.
 
-**Status recap** — the AR6-analog coefficients and **C** are reproduced from the
-shipped CSVs and are no longer flagged provisional. Still open: the **budget
-data** (`carbon_budgets.json`) pending an AR6/GCB review. The 1.5 °C citation is
-now complete (Tilsted & Bjørn 2023, Climatic Change 176:103,
-doi:10.1007/s10584-023-03583-4).
+**Status recap** — the coefficients and **C** on BOTH legs are reproduced from
+the shipped CSVs and are no longer flagged provisional. The 1.5 °C citation is
+complete (Tilsted & Bjørn 2023, Climatic Change 176:103,
+doi:10.1007/s10584-023-03583-4); the 2 °C affine is an original in-repo
+regression and must be cited as such.
+
+Still open, and deliberately so:
+
+| open item | where it is documented | why it is open |
+|---|---|---|
+| the **budget data** — AR6 WG1 values + the −200 GtCO₂ deduction | `carbon_budgets.json` `_notice`, `provisional: true` on every option | pending an AR6/GCB review before publication |
+| **A1** — f mixes observed (x₂₅) and modelled (C) provenance | "A1" above, with the alternative quantified | decided: keep the ensemble median; worth 0.53 % on the shipped default |
+| **A2** — mechanism (c), a true per-year CO₂e pathway | "A2" above, with the drift quantified | needs a CO₂e trajectory per SSP marker; the AR6 REMIND series are a different model/scenario set |
+| unifying the two legs' derivation code | "Procedural asymmetry" above | ~0.03 % on f; would move already-published 2 °C figures |
+| `sharing_data.json`'s AR principle still cites **GCB 2023** while the budgets cite **GCB 2024** | reported separately (B5) | a data decision, not a documentation one |

@@ -35,6 +35,7 @@ from mapper.core.aesa_engine import (
     BUILTIN_PRINCIPLES,
     MULTI_D_DEFAULTS,
     build_carbon_budget,
+    carbon_budget_vintage,
     build_default_multi_d_config,
     build_default_sharing_preset,
     co2e_conversion_for_budget,
@@ -690,6 +691,25 @@ def _build_aesa_workbook(
     header_fill = PatternFill("solid", fgColor="064E3B")
     num_fmt = "0.000E+00"
 
+    # ── Budget basis, resolved ONCE for the whole workbook (B1) ──────────────
+    # Every carbon-budget label AND value in this file follows the basis, so a
+    # reader never sees a CO2-basis magnitude sitting beside a CO2e one. The
+    # chain columns on "Impacts vs SOS" already did this; the Carbon Budget
+    # sheet, the Summary line and the Methodology line did not, and wrote the
+    # raw CO2 scalar under a "Gt CO2" (or bare "Gt") label next to the CO2e
+    # series compute had actually run on — reading as a remaining budget larger
+    # than its own initial budget.
+    #
+    # `_cb` is the engine's own `with_basis_applied()` copy: identity under the
+    # CO2 basis (no drift) and the exact pair the SR rows were computed from
+    # under CO2e.
+    _co2e = (config.carbon_budget is not None
+             and config.carbon_budget.budget_basis == "CO2e_GHG"
+             and config.carbon_budget.co2e_ratio() is not None)
+    _unit = "CO2e" if _co2e else "CO2"
+    _cb = (config.carbon_budget.with_basis_applied()
+           if config.carbon_budget is not None else None)
+
     wb = Workbook()
     wb.remove(wb.active)
 
@@ -721,11 +741,12 @@ def _build_aesa_workbook(
     # the legacy Layer-2 row when the 2-layer Multi-D config is present.
     if config.multi_d is not None:
         ws.append(["Layer 2 (sector share)", config.multi_d.layer2_sector_share])
-    if config.carbon_budget is not None:
-        cb = config.carbon_budget
-        ws.append(["Carbon budget", f"{cb.budget_source} — {cb.initial_budget_gt} Gt"])
-        ws.append(["SSP scenario", cb.ssp_scenario])
-        ws.append(["Budget horizon", f"{cb.start_year}–{cb.end_year}"])
+    if _cb is not None:
+        ws.append(["Carbon budget",
+                   f"{_cb.budget_source} — {_cb.initial_budget_gt} Gt {_unit}"])
+        ws.append(["Budget basis", config.carbon_budget.budget_basis])
+        ws.append(["SSP scenario", _cb.ssp_scenario])
+        ws.append(["Budget horizon", f"{_cb.start_year}–{_cb.end_year}"])
     ws.append(["Sensitivity", "all 5 principles" if getattr(result, "sensitivity", None) else "primary only"])
     ws.append([])
     hdr_row = ws.max_row + 1
@@ -772,9 +793,8 @@ def _build_aesa_workbook(
     # Patch 2d — relabel the carbon-budget chain columns as CO2e when the
     # budget basis is CO2e/GHG (the values are CO2e-scaled by compute). CO2
     # basis (default) keeps the original "(Gt)" / "(Gt/yr)" labels — no drift.
-    _co2e = (config.carbon_budget is not None
-             and config.carbon_budget.budget_basis == "CO2e_GHG"
-             and config.carbon_budget.co2e_ratio() is not None)
+    # `_co2e` is resolved once at the top of this builder. The CO2-basis labels
+    # keep their historical bare "(Gt)" / "(Gt/yr)" form — no drift.
     _rem_lbl = "Remaining Budget (Gt CO2e)" if _co2e else "Remaining Budget (Gt)"
     _alloc_lbl = "Global Allocation (Gt CO2e/yr)" if _co2e else "Global Allocation (Gt/yr)"
     ws.append([
@@ -842,16 +862,44 @@ def _build_aesa_workbook(
     # ── Carbon Budget ──
     if config.carbon_budget is not None:
         ws = wb.create_sheet("Carbon Budget")
-        cb = config.carbon_budget
-        ws.append(["Initial budget (Gt CO2)", cb.initial_budget_gt])
+        # B1 — the WHOLE sheet follows the basis, label AND value, exactly as
+        # the Impacts-vs-SOS chain columns already did.
+        #
+        # It used to write the RAW config: "Initial budget (Gt CO2) = 1150.0"
+        # while the sibling sheet, reading the same run's engine output, said
+        # "Remaining Budget (Gt CO2e) = 1707.2". Both cells were individually
+        # correct — one is the pre-basis CO2 scalar, the other the CO2e-scaled
+        # series compute actually ran on — but side by side in one workbook they
+        # read as a remaining budget exceeding its own initial budget. These
+        # files get attached to papers.
+        #
+        # `with_basis_applied()` is the engine's own scaling (identity under the
+        # CO2 basis, so no drift there), which also makes this sheet's per-year
+        # remaining-budget column agree with `remaining_budget_gt` on the SR
+        # rows instead of silently differing by the factor.
+        cb = _cb
+        ws.append([f"Initial budget (Gt {_unit})", cb.initial_budget_gt])
         ws.append(["Source", cb.budget_source])
         ws.append(["SSP scenario", cb.ssp_scenario])
         ws.append(["Start year", cb.start_year])
         ws.append(["End year", cb.end_year])
+        ws.append(["Budget basis", config.carbon_budget.budget_basis])
+        if _co2e:
+            # The pre-basis figure is kept, explicitly labelled, so the CO2e
+            # number stays traceable to the published AR6 CO2 budget it came
+            # from rather than appearing as an unsourced magnitude.
+            ws.append(["CO2->CO2e factor", config.carbon_budget.co2e_ratio()])
+            ws.append(["Initial budget before conversion (Gt CO2)",
+                       config.carbon_budget.initial_budget_gt])
         ws.append([])
-        ws.append(["Year", "Projected global CO2 (Gt)", "Remaining budget (Gt)",
-                   "Annual global allocation (Gt)"])
-        for row in ws.iter_rows(min_row=7, max_row=7):
+        _hdr_row = ws.max_row + 1
+        ws.append([
+            "Year",
+            f"Projected global {_unit} (Gt)",
+            f"Remaining budget (Gt {_unit})",
+            f"Annual global allocation (Gt {_unit})",
+        ])
+        for row in ws.iter_rows(min_row=_hdr_row, max_row=_hdr_row):
             for cell in row:
                 cell.font = header_font
                 cell.fill = header_fill
@@ -901,9 +949,17 @@ def _build_aesa_workbook(
         ws.append(["Layer 2 (grandfathering)", f"{config.multi_d.layer2_sector_share} — {config.multi_d.layer2_source}"])
         principles = sorted({sp.principle for sp in config.multi_d.layer1.values()})
         ws.append(["Layer 1 principles used", ", ".join(principles)])
-    if config.carbon_budget:
-        ws.append(["Carbon budget", f"{config.carbon_budget.initial_budget_gt} Gt — {config.carbon_budget.budget_source}"])
-        ws.append(["SSP scenario", config.carbon_budget.ssp_scenario])
+    if _cb is not None:
+        ws.append(["Carbon budget",
+                   f"{_cb.initial_budget_gt} Gt {_unit} — {_cb.budget_source}"])
+        ws.append(["Budget basis", config.carbon_budget.budget_basis])
+        if _co2e:
+            ws.append([
+                "CO2->CO2e conversion",
+                f"×{config.carbon_budget.co2e_ratio()} — "
+                f"{config.carbon_budget.co2e_conversion.source}",
+            ])
+        ws.append(["SSP scenario", _cb.ssp_scenario])
     ws.append(["Missing PB categories",
                ", ".join(result.missing_categories) if result.missing_categories else "none"])
     ws.append(["Uncertainty", "Deterministic — Monte Carlo planned for v1.1"])
@@ -1038,12 +1094,17 @@ def _build_sharing_workbook(
             ws.append(["(none)", "", "No carbon budget configured for this configuration."])
         else:
             for row in [
-                ["initial_budget_gt", cb.initial_budget_gt, "Gt CO2 (or CO2e once basis-applied)"],
+                ["initial_budget_gt", cb.initial_budget_gt,
+                 "Gt CO2 — ALWAYS the pre-basis figure. A CO2e_GHG basis is "
+                 "applied at compute (x co2e_factor); it is not stored here."],
                 ["budget_source", cb.budget_source, "e.g. IPCC AR6 1.5C 67th pct"],
                 ["start_year", cb.start_year, ""],
                 ["end_year", cb.end_year, ""],
                 ["ssp_scenario", cb.ssp_scenario, "Valid pathways on the Reference sheet"],
-                ["budget_basis", cb.budget_basis, "CO2 or CO2e_GHG"],
+                ["budget_basis", cb.budget_basis,
+                 "CO2 or CO2e_GHG. CO2e_GHG scales the budget AND the pathway "
+                 "below by co2e_factor, so the climate SR is divided by it and "
+                 "the depletion year is unchanged."],
                 ["provisional", "TRUE" if cb.provisional else "FALSE", ""],
             ]:
                 ws.append(row)
@@ -1052,9 +1113,16 @@ def _build_sharing_workbook(
             # inert on re-import, so it round-trips explicitly.
             conv = cb.co2e_conversion
             ws.append(["co2e_factor", round(conv.factor, 12) if conv else "",
-                       "Sourced CO2->CO2e factor. Blank = none."])
+                       "Sourced CO2->CO2e factor, DERIVED PER TEMPERATURE "
+                       "TARGET (not per SSP): f = (m*x20 + b - C) / x25, with "
+                       "the affine (m, b) and the offset C both fitted over the "
+                       "AR6 category matching the target. Blank = none, which "
+                       "makes a CO2e_GHG basis inert (compute rejects it rather "
+                       "than fabricating a factor)."])
             ws.append(["co2e_kind", conv.kind if conv else "", ""])
-            ws.append(["co2e_source", conv.source if conv else "", ""])
+            ws.append(["co2e_source", conv.source if conv else "",
+                       "Names the affine and the offset set, each with the file "
+                       "it is reproducible from."])
             ws.append([])
             ws.append(["Year", "Projected Emissions (Gt/yr)", ""])
             for year in sorted(cb.projected_emissions):
@@ -1140,6 +1208,24 @@ def _build_sharing_workbook(
                 ["Sheet: Carbon Budget"],
                 ["  Budget scalars, then a Year -> Gt/yr depletion pathway. Leave the"],
                 ["  sheet reading '(none)' for no carbon budget."],
+                ["  initial_budget_gt and the pathway are ALWAYS in Gt CO2 — the"],
+                ["  published IPCC AR6 budget and its CO2 trajectory. They are not"],
+                ["  rewritten when the basis changes."],
+                ["  budget_basis = CO2e_GHG matches the budget to the EF v3.1 GWP100"],
+                ["  impact, which counts all greenhouse gases. It multiplies BOTH the"],
+                ["  budget and the pathway by co2e_factor at compute time, so the"],
+                ["  climate-change Sustainability Ratio is divided by that factor and"],
+                ["  the depletion year does not move. No other boundary is affected."],
+                ["  co2e_factor is DERIVED PER TEMPERATURE TARGET, not per SSP:"],
+                ["    f = (m*x20 + b - C) / x25"],
+                ["  where x20 is the budget from 2020, x25 the budget from 2025, and"],
+                ["  (m, b) and C are an affine and a 2020-2024 offset fitted over the"],
+                ["  SAME AR6 scenario category as the target (C1+C2 for 1.5 C,"],
+                ["  C3+C4 for 2 C). Editing co2e_factor by hand overrides that"],
+                ["  derivation; the import reads this cell verbatim and never"],
+                ["  recomputes. Leaving it blank makes a CO2e_GHG basis inert and"],
+                ["  compute will reject it rather than assume a factor."],
+                ["  Full derivation: mapper/data/aesa/co2e_ratio/README.md"],
                 [""],
                 ["Sheet: Reference (locked, read-only)"],
                 ["  Valid values for every constrained field, generated from this"],
@@ -1186,12 +1272,18 @@ def _build_sharing_workbook(
         ref.append(["resolution", "(blank)", "Same as step."])
 
         # AR6 temperature x probability combinations, as the engine serves them.
+        # B7 — the BASE YEAR is derived from the budget data's own vintage, not
+        # hardcoded. The magnitude beside it was already read from the file; a
+        # literal "from 2025" next to a data-driven number is the shape that
+        # goes stale silently on a re-baselining, in a sheet the user cannot
+        # edit (it is locked read-only) and therefore cannot correct.
+        _vintage = carbon_budget_vintage()
         for opt in load_carbon_budget_options():
             ref.append([
                 "carbon_budget option",
                 opt.get("id", ""),
                 f"{opt.get('name', '')} — {opt.get('remaining_gt_from_2025', '')} Gt "
-                f"from 2025 ({opt.get('source_budget', '')})",
+                f"from {_vintage.base_year} ({opt.get('source_budget', '')})",
             ])
 
         for ssp in load_ssp_trajectories():

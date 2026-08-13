@@ -34,6 +34,9 @@ DATA_DIR = (
 )
 
 
+from mapper.core.aesa_engine import carbon_budget_vintage
+
+
 def _read(name: str) -> dict:
     return json.loads((DATA_DIR / name).read_text(encoding="utf-8"))
 
@@ -291,7 +294,11 @@ def test_fresh_config_carbon_budget_defaults():
     cfg = build_carbon_budget()
     assert cfg.initial_budget_gt == 1150.0
     assert cfg.ssp_scenario == "SSP1-2.6"
-    assert cfg.start_year == 2025
+    # B4 — asserted against the DATA's own vintage, not against the literal the
+    # default is derived from. `assert cfg.start_year == 2025` verified nothing:
+    # both sides traced to the same 2025, so a re-baselining could move the
+    # budget data and leave this green.
+    assert cfg.start_year == carbon_budget_vintage().base_year
     assert cfg.end_year == 2100
     assert "AR6" in cfg.budget_source
 
@@ -308,3 +315,168 @@ def test_get_defaults_surfaces_fresh_carbon_budget():
     assert cb["ssp_scenario"] == "SSP1-2.6"
     assert cb["start_year"] == 2025
     assert cb["end_year"] == 2100
+
+
+# ── B4 / B6 — the vintage and the deduction are written down ONCE ────────────
+#
+# Two failures of the same shape. The "from 2025" baseline and the "-200 Gt"
+# deduction each appear in several places — a numeric field, a field NAME, the
+# `_notice`, four per-option prose strings, a function default, a locked
+# workbook sheet — and only the numeric field was ever tested. A re-baselining
+# or a revised deduction could therefore move the number and leave every
+# description of it stale, in files that ship to reviewers.
+#
+# These tests make prose and code answer to the data.
+
+import re
+
+
+def test_carbon_budget_vintage_is_read_from_the_data_file():
+    """The vintage fields exist and are internally coherent."""
+    raw = _read("carbon_budgets.json")
+    v = carbon_budget_vintage()
+    assert v.reference_year == raw["start_year_reference"]
+    assert v.deduction_end_year == raw["deduction_end_year"]
+    assert v.consumed_gt == raw["consumed_2020_2024_gt"]
+    # The deduction covers a closed window ending the year before the base year.
+    assert v.deduction_end_year >= v.reference_year
+    assert v.base_year == v.deduction_end_year + 1
+    assert v.deducted_years == v.deduction_end_year - v.reference_year + 1
+
+
+def test_the_vintage_encoded_in_field_NAMES_matches_the_vintage_fields():
+    """`remaining_gt_from_2025` / `original_gt_from_2020` / `consumed_2020_2024_gt`
+    spell the vintage into their own keys, and the engine reads those keys as
+    literals. A re-baselining must rename them in step, or the engine would be
+    reading a from-2025 key holding a from-2030 number."""
+    raw = _read("carbon_budgets.json")
+    v = carbon_budget_vintage()
+    assert f"consumed_{v.reference_year}_{v.deduction_end_year}_gt" in raw
+    for opt in raw["options"]:
+        assert f"remaining_gt_from_{v.base_year}" in opt, opt["id"]
+        assert f"original_gt_from_{v.reference_year}" in opt, opt["id"]
+
+
+def test_build_carbon_budget_default_start_year_follows_the_data():
+    """The function default is DERIVED, so it cannot drift from the file."""
+    from mapper.core.aesa_engine import build_carbon_budget
+
+    v = carbon_budget_vintage()
+    assert build_carbon_budget().start_year == v.base_year
+    # And an explicit override still wins — the derivation is only the default.
+    assert build_carbon_budget(start_year=v.base_year + 7).start_year == v.base_year + 7
+
+
+def test_workbook_reference_sheet_derives_the_base_year():
+    """B7 — the locked Reference sheet's "N Gt from YYYY" detail. The magnitude
+    was already read from the data while the year was a literal; the sheet is
+    read-only, so a stale year there is one a user cannot correct."""
+    from mapper.api.aesa import _build_sharing_workbook
+    from mapper.core.aesa_engine import build_carbon_budget, build_default_sharing_preset
+    from mapper.models.aesa_schemas import AESAConfigBundle
+
+    v = carbon_budget_vintage()
+    preset = build_default_sharing_preset()
+    bundle = AESAConfigBundle(
+        boundary_set_id=preset.boundary_set_id, sharing=preset,
+        method_mapping=[], carbon_budget=build_carbon_budget(),
+    )
+    ws = _build_sharing_workbook(preset, bundle=bundle)["Reference"]
+    details = [r[2] for r in ws.iter_rows(min_row=2, values_only=True)
+               if r[0] == "carbon_budget option"]
+    assert details, "Reference sheet lists no carbon_budget options"
+    for d in details:
+        assert f"from {v.base_year}" in d, d
+
+
+def _deduction_claims(text: str) -> list[tuple[float, int, int]]:
+    """Every "-D Gt YYYY-YYYY" claim in a prose string."""
+    return [(float(d), int(a), int(b))
+            for d, a, b in re.findall(r"-\s*([\d.]+)\s*Gt(?:\s*CO2)?\s+(?:for cumulative\s+)?(\d{4})-(\d{4})", text)]
+
+
+def test_the_deduction_prose_agrees_with_the_deduction_number():
+    """B6 — the -200 Gt deduction is stated in five places; only the numeric
+    field was tested. Every prose statement of it must now agree with
+    `consumed_2020_2024_gt` AND with the vintage's window."""
+    raw = _read("carbon_budgets.json")
+    v = carbon_budget_vintage()
+    expected = (v.consumed_gt, v.reference_year, v.deduction_end_year)
+
+    claims = _deduction_claims(raw["_notice"])
+    assert claims, "_notice states no deduction — it must describe the -X Gt YYYY-YYYY adjustment"
+    for c in claims:
+        assert c == expected, f"_notice says {c}, data says {expected}"
+
+    for opt in raw["options"]:
+        claims = _deduction_claims(opt["source"])
+        assert claims, f"{opt['id']}: source prose states no deduction"
+        for c in claims:
+            assert c == expected, f"{opt['id']} source says {c}, data says {expected}"
+
+
+def test_each_option_source_prose_restates_its_own_arithmetic():
+    """The per-option strings spell out "X Gt from 2020, -200 Gt = R Gt
+    remaining". X and R must be that option's own fields, not another's."""
+    raw = _read("carbon_budgets.json")
+    v = carbon_budget_vintage()
+    for opt in raw["options"]:
+        m = re.search(
+            r"([\d.]+)\s*Gt\s+from\s+(\d{4}),\s*-\s*([\d.]+)\s*Gt\s+\d{4}-\d{4}\s*=\s*([\d.]+)\s*Gt\s+remaining",
+            opt["source"],
+        )
+        assert m, f"{opt['id']}: source prose does not state the arithmetic"
+        x20, ref, ded, r25 = float(m[1]), int(m[2]), float(m[3]), float(m[4])
+        assert x20 == opt["original_gt_from_2020"], opt["id"]
+        assert r25 == opt["remaining_gt_from_2025"], opt["id"]
+        assert ref == v.reference_year, opt["id"]
+        assert ded == v.consumed_gt, opt["id"]
+        # And the sentence is arithmetically true, not merely self-consistent.
+        assert x20 - ded == r25, opt["id"]
+
+
+def test_the_notice_states_the_base_year_it_re_baselines_to():
+    raw = _read("carbon_budgets.json")
+    v = carbon_budget_vintage()
+    assert f"from {v.base_year}" in raw["_notice"]
+
+
+# ── Item 7 — the provisional flag fails CLOSED ───────────────────────────────
+
+
+def test_provisional_defaults_to_true_on_both_schemas():
+    """A safety flag must not default to "verified".
+
+    `build_carbon_budget` ORs the budget option's and the SSP's flags, and every
+    bundled option and trajectory is provisional, so the data path always
+    produced True — while the SCHEMA default was False. A CarbonBudgetConfig or
+    PlanetaryBoundary constructed without the flag (a fixture, an importer, a
+    caller that skips the builder) therefore came out silently non-provisional
+    and would render without the caveat. Not reachable today; neither was the
+    boundary that eventually was.
+    """
+    from mapper.models.aesa_schemas import CarbonBudgetConfig, PlanetaryBoundary
+
+    cb = CarbonBudgetConfig(
+        initial_budget_gt=1.0, budget_source="", start_year=2025, end_year=2100,
+        projected_emissions={}, ssp_scenario="",
+    )
+    assert cb.provisional is True, "carbon budget must default to provisional"
+
+    pb = PlanetaryBoundary(
+        id="x", name="X", control_variable="c", unit="u", boundary_type="flow",
+    )
+    assert pb.provisional is True, "planetary boundary must default to provisional"
+
+
+def test_every_shipped_budget_and_trajectory_is_still_flagged():
+    """The default only matters because nothing shipped relies on it — assert
+    that, so a future entry cannot lean on a False default instead of saying so."""
+    budgets = _read("carbon_budgets.json")
+    for opt in budgets["options"]:
+        assert opt.get("provisional") is True, opt["id"]
+    for s in _read("ssp_trajectories.json")["scenarios"]:
+        assert s.get("provisional") is True, s["id"]
+    for bset in _read("boundary_sets.json")["sets"]:
+        for bid, b in bset["boundaries"].items():
+            assert "provisional" in b, f"{bset['id']}/{bid}"

@@ -75,6 +75,28 @@ async def load_demo(rebuild: bool = False) -> dict:
             status_code=500, detail=f"Demo built but could not activate: {e}"
         )
 
+    # The builder writes the DSM system, its state and results, the archetypes
+    # and the cohort mapping straight to `dsm_storage`; it never touches the
+    # in-memory registries, and cannot -- `mapper.core.demo_project` does not
+    # import `mapper.api` at all. Without this call everything it persisted
+    # stays invisible until the process restarts: databases show up (bw2data is
+    # a separate path) so the load looks like it worked, while Stock Modeller
+    # and LCA Architect are empty.
+    #
+    # `hydrate_from_disk()` is safe to call mid-session, on two counts checked
+    # rather than assumed:
+    #
+    #   * cost -- it re-reads every project, but that is ~40-100 ms against a
+    #     real store (336 files / 4.3 MB / 128 systems), which is nothing beside
+    #     the demo build it follows;
+    #   * clobbering -- it merges with `.update()`, and every in-memory write in
+    #     `dsm.py` persists in the same handler, so the disk copy it installs is
+    #     the same content. `_multi_results` is not hydrated at all, so it is
+    #     untouched. A project held only in memory survives, which is locked by
+    #     `test_rehydration_does_not_drop_another_project_held_in_memory`.
+    from mapper.api import dsm as _dsm
+    _dsm.hydrate_from_disk()
+
     payload = report.as_dict()
     payload["is_demo_active"] = True
     return payload

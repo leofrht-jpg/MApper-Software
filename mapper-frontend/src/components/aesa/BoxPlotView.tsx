@@ -109,7 +109,7 @@ export function BoxPlotView({ result }: Props) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-          Multi-D vs uniform sharing principles — SR distribution per boundary
+          Multi-D vs uniform sharing principles: SR distribution per boundary
         </div>
         <ChartExportButton chartRef={boxRef} legendRef={legendRef} filename={`aesa_boxplot_${year}`} />
       </div>

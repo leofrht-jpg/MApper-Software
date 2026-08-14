@@ -834,7 +834,7 @@ export function DSMDashboard() {
             }}>
               <span style={{ color: 'var(--text-tertiary)' }}>
                 Editing <strong style={{ color: 'var(--text-primary)' }}>{activeScenario.name}</strong>
-                {activeScenario.is_base ? ' — every upload is authoritative for Base.' : ` — unset slots inherit from ${baseScenarioObj?.name ?? 'Base'}.`}
+                {activeScenario.is_base ? '. Every upload is authoritative for Base.' : `. Unset slots inherit from ${baseScenarioObj?.name ?? 'Base'}.`}
               </span>
             </div>
           )}
@@ -866,7 +866,7 @@ export function DSMDashboard() {
                     >
                       <CSVUploader
                         label={useAggregate ? 'Upload aggregate stock CSV (no age column)' : 'Upload initial stock CSV'}
-                        description={useAggregate ? 'Total per cohort — server spreads across ages via Weibull.' : undefined}
+                        description={useAggregate ? 'Total per cohort. The server spreads it across ages via Weibull.' : undefined}
                         onUpload={async (f) => {
                           if (useAggregate) {
                             await uploadStockAggregate(f)
@@ -962,7 +962,7 @@ export function DSMDashboard() {
                       <SetupCard title="Stock targets" description={targetsLoaded ? `${targetYearCount} years loaded` : 'Required for stock-driven cohorts'}>
                         <CSVUploader
                           label="Upload stock-target CSV"
-                          description="year, dims…, count — one row per (year, cohort)."
+                          description="year, dims…, count. One row per (year, cohort)."
                           onUpload={async (f) => {
                             await uploadStockTargets(f)
                             setExpandTargets(false)

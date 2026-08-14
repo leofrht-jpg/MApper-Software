@@ -61,7 +61,7 @@ export function ConfigurationsDropdown({
         onClick={() => setOpen((x) => !x)}
         disabled={disabled}
         data-testid="aesa-configurations-toggle"
-        title={active ? `Configurations (${N}) — active: ${active.name}` : `Configurations (${N})`}
+        title={active ? `Configurations (${N}) · active: ${active.name}` : `Configurations (${N})`}
       >
         <Bookmark size={14} />
         Configurations ({N}){active ? ` · ${active.name}` : ''}

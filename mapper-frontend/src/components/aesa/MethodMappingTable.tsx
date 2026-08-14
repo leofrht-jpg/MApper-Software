@@ -57,7 +57,7 @@ export function MethodMappingTable({ mappings, boundaries, coverage }: Props) {
       <div style={readOnlyNote}>
         <Lock size={10} style={{ flexShrink: 0, marginTop: 1 }} />
         <span>
-          Derived from the boundary set’s EF indicators — read-only here. Use
+          Derived from the boundary set’s EF indicators, and read-only here. Use
           “Re-suggest” below, or edit the Method Mapping sheet of the
           configuration workbook.
         </span>
@@ -167,7 +167,7 @@ export function MethodMappingTable({ mappings, boundaries, coverage }: Props) {
             EF publishes each aggregate alongside its decomposition.
             Characterising a boundary against one slice of its own aggregate
             would double-count, and two rows for one boundary collide on
-            (year, pb_id) — so the sub-components are deliberately left
+            (year, pb_id), so the sub-components are deliberately left
             unmapped.
           </div>
           {table.expectedGroups.map((g) => (

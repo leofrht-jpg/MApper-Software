@@ -133,7 +133,7 @@ export function ArchetypeSelect({
                     aria-selected={checked}
                     data-testid={`archetype-select-option-${a.id}`}
                     onClick={() => { onChange(a.id); setOpen(false) }}
-                    title={errored ? `${a.name} — ${a.validation_error_rows} error rows; cannot compute until fixed` : a.name}
+                    title={errored ? `${a.name}: ${a.validation_error_rows} error rows; cannot compute until fixed` : a.name}
                     disabled={errored}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 8,

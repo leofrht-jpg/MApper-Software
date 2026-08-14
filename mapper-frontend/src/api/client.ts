@@ -2572,7 +2572,7 @@ export async function downloadCohortMappingsTemplate(
   const res = await fetch(url)
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new Error(`Template download failed (${res.status}) ${url} — ${body || '(no body)'}`)
+    throw new Error(`Template download failed (${res.status}) ${url}: ${body || '(no body)'}`)
   }
   const blob = await res.blob()
   const blobUrl = URL.createObjectURL(blob)

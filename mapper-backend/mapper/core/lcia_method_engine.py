@@ -412,7 +412,7 @@ def install_excel(
     if total > 0 and unmatched / total >= UNMATCHED_WARN_THRESHOLD:
         raise InstallError(
             f"{unmatched} of {total} biosphere flows could not be matched "
-            f"(≥ {UNMATCHED_WARN_THRESHOLD:.0%}). Install refused — "
+            f"(≥ {UNMATCHED_WARN_THRESHOLD:.0%}). Install refused: "
             "the method would produce incomplete results."
         )
     warnings: list[str] = []
@@ -432,7 +432,7 @@ def install_excel(
     new_tuples = sorted(after - before)
 
     if not new_tuples:
-        raise InstallError("No methods were registered — the workbook may be empty.")
+        raise InstallError("No methods were registered. The workbook may be empty.")
 
     # Persist the file in the cache so re-install works.
     method_id = f"custom_{_hash(str(method_name_tuple))}"
@@ -484,8 +484,8 @@ def uninstall(method_id: str) -> int:
 
 BUNDLED_FAMILY_HINTS: dict[str, dict[str, Any]] = {
     "EF v3.1": {"description": "Environmental Footprint (EU JRC)"},
-    "ReCiPe 2016 v1.03, midpoint (H)": {"description": "Midpoint (H) — Huijbregts et al. (2017)"},
-    "ReCiPe 2016 v1.03, endpoint (H)": {"description": "Endpoint (H) — Huijbregts et al. (2017)"},
+    "ReCiPe 2016 v1.03, midpoint (H)": {"description": "Midpoint (H), Huijbregts et al. (2017)"},
+    "ReCiPe 2016 v1.03, endpoint (H)": {"description": "Endpoint (H), Huijbregts et al. (2017)"},
     "CML v4.8 2016": {"description": "Leiden University CML"},
     "CML v4.8 2016 no LT": {"description": "Leiden University CML (no long-term)"},
     "TRACI v2.1": {"description": "US EPA TRACI"},

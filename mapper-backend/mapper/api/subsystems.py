@@ -313,7 +313,7 @@ async def update_subsystem(
     if subsystem_id == system_id:
         raise HTTPException(
             status_code=400,
-            detail="Primary subsystems are defined by the system itself — edit the system instead.",
+            detail="Primary subsystems are defined by the system itself. Edit the system instead.",
         )
     subs = _sys_subs(system_id)
     if subsystem_id not in subs:
@@ -418,7 +418,7 @@ async def clear_subsystem_initial_stock(
     system_id: str, subsystem_id: str
 ) -> dict[str, bool]:
     if subsystem_id == system_id:
-        raise HTTPException(status_code=400, detail="Primary system — use the DSM API.")
+        raise HTTPException(status_code=400, detail="Primary system. Use the DSM API.")
     subs = _sys_subs(system_id)
     sub = subs.get(subsystem_id)
     if sub is None:
@@ -437,7 +437,7 @@ async def clear_subsystem_initial_stock(
 )
 async def template_subsystem_stock(system_id: str, subsystem_id: str) -> Response:
     if subsystem_id == system_id:
-        raise HTTPException(status_code=400, detail="Primary template — use the DSM API.")
+        raise HTTPException(status_code=400, detail="Primary template. Use the DSM API.")
     sub = _sys_subs(system_id).get(subsystem_id)
     if sub is None:
         raise HTTPException(status_code=404, detail="Subsystem not found")

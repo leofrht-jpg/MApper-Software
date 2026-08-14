@@ -943,7 +943,7 @@ def get_biosphere_contributions(
     method_unit = bw2data.methods.get(lca.method, {}).get("unit", "")
 
     if not hasattr(lca, "characterized_inventory") or lca.characterized_inventory is None:
-        logger.warning("biosphere CA: lca.characterized_inventory missing — did lcia() run?")
+        logger.warning("biosphere CA: lca.characterized_inventory missing; did lcia() run?")
         return {"items": [], "rest_amount": float(total_score), "rest_percentage": 0.0}
 
     try:
@@ -956,7 +956,7 @@ def get_biosphere_contributions(
     if nonzero == 0:
         logger.info(
             "biosphere CA: characterized_inventory has no non-zero biosphere rows "
-            "(score=%s, method=%s) — method may not characterise any flows in this inventory",
+            "(score=%s, method=%s). The method may not characterise any flows in this inventory",
             total_score, lca.method,
         )
         return {"items": [], "rest_amount": float(total_score), "rest_percentage": 0.0}

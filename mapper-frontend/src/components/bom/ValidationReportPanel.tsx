@@ -125,8 +125,8 @@ function Stat({ dotColor, icon, label, highlight }: {
 function GroupList({ severity, groups }: { severity: ValidationSeverity; groups: ValidationGroup[] }) {
   const color = severity === 'error' ? 'var(--danger)' : 'var(--warning)'
   const heading = severity === 'error'
-    ? `Errors — ${groups.length} unique issue${groups.length === 1 ? '' : 's'} (block compute)`
-    : `Warnings — ${groups.length} unique issue${groups.length === 1 ? '' : 's'}`
+    ? `Errors: ${groups.length} unique issue${groups.length === 1 ? '' : 's'} (block compute)`
+    : `Warnings: ${groups.length} unique issue${groups.length === 1 ? '' : 's'}`
 
   return (
     <div style={{ marginTop: 12 }}>

@@ -300,7 +300,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
                           )}
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
                             {scen.is_base
-                              ? 'Root scenario — every slot is authoritative.'
+                              ? 'Root scenario. Every slot is authoritative.'
                               : `Inherits from ${baseScen?.name ?? 'Base'} for unset slots.`}
                           </div>
                         </div>
@@ -364,7 +364,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
                               <Edit2 size={13} strokeWidth={1.5} />
                             </Button>
                             <Button variant="ghost" onClick={() => handleDuplicate(scen)} disabled={busy}
-                              title="Duplicate — copies every slot into a new scenario">
+                              title="Duplicate: copies every slot into a new scenario">
                               <Copy size={13} strokeWidth={1.5} />
                             </Button>
                             {!scen.is_base && (
@@ -372,7 +372,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
                                 variant="ghost"
                                 onClick={() => setPromoteTarget(scen)}
                                 disabled={busy}
-                                title="Promote to Base — makes this the new inheritance fallback"
+                                title="Promote to Base: makes this the new inheritance fallback"
                               >
                                 <Star size={13} strokeWidth={1.5} /> Set as Base
                               </Button>
@@ -453,7 +453,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
                 <ul style={{ paddingLeft: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 6 }}>
                   <li>Make it the new fallback for inheritance</li>
                   <li>Copy currently-inherited data into all other scenarios as explicit overrides, so no scenario loses its current data</li>
-                  <li>Flatten the inheritance tree — after this change, scenarios won't automatically update if you modify the new Base's data</li>
+                  <li>Flatten the inheritance tree. After this change, scenarios won't automatically update if you modify the new Base's data</li>
                 </ul>
                 <p style={{ marginTop: 'var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
                   This operation is reversible by promoting another scenario back.

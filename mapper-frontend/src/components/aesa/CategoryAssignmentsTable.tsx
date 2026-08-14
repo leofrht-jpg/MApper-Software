@@ -38,7 +38,7 @@ export function CategoryAssignmentsTable({ boundarySet }: Props) {
         border: '1px dashed var(--border-subtle)',
         borderRadius: 'var(--radius-sm)',
       }}>
-        No category-specific layers in the chain — all categories use the fixed principles above.
+        No category-specific layers in the chain. All categories use the fixed principles above.
       </div>
     )
   }

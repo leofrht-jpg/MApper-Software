@@ -1156,14 +1156,14 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                   >
                     {databases.length === 0 && <option value="">Loading…</option>}
                     {dbGroups.tStatic.length > 0 && (
-                      <optgroup label="Technosphere — Static">
+                      <optgroup label="Technosphere: Static">
                         {dbGroups.tStatic.map((d) => (
                           <option key={d.name} value={d.name}>{d.name}</option>
                         ))}
                       </optgroup>
                     )}
                     {dbGroups.tProspective.length > 0 && (
-                      <optgroup label="Technosphere — Prospective">
+                      <optgroup label="Technosphere: Prospective">
                         {dbGroups.tProspective.map((d) => (
                           <option key={d.name} value={d.name}>{d.name}</option>
                         ))}
@@ -1302,9 +1302,9 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                   />
                   <div style={helperStyle}>
                     {computePatternInfo?.isProspective ? (
-                      <>Prospective LCI — premise-generated background.</>
+                      <>Prospective LCI: premise-generated background.</>
                     ) : (
-                      <>Static — only BOM expressions vary by year. Switch to a prospective database to see LCI evolution.</>
+                      <>Static. Only BOM expressions vary by year; switch to a prospective database to see LCI evolution.</>
                     )}
                   </div>
                 </div>
@@ -1780,7 +1780,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                         </div>
                         <p style={{ marginTop: 6, fontSize: 'var(--text-sm)', color: 'var(--text-secondary)' }}>
                           {Object.keys(arcResult.stage_amounts ?? {}).length > 0
-                            ? `${arcResult.archetype_name} — ${Object.entries(arcResult.stage_amounts).map(([s, v]) => `${s}: ${v}×`).join(', ')}`
+                            ? `${arcResult.archetype_name} · ${Object.entries(arcResult.stage_amounts).map(([s, v]) => `${s}: ${v}×`).join(', ')}`
                             : `${arcResult.amount} unit(s) of ${arcResult.archetype_name}`}
                         </p>
                       </div>
@@ -1857,7 +1857,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                         <div style={cardStyle}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
                             <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {activeArcResult.method[activeArcResult.method.length - 1]} — {activeArcResult.unit}
+                              {activeArcResult.method[activeArcResult.method.length - 1]} · {activeArcResult.unit}
                             </h4>
                             <ChartExportButton chartRef={comparisonBarRef} filename={`calc_comparison_${activeArcResult.method.join('_')}`} />
                           </div>

@@ -67,7 +67,7 @@ export function PrinciplesEditor() {
 
   const remove = (id: string) => {
     if (inUse[id]) {
-      alert(`Cannot delete "${id}" — ${inUse[id]}. Remove the reference first.`)
+      alert(`Cannot delete "${id}": ${inUse[id]}. Remove the reference first.`)
       return
     }
     if (!confirm(`Delete principle "${id}"?`)) return
@@ -106,7 +106,7 @@ export function PrinciplesEditor() {
                 )}
                 {inUse[p.id] && (
                   <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 1, fontStyle: 'italic' }}>
-                    in use — {inUse[p.id]}
+                    in use: {inUse[p.id]}
                   </div>
                 )}
               </div>
@@ -117,7 +117,7 @@ export function PrinciplesEditor() {
                 <button
                   onClick={() => remove(p.id)}
                   style={{ ...iconBtn, color: inUse[p.id] ? 'var(--text-tertiary)' : 'var(--danger)' }}
-                  title={inUse[p.id] ? `In use — ${inUse[p.id]}` : 'Delete'}
+                  title={inUse[p.id] ? `In use: ${inUse[p.id]}` : 'Delete'}
                   disabled={!!inUse[p.id]}
                 >
                   <Trash2 size={11} />

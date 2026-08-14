@@ -144,7 +144,7 @@ export function SlotDataViewer({ scenario, baseScenario, slotKey, onClose }: Slo
         }}>
           <div>
             <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>
-              {SLOT_LABELS[slotKey]} — {scenario.name}
+              {SLOT_LABELS[slotKey]} · {scenario.name}
             </h3>
             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
               {isInherited

@@ -3,7 +3,7 @@
     {
       "id": "impact_world_plus_2_2_1",
       "name": "IMPACT World+ 2.2.1",
-      "description": "Multi-regional LCIA — Bulle et al. (2019)",
+      "description": "Multi-regional LCIA, Bulle et al. (2019)",
       "long_description": "Midpoint, expert and footprint versions. Covers ~18 midpoint categories with regionalized characterisation factors. CIRAIG.",
       "source_url": "https://www.impactworldplus.org/",
       "citation": "Bulle, C., et al. (2019). IMPACT World+: a globally regionalized life cycle impact assessment method. Int J Life Cycle Assess 24, 1653-1674.",
@@ -30,7 +30,7 @@
     {
       "id": "lc_impact",
       "name": "LC-IMPACT",
-      "description": "GLAM-aligned damage method — Verones et al. (2020)",
+      "description": "GLAM-aligned damage method, Verones et al. (2020)",
       "long_description": "Global non-regionalized variant of LC-IMPACT. 22 methods across climate, land use, particulate matter, and water. Installed via the bw2_lcimpact package by Chris Mutel.",
       "source_url": "https://github.com/cmutel/bw2-lcimpact",
       "citation": "Verones, F., et al. (2020). LC-IMPACT: A regionalized life cycle damage assessment method. Journal of Industrial Ecology 24(6), 1201-1219.",
@@ -40,7 +40,7 @@
       "pip_entry_function": "import_global_lcimpact",
       "pip_entry_kwargs": { "biosphere": "biosphere3" },
       "file_size_mb": 1.0,
-      "notes": "Requires internet + pip at install time. First install downloads the Python package (~1 MB). Last released 2022-04 — biosphere flow remapping may be required for newer biosphere3 versions."
+      "notes": "Requires internet + pip at install time. First install downloads the Python package (~1 MB). Last released 2022-04, so biosphere flow remapping may be required for newer biosphere3 versions."
     }
   ]
 }

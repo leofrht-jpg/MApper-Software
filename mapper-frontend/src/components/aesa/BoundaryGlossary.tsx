@@ -81,7 +81,7 @@ export function BoundaryGlossary({
         <div style={{ overflow: 'auto', padding: '8px 16px 16px' }}>
           <p style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
             Charts label each axis with the EF v3.1 category name. EF defines no
-            per-category acronyms, so MApper does not use any — the
+            per-category acronyms, so MApper does not use any. The
             “commonly written” column lists the abbreviations you may see in the
             LCA literature (CML / ILCD convention), for cross-reference only.
           </p>

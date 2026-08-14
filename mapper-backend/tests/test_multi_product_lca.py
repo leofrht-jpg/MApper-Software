@@ -438,7 +438,7 @@ from mapper.api.lca import compose_activity_label  # noqa: E402
 def test_compose_leads_with_activity_name():
     # Distinct process name + product → "name — product".
     assert compose_activity_label("treatment of spent battery", "lithium") \
-        == "treatment of spent battery — lithium"
+        == "treatment of spent battery · lithium"
 
 
 def test_compose_omits_redundant_product():

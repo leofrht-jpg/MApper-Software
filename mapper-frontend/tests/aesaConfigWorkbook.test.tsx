@@ -171,7 +171,7 @@ describe('section (2) workbook buttons', () => {
     const text = container.textContent ?? ''
     expect(text).toContain('boundary_set_id')
     expect(text).toContain('budget_basis')
-    expect(text).toContain('nothing was changed')
+    expect(text).toContain('Nothing was changed')
     expect(onApply).not.toHaveBeenCalled()
     // no confirm dialog on a rejected import
     expect(container.querySelector('[data-testid="aesa-config-import-confirm"]')).toBeNull()

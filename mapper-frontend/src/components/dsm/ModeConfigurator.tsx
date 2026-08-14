@@ -233,7 +233,7 @@ export function ModeConfigurator({ onClose }: ModeConfiguratorProps) {
                 selected={globalKind === 'manual'}
                 onClick={() => setGlobalKind('manual')}
                 title="Manual"
-                hint="Upload stock, inflows, and outflows. Pure accounting — no survival function."
+                hint="Upload stock, inflows, and outflows. Pure accounting, with no survival function."
               />
               <ModeChoice
                 selected={globalKind === 'survival'}
@@ -332,7 +332,7 @@ export function ModeConfigurator({ onClose }: ModeConfiguratorProps) {
                 onChange={(e) => setSplitDim(e.target.value)}
                 style={{ width: '100%', height: 32, padding: '0 8px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', color: 'var(--text-primary)', fontSize: 'var(--text-sm)', marginBottom: 8 }}
               >
-                <option value="">No override — all cohorts use primary mode</option>
+                <option value="">No override (all cohorts use primary mode)</option>
                 {nonAgeDims.map((d) => (
                   <option key={d.name} value={d.name}>{d.display_name || d.name}</option>
                 ))}

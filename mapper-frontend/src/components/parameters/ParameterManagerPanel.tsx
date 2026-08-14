@@ -654,7 +654,7 @@ export function ParameterManagerPanel() {
                                 onClick={() => setScenarioMenuOpen((cur) => cur === s ? null : s)}
                                 onMouseEnter={() => setHoveredScenario(s)}
                                 onMouseLeave={() => setHoveredScenario(null)}
-                                title={`${s} — click for rename / delete`}
+                                title={`${s} · click for rename / delete`}
                                 style={{
                                   background: 'none', border: 'none', padding: 0,
                                   cursor: 'pointer',

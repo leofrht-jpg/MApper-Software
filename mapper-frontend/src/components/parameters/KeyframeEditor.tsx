@@ -144,7 +144,7 @@ export function KeyframeEditor({ param, onPatch, taggedMaterials = [] }: Keyfram
         />
         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>Time-varying</span>
         <span style={{ color: 'var(--text-tertiary)' }}>
-          — {param.name} varies by year ({HORIZON_START}–{HORIZON_END}) via keyframes.
+          {param.name} varies by year ({HORIZON_START}–{HORIZON_END}) via keyframes.
         </span>
       </label>
 

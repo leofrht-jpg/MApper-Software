@@ -560,7 +560,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 disabled={!draft}
                 data-testid="aesa-reset-defaults"
                 title={
-                  'Reset to built-in defaults — replaces the downscaling chain, '
+                  'Reset to built-in defaults. Replaces the downscaling chain, '
                   + 'sharing principles, category assignments and carbon budget '
                   + 'with the shipped Multi-D defaults. Your saved configurations '
                   + 'are not touched.'
@@ -806,7 +806,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                   lineHeight: 1.5,
                 }}
               >
-                Viewing saved session — Configuration is read-only.
+                Viewing a saved session. Configuration is read-only.
                 Click <strong>Return to live view</strong> in the page
                 header to compute new results.
               </div>
@@ -836,7 +836,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 data-testid="aesa-config-template-name"
                 value={draft.name}
                 onChange={(e) => updateDraft({ name: e.target.value })}
-                placeholder="e.g. WP5 – SSP2 – Prospective"
+                placeholder="e.g. WP5 / SSP2 / Prospective"
                 style={inputStyle}
               />
               <div style={{
@@ -899,7 +899,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                     ))}
                   </select>
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
-                    AESA assesses the selected LCI scenario ({lciScenarios.length} computed in the Prospective Background run) — no re-run needed.
+                    AESA assesses the selected LCI scenario ({lciScenarios.length} computed in the Prospective Background run), so no re-run is needed.
                   </div>
                 </div>
               )}
@@ -1139,7 +1139,7 @@ function ResetDefaultsModal({ onCancel, onConfirm }: {
           and <strong>carbon budget</strong> in the editor with the shipped
           Multi-D defaults. Unsaved edits to them are lost.
           <div style={{ marginTop: 6, color: 'var(--text-tertiary)' }}>
-            Saved configurations are not touched — this only affects what is
+            Saved configurations are not touched. This only affects what is
             currently in the editor.
           </div>
         </div>
@@ -1734,7 +1734,7 @@ function CarbonBudgetEditor({
       </div>
       <div
         data-testid="aesa-config-budget-basis-note"
-        title="The impact (numerator) is always all-GHG (EF v3.1 GWP100). This toggle only changes which budget it's measured against — CO₂-only vs all-GHG (CO₂-eq). Only the climate-change SR responds; applied on the next Compute."
+        title="The impact (numerator) is always all-GHG (EF v3.1 GWP100). This toggle only changes which budget it's measured against: CO₂-only vs all-GHG (CO₂-eq). Only the climate-change SR responds; applied on the next Compute."
         style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'help', lineHeight: 1.4 }}
       >
         Impact is always all-GHG; this sets the budget it's measured against (climate SR only).
@@ -1761,7 +1761,7 @@ function CarbonBudgetEditor({
             either basis; what follows the basis is the sparkline below and
             everything downstream of compute. */}
         {options.map((o) => (
-          <option key={o.id} value={o.id}>{o.name} — {o.remaining_gt_from_2025} Gt CO₂</option>
+          <option key={o.id} value={o.id}>{o.name} · {o.remaining_gt_from_2025} Gt CO₂</option>
         ))}
         {selectedOption === 'custom' && <option value="custom">Custom ({budget.initial_budget_gt} Gt CO₂)</option>}
       </select>
@@ -2372,7 +2372,7 @@ function DeleteSessionModal({ session, onCancel, onConfirm }: {
           lineHeight: 1.5,
         }}>
           Permanently delete <strong>{session.name}</strong>? This cannot
-          be undone — the saved configuration snapshot and result are
+          be undone. The saved configuration snapshot and result are
           removed from disk.
         </div>
         <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>

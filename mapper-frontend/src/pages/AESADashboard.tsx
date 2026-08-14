@@ -300,7 +300,7 @@ export function AESADashboard() {
             AESA
           </h1>
           <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
-            Absolute Environmental Sustainability Assessment — Multi-D allocation on Sala 2020 EF-compatible Planetary Boundaries.
+            Absolute Environmental Sustainability Assessment. Multi-D allocation on Sala 2020 EF-compatible Planetary Boundaries.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
@@ -317,7 +317,7 @@ export function AESADashboard() {
             variant="secondary"
             onClick={() => setShowGlossary(true)}
             data-testid="aesa-glossary-button"
-            title="Impact categories — what each one measures"
+            title="Impact categories: what each one measures"
             aria-label="Impact categories glossary"
             style={{ padding: '0 10px' }}
           >
@@ -426,7 +426,7 @@ export function AESADashboard() {
               {!activeSystem && (
                 <EmptyState
                   title="Select an DSM system"
-                  body="AESA is computed against the results of a Material Flow Analysis. Pick an active system on the DSM page first — or switch the source to Single product (LCA) in the sidebar."
+                  body="AESA is computed against the results of a Material Flow Analysis. Pick an active system on the DSM page first, or switch the source to Single product (LCA) in the sidebar."
                 />
               )}
 
@@ -520,7 +520,7 @@ export function AESADashboard() {
                     data-testid="aesa-indicator-filter-status"
                     style={{ fontSize: 11, color: 'var(--text-tertiary)' }}
                   >
-                    Filtering — exports respect the filter unless you choose
+                    Filtering is active. Exports respect it unless you choose
                     &ldquo;Export all computed indicators&rdquo;.
                   </span>
                 )}
@@ -567,7 +567,7 @@ export function AESADashboard() {
                   </div>
                   <span
                     data-testid="aesa-budget-basis-note"
-                    title="The impact (numerator) is always all-GHG (EF v3.1 GWP100). This toggle only changes which budget it's measured against — CO₂-only vs all-GHG (CO₂-eq). Only the climate-change SR responds."
+                    title="The impact (numerator) is always all-GHG (EF v3.1 GWP100). This toggle only changes which budget it's measured against: CO₂-only vs all-GHG (CO₂-eq). Only the climate-change SR responds."
                     style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'help' }}
                   >
                     Impact is always all-GHG; this sets the budget it's measured against (climate SR only).
@@ -844,8 +844,8 @@ function ExportSplit({
         data-testid="aesa-export-default"
         title={
           filtered
-            ? `Export .xlsx — ${visibleCount} of ${totalCount} indicators (current filter)`
-            : `Export .xlsx — all ${totalCount} indicators`
+            ? `Export .xlsx · ${visibleCount} of ${totalCount} indicators (current filter)`
+            : `Export .xlsx · all ${totalCount} indicators`
         }
         aria-label={
           filtered

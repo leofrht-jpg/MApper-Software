@@ -225,7 +225,7 @@ def _write_synthetic_technosphere(bd: Any, report: DemoBuildReport) -> None:
             "location": "GLO",
             "type": "process",
             "comment": (
-                "SYNTHETIC DEMO DATA — invented inventory shipped with MApper so "
+                "SYNTHETIC DEMO DATA. Invented inventory shipped with MApper so "
                 "the pipeline can be exercised without an ecoinvent licence. "
                 "Not a measurement; not valid for any assessment."
             ),
@@ -273,7 +273,7 @@ def _build_archetype(name: str, bom_spec: dict[str, dict], unit_label: str) -> A
     return Archetype(
         name=name,
         description=(
-            "SYNTHETIC DEMO ARCHETYPE — invented bill of materials. Provided so "
+            "SYNTHETIC DEMO ARCHETYPE. Invented bill of materials, provided so "
             "MApper's DSM → MFA → LCA → AESA chain can be run without an "
             "ecoinvent licence. Not valid for any assessment."
         ),
@@ -327,7 +327,7 @@ def build_demo_project(*, rebuild: bool = False) -> DemoBuildReport:
         system = SystemDefinition(
             name=DEMO_SYSTEM_NAME,
             description=(
-                "SYNTHETIC DEMO SYSTEM — invented fleet numbers. Demonstrates "
+                "SYNTHETIC DEMO SYSTEM. Invented fleet numbers, demonstrating "
                 "MApper's integrated workflow without an ecoinvent licence."
             ),
             time_horizon=TimeHorizon(start_year=START_YEAR, end_year=END_YEAR),

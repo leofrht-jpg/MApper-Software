@@ -123,7 +123,7 @@ export function BulkReboundModal({ archetype, onApply, onClose }: BulkReboundMod
         </div>
 
         <div style={{ padding: 'var(--space-3) var(--space-6)', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontStyle: 'italic', borderBottom: '1px solid var(--border-subtle)' }}>
-          Rebound is common when efficiency improvements make a process cheaper or more convenient — users consume more.
+          Rebound is common when efficiency improvements make a process cheaper or more convenient, so users consume more.
           Applicable to use-phase processes (appliance operation, lighting, heating, transport, etc.).
         </div>
 

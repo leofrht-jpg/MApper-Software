@@ -590,7 +590,7 @@ function CustomUploadPanel({ task, onSubmit, onCancel }: CustomUploadPanelProps)
         <code style={{ fontFamily: 'monospace' }}>bw2io.ExcelLCIAImporter</code>
         {' '}
         format. The file lists characterisation factors (biosphere flow name, category, subcategory, amount).
-        The method <em>name</em>, <em>description</em>, and <em>unit</em> are not read from the file — enter them below.
+        The method <em>name</em>, <em>description</em>, and <em>unit</em> are not read from the file. Enter them below.
       </div>
 
       <div>

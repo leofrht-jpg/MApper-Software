@@ -1590,7 +1590,7 @@ def _build_multi_param_workbook(
         note = (
             "No parameters vary across the selected sensitivity cases. The "
             "selection still produces distinct results if BOM expressions "
-            "reference parameters — but no parameter values differ between "
+            "reference parameters, but no parameter values differ between "
             "the named scenarios in the active project's parameter table."
         )
         ws_idx.append([note])
@@ -3205,7 +3205,7 @@ async def post_export_single_product_comparison(
         raise HTTPException(
             status_code=400,
             detail=(
-                "projected_runs must contain at least one entry — "
+                "projected_runs must contain at least one entry. "
                 "Comparison requires both sides to have results."
             ),
         )
@@ -3517,7 +3517,7 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
             n += 1
             sheet_name = f"{base[:27]}_{n}"
         ws_sb = wb.create_sheet(sheet_name)
-        ws_sb.append([f"Stage breakdown — {item.label}"])
+        ws_sb.append([f"Stage breakdown: {item.label}"])
         ws_sb.cell(row=1, column=1).font = Font(bold=True, size=12)
         ws_sb.append([])
         # Collect all stages across methods in first-seen order.

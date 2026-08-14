@@ -78,7 +78,7 @@ export function UnitTypePicker({
           style={inputStyle}
         />
         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4 }}>
-          Display label used in charts and exports — e.g., "vehicles", "turbines", "kg", "kWh".
+          Display label used in charts and exports, for example "vehicles", "turbines", "kg" or "kWh".
         </div>
       </div>
     </div>

@@ -112,7 +112,7 @@ export function TimelinePreviewModal({ archetypeName, fetchTimeline, onClose }: 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <CalendarRange size={18} strokeWidth={1.5} style={{ color: 'var(--mod-plca)' }} />
             <div>
-              <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--text-primary)' }}>Timeline — {archetypeName}</h3>
+              <h3 style={{ fontSize: 'var(--text-lg)', fontWeight: 600, color: 'var(--text-primary)' }}>Timeline: {archetypeName}</h3>
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
                 Per-unit material quantities across the selected horizon.
               </div>

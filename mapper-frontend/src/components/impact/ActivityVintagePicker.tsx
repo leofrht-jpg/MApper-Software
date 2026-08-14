@@ -104,7 +104,7 @@ export function ActivityVintagePicker({
   // the single-item LCI scenarios picker. Never group by SSP alone. Superstructure
   // DBs join their scenario group as DISABLED entries (per-year compute
   // unavailable). Grouping is display-only; `buildItems` still iterates `separate`.
-  const SUPER_TITLE = 'Superstructure databases are not year-resolvable for compute yet — generate separate-mode for per-year comparison.'
+  const SUPER_TITLE = 'Superstructure databases are not year-resolvable for compute yet. Generate separate-mode databases for per-year comparison.'
   const groups: ScenarioGroup[] = useMemo(() => {
     const map = new Map<string, { iam: string; ssp: string; years: ScenarioGroup['years'] }>()
     const add = (db: ProspectiveDB, disabled: boolean) => {

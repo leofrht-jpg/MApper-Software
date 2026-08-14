@@ -172,7 +172,7 @@ export function SubsystemMappingCard({
         setPendingImport(res.mappings)
       } else {
         setImportError(
-          'Import rejected — fix these rows and try again:\n' +
+          'Import rejected. Fix these rows and try again:\n' +
             res.errors.map((e) => `• Row ${e.row} (${e.field}): ${e.message}`).join('\n'),
         )
       }
@@ -321,7 +321,7 @@ export function SubsystemMappingCard({
                           data-testid={`subsystem-cohort-color-${key}`}
                           value={swatchColor}
                           onChange={(e) => updateMapping(key, { color: e.target.value })}
-                          title={hasColor ? `Color ${current?.color} — click to change` : 'Default color — click to set'}
+                          title={hasColor ? `Color ${current?.color} · click to change` : 'Default color · click to set'}
                           style={{
                             width: 24, height: 24, padding: 0, border: hasColor ? '2px solid var(--text-tertiary)' : '1px solid var(--border-default)',
                             borderRadius: 'var(--radius-sm)', background: 'none', cursor: 'pointer',

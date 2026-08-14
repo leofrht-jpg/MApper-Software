@@ -291,9 +291,9 @@ def co2e_conversion_for_budget(option: dict) -> RatioCO2eConversion:
             # wrong ensemble's offset is precisely the defect this shape exists
             # to make visible.
             f"CO2→CO2e GWP100 budget factor f={f:.4f} = (m·x20+b−C)/x25. "
-            f"Affine m={fit.slope}, b={fit.intercept} — OLS over {fit.ensemble} "
+            f"Affine m={fit.slope}, b={fit.intercept} from OLS over {fit.ensemble} "
             f"(2020→net-zero CO2), {fit.pairs_file}. "
-            f"Offset C={fit.offset_2020_2024_gt} GtCO2e — median 2020-2024 "
+            f"Offset C={fit.offset_2020_2024_gt} GtCO2e, the median 2020-2024 "
             f"cumulative CO2e over the SAME ensemble {fit.ensemble}, "
             f"{fit.offset_file}. "
             f"Method: Meinshausen et al. 2018/2019 as applied by Tilsted & Bjorn "

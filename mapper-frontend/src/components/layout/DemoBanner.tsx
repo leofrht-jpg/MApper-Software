@@ -57,7 +57,7 @@ export function DemoBanner() {
     >
       <AlertTriangle size={14} style={{ flexShrink: 0 }} />
       <span>
-        <b>Demo project — synthetic data.</b>{' '}
+        <b>Demo project. Synthetic data.</b>{' '}
         Every value shown is fictional and exists only to demonstrate the
         software. This is not an environmental assessment; do not cite or
         publish these results. Switch project to leave the demo.

@@ -1804,7 +1804,7 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
     project = _current_project()
     results = _proj_dsm_lca_results(project).get(system_id)
     if not results:
-        raise HTTPException(status_code=400, detail="No DSM × LCA results to export — run a calculation first.")
+        raise HTTPException(status_code=400, detail="No DSM × LCA results to export. Run a calculation first.")
 
     mapping = _proj_cohort_mappings(project).get(system_id)
     sim = _proj_results(project).get(system_id)
@@ -2756,7 +2756,7 @@ async def download_bom_template() -> Response:
     instructions.append(["folder (Archetypes sheet)", "Forward-slash path, e.g. 'Group_1/Type_A'. Empty = root. Max depth 5. Allowed characters: letters, digits, space, _, -"])
     instructions.append(["description (Archetypes sheet)", "Optional description."])
     instructions.append(["archetype_name (BOM sheet, first column)", "Points at an archetype defined in the Archetypes sheet."])
-    instructions.append(["Stage", "Life cycle stage name. Examples: Manufacturing, Use Phase, Maintenance, End of Life — but you can name them anything that fits your system. One row per unique Stage with empty Parent acts as that stage's root component."])
+    instructions.append(["Stage", "Life cycle stage name. Examples: Manufacturing, Use Phase, Maintenance, End of Life. You can name them anything that fits your system. One row per unique Stage with empty Parent acts as that stage's root component."])
     instructions.append(["Scope", "Explicit DSM scope for the stage: 'inflows' (manufacturing / one-time), 'stock' (per-year use-phase / maintenance), 'outflows' (end-of-life). Set ONLY on the stage root row; child rows leave it blank. If empty, the system falls back to keyword-matching on the stage name."])
     instructions.append(["Parent", "Direct parent component name within the same Stage. Empty for stage roots."])
     instructions.append(["Name", "Node name."])
@@ -2765,7 +2765,7 @@ async def download_bom_template() -> Response:
     instructions.append(["Ecoinvent *", "Populate Database + Code for materials to link them. Name and Location are informational."])
     instructions.append(["Evolution Method", "One of 'fixed' (or blank), 'learning_rate', 'rebound_effect', 'milestones'. Materials only."])
     instructions.append(["Learning Rate / Base Year", "For 'learning_rate': Quantity(year) = Quantity × (1 + rate)^(year − base_year). Typically negative (efficiency gain)."])
-    instructions.append(["Rebound Rate / Base Year", "For 'rebound_effect': annual fractional *increase* in consumption (e.g. 0.02 = +2%/yr). Typically positive. Mutually exclusive with Learning Rate and Milestones. Example: a product becomes more efficient (less consumption per unit of service) but users compensate by using it more — net consumption grows ~2%/yr in the early transition years."])
+    instructions.append(["Rebound Rate / Base Year", "For 'rebound_effect': annual fractional *increase* in consumption (e.g. 0.02 = +2%/yr). Typically positive. Mutually exclusive with Learning Rate and Milestones. Example: a product becomes more efficient (less consumption per unit of service) but users compensate by using it more, so net consumption grows ~2%/yr in the early transition years."])
     instructions.append(["Rebound Applies To Stages", "Optional filter for rebound_effect: semicolon-separated list of stage names (e.g. 'Use Phase' or 'Use Phase;Maintenance'). If empty, rebound applies regardless of stage."])
     instructions.append(["Milestone Years / Values", "For 'milestones': two ';'-separated parallel lists. Linear interpolation between."])
 

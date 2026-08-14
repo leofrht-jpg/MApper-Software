@@ -768,7 +768,7 @@ function ProjectedImpactPanelImpl() {
         </button>
         {infoBannerExpanded && (
           <span data-testid="projected-info-banner-body">
-            Cohort mappings are shared across Static and Prospective Background — one per DSM system. Each year is matched to a prospective database via premise (exact → nearest earlier → earliest available).
+            Cohort mappings are shared across Static and Prospective Background, one per DSM system. Each year is matched to a prospective database via premise (exact → nearest earlier → earliest available).
           </span>
         )}
       </div>
@@ -802,7 +802,7 @@ function ProjectedImpactPanelImpl() {
             borderRadius: 'var(--radius-md)',
           }}>
             {([
-              { value: 'independent' as const, label: 'Independent', tip: 'Multi-LCI, multi-DSM, or multi-parameter — pick one axis at a time.' },
+              { value: 'independent' as const, label: 'Independent', tip: 'Multi-LCI, multi-DSM, or multi-parameter. Pick one axis at a time.' },
               { value: 'paired' as const, label: 'Paired DSM × LCI', tip: 'Run N matched (DSM scenario × LCI scenario) pairs as one coherent SSP-N future per pair.' },
             ]).map((opt) => {
               const active = scenarioMode === opt.value
@@ -1077,7 +1077,7 @@ function ProjectedImpactPanelImpl() {
               display: 'flex', flexDirection: 'column', gap: 4,
             }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}>
-                <AlertCircle size={13} /> Cannot calculate yet — fix the following:
+                <AlertCircle size={13} /> Cannot calculate yet. Fix the following:
               </div>
               <ul style={{ margin: 0, paddingLeft: 22 }}>
                 {preflightIssues.map((msg, i) => <li key={i}>{msg}</li>)}
@@ -1942,7 +1942,7 @@ export function PairListEditor({
         </span>
       </label>
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: 4 }}>
-        Each row binds one DSM scenario to one prospective LCI database. Pairs are evaluated 1:1 — no Cartesian product.
+        Each row binds one DSM scenario to one prospective LCI database. Pairs are evaluated 1:1, with no Cartesian product.
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
         {pairs.map((p, i) => {
@@ -2034,7 +2034,7 @@ export function PairListEditor({
             border: '1px solid color-mix(in srgb, var(--danger) 40%, transparent)',
             borderRadius: 'var(--radius-sm)',
           }}>
-            {duplicateKeys.size === 1 ? '1 duplicate pair' : `${duplicateKeys.size} duplicate pairs`} — each (DSM × LCI) combination must be unique.
+            {duplicateKeys.size === 1 ? '1 duplicate pair' : `${duplicateKeys.size} duplicate pairs`} · each (DSM × LCI) combination must be unique.
           </div>
         )}
       </div>

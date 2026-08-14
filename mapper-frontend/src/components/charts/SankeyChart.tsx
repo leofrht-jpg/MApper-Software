@@ -123,7 +123,7 @@ export function SankeyChart({ data }: Props) {
             pointerEvents: 'none',
           }}
         >
-          Could not render supply chain — the graph may be too dense or contain
+          Could not render supply chain. The graph may be too dense or contain
           cycles. Try Tree view.
         </div>
       )}

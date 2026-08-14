@@ -1,6 +1,6 @@
 {
   "_generated_by": "mapper-backend/tests/test_aesa_default_budget_fixture.py",
-  "_why": "The frontend's budget-basis tests assert the LIVE default carbon budget (1150 Gt, SSP1-2.6, CO2-eq). Those values are backend data. Asserted as bare literals in a .tsx file they break a frontend test whenever the budget data moves \u2014 a break the backend author does not see and cannot interpret. This fixture is generated from build_carbon_budget() and kept in sync by the backend test above, which fails FIRST and says what to regenerate.",
+  "_why": "The frontend's budget-basis tests assert the LIVE default carbon budget (1150 Gt, SSP1-2.6, CO2-eq). Those values are backend data. Asserted as bare literals in a .tsx file they break a frontend test whenever the budget data moves — a break the backend author does not see and cannot interpret. This fixture is generated from build_carbon_budget() and kept in sync by the backend test above, which fails FIRST and says what to regenerate.",
   "_regenerate": "python -m pytest tests/test_aesa_default_budget_fixture.py -q  (see its docstring)",
   "default_carbon_budget": {
     "initial_budget_gt": 1150.0,
@@ -12,7 +12,7 @@
     "co2e_conversion": {
       "kind": "ratio",
       "factor": 1.4845521739130436,
-      "source": "CO2\u2192CO2e GWP100 budget factor f=1.4846 = (m\u00b7x20+b\u2212C)/x25; m=1.2935, b=218.41, C=257.4 GtCO2e \u2014 all refitted over AR6 C3+C4 (method: Meinshausen et al. 2018/2019 as applied by Tilsted & Bjorn 2023, doi:10.1007/s10584-023-03583-4). x20=1350 GtCO2, x25=1150 GtCO2. See mapper/data/aesa/co2e_ratio/README.md"
+      "source": "CO2→CO2e GWP100 budget factor f=1.4846 = (m·x20+b−C)/x25; m=1.2935, b=218.41, C=257.4 GtCO2e — all refitted over AR6 C3+C4 (method: Meinshausen et al. 2018/2019 as applied by Tilsted & Bjorn 2023, doi:10.1007/s10584-023-03583-4). x20=1350 GtCO2, x25=1150 GtCO2. See mapper/data/aesa/co2e_ratio/README.md"
     }
   },
   "vintage": {
@@ -24,28 +24,28 @@
   "budget_options": [
     {
       "id": "IPCC_AR6_1p5C_50",
-      "name": "IPCC AR6 \u2014 1.5\u00b0C, 50th percentile",
+      "name": "IPCC AR6 1.5°C, 50th percentile",
       "remaining_gt_from_2025": 300,
       "original_gt_from_2020": 500,
       "co2e_factor": 1.8518640000000002
     },
     {
       "id": "IPCC_AR6_1p5C_67",
-      "name": "IPCC AR6 \u2014 1.5\u00b0C, 67th percentile",
+      "name": "IPCC AR6 1.5°C, 67th percentile",
       "remaining_gt_from_2025": 200,
       "original_gt_from_2020": 400,
       "co2e_factor": 2.1206960000000006
     },
     {
       "id": "IPCC_AR6_2C_50",
-      "name": "IPCC AR6 \u2014 2.0\u00b0C, 50th percentile",
+      "name": "IPCC AR6 2.0°C, 50th percentile",
       "remaining_gt_from_2025": 1150,
       "original_gt_from_2020": 1350,
       "co2e_factor": 1.4845521739130436
     },
     {
       "id": "IPCC_AR6_2C_67",
-      "name": "IPCC AR6 \u2014 2.0\u00b0C, 67th percentile",
+      "name": "IPCC AR6 2.0°C, 67th percentile",
       "remaining_gt_from_2025": 950,
       "original_gt_from_2020": 1150,
       "co2e_factor": 1.5247736842105266

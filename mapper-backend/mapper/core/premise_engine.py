@@ -283,9 +283,9 @@ class ProspectiveDBGenerator:
                     "falling back to separate databases.\n%s",
                     tb,
                 )
-                self._emit("superstructure failed — falling back to separate", 0.87)
+                self._emit("superstructure failed, falling back to separate", 0.87)
                 fallback_warning = (
-                    "Superstructure generation failed — falling back to separate "
+                    "Superstructure generation failed. Falling back to separate "
                     f"databases. Error: {exc}"
                 )
                 names = [

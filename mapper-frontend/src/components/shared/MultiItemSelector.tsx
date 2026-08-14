@@ -550,7 +550,7 @@ export function MultiItemSelector({
               padding: 'var(--space-4)', textAlign: 'center',
               fontSize: 11, color: 'var(--text-tertiary)',
             }}>
-              {hasActiveFilters ? 'No matches — adjust filters' : 'No items available'}
+              {hasActiveFilters ? 'No matches. Adjust the filters.' : 'No items available'}
             </div>
           )}
         </div>

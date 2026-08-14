@@ -1525,7 +1525,7 @@ async def simulate_scenarios(
                 results[_key(sid, case)] = base_result
             if len(cases) > 1:
                 warnings.append(
-                    f"Scenario '{sid}' has no scaling rules — all cases produce identical results."
+                    f"Scenario '{sid}' has no scaling rules, so all cases produce identical results."
                 )
             continue
         for case in cases:

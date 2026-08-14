@@ -617,7 +617,7 @@ export const useDSMStore = create<DSMStore>((set, get) => ({
     if (!activeSystem?.id) throw new Error('No active system')
     const active = findScenario(systemState, systemState?.active_scenario_id ?? null)
     if (!active || active.is_base) {
-      throw new Error('Base scenario slots cannot be reverted — they are the source.')
+      throw new Error('Base scenario slots cannot be reverted. Base is the source every other scenario inherits from.')
     }
     await updateDSMScenario(activeSystem.id, active.id, { clear_slots: [slot] })
     await get().refreshState()

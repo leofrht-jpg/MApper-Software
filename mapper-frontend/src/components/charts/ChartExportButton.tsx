@@ -364,13 +364,13 @@ function FormatItem({ icon, label, onClick, busy }: { icon: React.ReactNode; lab
 
 function ScaleItem({ scale, hint, current, onSelect }: { scale: RasterScale; hint: string; current: RasterScale; onSelect: (v: RasterScale) => void }) {
   const active = current === scale
-  const label = `${scale}× — ${SCALE_HINTS[scale]}`
+  const label = `${scale}× · ${SCALE_HINTS[scale]}`
   return (
     <button
       role="menuitemradio"
       aria-checked={active}
       type="button"
-      title={`${scale}× pixel multiplier (${SCALE_HINTS[scale]} — approximate, depends on display) · ${hint}`}
+      title={`${scale}× pixel multiplier (${SCALE_HINTS[scale]}, approximate and display-dependent) · ${hint}`}
       onClick={() => onSelect(scale)}
       style={{
         display: 'flex', alignItems: 'center', gap: 8,

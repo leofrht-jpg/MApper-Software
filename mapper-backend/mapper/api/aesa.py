@@ -743,7 +743,7 @@ def _build_aesa_workbook(
         ws.append(["Layer 2 (sector share)", config.multi_d.layer2_sector_share])
     if _cb is not None:
         ws.append(["Carbon budget",
-                   f"{_cb.budget_source} — {_cb.initial_budget_gt} Gt {_unit}"])
+                   f"{_cb.budget_source} · {_cb.initial_budget_gt} Gt {_unit}"])
         ws.append(["Budget basis", config.carbon_budget.budget_basis])
         ws.append(["SSP scenario", _cb.ssp_scenario])
         ws.append(["Budget horizon", f"{_cb.start_year}–{_cb.end_year}"])
@@ -946,23 +946,23 @@ def _build_aesa_workbook(
     # Patch 5AT — legacy Multi-D rows only when multi_d is present (None for
     # sharing-preset configs).
     if config.multi_d is not None:
-        ws.append(["Layer 2 (grandfathering)", f"{config.multi_d.layer2_sector_share} — {config.multi_d.layer2_source}"])
+        ws.append(["Layer 2 (grandfathering)", f"{config.multi_d.layer2_sector_share} · {config.multi_d.layer2_source}"])
         principles = sorted({sp.principle for sp in config.multi_d.layer1.values()})
         ws.append(["Layer 1 principles used", ", ".join(principles)])
     if _cb is not None:
         ws.append(["Carbon budget",
-                   f"{_cb.initial_budget_gt} Gt {_unit} — {_cb.budget_source}"])
+                   f"{_cb.initial_budget_gt} Gt {_unit} · {_cb.budget_source}"])
         ws.append(["Budget basis", config.carbon_budget.budget_basis])
         if _co2e:
             ws.append([
                 "CO2->CO2e conversion",
-                f"×{config.carbon_budget.co2e_ratio()} — "
+                f"×{config.carbon_budget.co2e_ratio()} · "
                 f"{config.carbon_budget.co2e_conversion.source}",
             ])
         ws.append(["SSP scenario", _cb.ssp_scenario])
     ws.append(["Missing PB categories",
                ", ".join(result.missing_categories) if result.missing_categories else "none"])
-    ws.append(["Uncertainty", "Deterministic — Monte Carlo planned for v1.1"])
+    ws.append(["Uncertainty", "Deterministic. Monte Carlo planned for v1.1"])
     _autosize(ws)
 
     return wb
@@ -1102,7 +1102,7 @@ def _build_sharing_workbook(
         else:
             for row in [
                 ["initial_budget_gt", cb.initial_budget_gt,
-                 "Gt CO2 — ALWAYS the pre-basis figure. A CO2e_GHG basis is "
+                 "Gt CO2. ALWAYS the pre-basis figure; a CO2e_GHG basis is "
                  "applied at compute (x co2e_factor); it is not stored here."],
                 ["budget_source", cb.budget_source, "e.g. IPCC AR6 1.5C 67th pct"],
                 ["start_year", cb.start_year, ""],
@@ -1145,7 +1145,7 @@ def _build_sharing_workbook(
     if include_instructions:
         ws = wb.create_sheet("Instructions")
         rows = [
-            ["AESA Sharing Preset — Template"],
+            ["AESA Sharing Preset: Template"],
             [""],
             ["This workbook defines a sharing preset: which principle applies to each"],
             ["impact category, how the downscaling chain is structured, and the data"],
@@ -1176,7 +1176,7 @@ def _build_sharing_workbook(
             ["  different years. Each year's row supplies that year's two values,"],
             ["  and the share is recomputed for every assessment year."],
             [""],
-            ["  Resolution — how the years BETWEEN your rows are read. Set it per"],
+            ["  Resolution: how the years BETWEEN your rows are read. Set it per"],
             ["  principle; leave it blank for 'step'."],
             ["    step        : each value holds until the next year you supply."],
             ["    interpolate : a straight line is drawn between your years."],
@@ -1184,7 +1184,7 @@ def _build_sharing_workbook(
             ["  value, years after your last row use the last one. Nothing is ever"],
             ["  extrapolated beyond the data you gave."],
             [""],
-            ["  Worked example — two rows for EpC on layer 1:"],
+            ["  Worked example, two rows for EpC on layer 1:"],
             ["    Layer 1 | EpC | 5,900,000 | 8,100,000,000 | 2025 | interpolate"],
             ["    Layer 1 | EpC | 6,400,000 | 9,700,000,000 | 2050 | interpolate"],
             ["  System and global are interpolated separately and then divided, so"],
@@ -1215,7 +1215,7 @@ def _build_sharing_workbook(
                 ["Sheet: Carbon Budget"],
                 ["  Budget scalars, then a Year -> Gt/yr depletion pathway. Leave the"],
                 ["  sheet reading '(none)' for no carbon budget."],
-                ["  initial_budget_gt and the pathway are ALWAYS in Gt CO2 — the"],
+                ["  initial_budget_gt and the pathway are ALWAYS in Gt CO2: the"],
                 ["  published IPCC AR6 budget and its CO2 trajectory. They are not"],
                 ["  rewritten when the basis changes."],
                 ["  budget_basis = CO2e_GHG matches the budget to the EF v3.1 GWP100"],
@@ -1236,7 +1236,7 @@ def _build_sharing_workbook(
                 [""],
                 ["Sheet: Reference (locked, read-only)"],
                 ["  Valid values for every constrained field, generated from this"],
-                ["  installation's own data — not a static list."],
+                ["  installation's own data, not a static list."],
                 [""],
                 ["NUMERIC PRECISION"],
                 ["  Numbers are rounded to 12 decimal places when this workbook is"],
@@ -1261,7 +1261,7 @@ def _build_sharing_workbook(
         _style_sharing_header(ref)
 
         for bs in load_boundary_sets().values():
-            ref.append(["boundary_set_id", bs.id, f"{bs.name} — {bs.source}"])
+            ref.append(["boundary_set_id", bs.id, f"{bs.name} · {bs.source}"])
 
         for pr in preset.principles:
             ref.append(["principle_id", pr.id, pr.name])
@@ -1289,7 +1289,7 @@ def _build_sharing_workbook(
             ref.append([
                 "carbon_budget option",
                 opt.get("id", ""),
-                f"{opt.get('name', '')} — {opt.get('remaining_gt_from_2025', '')} Gt "
+                f"{opt.get('name', '')} · {opt.get('remaining_gt_from_2025', '')} Gt "
                 f"from {_vintage.base_year} ({opt.get('source_budget', '')})",
             ])
 
@@ -1666,7 +1666,7 @@ def _parse_sharing_workbook(wb: Workbook, default_name: str) -> SharingPreset:
             if mode not in RESOLUTION_MODES:
                 raise ValueError(
                     f"Sharing Data row has an unknown Resolution '{r[i_res]}' "
-                    f"for principle '{pid}' — expected one of "
+                    f"for principle '{pid}'. Expected one of "
                     f"{', '.join(RESOLUTION_MODES)}, or blank for step.",
                 )
             prev = layers_meta[num]["resolution"].get(pid)

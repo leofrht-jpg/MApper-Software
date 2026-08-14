@@ -933,7 +933,7 @@ function ErrorsBanner({ result }: { result: import('../../api/client').MultiProd
           </li>
         ))}
         {failed.length > 5 && (
-          <li>… and {failed.length - 5} more — see Errors sheet in the Excel export.</li>
+          <li>… and {failed.length - 5} more. See the Errors sheet in the Excel export.</li>
         )}
       </ul>
     </div>

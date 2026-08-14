@@ -53,7 +53,7 @@ export function PremiseKeyManager({ variant, onStatusChange }: Props) {
       // rather than leaking the raw "Load failed".
       setError(
         isTransientNetworkError(e)
-          ? "Couldn't reach the backend — it may still be starting. Reopen Settings to retry."
+          ? "Couldn't reach the backend. It may still be starting; reopen Settings to retry."
           : e instanceof Error ? e.message : String(e),
       )
     }
@@ -200,7 +200,7 @@ export function PremiseKeyManager({ variant, onStatusChange }: Props) {
       {error && <div style={errorStyle}>{error}</div>}
 
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-        The premise Fernet key decrypts the scenario data packages distributed with premise. It is stored locally —
+        The premise Fernet key decrypts the scenario data packages distributed with premise. It is stored locally.
         never sent anywhere except your backend filesystem.
       </div>
 
@@ -273,7 +273,7 @@ function KeyInputRow({
       )}
       {formatValid === false && (
         <span style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-          <X size={12} /> Invalid key format — expected 44 base64 characters
+          <X size={12} /> Invalid key format. Expected 44 base64 characters
         </span>
       )}
     </div>

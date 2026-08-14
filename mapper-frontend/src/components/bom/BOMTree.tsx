@@ -386,7 +386,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
                 onFocus={() => setShowAutocomplete(isExpressionInput(draft.amount))}
                 onBlur={() => setTimeout(() => setShowAutocomplete(false), 150)}
                 onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') cancelEdit() }}
-                title={isExpressionInput(draft.amount) ? 'Expression — resolves against active parameter set' : 'Numeric quantity'}
+                title={isExpressionInput(draft.amount) ? 'Expression, resolved against the active parameter set' : 'Numeric quantity'}
                 style={{
                   width: 160, height: 28, padding: '0 8px 0 24px', backgroundColor: 'var(--bg-elevated)',
                   border: `1px solid ${draftResolve?.error ? 'var(--danger)' : 'var(--border-default)'}`,
@@ -461,7 +461,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
             {hasExpression ? (
               <span
                 onClick={beginEdit}
-                title={`Expression${expressionResolve?.error ? ` — ${expressionResolve.error}` : ''}`}
+                title={`Expression${expressionResolve?.error ? `: ${expressionResolve.error}` : ''}`}
                 style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', cursor: 'pointer' }}
               >
                 <span style={{ fontSize: 10, fontWeight: 700, fontStyle: 'italic', color: 'var(--mod-plca)' }}>fx</span>
@@ -501,7 +501,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
                   const next = v === '' ? null : (v as 'inflows' | 'stock' | 'outflows')
                   onPatch(nodeId, { scope: next })
                 }}
-                title="DSM scope — inflows (manufacturing), stock (per-year use/maintenance), outflows (end of life). Empty falls back to keyword matching on the stage name."
+                title="DSM scope: inflows (manufacturing), stock (per-year use/maintenance), outflows (end of life). Empty falls back to keyword matching on the stage name."
                 style={{
                   height: 22,
                   padding: '0 6px',
@@ -530,7 +530,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
             {isRoot && isComponent && (
               <button
                 onClick={() => onPatch(nodeId, { is_annual: !node.is_annual })}
-                title={node.is_annual ? 'Annual quantities (per year) — click to set as one-time' : 'One-time quantities — click to set as annual'}
+                title={node.is_annual ? 'Annual quantities (per year). Click to set as one-time.' : 'One-time quantities. Click to set as annual.'}
                 style={{
                   background: node.is_annual
                     ? 'color-mix(in srgb, var(--accent) 15%, transparent)'
@@ -562,7 +562,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
               return (
                 <button
                   onClick={() => setEvolutionOpen((v) => !v)}
-                  title={`Quantity evolution — ${evolutionSummary(ev)}`}
+                  title={`Quantity evolution: ${evolutionSummary(ev)}`}
                   style={{
                     background: active
                       ? `color-mix(in srgb, ${accent} 15%, transparent)`
@@ -906,7 +906,7 @@ function EvolutionPanel({
             </span>
           </div>
           <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
-            Represents increased consumption from efficiency gains (rebound effect). Common on use-phase processes — appliance operation, lighting, heating, transport, etc.
+            Represents increased consumption from efficiency gains (rebound effect). Common on use-phase processes such as appliance operation, lighting, heating and transport.
           </span>
         </div>
       )}

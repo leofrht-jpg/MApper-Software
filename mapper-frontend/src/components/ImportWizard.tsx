@@ -23,9 +23,9 @@ import { useProjectStore } from '../stores/projectStore'
 type Method = 'local' | 'credentials' | null
 
 const SYSTEM_MODELS = [
-  { id: 'cutoff', label: 'Cutoff', description: 'Attributional — most widely used' },
+  { id: 'cutoff', label: 'Cutoff', description: 'Attributional (most widely used)' },
   { id: 'apos', label: 'APOS', description: 'Allocation at Point of Substitution' },
-  { id: 'consequential', label: 'Consequential', description: 'Consequential — for decision support' },
+  { id: 'consequential', label: 'Consequential', description: 'Consequential, built for decision support' },
 ]
 
 const STEPS = ['connecting', 'biosphere', 'importing', 'strategies', 'matching', 'writing', 'done']

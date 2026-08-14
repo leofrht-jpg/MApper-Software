@@ -23,7 +23,7 @@ const STEPS: Step[] = [
     target: 'body',
     title: 'Welcome to MApper',
     content:
-      'MApper integrates four methodologies — LCA, dynamic stock modelling, prospective LCA, and absolute environmental sustainability assessment — into one workflow. This 2-minute tour walks through computing a product\'s climate impact end-to-end, hitting each stage of the pipeline in research order.',
+      'MApper integrates four methodologies into one workflow: LCA, dynamic stock modelling, prospective LCA, and absolute environmental sustainability assessment. This 2-minute tour walks through computing a product\'s climate impact end-to-end, hitting each stage of the pipeline in research order.',
     placement: 'center',
     skipBeacon: true,
   },
@@ -31,7 +31,7 @@ const STEPS: Step[] = [
     target: '[data-tour="nav-databases"]',
     title: '1. The data foundation',
     content:
-      'Every assessment starts from a Brightway2 project. Database Explorer shows what\'s loaded — base ecoinvent for static analysis, plus any prospective (future-scenario) databases generated via the pLCA Developer tab. For this tour we\'ll use the static base; nothing to configure here.',
+      'Every assessment starts from a Brightway2 project. Database Explorer shows what\'s loaded: base ecoinvent for static analysis, plus any prospective (future-scenario) databases generated via the pLCA Developer tab. For this tour we\'ll use the static base; nothing to configure here.',
     placement: 'right',
     skipBeacon: true,
   },
@@ -39,7 +39,7 @@ const STEPS: Step[] = [
     target: '[data-tour="nav-lca"]',
     title: '2. Define the product',
     content:
-      'Archetypes are MApper\'s primary unit of analysis — a structured Bill of Materials linked to ecoinvent activities, organised by lifecycle stage (Manufacturing, Use Phase, Maintenance, End of Life). Open an archetype here to inspect its BOM, link materials, and run a single-product LCA before scaling up.',
+      'Archetypes are MApper\'s primary unit of analysis: a structured Bill of Materials linked to ecoinvent activities, organised by lifecycle stage (Manufacturing, Use Phase, Maintenance, End of Life). Open an archetype here to inspect its BOM, link materials, and run a single-product LCA before scaling up.',
     placement: 'right',
     skipBeacon: true,
   },
@@ -47,7 +47,7 @@ const STEPS: Step[] = [
     target: '[data-tour="nav-dsm"]',
     title: '3. Scale to a fleet over time',
     content:
-      'A single-product impact tells you per-unit. To get the system view, the Dynamic Stock Modeller tracks how products enter and leave the population year by year — every cohort, from birth to deregistration, with Weibull survival. DSM scenarios are independent slots; you can run impacts against several to compare stock futures.',
+      'A single-product impact tells you per-unit. To get the system view, the Dynamic Stock Modeller tracks how products enter and leave the population year by year: every cohort, from birth to deregistration, with Weibull survival. DSM scenarios are independent slots; you can run impacts against several to compare stock futures.',
     placement: 'right',
     skipBeacon: true,
   },
@@ -55,7 +55,7 @@ const STEPS: Step[] = [
     target: '[data-tour="nav-impact"]',
     title: '4. Compute the impact',
     content:
-      'Pick an LCIA method (EF v3.1 by default), choose lifecycle stages, click Calculate. Static Background uses today\'s ecoinvent; Prospective Background year-matches each cohort to a future-scenario database. You can fan out across three axes — LCI source, DSM scenario, or parameter sensitivity — to compare scenarios in one run.',
+      'Pick an LCIA method (EF v3.1 by default), choose lifecycle stages, click Calculate. Static Background uses today\'s ecoinvent; Prospective Background year-matches each cohort to a future-scenario database. You can fan out across three axes to compare scenarios in one run: LCI source, DSM scenario, or parameter sensitivity.',
     placement: 'right',
     skipBeacon: true,
   },

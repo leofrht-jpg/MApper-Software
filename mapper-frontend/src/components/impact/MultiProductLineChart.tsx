@@ -205,7 +205,7 @@ export function MultiProductLineChart({
 
       {allHidden ? (
         <div data-testid="multi-product-line-all-hidden" style={{ padding: 'var(--space-6)', textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)', border: '1px dashed var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
-          All scenarios hidden — click a legend entry to show one.
+          All scenarios hidden. Click a legend entry to show one.
         </div>
       ) : (
         <ChartExportContainer ref={chartRef} style={{ width: '100%', height: 340 }}>

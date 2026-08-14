@@ -70,14 +70,14 @@ function migrateMultiDToPreset(mD: MultiDConfig): SharingPreset {
       layers: [
         {
           layer_number: 1,
-          name: 'Layer 1 — category-specific',
+          name: 'Layer 1: category-specific',
           principle_mode: 'category_specific',
           description: 'Migrated SP-I layer.',
           data: layer1Data,
         },
         {
           layer_number: 2,
-          name: 'Layer 2 — sector share',
+          name: 'Layer 2: sector share',
           principle_mode: 'fixed',
           fixed_principle: 'AR',
           description: mD.layer2_source || 'Migrated sector share.',

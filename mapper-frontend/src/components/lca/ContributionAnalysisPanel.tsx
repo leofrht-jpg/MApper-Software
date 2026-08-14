@@ -127,8 +127,8 @@ export function ContributionAnalysisPanel({ result, loadingPhase, stageBreakdown
       summary={summary}
     >
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-3)' }}>
-        {result.target_label}{result.scope && result.scope !== 'all' ? ` — scope: ${result.scope}` : ''}
-        {result.year != null ? ` — year: ${result.year}` : ''}
+        {result.target_label}{result.scope && result.scope !== 'all' ? ` · scope: ${result.scope}` : ''}
+        {result.year != null ? ` · year: ${result.year}` : ''}
         <span style={{ marginLeft: 8 }}>· {result.method.join(' › ')}</span>
         {result.compute_database && (
           <span
@@ -691,16 +691,16 @@ function MethodologyNote({
       {open && (
         <div style={{ marginTop: 8, padding: 'var(--space-3)', backgroundColor: 'var(--bg-elevated)', borderRadius: 'var(--radius-md)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
           <p style={{ margin: '0 0 6px' }}>
-            <strong>Top activities</strong> uses <code>bw2analyzer.ContributionAnalysis.annotated_top_processes</code> — the dominant technosphere processes after solving the LCI system.
+            <strong>Top activities</strong> uses <code>bw2analyzer.ContributionAnalysis.annotated_top_processes</code>: the dominant technosphere processes after solving the LCI system.
           </p>
           <p style={{ margin: '0 0 6px' }}>
-            <strong>Top flows</strong> uses <code>annotated_top_emissions</code> — the dominant biosphere flows after characterisation.
+            <strong>Top flows</strong> uses <code>annotated_top_emissions</code>: the dominant biosphere flows after characterisation.
           </p>
           <p style={{ margin: '0 0 6px' }}>
-            <strong>Supply chain tree</strong> walks the technosphere graph and runs a sub-LCA at every node, so each branch's value is its <em>characterised</em> impact. The <strong>Sankey</strong> view applies the same convention — link width = characterised impact contributed by that exchange, in the active method's unit. The Sankey BFS is cycle-safe (back- and cross-edges are dropped to keep the graph layered) and capped at a node budget; nodes beyond the cap are pruned best-first by edge value from the root.
+            <strong>Supply chain tree</strong> walks the technosphere graph and runs a sub-LCA at every node, so each branch's value is its <em>characterised</em> impact. The <strong>Sankey</strong> view applies the same convention: link width is the characterised impact contributed by that exchange, in the active method's unit. The Sankey BFS is cycle-safe (back- and cross-edges are dropped to keep the graph layered) and capped at a node budget; nodes beyond the cap are pruned best-first by edge value from the root.
           </p>
           <p style={{ margin: '0 0 6px' }}>
-            <strong>Computed at</strong> depth ≤ {serverMaxDepth}, cutoff ≥ {(serverCutoff * 100).toFixed(2)}% of root. These are the bounds applied server-side when building the tree — branches outside them were never materialised.
+            <strong>Computed at</strong> depth ≤ {serverMaxDepth}, cutoff ≥ {(serverCutoff * 100).toFixed(2)}% of root. These are the bounds applied server-side when building the tree. Branches outside them were never materialised.
           </p>
           <p style={{ margin: isMultiYear ? '0 0 6px' : 0 }}>
             <strong>Current view</strong> further prunes to depth ≤ {depth}, cutoff ≥ {(cutoff * 100).toFixed(1)}% client-side. Lower the cutoff or raise the depth to surface more of the computed tree (capped by the server bounds above).

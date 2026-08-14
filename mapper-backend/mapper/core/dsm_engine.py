@@ -923,7 +923,7 @@ _AGE_CONVENTION_NOTES = [
     "Age convention:",
     "  • Initial stock contains pre-existing products (age 1 and above).",
     "  • New arrivals at the reference year t₀ are specified in the inflows CSV.",
-    "  • Age=0 rows are NOT allowed in initial stock — uploads with age=0 are rejected.",
+    "  • Age=0 rows are NOT allowed in initial stock. Uploads with age=0 are rejected.",
 ]
 
 
@@ -960,7 +960,7 @@ def stock_template_xlsx(dims: list[DimensionDef], example_ages: int = 5) -> byte
         for age in range(1, example_ages + 1):
             rows.append(list(combo) + [age, ""])
     instructions = [
-        "Initial Stock — Format A (by-age)",
+        "Initial Stock: Format A (by-age)",
         "",
         f"Columns: {', '.join(headers)}",
         "  • One row per (cohort, age). 'count' is the number of units of that cohort alive at the reference year t₀ with that age.",
@@ -971,7 +971,7 @@ def stock_template_xlsx(dims: list[DimensionDef], example_ages: int = 5) -> byte
         "",
         "Examples (using your system's dimension labels in the rows above):",
         "  • To represent 200 units of a cohort produced 3 years ago → row with age=3, count=200.",
-        "  • For new arrivals at t₀, do NOT add an age=0 row here — use the annual-inflows template with year=t₀ instead.",
+        "  • For new arrivals at t₀, do NOT add an age=0 row here. Use the annual-inflows template with year=t₀ instead.",
         "",
         "Tips:",
         "  • Empty 'count' cells are ignored. Delete rows you don't need or leave them blank.",
@@ -988,14 +988,14 @@ def aggregate_stock_template_xlsx(dims: list[DimensionDef]) -> bytes:
     for combo in product(*(d.labels for d in nads)) if nads else [()]:
         rows.append(list(combo) + [""])
     instructions = [
-        "Initial Stock — Format B (aggregate, no age column)",
+        "Initial Stock: Format B (aggregate, no age column)",
         "",
         f"Columns: {', '.join(headers)}",
         "  • One row per cohort. 'count' is the total number of pre-existing units (age ≥ 1) of that cohort alive at the reference year t₀.",
         "  • A 'unit' is whatever your system tracks (vehicles, buildings, turbines, devices, kg of material, etc.).",
         "",
         "How the engine handles this format:",
-        "  • The server applies a Weibull REVERSE age decomposition to spread each row across synthetic age cohorts (ages 1..max_age — age=0 is excluded).",
+        "  • The server applies a Weibull REVERSE age decomposition to spread each row across synthetic age cohorts (ages 1..max_age; age=0 is excluded).",
         "  • The full count remains pre-existing stock; manufacturing impacts are NOT counted for it.",
         "  • New arrivals at t₀ must be supplied via the annual-inflows template with year=t₀.",
         "",
@@ -1041,14 +1041,14 @@ def stock_target_template_xlsx(
         for combo in product(*(d.labels for d in nads)) if nads else [()]:
             rows.append([year] + list(combo) + [""])
     instructions = [
-        "Stock Targets (Mode B — survival_stock)",
+        "Stock Targets (Mode B, survival_stock)",
         "",
         f"Columns: {', '.join(headers)}",
         "  • One row per (year, dimension combination). 'count' is the desired total alive stock for that cohort at end-of-year.",
         "  • The engine back-calculates the inflows needed each year to reach these targets, given the Weibull survival hazard.",
         "",
         "Note on year-zero accounting:",
-        "  • survival_stock mode does NOT inject inflows at t₀ — the initial stock is taken as given. Year-0 inflow is therefore zero in this mode.",
+        "  • survival_stock mode does NOT inject inflows at t₀. The initial stock is taken as given, so year-0 inflow is zero in this mode.",
         "  • If you need manufacturing impacts attributed at t₀, switch the cohort to survival_inflow mode and supply the t₀ row in the annual-inflows template.",
         "",
     ] + _AGE_CONVENTION_NOTES
@@ -1465,7 +1465,7 @@ class DynamicStockModel:
                         if remaining > 1e-6:
                             manual_warnings.append(
                                 f"Year {year}: manual outflow of {cohort_total:.4g} for cohort "
-                                f"'{ck}' exceeds available stock by {remaining:.4g} — excess ignored."
+                                f"'{ck}' exceeds available stock by {remaining:.4g}. Excess ignored."
                             )
                     year_manual[ck] = year_manual.get(ck, 0.0) + removed_total
 

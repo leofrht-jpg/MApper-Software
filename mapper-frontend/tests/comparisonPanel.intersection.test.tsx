@@ -210,7 +210,7 @@ describe('ComparisonPanel — DSM scenario intersection (Patch 2G)', () => {
     // Tab bar is present whether expanded or not.
     expect(getByTestId('comparison-dsm-tab-bar')).toBeInTheDocument()
     // Default expanded — chart subtitle visible (no display:none ancestor).
-    const subtitleExpanded = getByText(/Impact per year — Static vs Projected/i)
+    const subtitleExpanded = getByText(/Impact per year: Static vs Projected/i)
     expect(subtitleExpanded.closest('[style*="display: none"]')).toBeNull()
 
     // Collapse the Results card. The tab bar (rendered above the
@@ -224,7 +224,7 @@ describe('ComparisonPanel — DSM scenario intersection (Patch 2G)', () => {
     })
 
     expect(getByTestId('comparison-dsm-tab-bar')).toBeInTheDocument()
-    const subtitleCollapsed = getByText(/Impact per year — Static vs Projected/i)
+    const subtitleCollapsed = getByText(/Impact per year: Static vs Projected/i)
     expect(subtitleCollapsed.closest('[style*="display: none"]')).not.toBeNull()
     // Summary line shows Cumulative difference + comparable-scenario count.
     expect(getByText(/Cumulative difference:/i)).toBeInTheDocument()

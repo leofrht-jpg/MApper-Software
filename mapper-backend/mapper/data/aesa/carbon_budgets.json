@@ -19,7 +19,7 @@
     },
     {
       "id": "AR6_BUDGET_CALC",
-      "citation": "Lamboll, R., AR6CarbonBudgetCalc — Reference implementation for AR6 WG1 Table SPM.2 / Table 5.8 / Table TS.3.",
+      "citation": "Lamboll, R., AR6CarbonBudgetCalc. Reference implementation for AR6 WG1 Table SPM.2 / Table 5.8 / Table TS.3.",
       "doi": "10.5281/zenodo.8332951",
       "url": "https://github.com/Rlamboll/AR6CarbonBudgetCalc"
     },
@@ -32,7 +32,7 @@
   "options": [
     {
       "id": "IPCC_AR6_1p5C_50",
-      "name": "IPCC AR6 — 1.5°C, 50th percentile",
+      "name": "IPCC AR6 1.5°C, 50th percentile",
       "remaining_gt_from_2025": 300,
       "original_gt_from_2020": 500,
       "source": "IPCC AR6 WG1 Table SPM.2 (500 Gt from 2020, -200 Gt 2020-2024 = 300 Gt remaining; AR6 50 Gt rounding convention)",
@@ -42,7 +42,7 @@
     },
     {
       "id": "IPCC_AR6_1p5C_67",
-      "name": "IPCC AR6 — 1.5°C, 67th percentile",
+      "name": "IPCC AR6 1.5°C, 67th percentile",
       "remaining_gt_from_2025": 200,
       "original_gt_from_2020": 400,
       "source": "IPCC AR6 WG1 Table SPM.2 (400 Gt from 2020, -200 Gt 2020-2024 = 200 Gt remaining; AR6 50 Gt rounding convention)",
@@ -52,7 +52,7 @@
     },
     {
       "id": "IPCC_AR6_2C_50",
-      "name": "IPCC AR6 — 2.0°C, 50th percentile",
+      "name": "IPCC AR6 2.0°C, 50th percentile",
       "remaining_gt_from_2025": 1150,
       "original_gt_from_2020": 1350,
       "source": "IPCC AR6 WG1 Table SPM.2 (1350 Gt from 2020, -200 Gt 2020-2024 = 1150 Gt remaining; AR6 50 Gt rounding convention)",
@@ -62,7 +62,7 @@
     },
     {
       "id": "IPCC_AR6_2C_67",
-      "name": "IPCC AR6 — 2.0°C, 67th percentile",
+      "name": "IPCC AR6 2.0°C, 67th percentile",
       "remaining_gt_from_2025": 950,
       "original_gt_from_2020": 1150,
       "source": "IPCC AR6 WG1 Table SPM.2 (1150 Gt from 2020, -200 Gt 2020-2024 = 950 Gt remaining; AR6 50 Gt rounding convention)",

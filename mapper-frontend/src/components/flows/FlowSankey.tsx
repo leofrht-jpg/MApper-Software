@@ -78,7 +78,7 @@ export function FlowSankey({ year }: FlowSankeyProps) {
         .attr('text-anchor', 'middle')
         .attr('fill', '#5A6577')
         .attr('font-size', 12)
-        .text(`Stock only — no inflows or outflows in ${year.year}.`)
+        .text(`Stock only. No inflows or outflows in ${year.year}.`)
       return
     }
 

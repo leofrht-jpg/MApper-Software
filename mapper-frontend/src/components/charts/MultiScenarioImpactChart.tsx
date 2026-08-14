@@ -190,7 +190,7 @@ export function MultiScenarioImpactChart({
               border: '1px dashed var(--border-default)', borderRadius: 'var(--radius-md)',
             }}
           >
-            All {axisLabel} hidden — click a {axisLabel.replace(/s$/, '')} below to show it.
+            All {axisLabel} hidden. Click a {axisLabel.replace(/s$/, '')} below to show it.
           </div>
         ) : view === 'total' ? (
           <TotalView
@@ -275,7 +275,7 @@ export function MultiScenarioImpactChart({
               data-testid="multi-scenario-legend-controls"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}
             >
-              <span>Click a {axisLabel.replace(/s$/, '')} to hide it — the download includes only visible {axisLabel}.</span>
+              <span>Click a {axisLabel.replace(/s$/, '')} to hide it. The download includes only visible {axisLabel}.</span>
               {visibleScenarios.length > 1 && (
                 <span style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap' }}>
                   {visibleScenarios.map((s) => (

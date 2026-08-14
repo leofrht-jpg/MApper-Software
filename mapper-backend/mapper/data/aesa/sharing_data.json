@@ -46,7 +46,7 @@
   },
   "layer2": {
     "sector_share": 0.15,
-    "source": "Passenger cars ~60% of Danish transport GHG × transport ~25% of national total ≈ 0.15. Provisional — refine with Danish EPA sectoral breakdown.",
+    "source": "Passenger cars ~60% of Danish transport GHG × transport ~25% of national total ≈ 0.15. Provisional; refine with Danish EPA sectoral breakdown.",
     "provisional": true
   }
 }

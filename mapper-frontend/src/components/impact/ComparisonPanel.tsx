@@ -504,7 +504,7 @@ function ComparisonPanelImpl() {
 
       {/* Chart 1: Overlay */}
       <ChartCard
-        title={`Impact per year — Static vs ${selectedLciLabel ?? 'Projected'}`}
+        title={`Impact per year: Static vs ${selectedLciLabel ?? 'Projected'}`}
         subtitle={current.unit}
         chartRef={overlayRef}
         exportFilename={`impact_overlay_${current.method.join('_')}${selectedLciLabel ? `_${selectedLciLabel.replace(/[^\w.-]+/g, '_')}` : ''}`}
@@ -518,7 +518,7 @@ function ComparisonPanelImpl() {
             <Tooltip content={<OverlayTooltip unit={current.unit} fmtValue={overlayFormat.format} />} />
             <Legend wrapperStyle={{ fontSize: 11 }} />
             <Line type="monotone" dataKey="static_impact" name="Static Background" stroke="var(--mod-lca)" strokeWidth={2} dot={false} />
-            <Line type="monotone" dataKey="projected_impact" name={selectedLciLabel ? `Prospective — ${selectedLciLabel}` : 'Prospective Background'} stroke="var(--mod-plca)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+            <Line type="monotone" dataKey="projected_impact" name={selectedLciLabel ? `Prospective: ${selectedLciLabel}` : 'Prospective Background'} stroke="var(--mod-plca)" strokeWidth={2} strokeDasharray="5 4" dot={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>
@@ -526,7 +526,7 @@ function ComparisonPanelImpl() {
       {/* Chart 2: Delta bars */}
       <ChartCard
         title={`Δ per year (${selectedLciLabel ?? 'Projected'} − Static)`}
-        subtitle={`${current.unit} — green = improvement, red = worse`}
+        subtitle={`${current.unit} · green is improvement, red is worse`}
         chartRef={deltaRef}
         exportFilename={`impact_delta_${current.method.join('_')}${selectedLciLabel ? `_${selectedLciLabel.replace(/[^\w.-]+/g, '_')}` : ''}`}
         extra={<NumberFormatControl settings={deltaFormat.settings} onChange={deltaFormat.setSettings} />}

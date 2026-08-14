@@ -411,7 +411,7 @@ function CarbonBudgetInset({ budget: rawBudget, sharing, results }: {
           Carbon budget depletion
         </span>
         <div style={{ marginTop: 4 }}>
-          No depletion data in this result — the budget is configured, but no
+          No depletion data in this result. The budget is configured, but no
           cumulative boundary (climate change) was mapped to an impact method,
           so Compute produced no remaining-budget series to show.
         </div>

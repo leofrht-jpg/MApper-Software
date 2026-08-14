@@ -3,7 +3,7 @@
   "sets": [
     {
       "id": "Sala2020_EF",
-      "name": "Sala et al. 2020 — PB-EF",
+      "name": "Sala et al. 2020: PB-EF",
       "source": "Sala, S., et al. (2020). Environmental sustainability of European production and consumption assessed against planetary boundaries. J. Environ. Manage. 269: 110686.",
       "boundaries": {
         "climate_change": {
@@ -218,7 +218,7 @@
     },
     {
       "id": "Ryberg2018_PBLCIA",
-      "name": "Ryberg et al. 2018 — PB-LCIA",
+      "name": "Ryberg et al. 2018: PB-LCIA",
       "source": "Ryberg, M.W., Owsianiak, M., Richardson, K., Hauschild, M.Z. (2018). Development of a life-cycle impact assessment methodology linked to the Planetary Boundaries framework. Ecological Indicators 88: 250-262. DOI 10.1016/j.ecolind.2017.12.065",
       "computable": false,
       "_notice": "Patch 2c SCAFFOLD — structure only, NOT computable. The 9 PB-framework control variables/units are the standard Steffen et al. 2015 labels and are PROVISIONAL: replace with the exact Ryberg 2018 PB-LCIA control variables/units before use. pb_value (SOS), ef_indicator (PB-LCIA characterisation-method link), zone_of_uncertainty and status_2023 are deliberately null — to be filled authoritatively. Compute rejects this set with a clear message until SOS values and a PB-LCIA method exist.",

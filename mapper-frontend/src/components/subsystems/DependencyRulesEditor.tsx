@@ -164,7 +164,7 @@ export function DependencyRulesEditor({ subsystem, collapsed, onToggleCollapse }
         setPendingImport(res.rules)
       } else {
         setError(
-          'Import rejected — fix these rows and try again:\n' +
+          'Import rejected. Fix these rows and try again:\n' +
             res.errors.map((e) => `• Row ${e.row} (${e.field}): ${e.message}`).join('\n'),
         )
       }

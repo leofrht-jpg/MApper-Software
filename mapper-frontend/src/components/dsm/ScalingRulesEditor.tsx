@@ -166,7 +166,7 @@ export function ScalingRulesEditor({ onClose }: ScalingRulesEditorProps) {
             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4, maxWidth: 620 }}>
               Scale base DSM data (inflows, stock targets, or manual outflows) with parameter-driven
               expressions. Reserved variables: <code>base</code> (uploaded value), <code>year</code>.
-              One rule per cohort — most-specific filter wins.
+              One rule per cohort. The most-specific filter wins.
             </p>
           </div>
           <button
@@ -323,7 +323,7 @@ function RuleCard({
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
           {filterEntries.length === 0 && (
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-              Global — matches every cohort (unless a more specific rule wins).
+              Global. Matches every cohort unless a more specific rule wins.
             </span>
           )}
           {filterEntries.map(([dim, label]) => (

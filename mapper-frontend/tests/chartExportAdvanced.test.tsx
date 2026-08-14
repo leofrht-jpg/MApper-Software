@@ -126,7 +126,7 @@ describe('ChartExportButton — Advanced collapse (Patch 4L)', () => {
     // role="menuitemradio" with the label `3× — ~288 DPI` rendered as
     // body text — query by text on that label, not by button role.
     fireEvent.click(getByTestId('chart-export-advanced-toggle'))
-    fireEvent.click(getByText('3× — ~288 DPI'))
+    fireEvent.click(getByText('3× · ~288 DPI'))
     // Close and reopen.
     fireEvent.click(getByRole('button'))
     fireEvent.click(getByRole('button'))

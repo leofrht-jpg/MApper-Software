@@ -674,7 +674,7 @@ async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> Ar
         )
     elif len(anchors) == 1:
         warnings.append(
-            "Only one prospective anchor available for this trajectory — showing "
+            "Only one prospective anchor available for this trajectory, so it shows "
             "a single point (no curve). Generate more years to interpolate."
         )
 
@@ -1733,7 +1733,7 @@ def _build_contribution_workbook(result: ContributionAnalysisResult):
         ("Top technosphere", "bw2analyzer.ContributionAnalysis.annotated_top_processes"),
         ("Top biosphere", "bw2analyzer.ContributionAnalysis.annotated_top_emissions"),
         ("Supply chain Sankey", "BFS over technosphere exchanges (raw exchange amounts)"),
-        ("Supply chain tree", "Recursive sub-LCA per node — characterised impact at each branch"),
+        ("Supply chain tree", "Recursive sub-LCA per node, characterised impact at each branch"),
         ("Cutoff", f"{result.cutoff} (fraction of root score; branches below are pruned)"),
         ("Max depth", f"{result.max_depth} (hard recursion cap)"),
         ("LCIA method", method_label),
@@ -1923,7 +1923,7 @@ def compose_activity_label(name: str, product: str | None) -> str:
         return product
     if not product or product.lower() in name.lower():
         return name
-    return f"{name} — {product}"
+    return f"{name} · {product}"
 
 
 def _activity_label_parts(database: str, code: str) -> tuple[str, str | None]:

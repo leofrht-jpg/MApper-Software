@@ -134,7 +134,7 @@ export function ConfigWorkbookButtons({
             maxWidth: 620, maxHeight: '70vh', overflow: 'auto',
           }}>
             <h4 style={{ margin: 0, color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>
-              Import rejected — nothing was changed
+              Import rejected. Nothing was changed.
             </h4>
             <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
               The whole workbook is rejected if any field is invalid, so your current

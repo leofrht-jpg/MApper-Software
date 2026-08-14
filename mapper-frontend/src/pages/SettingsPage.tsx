@@ -501,7 +501,7 @@ function formatEntry(e: UnifiedEntry): string {
 function formatExport({ entries, version, project }: { entries: UnifiedEntry[]; version: string; project: string }): string {
   const now = new Date()
   const header = [
-    `MApper Logs — exported ${now.toISOString().slice(0, 19).replace('T', ' ')}`,
+    `MApper Logs · exported ${now.toISOString().slice(0, 19).replace('T', ' ')}`,
     `Version: ${version}`,
     `Platform: ${navigator.userAgent}`,
     `Project: ${project}`,
@@ -724,7 +724,7 @@ function LocationPanel() {
       >
         {options.map((c) => (
           <option key={c.code} value={c.code}>
-            {c.name} — {c.intensity} g CO₂/kWh
+            {c.name} · {c.intensity} g CO₂/kWh
           </option>
         ))}
       </select>

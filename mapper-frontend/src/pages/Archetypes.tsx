@@ -55,7 +55,7 @@ function validateFolderPath(path: string): string | null {
   for (const seg of parts) {
     if (!seg) return 'Empty segment in path'
     if (!FOLDER_SEGMENT_RE.test(seg)) {
-      return `Invalid segment "${seg}" — use letters, digits, spaces, "_" or "-"`
+      return `Invalid segment "${seg}": use letters, digits, spaces, "_" or "-"`
     }
   }
   return null

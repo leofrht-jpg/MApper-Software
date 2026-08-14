@@ -549,7 +549,7 @@ function DatabaseDropdown({
           const yearLabel = isSuper
             ? (meta?.years && meta.years.length > 1 ? `${meta.years[0]}–${meta.years[meta.years.length - 1]}` : (meta?.years?.[0] ?? ''))
             : (meta?.year ?? '')
-          const tip = `Prospective — ${meta?.iam?.toUpperCase() ?? ''} ${meta?.ssp ?? ''} ${yearLabel}${isSuper ? ` · superstructure (${meta?.years?.length ?? 0} scenarios)` : ''}`.trim()
+          const tip = `Prospective: ${meta?.iam?.toUpperCase() ?? ''} ${meta?.ssp ?? ''} ${yearLabel}${isSuper ? ` · superstructure (${meta?.years?.length ?? 0} scenarios)` : ''}`.trim()
           return (
             <span
               title={tip}

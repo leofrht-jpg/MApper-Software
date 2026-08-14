@@ -294,7 +294,7 @@ function PrincipleDataCard({
                 </ModeOption>
               </div>
               <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-                Both clamp at the ends — nothing is extrapolated.
+                Both clamp at the ends. Nothing is extrapolated.
               </span>
             </div>
           )}

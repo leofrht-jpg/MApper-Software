@@ -170,7 +170,7 @@ export function DatabaseSelector({ databases, value, onChange, disabled, style }
         </optgroup>
       )}
       {prospectiveByIam.map(([iam, items]) => (
-        <optgroup key={iam} label={`Prospective — ${iam}`}>
+        <optgroup key={iam} label={`Prospective: ${iam}`}>
           {items.map((p) => (
             <option key={p.pattern} value={p.pattern} title={p.pattern}>
               {p.label}

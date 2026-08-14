@@ -89,7 +89,7 @@ def save(preset: dict) -> None:
     if not pid:
         raise ValueError("preset.id is required")
     if pid in BUILTIN_PRESET_IDS:
-        raise ValueError(f"Cannot modify built-in preset '{pid}' — duplicate it first.")
+        raise ValueError(f"Cannot modify built-in preset '{pid}'. Duplicate it first.")
     path = _path(pid)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")

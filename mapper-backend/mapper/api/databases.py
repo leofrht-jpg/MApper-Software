@@ -53,6 +53,35 @@ async def get_projects() -> list[ProjectResponse]:
     return [ProjectResponse(**p) for p in list_projects()]
 
 
+def _rehydrate_after_storage_write() -> None:
+    """Make storage written for a NEW project visible without a restart.
+
+    ``duplicate_project`` and ``import_project`` now write MApper's own
+    per-project storage (DSM systems, archetypes, cohort mappings, AESA
+    configurations, parameter tables, the pLCA registry). Those files land on
+    disk under a project key this process has never loaded, and
+    ``hydrate_from_disk()`` otherwise runs only from the FastAPI startup hook,
+    so the copy stayed invisible until the app restarted -- the copy looked
+    like it had silently failed.
+
+    This is the same defect ``POST /demo/load`` had, and the same fix. The rule
+    it enforces: ANY route that writes MApper storage for a project the process
+    has not already loaded must rehydrate before returning. Route-level
+    visibility assertions in ``test_project_copy_roundtrip.py`` hold both
+    routes to it, so the rule is enforced rather than remembered -- the earlier
+    sweep concluded these routes had "no gap", which was true until they
+    started writing storage.
+
+    Safe mid-session on the two counts measured when demo/load adopted it:
+    ~40-100 ms against a real store, and it merges with ``.update()`` over
+    registries every writer persists eagerly, so it installs identical content
+    rather than rolling anything back.
+    """
+    from mapper.api import dsm as _dsm
+
+    _dsm.hydrate_from_disk()
+
+
 @router.post("/projects/switch", response_model=ProjectResponse)
 async def post_switch_project(body: SwitchProjectRequest) -> ProjectResponse:
     try:
@@ -77,6 +106,7 @@ async def post_duplicate_project(body: DuplicateProjectRequest) -> ProjectRespon
         name = duplicate_project(body.source_name, body.new_name)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _rehydrate_after_storage_write()
     return ProjectResponse(name=name, is_current=True)
 
 
@@ -110,6 +140,7 @@ async def post_import_project(file: UploadFile = File(...)) -> ProjectResponse:
         name = import_project(data)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _rehydrate_after_storage_write()
     return ProjectResponse(name=name, is_current=True)
 
 

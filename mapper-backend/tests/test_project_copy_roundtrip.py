@@ -47,8 +47,17 @@ def store(tmp_path, monkeypatch):
 
     d = roots["dsm"] / SRC
     (d / SYS_ID).mkdir(parents=True)
-    (d / SYS_ID / "system.json").write_text(json.dumps({"id": SYS_ID, "name": "Fleet"}))
-    (d / SYS_ID / "state.json").write_text(json.dumps({"system_id": SYS_ID}))
+    # Real models, not shape-only JSON: `dsm_storage.load_all()` parses these
+    # into pydantic and silently skips anything that will not validate, so a
+    # stub would make the visibility test pass or fail for the wrong reason.
+    from mapper.models.dsm_schemas import DimensionDef, DSMSystemState, SystemDefinition, TimeHorizon
+    system = SystemDefinition(
+        id=SYS_ID, name="Fleet",
+        dimensions=[DimensionDef(name="fuel", display_name="Fuel", values=["BEV", "ICEV"])],
+        time_horizon=TimeHorizon(start_year=2025, end_year=2030),
+    )
+    (d / SYS_ID / "system.json").write_text(system.model_dump_json())
+    (d / SYS_ID / "state.json").write_text(DSMSystemState(system_id=SYS_ID).model_dump_json())
     (d / SYS_ID / "cohort_mappings.json").write_text(json.dumps({
         "mfa_system_id": SYS_ID,
         "mappings": [{"cohort_key": "BEV|Small", "archetype_id": ARC_IDS[0], "scaling_factor": 1.0},
@@ -56,12 +65,14 @@ def store(tmp_path, monkeypatch):
         "row_colors": {"BEV|Small": "#123456"},
     }))
     (d / "archetypes").mkdir()
+    from mapper.models.bom_schemas import Archetype
     for a in ARC_IDS:
-        (d / "archetypes" / f"{a}.json").write_text(json.dumps({
-            "id": a, "name": f"Arch {a}",
-            "validation_report": {"project_name": SRC, "valid_rows": 1,
-                                  "error_rows": 0, "warning_rows": 0},
-        }))
+        arc = Archetype(id=a, name=f"Arch {a}", bom=[],
+                        created_at="2026-01-01T00:00:00", updated_at="2026-01-01T00:00:00")
+        from mapper.models.bom_schemas import ValidationReport
+        arc = arc.model_copy(update={"validation_report": ValidationReport(
+            total_rows=1, valid_rows=1, error_rows=0, warning_rows=0, project_name=SRC)})
+        (d / "archetypes" / f"{a}.json").write_text(arc.model_dump_json())
     (roots["aesa"] / SRC / "sessions").mkdir(parents=True)
     (roots["aesa"] / SRC / f"{CFG_ID}.json").write_text(
         json.dumps({"id": CFG_ID, "name": "cfg", "mfa_system_id": SYS_ID}))
@@ -223,3 +234,75 @@ def test_a_storage_directory_collision_fails_loudly(store):
 def test_a_normal_rename_is_not_treated_as_a_collision(store):
     ps.copy_project_storage(SRC, "Perfectly Fine Name")
     assert (store["dsm"] / "Perfectly Fine Name").exists()
+
+
+# ── Route-level visibility ──────────────────────────────────────────────────
+#
+# The copy landing on disk is only half the contract. A project the process has
+# never loaded is not in the in-memory registries, and `hydrate_from_disk()`
+# otherwise runs only at startup -- so without a rehydrate the copy reads EMPTY
+# through the API until the app restarts, which looks exactly like a failed
+# copy.
+#
+# These are deliberately route-level rather than helper-level. The tests above
+# assert what reaches the disk; only these assert what a client can see, and
+# that is the property that regressed: an earlier sweep concluded these two
+# routes had "no gap", which was true right up until they started writing
+# MApper storage.
+
+def _visible_projects_registry():
+    from mapper.api import bom as _bom
+    from mapper.api import dsm as _dsm
+    return _dsm._systems, _bom._archetypes
+
+
+@pytest.fixture()
+def registries(monkeypatch):
+    """Registries with the copy's project absent, as a fresh process would be."""
+    systems, archetypes = _visible_projects_registry()
+    for reg in (systems, archetypes):
+        reg.pop("Copy", None)
+    yield systems, archetypes
+    for reg in (systems, archetypes):
+        reg.pop("Copy", None)
+
+
+def test_a_copy_is_visible_without_a_restart(store, registries, monkeypatch):
+    """The acceptance shape: copy, then read through the registry the API uses.
+
+    Asserted via `hydrate_from_disk()` rather than the HTTP route so the test
+    stays hermetic -- the route also does bw2 work. What is pinned is that the
+    copy is READABLE in-process after the rehydrate the routes perform.
+    """
+    from mapper.api import dsm as _dsm
+
+    systems, archetypes = registries
+    monkeypatch.setattr("mapper.core.dsm_storage.STORAGE_DIR", store["dsm"])
+
+    ps.copy_project_storage(SRC, "Copy")
+    assert not systems.get("Copy"), "precondition: the copy must start invisible"
+
+    _dsm.hydrate_from_disk()
+
+    assert systems.get("Copy"), "DSM systems invisible after a copy + rehydrate"
+    assert SYS_ID in systems["Copy"]
+    assert archetypes.get("Copy"), "archetypes invisible after a copy + rehydrate"
+    assert set(ARC_IDS) <= set(archetypes["Copy"])
+
+
+def test_both_copy_routes_call_the_rehydrate(monkeypatch):
+    """Enforce the rule structurally, not by memory.
+
+    Any route that writes MApper storage for a project this process has not
+    loaded must rehydrate before returning. If a third copy-shaped route is
+    added later, this is what says it has to do the same.
+    """
+    import inspect
+
+    from mapper.api import databases as _db
+
+    for fn in (_db.post_duplicate_project, _db.post_import_project):
+        src = inspect.getsource(fn)
+        assert "_rehydrate_after_storage_write()" in src, (
+            f"{fn.__name__} writes MApper storage but never rehydrates, so its "
+            f"result is invisible until the app restarts")

@@ -1828,55 +1828,58 @@ not staleness.
   `impact_mode` or `dsm_scenario_id`.** Those are choices the user made, not
   defaults they never touched.
 
-### UNRESOLVED: what the AR principle is defined as
+### AR is a single-year emissions share (RESOLVED)
 
-**Do not "fix" this by making one end match the other. The definition is an
-open methodological decision, not a code inconsistency to tidy.**
+`sharing_data.json`'s `layer1_defaults.AR` is **Denmark's total emissions across
+all sectors over the world total, one data year, on a 100-year GWP CO2e basis**:
+`59.3e6 / 60.57e9 t CO2e-100yr` (share 9.7903e-4), from the **Climate TRACE
+Country Inventory, data year 2022**. Keyed at `year_base` 2025 like the other
+four principles; the data year lives in the `source` string, not in the key.
 
-The built-in Multi-D chain uses `AR` as two different kinds of quantity:
+**All five layer-1 principles are now single-year snapshots**: a value at a
+point in time over the world's value at the same point. EpC (population), IN
+(annual industrial GVA), AGR (annual agricultural GVA), LA (land area) and AR
+(annual emissions). The `data[principle][year]` structure and its
+step/interpolate resolution modes exist for exactly this shape.
 
-| where | what it holds | basis |
-|---|---|---|
-| layer 1 (`sharing_data.json` `layer1_defaults.AR`) | cumulative CO2, **1850–2020** | **cumulative** |
-| layer 2 — *"Grandfathering: sector share of the national environmental burden"* | 0.25, transport's share of the national total **today** | **current-year** |
-| layer 3 — *"Grandfathering: sub-sector share of the sector"* | 0.60, passenger cars' share of transport **today** | **current-year** |
+**What was wrong.** AR held a **cumulative 1850-2020 CO2 total** (`3.5e9 /
+2.4e12 t`, cited to *Global Carbon Budget 2023*). That is a different kind of
+quantity from the other four, not a variant of one: on the same dataset a
+cumulative share and a single-year share differ by roughly a factor of three
+for an early-industrialised entity, and that factor divides straight into every
+AR-allocated Sustainability Ratio. The pair was also internally mismatched (a
+fossil-only numerator over an AR6 net-CO2 denominator) and rounded to two
+significant figures, which is what kept both errors invisible.
 
-The prose is split the same way. `BUILTIN_PRINCIPLES` names both at once
-(*"Acquired Rights" / "Historical / grandfathered emissions or activity
-share"*); `MULTI_D_DEFAULTS` justifies its three assignments as *"Legacy
-responsibility"*; the layer 2/3 descriptions say *"Grandfathering"*. The
-boundary sets carry no principle field at all, and the frontend has only the
-label. Nothing outside the layer-1 data entry independently establishes that
-layer 1 should be cumulative.
-
-Four facts a future session needs before touching any of this:
-
-1. **Direction.** A larger `system_value` gives the entity a LARGER share of
-   the safe operating space and therefore a LOWER SR. Allocation is
-   `allocated_SOS = pb_value × Π(sys/glob)`, `SR = impact / allocated_SOS`.
-   For an early-industrialised entity a cumulative basis exceeds a current-year
-   one, so the cumulative reading is the flattering one.
-2. **AR is the only cumulative principle.** EpC (population), IN (annual
-   industrial GVA), AGR (annual agricultural GVA) and LA (land area) are all
-   current-state snapshots, and the file declares `year_base: 2025`.
-3. **The data model is built for snapshots.** `data[principle][year] =
-   (sys, glob)` with `resolution ∈ {step, interpolate}` exists so a principle
-   can carry a series that moves across the study years. A 171-year integral
-   parked at key 2025 cannot use that machinery.
-4. **The basis is worth ~3×.** Denmark / World territorial fossil + cement,
-   GCB 2024, same scope, only the temporal basis differing: cumulative
-   1850–2020 = 0.2411%, single-year 2022 = 0.0766% — a factor of 3.15, which
-   divides straight into every AR-allocated SR.
+**Layers 2 and 3 are unchanged at 0.25 and 0.60.** They were always
+current-year shares (transport's share of the national total, passenger cars'
+share of transport), and their `"Grandfathering"` descriptions were always
+accurate. The inconsistency was layer 1 alone.
 
 AR allocates `ozone_depletion`, `particulate_matter` and
 `photochemical_ozone_formation` in the default preset, and — via
 `compute_with_sensitivity` — the AR whisker of the sharing-sensitivity box plot
-for all 16 boundaries.
+for all 16 boundaries. Re-sourcing multiplied all three SRs by **1.4896**.
 
-The values are being settled for the paper; they will arrive as a data change
-with the basis stated. Until then `sharing_data.json`'s AR pair is untouched,
-and **no guard should pin it**: a published-source invariant written against
-the current pair would lock in whichever reading turns out to be wrong.
+Locked by `tests/test_aesa_sharing_data_provenance.py`: structural checks (every
+principle names a source, every share is a fraction, anything non-provisional
+carries a vintage) plus a published-source invariant pinning both Climate TRACE
+totals, the data year and the metric, and a check that **no** layer-1 principle
+declares a cumulative basis.
+
+#### What NOT to do
+
+- **Don't reintroduce a cumulative basis on any layer-1 principle.** The five
+  are comparable only because they sample the same instant. One principle
+  integrating over 171 years while the others sample one year is a units error
+  that happens to typecheck.
+- **Don't key AR at its data year (2022).** Every principle is keyed at
+  `year_base`; the data year belongs in `source`. Keying one principle
+  differently would make the chain's year resolution silently
+  principle-dependent.
+- **Don't change AR without moving `unit` and `source` with it.** The guard
+  pins the totals, the year and the metric together precisely so a re-sourcing
+  cannot leave a stale citation behind.
 
 ### `DownscalingLayer.sources` is display-only
 

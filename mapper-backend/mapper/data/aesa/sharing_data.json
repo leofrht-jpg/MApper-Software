@@ -1,5 +1,5 @@
 {
-  "_notice": "Default values for Multi-D sharing factors. Denmark / world values are provisional estimates — refine with Eurostat, World Bank, FAOSTAT, Global Carbon Budget, and Danish EPA (Miljøstyrelsen) before publication.",
+  "_notice": "Default values for Multi-D sharing factors. Entries flagged provisional:true are estimates; refine with Eurostat, World Bank, FAOSTAT and Danish EPA (Miljøstyrelsen) before publication. Entries flagged provisional:false name a dataset and a data year in their own source field. Every layer-1 principle is a SINGLE-YEAR snapshot keyed at year_base: a value at a point in time over the world value at the same point. AR was moved onto Climate TRACE 2022 and is no longer an estimate; it previously held a cumulative 1850-2020 CO2 total, which is a different quantity from the other four and is the basis error the provenance guard now prevents.",
   "entity": "Denmark",
   "sector": "passenger cars",
   "year_base": 2025,
@@ -36,12 +36,12 @@
       "provisional": false
     },
     "AR": {
-      "description": "Acquired rights — historical cumulative CO2 emissions share",
-      "system_value": 3.5e9,
-      "global_value": 2.4e12,
-      "unit": "t CO2 cumulative (1850-2020)",
-      "source": "Global Carbon Budget 2023, provisional",
-      "provisional": true
+      "description": "Acquired rights: share of current annual emissions",
+      "system_value": 59.3e6,
+      "global_value": 60.57e9,
+      "unit": "t CO2e-100yr per year, all sectors, data year 2022",
+      "source": "Climate TRACE Country Inventory, data year 2022. Denmark total across all sectors 59.3 Mt CO2e-100yr; world total 60.57 Gt CO2e-100yr. Metric is CO2e on a 100-year GWP basis, not CO2 alone. SINGLE-YEAR, like the other four principles: this is a snapshot of the emissions share at a point in time, not a cumulative total over a historical window. Keyed at year_base 2025 (the assessment base year) even though the data year is 2022, which is the convention every principle in this file follows.",
+      "provisional": false
     }
   },
   "layer2": {

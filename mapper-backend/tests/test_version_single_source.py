@@ -59,7 +59,7 @@ def test_detect_version_returns_fallback_and_does_not_raise_on_malformed(monkeyp
     # Simulate a malformed / unreadable pyproject: tomllib.load raises.
     monkeypatch.setattr(tomllib, "load", lambda *_a, **_k: (_ for _ in ()).throw(tomllib.TOMLDecodeError("boom", "", 0)))
     v = mapper._detect_version()
-    assert v == "0.1.7"  # the literal fallback, no exception
+    assert v == "0.1.8"  # the literal fallback, no exception
 
 
 def test_detect_version_returns_fallback_when_no_source_available(monkeypatch):
@@ -69,7 +69,7 @@ def test_detect_version_returns_fallback_when_no_source_available(monkeypatch):
     monkeypatch.setattr(_md, "version", lambda *_a, **_k: (_ for _ in ()).throw(_md.PackageNotFoundError()))
     # No pyproject.toml anywhere: is_file() always False.
     monkeypatch.setattr(Path, "is_file", lambda self: False)
-    assert mapper._detect_version() == "0.1.7"
+    assert mapper._detect_version() == "0.1.8"
 
 
 def test_the_running_app_echoes_its_version():

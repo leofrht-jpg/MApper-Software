@@ -359,32 +359,32 @@
   [
    2025,
    "ozone_depletion",
-   1.8645502645502645,
-   11812.5,
+   2.777370245456249,
+   7930.163447251114,
    22025.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2025,
    "particulate_matter",
-   19.428571428571427,
-   109.375,
+   28.940134907251263,
+   73.42743932639921,
    2125.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2025,
    "photochemical_ozone_formation",
-   557.4913117770035,
-   89687500.0,
+   830.4199735818286,
+   60210500.24764735,
    50000002025.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2030,
@@ -409,32 +409,32 @@
   [
    2030,
    "ozone_depletion",
-   1.864973544973545,
-   11812.5,
+   2.7780007494847294,
+   7930.163447251114,
    22030.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2030,
    "particulate_matter",
-   19.474285714285713,
-   109.375,
+   29.008229342327148,
+   73.42743932639921,
    2130.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2030,
    "photochemical_ozone_formation",
-   557.4913118327526,
-   89687500.0,
+   830.4199736648707,
+   60210500.24764735,
    50000002030.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2035,
@@ -459,32 +459,32 @@
   [
    2035,
    "ozone_depletion",
-   1.8653968253968254,
-   11812.5,
+   2.77863125351321,
+   7930.163447251114,
    22035.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2035,
    "particulate_matter",
-   19.52,
-   109.375,
+   29.076323777403033,
+   73.42743932639921,
    2135.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2035,
    "photochemical_ozone_formation",
-   557.4913118885017,
-   89687500.0,
+   830.4199737479126,
+   60210500.24764735,
    50000002035.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2040,
@@ -509,32 +509,32 @@
   [
    2040,
    "ozone_depletion",
-   1.8658201058201058,
-   11812.5,
+   2.7792617575416902,
+   7930.163447251114,
    22040.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2040,
    "particulate_matter",
-   19.565714285714286,
-   109.375,
+   29.14441821247892,
+   73.42743932639921,
    2140.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2040,
    "photochemical_ozone_formation",
-   557.4913119442509,
-   89687500.0,
+   830.4199738309546,
+   60210500.24764735,
    50000002040.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ]
  ],
  "SR|CO2e_GHG": [
@@ -561,32 +561,32 @@
   [
    2025,
    "ozone_depletion",
-   1.8645502645502645,
-   11812.5,
+   2.777370245456249,
+   7930.163447251114,
    22025.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2025,
    "particulate_matter",
-   19.428571428571427,
-   109.375,
+   28.940134907251263,
+   73.42743932639921,
    2125.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2025,
    "photochemical_ozone_formation",
-   557.4913117770035,
-   89687500.0,
+   830.4199735818286,
+   60210500.24764735,
    50000002025.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2030,
@@ -611,32 +611,32 @@
   [
    2030,
    "ozone_depletion",
-   1.864973544973545,
-   11812.5,
+   2.7780007494847294,
+   7930.163447251114,
    22030.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2030,
    "particulate_matter",
-   19.474285714285713,
-   109.375,
+   29.008229342327148,
+   73.42743932639921,
    2130.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2030,
    "photochemical_ozone_formation",
-   557.4913118327526,
-   89687500.0,
+   830.4199736648707,
+   60210500.24764735,
    50000002030.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2035,
@@ -661,32 +661,32 @@
   [
    2035,
    "ozone_depletion",
-   1.8653968253968254,
-   11812.5,
+   2.77863125351321,
+   7930.163447251114,
    22035.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2035,
    "particulate_matter",
-   19.52,
-   109.375,
+   29.076323777403033,
+   73.42743932639921,
    2135.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2035,
    "photochemical_ozone_formation",
-   557.4913118885017,
-   89687500.0,
+   830.4199737479126,
+   60210500.24764735,
    50000002035.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2040,
@@ -711,35 +711,35 @@
   [
    2040,
    "ozone_depletion",
-   1.8658201058201058,
-   11812.5,
+   2.7792617575416902,
+   7930.163447251114,
    22040.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2040,
    "particulate_matter",
-   19.565714285714286,
-   109.375,
+   29.14441821247892,
+   73.42743932639921,
    2140.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ],
   [
    2040,
    "photochemical_ozone_formation",
-   557.4913119442509,
-   89687500.0,
+   830.4199738309546,
+   60210500.24764735,
    50000002040.0,
    null,
    null,
-   0.00021875
+   0.00014685487865279841
   ]
  ],
- "_generated_from": "git main @ a7254a3. Regenerated deliberately to EXTEND COVERAGE, not because a number moved: the SR set now includes the three AR-allocated boundaries (ozone_depletion, particulate_matter, photochemical_ozone_formation), which no previous row depended on. Every value carried over from the previous fixture is unchanged; the sharing data is main's, untouched. Captured from the probe in test_phase_b_no_drift.py, never typed.",
+ "_generated_from": "git main @ 565bcaf plus the AR re-sourcing in this commit. Regenerated deliberately: layer 1's AR pair moved from an unsourced cumulative 1850-2020 CO2 total (3.5e9 / 2.4e12 t) to the Climate TRACE Country Inventory single-year 2022 CO2e-100yr totals (59.3e6 / 60.57e9 t). AR is a single-year emissions share, matching the other four layer-1 principles; the cumulative basis was a units error. Only the three AR-allocated boundaries move; climate_change (EpC) and acidification (AGR) are byte-identical. Captured from the probe in test_phase_b_no_drift.py, never typed.",
  "factors": {
   "IPCC_AR6_1p5C_50": 1.8518640000000002,
   "IPCC_AR6_1p5C_67": 2.1206960000000006,

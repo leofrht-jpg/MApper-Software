@@ -20,6 +20,8 @@ import bw2analyzer
 import bw2calc
 import bw2data
 
+from mapper.core import project_storage
+
 logger = logging.getLogger(__name__)
 
 
@@ -66,6 +68,14 @@ def duplicate_project(source: str, new_name: str) -> str:
         raise ValueError(f"Project '{new_name}' already exists")
     bw2data.projects.set_current(source)
     bw2data.projects.copy_project(new_name, switch=True)
+    # bw2's copy moves only its own project directory. Everything MApper models
+    # -- DSM systems, archetypes, cohort mappings, subsystems, AESA
+    # configurations and sessions, parameter tables, the pLCA registry -- lives
+    # outside it, keyed by project name, so without this the duplicate arrives
+    # with its databases and none of the modelling. Ids are copied verbatim:
+    # cohort mappings point at archetype ids and AESA configs at DSM system
+    # ids, so re-keying would orphan them.
+    project_storage.copy_project_storage(source, new_name)
     return new_name
 
 
@@ -99,6 +109,18 @@ def export_project(name: str) -> bytes:
         buf = io.BytesIO()
         with tarfile.open(fileobj=buf, mode="w:gz") as tf:
             tf.add(str(src), arcname=name)
+            # MApper's own storage, plus a manifest, under `{name}/__mapper__/`.
+            # NESTED inside the project directory rather than beside it: the
+            # importer shipped before this feature takes `roots[0]` from the
+            # archive's top level, and a sibling can be picked AS the project.
+            # Verified, not assumed -- see
+            # test_project_copy_roundtrip.py::test_a_new_archive_does_not_confuse_the_old_importer.
+            #
+            # Export does NOT refuse to write an archive with no modelling in
+            # it: a project that legitimately has only databases is a valid
+            # export. The manifest is what makes that legible, distinguishing
+            # "nothing to carry" from "written before this existed".
+            project_storage.write_archive_storage(tf, name, name)
         return buf.getvalue()
     finally:
         if original != name and original in {p.name for p in bw2data.projects}:
@@ -134,6 +156,10 @@ def import_project(data: bytes) -> str:
         if original in {p.name for p in bw2data.projects} and original != new_name:
             bw2data.projects.set_current(original)
         for item in src.iterdir():
+            # MApper's own storage rides inside the project folder; it is not
+            # bw2 data and must not be copied into the bw2 project directory.
+            if item.name == project_storage.ARCHIVE_DIR:
+                continue
             dest = target / item.name
             if item.is_dir():
                 if dest.exists():
@@ -143,6 +169,10 @@ def import_project(data: bytes) -> str:
                 if dest.exists():
                     dest.unlink()
                 shutil.copy2(item, dest)
+        # Install the modelling under the (possibly disambiguated) new name.
+        # A no-op for an archive written before the format existed, which is
+        # the old-archive path and stays silent by design.
+        project_storage.install_archive_storage(src, new_name)
         bw2data.projects.set_current(new_name)
         return new_name
 

@@ -306,3 +306,48 @@ def test_both_copy_routes_call_the_rehydrate(monkeypatch):
         assert "_rehydrate_after_storage_write()" in src, (
             f"{fn.__name__} writes MApper storage but never rehydrates, so its "
             f"result is invisible until the app restarts")
+
+
+# ── Delete ──────────────────────────────────────────────────────────────────
+#
+# The mirror of the copy gap. `delete_project` dropped the Brightway project
+# and left MApper's storage on disk, where a later project whose name sanitised
+# to the same directory would silently adopt a dead project's modelling.
+
+def test_delete_removes_every_root(store):
+    ps.copy_project_storage(SRC, "Doomed")
+    assert (store["dsm"] / "Doomed").exists()
+
+    removed = ps.delete_project_storage("Doomed", other_projects=[SRC])
+
+    assert removed, "delete reported nothing removed"
+    for label in ("dsm", "aesa", "parameters", "plca"):
+        assert not (store[label] / "Doomed").exists(), f"{label} survived the delete"
+    # the source is untouched
+    assert (store["dsm"] / SRC).exists()
+    assert (store["aesa"] / SRC).exists()
+
+
+def test_delete_refuses_when_a_survivor_shares_the_storage_directory(store):
+    """`My/Project` and `My_Project` are one directory. Deleting either would
+    destroy the other's modelling, so it refuses instead."""
+    with pytest.raises(ps.ProjectStorageCollision):
+        ps.delete_project_storage("My/Project", other_projects=["My_Project", SRC])
+
+
+def test_delete_of_a_project_with_no_storage_is_a_quiet_noop(store):
+    assert ps.delete_project_storage("NeverExisted", other_projects=[SRC]) == {}
+    assert (store["dsm"] / SRC).exists()
+
+
+def test_the_delete_route_cleans_up_storage(monkeypatch):
+    """Structural, like the copy routes: deleting a project must not leave its
+    modelling orphaned on disk."""
+    import inspect
+
+    from mapper.api import databases as _db
+
+    src = inspect.getsource(_db.delete_project_endpoint)
+    assert "delete_project_storage" in src, (
+        "delete_project_endpoint drops the bw2 project but leaves MApper "
+        "storage orphaned")

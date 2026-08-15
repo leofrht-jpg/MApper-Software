@@ -7,6 +7,9 @@
 # Lead developer: Leonardo Ferhati
 
 import bw2data
+import logging
+
+from mapper.core import project_storage
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
@@ -31,6 +34,8 @@ from mapper.models.schemas import (
     ProjectResponse,
     SwitchProjectRequest,
 )
+
+logger = logging.getLogger("mapper.api.databases")
 
 router = APIRouter()
 
@@ -112,10 +117,35 @@ async def post_duplicate_project(body: DuplicateProjectRequest) -> ProjectRespon
 
 @router.delete("/projects/{name}", response_model=DeleteProjectResponse)
 async def delete_project_endpoint(name: str) -> DeleteProjectResponse:
+    # Which projects will still exist afterwards. Captured BEFORE the delete so
+    # the storage guard can tell whether a survivor shares this project's
+    # storage directory (`My/Project` and `My_Project` sanitise to one).
+    try:
+        import bw2data
+
+        survivors = [p.name for p in bw2data.projects if p.name != name]
+    except Exception:
+        survivors = []
+
     try:
         current = delete_project(name)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # The mirror of the copy gap: bw2 drops its project directory and MApper's
+    # storage was left orphaned on disk, where a later project whose name
+    # sanitised the same way would silently adopt it. Refuses rather than
+    # deleting when a surviving project shares the directory.
+    try:
+        project_storage.delete_project_storage(name, survivors)
+    except project_storage.ProjectStorageCollision as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception:
+        # The bw2 project is already gone; a storage-cleanup failure must not
+        # turn a completed delete into an error the caller can act on.
+        logger.exception("project delete: storage cleanup failed for %r", name)
+
+    _rehydrate_after_storage_write()
     return DeleteProjectResponse(deleted=True, current_project=current)
 
 

@@ -174,6 +174,45 @@ def copy_project_storage(src: str, dst: str) -> dict[str, int]:
     return copied
 
 
+def delete_project_storage(project: str, other_projects) -> dict[str, int]:
+    """Remove every project-keyed root for ``project``.
+
+    The mirror of the copy gap. ``delete_project`` removed the Brightway
+    project and left MApper's storage behind, so a deleted project's DSM
+    systems, archetypes, AESA configurations and parameter tables stayed on
+    disk indefinitely -- and would be silently re-adopted by any later project
+    whose name sanitised to the same directory.
+
+    ``other_projects`` is the set of names that still exist. The collision
+    guard is the reverse of the copy's: deleting is refused when a SURVIVING
+    project shares this storage directory, because the delete would take out
+    data that is still in use. `My/Project` and `My_Project` are one directory,
+    so removing either would otherwise destroy the other's modelling.
+
+    Returns ``{label: files removed}``; roots with nothing are omitted.
+    """
+    safe = _safe_project(project)
+    clash = sorted(o for o in other_projects
+                   if o != project and _safe_project(o) == safe)
+    if clash:
+        raise ProjectStorageCollision(
+            f"Refusing to delete storage for {project!r}: the surviving "
+            f"project(s) {clash!r} share the storage directory {safe!r}. "
+            f"Their modelling would be destroyed. Rename one first."
+        )
+
+    removed: dict[str, int] = {}
+    for label, root in storage_roots().items():
+        d = root / safe
+        if not d.exists():
+            continue
+        n = _count(d)
+        shutil.rmtree(d)
+        if n:
+            removed[label] = n
+    return removed
+
+
 def write_archive_storage(tf, project: str, arc_prefix: str) -> dict:
     """Add ``{arc_prefix}/__mapper__/…`` to an open tarfile; return the manifest.
 

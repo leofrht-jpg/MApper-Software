@@ -7,6 +7,9 @@
 # Lead developer: Leonardo Ferhati
 
 import bw2data
+import logging
+
+from mapper.core import project_storage
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from fastapi.responses import Response
 
@@ -32,6 +35,8 @@ from mapper.models.schemas import (
     SwitchProjectRequest,
 )
 
+logger = logging.getLogger("mapper.api.databases")
+
 router = APIRouter()
 
 
@@ -51,6 +56,35 @@ async def health() -> HealthResponse:
 @router.get("/projects", response_model=list[ProjectResponse])
 async def get_projects() -> list[ProjectResponse]:
     return [ProjectResponse(**p) for p in list_projects()]
+
+
+def _rehydrate_after_storage_write() -> None:
+    """Make storage written for a NEW project visible without a restart.
+
+    ``duplicate_project`` and ``import_project`` now write MApper's own
+    per-project storage (DSM systems, archetypes, cohort mappings, AESA
+    configurations, parameter tables, the pLCA registry). Those files land on
+    disk under a project key this process has never loaded, and
+    ``hydrate_from_disk()`` otherwise runs only from the FastAPI startup hook,
+    so the copy stayed invisible until the app restarted -- the copy looked
+    like it had silently failed.
+
+    This is the same defect ``POST /demo/load`` had, and the same fix. The rule
+    it enforces: ANY route that writes MApper storage for a project the process
+    has not already loaded must rehydrate before returning. Route-level
+    visibility assertions in ``test_project_copy_roundtrip.py`` hold both
+    routes to it, so the rule is enforced rather than remembered -- the earlier
+    sweep concluded these routes had "no gap", which was true until they
+    started writing storage.
+
+    Safe mid-session on the two counts measured when demo/load adopted it:
+    ~40-100 ms against a real store, and it merges with ``.update()`` over
+    registries every writer persists eagerly, so it installs identical content
+    rather than rolling anything back.
+    """
+    from mapper.api import dsm as _dsm
+
+    _dsm.hydrate_from_disk()
 
 
 @router.post("/projects/switch", response_model=ProjectResponse)
@@ -77,15 +111,41 @@ async def post_duplicate_project(body: DuplicateProjectRequest) -> ProjectRespon
         name = duplicate_project(body.source_name, body.new_name)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _rehydrate_after_storage_write()
     return ProjectResponse(name=name, is_current=True)
 
 
 @router.delete("/projects/{name}", response_model=DeleteProjectResponse)
 async def delete_project_endpoint(name: str) -> DeleteProjectResponse:
+    # Which projects will still exist afterwards. Captured BEFORE the delete so
+    # the storage guard can tell whether a survivor shares this project's
+    # storage directory (`My/Project` and `My_Project` sanitise to one).
+    try:
+        import bw2data
+
+        survivors = [p.name for p in bw2data.projects if p.name != name]
+    except Exception:
+        survivors = []
+
     try:
         current = delete_project(name)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # The mirror of the copy gap: bw2 drops its project directory and MApper's
+    # storage was left orphaned on disk, where a later project whose name
+    # sanitised the same way would silently adopt it. Refuses rather than
+    # deleting when a surviving project shares the directory.
+    try:
+        project_storage.delete_project_storage(name, survivors)
+    except project_storage.ProjectStorageCollision as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception:
+        # The bw2 project is already gone; a storage-cleanup failure must not
+        # turn a completed delete into an error the caller can act on.
+        logger.exception("project delete: storage cleanup failed for %r", name)
+
+    _rehydrate_after_storage_write()
     return DeleteProjectResponse(deleted=True, current_project=current)
 
 
@@ -110,6 +170,7 @@ async def post_import_project(file: UploadFile = File(...)) -> ProjectResponse:
         name = import_project(data)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _rehydrate_after_storage_write()
     return ProjectResponse(name=name, is_current=True)
 
 

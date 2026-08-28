@@ -16,6 +16,7 @@ import { Button } from '../components/ui/Button'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
 import { useBOMStore } from '../stores/bomStore'
+import { useProjectSettingsStore } from '../stores/projectSettingsStore'
 import {
   downloadBOMTemplate,
   exportAllArchetypes,
@@ -42,6 +43,10 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
   const [sortKey, setSortKey] = useState<SortKey>('updated_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [summaryExpanded, setSummaryExpanded] = useState(false)
+  const projectSettings = useProjectSettingsStore((st) => st.settings)
+  const fetchProjectSettings = useProjectSettingsStore((st) => st.fetchSettings)
+  const setUsePhaseBasis = useProjectSettingsStore((st) => st.setUsePhaseBasis)
+  useEffect(() => { if (!projectSettings) void fetchProjectSettings() }, [projectSettings, fetchProjectSettings])
   const [importExpanded, setImportExpanded] = useState(true)
   const [exportExpanded, setExportExpanded] = useState(true)
 
@@ -344,6 +349,63 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
             </div>
           )}
         </CollapsibleCard>
+      </div>
+
+      {/* ── Project conventions (between Import/Export and the summary) ── */}
+      <div
+        data-testid="project-conventions-card"
+        style={{
+          border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-lg)',
+          backgroundColor: 'var(--bg-surface)', padding: '14px 16px',
+          display: 'flex', flexDirection: 'column', gap: 8,
+        }}
+      >
+        <div style={{
+          fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)',
+          textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
+        }}>
+          Project conventions
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+            Use phase basis
+          </span>
+          <div style={{ display: 'flex', gap: 4 }}>
+            {([
+              { key: 'life_cycle' as const, label: 'Life cycle' },
+              { key: 'one_year' as const, label: 'One year' },
+            ]).map((o) => {
+              const active = (projectSettings?.use_phase_basis ?? 'one_year') === o.key
+              return (
+                <button
+                  key={o.key}
+                  type="button"
+                  data-testid={`use-phase-basis-${o.key}`}
+                  aria-pressed={active}
+                  onClick={() => void setUsePhaseBasis(o.key)}
+                  style={{
+                    padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                    border: '1px solid ' + (active ? 'var(--mod-lca)' : 'var(--border-default)'),
+                    backgroundColor: active
+                      ? 'color-mix(in srgb, var(--mod-lca) 12%, transparent)'
+                      : 'var(--bg-elevated)',
+                    color: 'var(--text-primary)', fontSize: 'var(--text-xs)',
+                    fontWeight: active ? 600 : 500,
+                  }}
+                >
+                  {o.label}
+                </button>
+              )
+            })}
+          </div>
+        </div>
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', maxWidth: '72ch' }}>
+          {(projectSettings?.use_phase_basis ?? 'one_year') === 'life_cycle'
+            ? 'Your BOMs already contain whole-life quantities, so Stage amounts is hidden on Single-product — there is no multiplier to apply.'
+            : 'Your BOMs contain annual use-phase quantities, so Stage amounts appears on Single-product with Lifetime available.'}
+          {' '}Applies to Use Phase and Maintenance; Manufacturing and End of Life are
+          always per unit. A per-stage declaration on an archetype overrides this.
+        </div>
       </div>
 
       {/* ── Card 3: Archetype Summary (collapsible) ───────────────────── */}

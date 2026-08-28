@@ -42,6 +42,7 @@ import { shortenByCommonPrefix } from '../../utils/labelPrefix'
 import { StageAmountsEditor, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { useBOMStore } from '../../stores/bomStore'
+import { useProjectSettingsStore } from '../../stores/projectSettingsStore'
 import { useActivityStore } from '../../stores/activityStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePLCAStore } from '../../stores/plcaStore'
@@ -81,6 +82,8 @@ const SCOPE_LABELS: Record<Scope, string> = {
 export function MultiProductLCA() {
   const archetypes = useBOMStore((s) => s.archetypes)
   const setStageBasis = useBOMStore((s) => s.setStageBasis)
+  const projectBasis = useProjectSettingsStore((st) => st.settings)?.use_phase_basis ?? 'one_year'
+  const lifeCycleBasis = projectBasis === 'life_cycle'
   const fetchArchetypes = useBOMStore((s) => s.fetchArchetypes)
   const activities = useActivityStore((s) => s.activities)
   const searchActivities = useActivityStore((s) => s.searchActivities)
@@ -430,7 +433,10 @@ export function MultiProductLCA() {
           Single-item <StageAmountsEditor>; per-item amounts feed compute via
           the shared backend stage-amount logic. Global preset applies to all;
           each item is independently overridable. Activities have no stages. */}
-      {archetypeItems.length > 0 && (
+      {/* Same project convention as the single-item card: under Life cycle the
+          BOM already carries whole-life quantities, so there is nothing to
+          multiply and the per-item editors are hidden. */}
+      {archetypeItems.length > 0 && !lifeCycleBasis && (
         <div data-testid="multi-product-stage-amounts" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
           {/* Global preset (applies to every item) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
@@ -511,6 +517,7 @@ export function MultiProductLCA() {
                     value={entry}
                     onChange={(next) => setItemStageAmounts(key, next)}
                     accent="var(--mod-lca)"
+                    projectBasis={projectBasis}
                     onDeclareBasis={(stage, basis) => {
                       const nodeId = arc.stage_ids?.[stage]
                       if (nodeId) void setStageBasis(arc.id, nodeId, basis)

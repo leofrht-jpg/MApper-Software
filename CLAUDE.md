@@ -7717,6 +7717,88 @@ single reference** — split it, or leave it inline.
   string on purpose.
 - **Don't export a composed archetype to the BOM workbook.** The format has no
   reference row; the refusal is the feature.
+## Use-phase basis is a PROJECT convention, with a per-stage override
+
+Battery Circularity's archetypes are uniformly whole-lifecycle, so declaring a
+basis per stage per archetype was repetitive for something that is really a
+project fact. And the only stages that differ between the two real projects are
+**Use Phase and Maintenance** — Manufacturing and End of Life are per-unit in
+both.
+
+`ProjectSettings.use_phase_basis ∈ {life_cycle, one_year}`, set in
+LCA Architect → Manager between the Import/Export cards and Archetype Summary.
+
+- **Life cycle** → the BOM already holds whole-life quantities, so **Stage
+  amounts is hidden entirely** on Single-product (and on Multi-item, same page).
+- **One year** → the control appears as before, Lifetime available.
+
+### Where it lives, and why no copy-helper change was needed
+
+`dsm/{project}/project_settings.json` — a FILE inside the **existing** dsm root,
+not a sixth root. All three carry paths are whole-tree operations on
+`root/{safe_project}` (`copy_project_storage` → `shutil.copytree`,
+`write_archive_storage` → recursive `tf.add`, `install_archive_storage` →
+`_copy_tree`), so duplicate, rename, export, import and delete carry it with
+**zero changes to `project_storage.py`**. A new root would have needed a
+`storage_roots()` entry and an archive label, and — the real hazard — an archive
+from this build would be **silently dropped by an older one**, since
+`install_archive_storage` does `root = roots.get(label); if root is None:
+continue`. `dsm_storage._load_project` skips non-directories, so the file is
+invisible to the existing loader.
+
+The in-memory registry follows `parameters._tables` **including its lesson**:
+reloaded by `_rehydrate_after_storage_write` and pruned by `_prune_registries`,
+because `hydrate_from_disk` merges and never prunes. Sixth appearance of that
+class.
+
+### Defaults
+
+- **Existing project → `one_year`.** No file means it predates the feature and
+  must compute exactly as it did: the control renders, the preset defaults to
+  1 year, every multiplier is 1.
+- **New project → `life_cycle`, written explicitly at creation.** The
+  difference between a new and a legacy project is a stored fact, not a guess
+  at read time. Whole-lifecycle is the more common convention outside fleet
+  modelling, and it is the more conservative failure — getting it wrong shows
+  an implausibly small use phase, where the other direction silently multiplies
+  a whole-life BOM by the lifetime.
+
+### How it composes with the per-stage declaration
+
+**Per-stage declaration › project setting › nothing.** The setting supplies a
+default for **Use Phase and Maintenance only**; PR #41's declaration still
+overrides it, which is what an archetype mixing bases against its project's
+convention needs (WP5's station archetypes, whose Use Phase rows are
+evaporative losses rather than annual driving).
+
+This **revises what `basis = None` means** — PR #41 shipped "undeclared →
+forced ×1", this is "undeclared → inherit the project setting". Gated: MAp-test
+at the default preset is byte-identical, because existing projects resolve to
+`one_year` and the 1-year preset is ×1 either way.
+
+### Single-product only — never the fleet
+
+The fleet gets annual semantics **structurally from `scope`**: `scope="stock"`
+applies the Use Phase BOM once per simulation year for every unit alive. A
+basis multiplier there would **double-count**. Guarded by a name sweep over
+`dsm_lca_engine.py` in the same family as the resolution guard.
+
+### The hidden control explains itself where it is missing
+
+When Life cycle hides Stage amounts, Single-product renders a note saying so,
+naming the setting and linking to Manager. A user with an annual BOM notices
+the missing control **there**, not in Manager; a note only in Manager leaves a
+hidden affordance with no explanation on the page it is missing from.
+
+#### What NOT to do
+
+- **Don't add a sixth storage root for project-level data.** A file inside an
+  existing root is carried for free and cannot be dropped by an older build.
+- **Don't let the setting reach `dsm_lca_engine`.** Double-counting against
+  per-year cohort counting.
+- **Don't extend the setting to Manufacturing or End of Life.** They are
+  per-unit in every project examined; the setting says nothing about them.
+- **Don't hide a control without explaining it on the page it vanished from.**
 
 ## Scope is WHEN the fleet counts it; basis is WHAT one row means
 

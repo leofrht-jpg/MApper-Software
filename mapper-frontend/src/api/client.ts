@@ -853,6 +853,26 @@ export async function duplicateProject(sourceName: string, newName: string): Pro
   })
 }
 
+export type UsePhaseBasis = 'life_cycle' | 'one_year'
+
+export interface ProjectSettings {
+  /** Supplies the DEFAULT basis for Use Phase and Maintenance only. A
+   *  per-stage declaration still overrides it. */
+  use_phase_basis: UsePhaseBasis
+}
+
+export async function getProjectSettings(): Promise<ProjectSettings> {
+  return request<ProjectSettings>('/project-settings')
+}
+
+export async function saveProjectSettings(s: ProjectSettings): Promise<ProjectSettings> {
+  return request<ProjectSettings>('/project-settings', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(s),
+  })
+}
+
 export async function renameProject(name: string, newName: string): Promise<ProjectResponse> {
   return request<ProjectResponse>('/projects/rename', {
     method: 'POST',

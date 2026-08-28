@@ -40,6 +40,9 @@ app = FastAPI(title="MApper API", version=__version__)
 async def _hydrate() -> None:
     _dsm.hydrate_from_disk()
     _parameters.install_parameters(parameter_storage.load_all())
+    from mapper.api import project_settings as _project_settings
+    from mapper.core import project_settings_storage as _ps_storage
+    _project_settings.install_project_settings(_ps_storage.load_all())
     # Sparse-solver readiness — load-bearing for prospective-LCA speed. In the
     # frozen desktop sidecar this confirms the bundled scikits.umfpack extension
     # + SuiteSparse dylibs actually import at runtime (not just on disk); False

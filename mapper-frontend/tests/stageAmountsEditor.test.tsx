@@ -19,10 +19,16 @@ import type { ArchetypeSummary } from '../src/api/client'
 // useSingleProductImpactStore so tab/round-trip/archetype switches don't
 // destroy edits.
 
+// `annual` now declares the stage BASIS rather than relying on the
+// scope-derived hint: a stage with no declaration is undeclared, computes at
+// x1 and disables the Lifetime preset. See the scope-vs-basis section in
+// CLAUDE.md and tests/stageBasis.test.tsx.
 const mkArc = (id: string, stages: string[], annual: Record<string, boolean> = {}): ArchetypeSummary => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   id, name: id, folder: null, material_count: 0, unlinked_count: 0,
   stages, stage_annual: annual,
+  stage_basis: Object.fromEntries(stages.map((st) => [st, annual[st] ? 'per_year' : 'per_unit'])),
+  stage_ids: Object.fromEntries(stages.map((st) => [st, `node-${st}`])),
 } as any)
 
 beforeEach(() => {

@@ -33,8 +33,8 @@ vi.mock('recharts', async () => {
 })
 
 const ARCHETYPES: ArchetypeSummary[] = [
-  { id: 'arc-a', name: 'BEV', description: null, category: 'pc', folder: 'PC', material_count: 1, unlinked_count: 0, stages: ['Manufacturing', 'Use Phase', 'End of Life'], stage_annual: { 'Use Phase': true }, created_at: '', updated_at: '' },
-  { id: 'arc-b', name: 'ICEV', description: null, category: 'pc', folder: 'PC', material_count: 1, unlinked_count: 0, stages: ['Manufacturing', 'Use Phase', 'End of Life'], stage_annual: { 'Use Phase': true }, created_at: '', updated_at: '' },
+  { id: 'arc-a', name: 'BEV', description: null, category: 'pc', folder: 'PC', material_count: 1, unlinked_count: 0, stages: ['Manufacturing', 'Use Phase', 'End of Life'], stage_annual: { 'Use Phase': true }, stage_basis: { Manufacturing: 'per_unit', 'Use Phase': 'per_year', 'End of Life': 'per_unit' }, created_at: '', updated_at: '' },
+  { id: 'arc-b', name: 'ICEV', description: null, category: 'pc', folder: 'PC', material_count: 1, unlinked_count: 0, stages: ['Manufacturing', 'Use Phase', 'End of Life'], stage_annual: { 'Use Phase': true }, stage_basis: { Manufacturing: 'per_unit', 'Use Phase': 'per_year', 'End of Life': 'per_unit' }, created_at: '', updated_at: '' },
 ] as any
 
 const arcItem = (id: string, name: string): ProductItem => ({ type: 'archetype', archetype_id: id, display_name: name } as ProductItem)

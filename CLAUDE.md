@@ -7597,6 +7597,205 @@ alone, is indistinguishable from a burden of the same size. It would read as
   segments overflow and are clipped.
 - **Don't distinguish credits by colour alone.** Chart exports re-theme ink and
   may be read in greyscale; the hatch is what survives.
+## Archetype composition — an archetype as another's BOM input
+
+`Archetype.includes: list[ArchetypeInclude]`. The reference is by **archetype
+id, never a node id**: node ids are re-minted on every import
+(`assign_node_ids` only fills missing ones, and the workbook parser builds
+nodes without them), while a merge-mode import matches archetypes by name and
+preserves their id.
+
+### Spliced stage-by-stage, MATCHED ON SCOPE
+
+A child's Manufacturing lands in the parent's Manufacturing, its End of Life in
+the parent's End of Life. This is the whole design constraint: `Battery Pack`
+carries both stages, and collapsing it into whichever stage the reference sat
+in would put end-of-life transport into manufacturing — wrong scope, wrong
+basis, wrong point in the DSM. A scope the parent lacks gets a new stage rather
+than being dropped into an unrelated one.
+
+### Parameters resolve in the CALLER's context
+
+There is one parameter table per project and one namespace, so the caller's
+context is the only context. **Compute the parent under `Optimistic` and the
+child's expressions take Optimistic values too.** A nested archetype is NOT a
+frozen sub-assembly, and someone will expect it to be. Cross-project references
+are forbidden in v1 precisely because two projects genuinely have two tables.
+
+### Eager splice, so no cache changes
+
+Splicing runs in `DSMLCAPipeline.__init__` before `self.archetypes` is set, and
+in `_build_archetype_source_demand` before parameter resolution — upstream of
+`_flat_cache` `(archetype_id, scope, year)`, `_flat_cache_year`
+`(archetype_id, year, scope, db)` and `_resolved_arc_cache`
+`(archetype_id, year)`. Every key therefore refers to an archetype whose
+children are already baked in, and no cache learns about references.
+`test_splicing_happens_upstream_of_every_flatten_cache` is the alarm if that
+ever moves.
+
+Quantity scaling is free: `flatten_bom` already cascades
+`effective = parent_quantity × node.quantity`, so a ref at 2 doubles the
+child's whole subtree. `ArchetypeInclude.quantity_expression` resolves like any
+other quantity — which is what lets a reference carry a functional-unit
+normaliser (see the acceptance case below).
+
+### Cycles and depth
+
+Detected at **save time and flatten time**, and the second is not redundant:
+archetype JSON is edited on disk, arrives by project import, and round-trips
+through Excel, none of which passes a save route. `MAX_INCLUDE_DEPTH = 4`,
+surfaced verbatim in the error. A cycle error names the chain.
+
+### Basis below the root
+
+A spliced child stage becomes a NON-root node while keeping its own `basis`,
+so basis had to become readable below the root. `flatten_root_with_amounts`
+inherits the multiplier down the tree and lets the nearest basis-declaring
+ancestor override it, so a per-year child under a per-unit parent stage still
+scales with the lifetime. Driven by `basis_amounts`
+(`{"per_unit": 1.0, "per_year": <lifetime>}`); absent, every material takes its
+stage root's amount, byte-identical to pre-composition behaviour.
+
+### Source-qualified material keys
+
+DSM aggregation keys by material NAME (`mat_qty[...]`, `material_totals[...]`),
+so a "Steel frame" in the parent and one in a child would merge into a single
+contribution line. `material_key()` qualifies the leaf with the **nearest**
+enclosing include using `INCLUDE_KEY_SEP = "::"` — the same string the
+subsystem aggregation already uses, not a second scheme — so a grandchild
+reports the grandchild and a reader recovers the source with
+`key.split(INCLUDE_KEY_SEP)`. Rows outside any include are unchanged.
+
+`lca.py` still reads only `path[0]` / `path[1]` for `stage` / `component`, so
+for a chain deeper than one level the intermediate names do not fit there. The
+**name** carries the nearest include instead; widening the contribution shape
+to a full path is a separate UI decision.
+
+### Dangling references are LOUD
+
+`dsm_lca_engine` used to `continue` past a cohort mapping pointing at a missing
+archetype while the API raised 404 for the same condition. That silent skip is
+the WP5 failure verbatim, and composition adds a second class of dangling id,
+so the engine now raises `DanglingArchetypeError`. A dangling include raises
+`ArchetypeCompositionError`.
+
+### Import modes
+
+**Merge is safe for a project using composition** — it matches by name and
+preserves the archetype id. **Replace orphans every reference**: it mints a
+fresh `uuid4()`. Both re-mint node ids.
+
+**The BOM workbook cannot express a reference**, so exporting a composed
+archetype is **refused** with a 400 rather than silently writing the child's
+spliced rows and re-importing a flattened copy that no longer tracks the child.
+Use project export/import, which carries `includes` intact.
+
+### Acceptance
+
+`B0 - Reference BESS` hand-duplicates `Battery Pack` inline. Rebuilt as a
+reference carrying `1 / b0_cumulative_ac_energy_delivered_kwh` as its include
+quantity, the composed twin reproduces the original at **rel-diff 0.000e+00**
+on GWP100 and acidification against the live project.
+
+**Why the divisor is needed, and the design limit it reveals:** the standalone
+`Battery Pack` is expressed per pack, while B0's inline copies are the same
+expressions divided by the FU normaliser. One include quantity reproduces both
+of its stages because both carry the same divisor. `BESS-Inverter` cannot be
+referenced the same way: its Manufacturing is divided by the normaliser and its
+Use Phase is not, and a single include quantity scales the whole child
+uniformly. **A child whose stages carry different normalisations cannot be a
+single reference** — split it, or leave it inline.
+
+#### What NOT to do
+
+- **Don't flatten a child into one of the parent's stages.** Match on scope.
+- **Don't splice lazily inside `_flatten`.** The cache keys would go stale.
+- **Don't reference a node id.** They are re-minted on every import.
+- **Don't let a dangling reference `continue`.** Silent shrinkage is
+  indistinguishable from a genuinely smaller result.
+- **Don't invent a second key separator.** `INCLUDE_KEY_SEP` is the subsystem
+  string on purpose.
+- **Don't export a composed archetype to the BOM workbook.** The format has no
+  reference row; the refusal is the feature.
+
+## Scope is WHEN the fleet counts it; basis is WHAT one row means
+
+Two independent properties of a BOM stage. They were conflated, and the
+conflation was expensive.
+
+- **`scope`** — `inflows` / `stock` / `outflows`. Tells the DSM *when to count
+  the stage*: manufacturing at the year of production, stock every year the
+  unit is alive, end-of-life at deregistration. Correct for every project and
+  unchanged.
+- **`basis`** — `per_unit` / `per_year` / **undeclared**. Tells the app *what a
+  single row's quantity means*: the whole-life amount for one functional unit,
+  or one year's worth. It decides the stage-amounts multiplier.
+
+**A stock-scoped stage is not necessarily per-year.** Every Battery Circularity
+Use Phase carries `scope="stock"` while its quantities are already per kWh of
+service (each stage divided by `bess_ac_energy_delivered_kwh = 88 358`). The
+old `is_annual = (scope == "stock")` derivation therefore multiplied its use
+phase by the lifetime and left manufacturing at 1 — the functional unit becomes
+15 kWh for one stage and 1 kWh for another. Incoherent, not a rescale: ×8.76 on
+B0's total.
+
+Meanwhile WP5 genuinely *is* per-year (`d_annual * w_car * p_icev_petrol`), and
+mixes bases inside one archetype — Manufacturing and End of Life one-time, Use
+Phase and Maintenance annual. So basis is **per stage**, never per archetype: a
+per-archetype declaration cannot express WP5 at all.
+
+### Undeclared means undeclared
+
+Every existing stage migrated to `basis = None`, which forces a multiplier of
+**1** and disables the Lifetime preset with the reason stated in the panel.
+That default is safe for *both* conventions precisely because it is not a
+guess: ×1 is the one multiplier WP5 and Battery Circularity already agree on
+(WP5 ×1 is exactly the previous `1year` default; BC ×1 is its intended FU).
+Any basis guess is right for one project and wrong for the other — which is why
+there is a declaration at all.
+
+`basis` is three-state for the same reason. A boolean's absence is
+indistinguishable from `False`, and that is exactly how the silent
+scope-derived guess took hold.
+
+### `is_annual` is demoted, not deleted
+
+It is still computed and still published as `ArchetypeSummary.stage_annual`,
+but **only as a UI suggestion** ("this stage is counted per simulation year —
+probably per_year"). It must never determine a multiplier again;
+`stage_basis` does that. It is kept because it is present in every persisted
+archetype and drives the hint.
+
+### Declaring it
+
+In-app, per stage, via `BOMNodeUpdate.basis` → `bomStore.setStageBasis` →
+the select in `<StageAmountsEditor>`. **Re-import is deliberately not the
+migration path**: re-importing is what orphaned the WP5 cohort mapping on
+2026-08-04, so the route for the project that most needs a basis must not be
+the one that breaks it. `ArchetypeSummary.stage_ids` exists to make the
+in-app route possible. The `Basis` workbook column is an additional route for
+people who work in Excel, and round-trips on the stage-root row like `Scope`.
+
+The Lifetime horizon may reference a parameter (`ArchetypeStageAmounts
+.lifetimeParam`) so a project that already models it — Battery Circularity's
+`bess_lifetime_years = 15` — drives it rather than carrying a hand-typed
+duplicate that can drift from the BOM's own expressions.
+
+#### What NOT to do
+
+- **Never derive `basis` from `scope`.** They answer different questions. The
+  `stock → per_year` rule is a *suggestion* surfaced in the UI and nothing
+  more. `tests/test_stage_basis.py` and `tests/stageBasis.test.tsx` both pin
+  this; restoring the fallback fails 5 frontend tests.
+- **Don't reach for `stage_annual` when you need a multiplier.** It is the
+  scope-derived hint. `stageBasis()` is the accessor that decides.
+- **Don't make undeclared fall back to anything.** Undeclared computes at ×1
+  and says so. A fallback is precisely the silent guess being removed.
+- **Don't make basis per-archetype.** WP5 mixes bases within one archetype;
+  a per-archetype flag would force all-per-year (Manufacturing ×15 — fifteen
+  vehicles built, 141 732 kg CO₂e) or all-per-unit (no lifetime scaling at
+  all).
+- **Don't collapse `basis` to a boolean.** The third state is load-bearing.
 
 ## A parameter scenario says WHICH values, never WHETHER to resolve
 

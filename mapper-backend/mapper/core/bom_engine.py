@@ -21,6 +21,8 @@ import uuid
 from typing import Iterable
 
 from mapper.models.bom_schemas import (
+    INCLUDE_KEY_SEP,
+    MAX_INCLUDE_DEPTH,
     Archetype,
     ArchetypeTimeline,
     ArchetypeTimelineRow,
@@ -248,6 +250,178 @@ _STAGE_KEYWORDS: list[tuple[tuple[str, ...], str]] = [
 ]
 
 _VALID_SCOPES = frozenset({"inflows", "stock", "outflows"})
+
+
+class ArchetypeCompositionError(ValueError):
+    """A reference that cannot be resolved: dangling, cyclic, or too deep.
+
+    Always raised, never swallowed. A dangling reference that silently shrinks
+    a number is the WP5 failure mode, and composition adds a second class of
+    dangling id on top of the cohort mapping's.
+    """
+
+
+def _child_stage_name(child_name: str, stage_name: str) -> str:
+    """Name a spliced stage so its rows stay distinct from the parent's.
+
+    DSM aggregation keys materials by NAME (``mat_qty[mat.name]``,
+    ``material_totals[name]``), so a "Steel frame" in the parent and one in a
+    child would otherwise merge into a single contribution line. Reuses the
+    subsystem separator rather than inventing a second scheme, so a reader can
+    recover the source with ``key.split(INCLUDE_KEY_SEP)``.
+    """
+    return f"{child_name}{INCLUDE_KEY_SEP}{stage_name}"
+
+
+def material_key(m: FlattenedMaterial) -> str:
+    """Aggregation/display key for a flattened material, source-qualified.
+
+    DSM aggregation keys by material NAME (``mat_qty[mat.name]``,
+    ``material_totals[name]``), so a "Steel frame" in the parent and one in an
+    included child would merge into a single contribution line. Renaming the
+    spliced STAGE is not enough -- the leaf name is what those dicts key on.
+
+    Qualifies the leaf with the NEAREST enclosing include, so a grandchild
+    reports the grandchild rather than the child. Uses the subsystem separator
+    rather than a second scheme, so a reader recovers the source with
+    ``key.split(INCLUDE_KEY_SEP)``. Materials outside any include are returned
+    unchanged, which keeps every existing key byte-identical.
+    """
+    for seg in reversed(m.path or []):
+        if INCLUDE_KEY_SEP in seg:
+            return f"{seg.split(INCLUDE_KEY_SEP, 1)[0]}{INCLUDE_KEY_SEP}{m.name}"
+    return m.name
+
+
+def splice_includes(
+    arc: Archetype,
+    registry: dict[str, Archetype],
+    *,
+    _depth: int = 0,
+    _path: tuple[str, ...] = (),
+) -> Archetype:
+    """Return ``arc`` with every ``includes`` reference spliced into its BOM.
+
+    Stage-by-stage, MATCHED ON SCOPE: a child's Manufacturing rows land in the
+    parent's Manufacturing and its End of Life in the parent's End of Life. A
+    child that spans several stages (Battery Pack carries both) must not
+    collapse into whichever stage the reference happened to sit in.
+
+    Splicing is EAGER -- done at resolution time, upstream of every flatten
+    cache -- so the child's content is baked into the parent's tree before any
+    cache key is computed and no cache needs to learn about references.
+
+    The child's stage roots keep their own ``basis``. They become non-root
+    nodes, which is why basis must be readable below the root; see
+    ``resolve_stage_amount`` for the multiplier side of that.
+
+    Raises :class:`ArchetypeCompositionError` on a dangling id, a cycle, or a
+    chain deeper than ``MAX_INCLUDE_DEPTH``.
+    """
+    if not getattr(arc, "includes", None):
+        return arc
+
+    here = _path + (arc.id or arc.name,)
+    if _depth >= MAX_INCLUDE_DEPTH:
+        raise ArchetypeCompositionError(
+            f"Archetype includes nested deeper than MAX_INCLUDE_DEPTH="
+            f"{MAX_INCLUDE_DEPTH}: {' -> '.join(here)}"
+        )
+
+    roots = [r.model_copy(deep=True) for r in arc.bom]
+    by_scope: dict[str, BOMNode] = {}
+    for r in roots:
+        by_scope.setdefault(stage_to_scope(r.name, r.scope), r)
+
+    for inc in arc.includes:
+        if inc.archetype_id in here:
+            raise ArchetypeCompositionError(
+                f"Archetype include cycle: "
+                f"{' -> '.join(here + (inc.archetype_id,))}"
+            )
+        child = registry.get(inc.archetype_id)
+        if child is None:
+            raise ArchetypeCompositionError(
+                f"Archetype '{arc.name}' includes archetype id "
+                f"'{inc.archetype_id}', which does not exist in this project. "
+                f"Cross-project references are not supported."
+            )
+        child = splice_includes(child, registry, _depth=_depth + 1, _path=here)
+
+        for cr in child.bom:
+            scope = stage_to_scope(cr.name, cr.scope)
+            target = by_scope.get(scope)
+            if target is None:
+                # The parent has no stage in this scope yet -- give the child's
+                # rows one rather than dropping them into an unrelated stage.
+                target = BOMNode(
+                    name=cr.name, node_type="component", quantity=1.0,
+                    unit="piece", scope=scope, children=[],
+                )
+                roots.append(target)
+                by_scope[scope] = target
+            node = cr.model_copy(deep=True)
+            node.id = None                       # re-minted by assign_node_ids
+            node.name = _child_stage_name(child.name, cr.name)
+            # The include quantity rides on the spliced node, so the existing
+            # flatten cascade scales the child's whole subtree by it.
+            node.quantity = float(inc.quantity or 1.0)
+            node.quantity_expression = inc.quantity_expression
+            # `basis` and `scope` are carried through untouched: the child's
+            # rows keep the child's basis.
+            target.children = list(target.children or []) + [node]
+
+    return arc.model_copy(update={"bom": roots, "includes": []})
+
+
+def flatten_root_with_amounts(
+    root: BOMNode,
+    stage_amounts: dict[str, float],
+    basis_amounts: dict[str, float] | None = None,
+) -> list[tuple[FlattenedMaterial, float]]:
+    """Flatten one stage root, pairing each material with ITS OWN multiplier.
+
+    Ordinarily every material in a stage takes that stage root's amount. But a
+    spliced child stage sits BELOW the root while carrying its own ``basis``,
+    and the child's basis must win -- a per-year child under a per-unit parent
+    stage still scales with the lifetime. So the multiplier is inherited down
+    the tree and overridden by the nearest ancestor that declares a basis,
+    excluding the root itself (whose amount is already in ``stage_amounts``).
+
+    ``basis_amounts`` is ``{"per_unit": 1.0, "per_year": <lifetime>}``. Absent,
+    every material takes the root's amount -- byte-identical to the
+    pre-composition behaviour.
+
+    Mirrors :func:`flatten_bom`'s cascade exactly; the pairing is the only
+    addition.
+    """
+    base = float(stage_amounts.get(root.name, 1.0))
+    out: list[tuple[FlattenedMaterial, float]] = []
+
+    def walk(node: BOMNode, parent_quantity: float, path: list[str], amount: float) -> None:
+        effective = parent_quantity * float(node.quantity or 0.0)
+        if node is not root and node.basis and basis_amounts:
+            override = basis_amounts.get(node.basis)
+            if override is not None:
+                amount = float(override)
+        if node.node_type == "material":
+            out.append((
+                FlattenedMaterial(
+                    node_id=node.id or "",
+                    name=node.name,
+                    quantity=effective,
+                    unit=node.unit,
+                    ecoinvent_activity=node.ecoinvent_activity,
+                    path=path + [node.name],
+                ),
+                amount,
+            ))
+            return
+        for child in node.children or []:
+            walk(child, effective, path + [node.name], amount)
+
+    walk(root, 1.0, [], base)
+    return out
 
 
 def stage_to_scope(stage_name: str, explicit_scope: str | None = None) -> str:
@@ -634,6 +808,12 @@ def summarize_archetype(arc: Archetype) -> dict:
         "material_count": material_count_total(arc.bom),
         "unlinked_count": unlinked_count_total(arc.bom),
         "stages": [r.name for r in arc.bom],
+        # The declaration (decides the multiplier) and, separately, the
+        # scope-derived suggestion (a UI hint only).
+        "stage_basis": {r.name: r.basis for r in arc.bom},
+        # Stage-root node ids, so the UI can PUT a basis declaration without
+        # re-importing the archetype.
+        "stage_ids": {r.name: r.id for r in arc.bom},
         "stage_annual": {r.name: r.is_annual for r in arc.bom},
         "created_at": arc.created_at or "",
         "updated_at": arc.updated_at or arc.created_at or "",

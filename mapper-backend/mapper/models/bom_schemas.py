@@ -89,7 +89,19 @@ class BOMNode(BaseModel):
     # and sub-components inherit their parent stage's scope. ``None`` falls
     # back to keyword-matching on the stage name for backward compatibility.
     scope: str | None = None  # "inflows" | "stock" | "outflows"
-    is_annual: bool = False  # True → quantities are per-year (Use Phase, Maintenance)
+    # WHAT ONE ROW'S QUANTITY MEANS. Only meaningful on root-level stage nodes.
+    #   "per_unit" → the whole-life amount for one functional unit (multiplier 1)
+    #   "per_year" → one year's amount (multiplier = years of life)
+    #   None       → NOT DECLARED. Forces a multiplier of 1 and disables the
+    #                Lifetime preset; never guessed from scope.
+    # Distinct from ``scope``, which is WHEN THE FLEET COUNTS IT. See the
+    # scope-vs-basis section in CLAUDE.md before touching either.
+    basis: Literal["per_unit", "per_year"] | None = None
+    # DEPRECATED as a decision input: scope-derived, so it is a *suggestion*
+    # only ("this stage is counted per simulation year — probably per_year").
+    # It must never determine a multiplier; `basis` does that. Kept because it
+    # is present in every persisted archetype and drives the UI hint.
+    is_annual: bool = False
     children: list["BOMNode"] | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None
@@ -181,6 +193,38 @@ class ValidationReport(BaseModel):
 # ── Archetype ────────────────────────────────────────────────────────────────
 
 
+# How deep a chain of archetype includes may go (parent -> pack -> cell -> ...).
+# Not a technical bound -- Python's recursion limit is far away -- but a
+# modelling one: past this a BOM is better expressed as a subsystem. Surfaced
+# verbatim in the error so the reader knows the rule that stopped them.
+MAX_INCLUDE_DEPTH = 4
+
+# Separator for keys that must stay distinct once a child archetype's rows are
+# spliced into a parent. Same convention (and same string) the subsystem
+# aggregation already uses -- see SUBSYSTEM_KEY_SEP in dsm_lca_engine.
+INCLUDE_KEY_SEP = "::"
+
+
+class ArchetypeInclude(BaseModel):
+    """A reference from one archetype to another, as a BOM input.
+
+    The reference is by ARCHETYPE id, never a node id: node ids are re-minted on
+    every import (``assign_node_ids`` only fills missing ones and the workbook
+    parser builds nodes without them), whereas a merge-mode import matches
+    archetypes by name and preserves their id.
+
+    ``quantity`` needs no special handling downstream: ``flatten_bom`` already
+    cascades ``effective = parent_quantity * node.quantity``, so a ref at 2
+    doubles the child's whole subtree.
+    """
+
+    archetype_id: str
+    quantity: float = 1.0
+    # Resolved exactly like any other node quantity, in the CALLER's parameter
+    # context. See the composition section in CLAUDE.md.
+    quantity_expression: str | None = None
+
+
 class Archetype(BaseModel):
     id: str | None = None  # set by server
     name: str
@@ -193,6 +237,12 @@ class Archetype(BaseModel):
     # Last upload-time validation outcome (Patch 2). ``None`` for legacy
     # archetypes that were imported before validation existed.
     validation_report: "ValidationReport | None" = None
+    # Archetype composition. Spliced stage-by-stage MATCHED ON SCOPE, so a
+    # child's Manufacturing lands in the parent's Manufacturing and its End of
+    # Life in the parent's End of Life -- a child that spans several stages
+    # (Battery Pack carries both) must not collapse into one of them.
+    # Additive: legacy archetypes deserialize with an empty list.
+    includes: list[ArchetypeInclude] = Field(default_factory=list)
 
 
 Archetype.model_rebuild()
@@ -207,7 +257,13 @@ class ArchetypeSummary(BaseModel):
     material_count: int
     unlinked_count: int
     stages: list[str] = Field(default_factory=list)
-    stage_annual: dict[str, bool] = Field(default_factory=dict)  # stage_name → is_annual
+    # stage_name → declared basis ("per_unit" | "per_year") or None = undeclared.
+    # This is what decides a stage's multiplier.
+    stage_basis: dict[str, str | None] = Field(default_factory=dict)
+    # stage_name → stage-root node id, so basis can be declared in-app.
+    stage_ids: dict[str, str] = Field(default_factory=dict)
+    # stage_name → scope-derived SUGGESTION. Renders as a hint; never a multiplier.
+    stage_annual: dict[str, bool] = Field(default_factory=dict)
     created_at: str
     updated_at: str
     # Patch 2: per-archetype validation roll-up. Lets the archetype list page
@@ -222,6 +278,7 @@ class ArchetypeCreate(BaseModel):
     category: str | None = None
     folder: str | None = None
     bom: list[BOMNode] = Field(default_factory=list)
+    includes: list[ArchetypeInclude] = Field(default_factory=list)
 
 
 class BOMNodeCreate(BaseModel):
@@ -235,6 +292,9 @@ class BOMNodeUpdate(BaseModel):
     quantity_expression: str | None = None
     unit: str | None = None
     is_annual: bool | None = None
+    # Declare the stage basis in-app. "unset" clears it back to undeclared;
+    # None means "leave as-is" (the usual PATCH semantic).
+    basis: Literal["per_unit", "per_year", "unset"] | None = None
     scope: str | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None

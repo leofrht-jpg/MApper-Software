@@ -3337,6 +3337,16 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
     from openpyxl.styles import Alignment
 
     result = body.result
+    # Sensitivity cases. `body.result` remains the Base envelope, so the
+    # Configuration / Stage amounts / Vintages / stage-breakdown sheets are
+    # untouched and every existing consumer keeps working. Only the two DATA
+    # sheets gain the leading discriminator, and only when >1 case ran.
+    _by_case = body.results_by_case or {}
+    _order = [c for c in (body.case_order or list(_by_case)) if c in _by_case]
+    _multi_case = len(_order) > 1
+    _case_envelopes = (
+        [(c, _by_case[c]) for c in _order] if _multi_case else [("Base", result)]
+    )
     method_pairs = _mp_unique_method_labels(result)  # [(label, unit), ...]
     method_labels = [m for m, _ in method_pairs]
 
@@ -3465,16 +3475,23 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
 
     # ── 2. Comparison (wide) ───────────────────────────────────────
     ws_wide = wb.create_sheet("Comparison (wide)")
-    header = ["#", "Type", "Item"] + [f"{lbl} ({unit})" for lbl, unit in method_pairs] + ["Error"]
+    # `Sensitivity case` is a LEADING column, matching the discriminator
+    # convention the multi-param / multi-DSM / multi-LCI workbooks already use
+    # (the column header is the same string the user sees in-app). Emitted only
+    # when more than Base was run, so a single-case export is byte-identical.
+    header = (["Sensitivity case"] if _multi_case else []) + \
+        ["#", "Type", "Item"] + [f"{lbl} ({unit})" for lbl, unit in method_pairs] + ["Error"]
     ws_wide.append(header)
     _sp_style_header(ws_wide)
-    for i, item in enumerate(result.items, start=1):
+    _lead = 1 if _multi_case else 0
+    for _case, _env in _case_envelopes:
+      for i, item in enumerate(_env.items, start=1):
         method_results = (
             item.archetype_result.results if item.archetype_result else
             item.activity_result.results if item.activity_result else []
         )
         by_label = {m.method_label: m.score for m in method_results}
-        row = [i, item.type, item.label]
+        row = ([_case] if _multi_case else []) + [i, item.type, item.label]
         for label, _unit in method_pairs:
             v = by_label.get(label)
             row.append(v if v is not None else "—")
@@ -3482,7 +3499,7 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
         ws_wide.append(row)
         # Format method-score cells in scientific notation. Skip
         # non-numeric "—" cells (failed items contribute strings).
-        for col_idx in range(4, 4 + len(method_pairs)):
+        for col_idx in range(4 + _lead, 4 + _lead + len(method_pairs)):
             cell = ws_wide.cell(row=ws_wide.max_row, column=col_idx)
             if isinstance(cell.value, (int, float)):
                 cell.number_format = "0.000E+00"
@@ -3490,9 +3507,11 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
 
     # ── 3. Comparison (long) ───────────────────────────────────────
     ws_long = wb.create_sheet("Comparison (long)")
-    ws_long.append(["Item", "Type", "Method", "Score", "Unit"])
+    ws_long.append((["Sensitivity case"] if _multi_case else [])
+                   + ["Item", "Type", "Method", "Score", "Unit"])
     _sp_style_header(ws_long)
-    for item in result.items:
+    for _case, _env in _case_envelopes:
+      for item in _env.items:
         if item.status != "success":
             continue
         method_results = (
@@ -3500,8 +3519,9 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
             item.activity_result.results if item.activity_result else []
         )
         for m in method_results:
-            ws_long.append([item.label, item.type, m.method_label, m.score, m.unit])
-            ws_long.cell(row=ws_long.max_row, column=4).number_format = "0.000E+00"
+            ws_long.append(([_case] if _multi_case else [])
+                           + [item.label, item.type, m.method_label, m.score, m.unit])
+            ws_long.cell(row=ws_long.max_row, column=4 + _lead).number_format = "0.000E+00"
     _sp_autosize(ws_long)
 
     # ── 4. Stage breakdown sheets (per archetype item, when present) ─

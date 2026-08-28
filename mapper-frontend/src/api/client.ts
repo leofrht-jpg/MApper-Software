@@ -1274,6 +1274,10 @@ export async function exportMultiProductComparison(
       label: string; database: string
       base_database?: string | null; iam?: string | null; ssp?: string | null; year?: number | null
     }>
+    /** Per-case envelopes. `result` stays the Base one; supplying these adds a
+     *  leading `Sensitivity case` column to the two data sheets. */
+    resultsByCase?: Record<string, MultiProductLCAResult> | null
+    caseOrder?: string[]
   } = {},
 ): Promise<void> {
   await _downloadXlsx(
@@ -1285,6 +1289,8 @@ export async function exportMultiProductComparison(
       computed_at: options.computedAt ?? new Date().toISOString(),
       stage_amounts_meta: options.stageAmountsMeta ?? null,
       activity_vintage_meta: options.activityVintageMeta ?? null,
+      results_by_case: options.resultsByCase ?? null,
+      case_order: options.caseOrder ?? [],
     },
     buildExportFilename('Multi-item comparison', [], 'LCA'),
   )

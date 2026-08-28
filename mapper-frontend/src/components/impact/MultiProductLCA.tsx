@@ -803,7 +803,9 @@ function ResultsSection({
   const handleExport = async () => {
     setExporting(true)
     try {
-      await exportMultiProductComparison(result, scope, { stageAmountsMeta, activityVintageMeta })
+      await exportMultiProductComparison(result, scope, {
+        resultsByCase: byCase,
+        caseOrder, stageAmountsMeta, activityVintageMeta })
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Multi-product export failed', e)

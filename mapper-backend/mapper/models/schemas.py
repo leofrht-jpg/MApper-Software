@@ -570,6 +570,12 @@ class MultiProductExportRequest(BaseModel):
     re-uses these to build the Configuration sheet in the workbook.
     """
     result: MultiProductLCAResult
+    # Sensitivity cases. `result` stays the Base envelope so every existing
+    # consumer is unaffected; when this map is supplied the data sheets gain a
+    # leading `Sensitivity case` column and carry one row-block per case.
+    # Absent or single-entry → the workbook is byte-identical to before.
+    results_by_case: dict[str, MultiProductLCAResult] | None = None
+    case_order: list[str] = Field(default_factory=list)
     scope: str = "all"
     compute_database: str | None = None
     # Optional ISO-8601 timestamp the frontend captures at compute

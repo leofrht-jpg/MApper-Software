@@ -337,6 +337,7 @@ def _build_archetype_source_demand(
     methods: list[list[str]],
     parameter_scenario: str | None,
     resolve_year: int = 2025,
+    basis_amounts: dict[str, float] | None = None,
 ) -> _ArchetypeDemand:
     """Shared source-DB demand builder for the single-product archetype LCA
     paths (discrete ``calculate_archetype_lca`` + the continuous-horizon
@@ -356,6 +357,19 @@ def _build_archetype_source_demand(
     from mapper.core.parameter_engine import ParameterEngine, ParameterError
 
     arc = _get_archetype(archetype_id)  # raises 404 if not found
+
+    # Archetype composition. Spliced EAGERLY here, before parameter resolution
+    # and upstream of every flatten cache, so (a) the child's expressions
+    # resolve in the CALLER's parameter context -- the only context there is,
+    # one table per project -- and (b) the child's content is baked into the
+    # tree before any cache key is computed.
+    from mapper.api.bom import _proj_archetypes
+    from mapper.core.bom_engine import ArchetypeCompositionError, splice_includes
+
+    try:
+        arc = splice_includes(arc, _proj_archetypes())
+    except ArchetypeCompositionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     if not methods or len(methods) == 0:
         raise HTTPException(status_code=400, detail="At least one method is required")
@@ -418,13 +432,15 @@ def _build_archetype_source_demand(
         for r in scope_roots:
             effective_amounts[r.name] = amount
 
-    # Flatten each stage separately and apply its amount multiplier
+    # Flatten each stage and pair every material with ITS OWN multiplier. A
+    # spliced child stage sits below the root carrying its own basis, and that
+    # basis wins -- see flatten_root_with_amounts.
+    from mapper.core.bom_engine import flatten_root_with_amounts, material_key
+
     all_materials = []
     for root in scope_roots:
-        flat = flatten_bom(root)
-        stage_amt = effective_amounts.get(root.name, 1.0)
-        for m in flat:
-            m._stage_amount = stage_amt  # type: ignore[attr-defined]
+        for m, amt in flatten_root_with_amounts(root, effective_amounts, basis_amounts):
+            m._stage_amount = amt  # type: ignore[attr-defined]
             all_materials.append(m)
 
     # Collect linked materials
@@ -451,6 +467,8 @@ def _build_archetype_source_demand(
 
 @router.post("/lca/calculate-archetype", response_model=ArchetypeLCACalculateResult)
 async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> ArchetypeLCACalculateResult:
+    from mapper.core.bom_engine import material_key
+
     t0 = time.perf_counter()
 
     bundle = _build_archetype_source_demand(
@@ -460,6 +478,7 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
         stage_amounts=body.stage_amounts,
         methods=body.methods,
         parameter_scenario=body.parameter_scenario,
+        basis_amounts=body.basis_amounts,
     )
     arc = bundle.arc
     stages = bundle.stages
@@ -540,7 +559,12 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
             if abs(impact) < 1e-20:
                 continue
             contribs.append(MaterialContribution(
-                name=m.name,
+                # Source-qualified when the row came from an included
+                # archetype, so parent and child rows of the same name stay
+                # distinct. `stage`/`component` still read path[0]/path[1], so
+                # for a chain deeper than one level the intermediate names do
+                # not fit there -- the NAME carries the nearest include instead.
+                name=material_key(m),
                 stage=stage_name,
                 component=m.path[1] if len(m.path) > 2 else "",
                 quantity=m.quantity * stage_amt,
@@ -673,6 +697,7 @@ async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> Ar
         stage_amounts=body.stage_amounts,
         methods=body.methods,
         parameter_scenario=body.parameter_scenario,
+        basis_amounts=body.basis_amounts,
     )
 
     project = bw2data.projects.current

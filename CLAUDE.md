@@ -7549,6 +7549,85 @@ name is not the same as *gating* on it. The one conditional that legitimately
 wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
 resolve-once vs resolve-per-year — is pinned unflagged by its own test.
 
+## Scope is WHEN the fleet counts it; basis is WHAT one row means
+
+Two independent properties of a BOM stage. They were conflated, and the
+conflation was expensive.
+
+- **`scope`** — `inflows` / `stock` / `outflows`. Tells the DSM *when to count
+  the stage*: manufacturing at the year of production, stock every year the
+  unit is alive, end-of-life at deregistration. Correct for every project and
+  unchanged.
+- **`basis`** — `per_unit` / `per_year` / **undeclared**. Tells the app *what a
+  single row's quantity means*: the whole-life amount for one functional unit,
+  or one year's worth. It decides the stage-amounts multiplier.
+
+**A stock-scoped stage is not necessarily per-year.** Every Battery Circularity
+Use Phase carries `scope="stock"` while its quantities are already per kWh of
+service (each stage divided by `bess_ac_energy_delivered_kwh = 88 358`). The
+old `is_annual = (scope == "stock")` derivation therefore multiplied its use
+phase by the lifetime and left manufacturing at 1 — the functional unit becomes
+15 kWh for one stage and 1 kWh for another. Incoherent, not a rescale: ×8.76 on
+B0's total.
+
+Meanwhile WP5 genuinely *is* per-year (`d_annual * w_car * p_icev_petrol`), and
+mixes bases inside one archetype — Manufacturing and End of Life one-time, Use
+Phase and Maintenance annual. So basis is **per stage**, never per archetype: a
+per-archetype declaration cannot express WP5 at all.
+
+### Undeclared means undeclared
+
+Every existing stage migrated to `basis = None`, which forces a multiplier of
+**1** and disables the Lifetime preset with the reason stated in the panel.
+That default is safe for *both* conventions precisely because it is not a
+guess: ×1 is the one multiplier WP5 and Battery Circularity already agree on
+(WP5 ×1 is exactly the previous `1year` default; BC ×1 is its intended FU).
+Any basis guess is right for one project and wrong for the other — which is why
+there is a declaration at all.
+
+`basis` is three-state for the same reason. A boolean's absence is
+indistinguishable from `False`, and that is exactly how the silent
+scope-derived guess took hold.
+
+### `is_annual` is demoted, not deleted
+
+It is still computed and still published as `ArchetypeSummary.stage_annual`,
+but **only as a UI suggestion** ("this stage is counted per simulation year —
+probably per_year"). It must never determine a multiplier again;
+`stage_basis` does that. It is kept because it is present in every persisted
+archetype and drives the hint.
+
+### Declaring it
+
+In-app, per stage, via `BOMNodeUpdate.basis` → `bomStore.setStageBasis` →
+the select in `<StageAmountsEditor>`. **Re-import is deliberately not the
+migration path**: re-importing is what orphaned the WP5 cohort mapping on
+2026-08-04, so the route for the project that most needs a basis must not be
+the one that breaks it. `ArchetypeSummary.stage_ids` exists to make the
+in-app route possible. The `Basis` workbook column is an additional route for
+people who work in Excel, and round-trips on the stage-root row like `Scope`.
+
+The Lifetime horizon may reference a parameter (`ArchetypeStageAmounts
+.lifetimeParam`) so a project that already models it — Battery Circularity's
+`bess_lifetime_years = 15` — drives it rather than carrying a hand-typed
+duplicate that can drift from the BOM's own expressions.
+
+#### What NOT to do
+
+- **Never derive `basis` from `scope`.** They answer different questions. The
+  `stock → per_year` rule is a *suggestion* surfaced in the UI and nothing
+  more. `tests/test_stage_basis.py` and `tests/stageBasis.test.tsx` both pin
+  this; restoring the fallback fails 5 frontend tests.
+- **Don't reach for `stage_annual` when you need a multiplier.** It is the
+  scope-derived hint. `stageBasis()` is the accessor that decides.
+- **Don't make undeclared fall back to anything.** Undeclared computes at ×1
+  and says so. A fallback is precisely the silent guess being removed.
+- **Don't make basis per-archetype.** WP5 mixes bases within one archetype;
+  a per-archetype flag would force all-per-year (Manufacturing ×15 — fifteen
+  vehicles built, 141 732 kg CO₂e) or all-per-unit (no lifetime scaling at
+  all).
+- **Don't collapse `basis` to a boolean.** The third state is load-bearing.
+
 ## A parameter scenario says WHICH values, never WHETHER to resolve
 
 A BOM row whose Quantity cell is a parameter expression is imported with

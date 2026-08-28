@@ -80,6 +80,7 @@ const SCOPE_LABELS: Record<Scope, string> = {
 
 export function MultiProductLCA() {
   const archetypes = useBOMStore((s) => s.archetypes)
+  const setStageBasis = useBOMStore((s) => s.setStageBasis)
   const fetchArchetypes = useBOMStore((s) => s.fetchArchetypes)
   const activities = useActivityStore((s) => s.activities)
   const searchActivities = useActivityStore((s) => s.searchActivities)
@@ -510,6 +511,10 @@ export function MultiProductLCA() {
                     value={entry}
                     onChange={(next) => setItemStageAmounts(key, next)}
                     accent="var(--mod-lca)"
+                    onDeclareBasis={(stage, basis) => {
+                      const nodeId = arc.stage_ids?.[stage]
+                      if (nodeId) void setStageBasis(arc.id, nodeId, basis)
+                    }}
                   />
                 </CollapsibleCard>
               )

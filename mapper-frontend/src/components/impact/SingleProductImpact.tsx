@@ -9,6 +9,7 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useBOMStore } from '../../stores/bomStore'
+import { useParameterStore } from '../../stores/parameterStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { ArchetypeSelect } from '../archetypes/ArchetypeSelect'
 import { SingleProductStaticPanel } from './SingleProductStaticPanel'
@@ -33,6 +34,17 @@ type ViewMode = 'single' | 'multi'
 export function SingleProductImpact() {
   const archetypes = useBOMStore((s) => s.archetypes)
   const fetchArchetypes = useBOMStore((s) => s.fetchArchetypes)
+  const setStageBasis = useBOMStore((s) => s.setStageBasis)
+  // Integer-valued parameters are the plausible lifetime references (e.g.
+  // Battery Circularity's `bess_lifetime_years = 15`), so the horizon can be
+  // driven by the project's own parameter instead of a retyped duplicate.
+  const paramTable = useParameterStore((s) => s.table)
+  const lifetimeParams = useMemo(
+    () => Object.values(paramTable?.parameters ?? {})
+      .filter((q) => Number.isFinite(q.base_value) && q.base_value >= 1)
+      .map((q) => ({ name: q.name, value: q.base_value })),
+    [paramTable],
+  )
   const setStoreArchetypeId = useSingleProductImpactStore((s) => s.setArchetypeId)
   const stageAmountsByArc = useSingleProductImpactStore((s) => s.stageAmountsByArc)
   const setStageAmountsForArc = useSingleProductImpactStore((s) => s.setStageAmountsForArc)
@@ -209,6 +221,11 @@ export function SingleProductImpact() {
               value={stageAmountsEntry}
               onChange={(next) => setStageAmountsForArc(activeArchetype.id, next)}
               accent="var(--mod-lca)"
+              onDeclareBasis={(stage, basis) => {
+                const nodeId = activeArchetype.stage_ids?.[stage]
+                if (nodeId) void setStageBasis(activeArchetype.id, nodeId, basis)
+              }}
+              parameters={lifetimeParams}
             />
           </CollapsibleCard>
         </div>

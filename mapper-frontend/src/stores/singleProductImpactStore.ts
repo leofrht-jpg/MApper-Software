@@ -46,6 +46,10 @@ export type AmountPreset = '1year' | 'lifetime' | 'custom'
 export interface ArchetypeStageAmounts {
   preset: AmountPreset
   lifetime: number
+  /** Optional parameter name driving `lifetime`, so a project that already
+   *  models its horizon (Battery Circularity's `bess_lifetime_years = 15`)
+   *  does not carry a hand-typed duplicate that can drift from the BOM. */
+  lifetimeParam?: string | null
   amounts: Record<string, number>
 }
 

@@ -634,6 +634,12 @@ def summarize_archetype(arc: Archetype) -> dict:
         "material_count": material_count_total(arc.bom),
         "unlinked_count": unlinked_count_total(arc.bom),
         "stages": [r.name for r in arc.bom],
+        # The declaration (decides the multiplier) and, separately, the
+        # scope-derived suggestion (a UI hint only).
+        "stage_basis": {r.name: r.basis for r in arc.bom},
+        # Stage-root node ids, so the UI can PUT a basis declaration without
+        # re-importing the archetype.
+        "stage_ids": {r.name: r.id for r in arc.bom},
         "stage_annual": {r.name: r.is_annual for r in arc.bom},
         "created_at": arc.created_at or "",
         "updated_at": arc.updated_at or arc.created_at or "",

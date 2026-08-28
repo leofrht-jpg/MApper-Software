@@ -56,6 +56,11 @@ interface BOMStore {
   error: string | null
 
   fetchArchetypes: () => Promise<void>
+  setStageBasis: (
+    arcId: string,
+    nodeId: string,
+    basis: 'per_unit' | 'per_year' | 'unset',
+  ) => Promise<void>
   fetchFolders: () => Promise<void>
   selectArchetype: (id: string) => Promise<void>
   createNew: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[] }) => Promise<Archetype>
@@ -186,6 +191,16 @@ export const useBOMStore = create<BOMStore>((set, get) => ({
     })
     const list = await listArchetypes()
     set({ active: updated, archetypes: list, flattened: null, standaloneLCA: null })
+  },
+
+  // Declare a stage's basis without needing an `active` archetype and without
+  // re-importing. Re-import is what orphaned the WP5 cohort mapping, so the
+  // migration route for the project that most needs a basis must not be it.
+  // Refreshes the summary list, since `stage_basis` there is what decides the
+  // multiplier the Stage Amounts card shows.
+  setStageBasis: async (arcId, nodeId, basis) => {
+    await updateBOMNode(arcId, nodeId, { basis })
+    await get().fetchArchetypes()
   },
 
   patchNode: async (nodeId, patch) => {

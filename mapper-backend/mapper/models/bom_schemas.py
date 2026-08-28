@@ -89,7 +89,19 @@ class BOMNode(BaseModel):
     # and sub-components inherit their parent stage's scope. ``None`` falls
     # back to keyword-matching on the stage name for backward compatibility.
     scope: str | None = None  # "inflows" | "stock" | "outflows"
-    is_annual: bool = False  # True → quantities are per-year (Use Phase, Maintenance)
+    # WHAT ONE ROW'S QUANTITY MEANS. Only meaningful on root-level stage nodes.
+    #   "per_unit" → the whole-life amount for one functional unit (multiplier 1)
+    #   "per_year" → one year's amount (multiplier = years of life)
+    #   None       → NOT DECLARED. Forces a multiplier of 1 and disables the
+    #                Lifetime preset; never guessed from scope.
+    # Distinct from ``scope``, which is WHEN THE FLEET COUNTS IT. See the
+    # scope-vs-basis section in CLAUDE.md before touching either.
+    basis: Literal["per_unit", "per_year"] | None = None
+    # DEPRECATED as a decision input: scope-derived, so it is a *suggestion*
+    # only ("this stage is counted per simulation year — probably per_year").
+    # It must never determine a multiplier; `basis` does that. Kept because it
+    # is present in every persisted archetype and drives the UI hint.
+    is_annual: bool = False
     children: list["BOMNode"] | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None
@@ -207,7 +219,13 @@ class ArchetypeSummary(BaseModel):
     material_count: int
     unlinked_count: int
     stages: list[str] = Field(default_factory=list)
-    stage_annual: dict[str, bool] = Field(default_factory=dict)  # stage_name → is_annual
+    # stage_name → declared basis ("per_unit" | "per_year") or None = undeclared.
+    # This is what decides a stage's multiplier.
+    stage_basis: dict[str, str | None] = Field(default_factory=dict)
+    # stage_name → stage-root node id, so basis can be declared in-app.
+    stage_ids: dict[str, str] = Field(default_factory=dict)
+    # stage_name → scope-derived SUGGESTION. Renders as a hint; never a multiplier.
+    stage_annual: dict[str, bool] = Field(default_factory=dict)
     created_at: str
     updated_at: str
     # Patch 2: per-archetype validation roll-up. Lets the archetype list page
@@ -235,6 +253,9 @@ class BOMNodeUpdate(BaseModel):
     quantity_expression: str | None = None
     unit: str | None = None
     is_annual: bool | None = None
+    # Declare the stage basis in-app. "unset" clears it back to undeclared;
+    # None means "leave as-is" (the usual PATCH semantic).
+    basis: Literal["per_unit", "per_year", "unset"] | None = None
     scope: str | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None

@@ -495,6 +495,12 @@ export interface ArchetypeSummary {
   material_count: number
   unlinked_count: number
   stages: string[]
+  /** stage name → declared basis. null/absent = UNDECLARED (multiplier 1).
+   *  This decides the multiplier. */
+  stage_basis?: Record<string, 'per_unit' | 'per_year' | null>
+  /** stage name → stage-root node id, for declaring basis in-app. */
+  stage_ids?: Record<string, string>
+  /** stage name → scope-derived SUGGESTION. A hint only; never a multiplier. */
   stage_annual: Record<string, boolean>
   created_at: string
   updated_at: string
@@ -2436,7 +2442,7 @@ export async function moveArchetype(
 export async function updateBOMNode(
   arcId: string,
   nodeId: string,
-  patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null },
+  patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; basis?: 'per_unit' | 'per_year' | 'unset'; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null },
 ): Promise<BOMNode> {
   return request<BOMNode>(`/bom/archetypes/${arcId}/nodes/${nodeId}`, {
     method: 'PUT',

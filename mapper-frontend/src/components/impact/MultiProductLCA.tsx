@@ -35,6 +35,8 @@ import { MultiItemSelector } from '../shared/MultiItemSelector'
 import { ActivityVintagePicker } from './ActivityVintagePicker'
 import { GroupedVintagePanel } from './GroupedVintagePanel'
 import { MethodPicker } from '../MethodPicker'
+import { MultiProductSensitivityChart } from '../charts/MultiProductSensitivityChart'
+import { useNumberFormatter } from '../charts/numberFormat'
 import { NumberInput } from '../ui/NumberInput'
 import { MultiProductComparisonChart } from './MultiProductComparisonChart'
 import { MultiProductLineChart } from './MultiProductLineChart'
@@ -42,6 +44,8 @@ import { shortenByCommonPrefix } from '../../utils/labelPrefix'
 import { StageAmountsEditor, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { useBOMStore } from '../../stores/bomStore'
+import { useParameterStore } from '../../stores/parameterStore'
+import { SensitivityCases, hasVaryingParameters, varyingCases } from './SensitivityCases'
 import { useProjectSettingsStore } from '../../stores/projectSettingsStore'
 import { useActivityStore } from '../../stores/activityStore'
 import { useProjectStore } from '../../stores/projectStore'
@@ -82,6 +86,18 @@ const SCOPE_LABELS: Record<Scope, string> = {
 export function MultiProductLCA() {
   const archetypes = useBOMStore((s) => s.archetypes)
   const setStageBasis = useBOMStore((s) => s.setStageBasis)
+  // Sensitivity cases -- same store slice, label and chip as the system-level
+  // control. Reused, not re-invented.
+  const paramTable = useParameterStore((s) => s.table)
+  const fetchParamTable = useParameterStore((s) => s.fetchTable)
+  const selectedScenarios = useParameterStore((s) => s.selectedScenarios)
+  const toggleSelectedScenario = useParameterStore((s) => s.toggleSelectedScenario)
+  useEffect(() => { if (!paramTable) void fetchParamTable() }, [paramTable, fetchParamTable])
+  const effectiveCases = useMemo(() => {
+    if (!hasVaryingParameters(paramTable)) return []
+    const avail = varyingCases(paramTable)
+    return selectedScenarios.filter((c) => avail.includes(c))
+  }, [paramTable, selectedScenarios])
   const projectBasis = useProjectSettingsStore((st) => st.settings)?.use_phase_basis ?? 'one_year'
   const lifeCycleBasis = projectBasis === 'life_cycle'
   const fetchArchetypes = useBOMStore((s) => s.fetchArchetypes)
@@ -103,6 +119,8 @@ export function MultiProductLCA() {
   const setItemStageAmounts = useMultiProductLCAStore((s) => s.setItemStageAmounts)
   const setStageAmountsMap = useMultiProductLCAStore((s) => s.setStageAmountsMap)
   const multiResult = useMultiProductLCAStore((s) => s.multiResult)
+  const multiByCase = useMultiProductLCAStore((s) => s.multiByCase)
+  const multiCaseOrder = useMultiProductLCAStore((s) => s.multiCaseOrder)
   // Results-aligned vintage coords, snapshotted at compute time — the source for
   // the Line gate / chart / export (NOT the live selection).
   const multiVintageCoords = useMultiProductLCAStore((s) => s.multiVintageCoords)
@@ -296,7 +314,7 @@ export function MultiProductLCA() {
   const effectiveScope = scopeForMode(compareMode, scope)
 
   const handleCompute = () => {
-    void compute({ scope: effectiveScope, methods })
+    void compute({ scope: effectiveScope, methods, cases: effectiveCases })
   }
 
   // Live collapsed-header summary for Configuration. Reads `scope` + `methods`
@@ -585,6 +603,15 @@ export function MultiProductLCA() {
               defaultAllSelected
             />
           </div>
+
+          <div style={{ marginTop: 'var(--space-3)' }}>
+            <SensitivityCases
+              table={paramTable}
+              selected={selectedScenarios}
+              onToggle={toggleSelectedScenario}
+              testId="multi-product-sensitivity-cases"
+            />
+          </div>
         </div>
       </CollapsibleCard>
 
@@ -657,7 +684,7 @@ export function MultiProductLCA() {
             </span>
           ) : undefined}
         >
-          <ResultsSection result={multiResult} scope={scope} stageAmountsMeta={stageAmountsMeta} activityVintageMeta={activityVintageMeta} />
+          <ResultsSection result={multiResult} scope={scope} stageAmountsMeta={stageAmountsMeta} activityVintageMeta={activityVintageMeta} byCase={multiByCase} caseOrder={multiCaseOrder} />
         </CollapsibleCard>
       )}
     </div>
@@ -667,6 +694,8 @@ export function MultiProductLCA() {
 // ── Results section (Patch 4AG.4) ──────────────────────────────────
 
 function ResultsSection({
+  byCase,
+  caseOrder,
   result, scope, stageAmountsMeta, activityVintageMeta,
 }: {
   result: import('../../api/client').MultiProductLCAResult
@@ -676,8 +705,11 @@ function ResultsSection({
     label: string; database: string
     base_database?: string | null; iam?: string | null; ssp?: string | null; year?: number | null
   }>
+  byCase: Record<string, import('../../api/client').MultiProductLCAResult> | null
+  caseOrder: string[]
 }) {
-  const [view, setView] = useState<'chart' | 'table'>('chart')
+  const [view, setView] = useState<'chart' | 'by case' | 'table'>('chart')
+
   const [exporting, setExporting] = useState(false)
 
   // Available methods — union across successful items in source
@@ -709,6 +741,39 @@ function ResultsSection({
     }
   }, [methodLabels, selectedMethod])
 
+  const fmt = useNumberFormatter()
+
+  // Per-item score by case for the active method. Built from the per-case
+  // envelopes; items that failed in a case simply have no entry there.
+  const sensitivityItems = useMemo(() => {
+    if (!byCase || !selectedMethod) return []
+    const base = byCase['Base']
+    if (!base) return []
+    return base.items
+      .filter((it) => it.status === 'success')
+      .map((it) => {
+        const scores: Record<string, number> = {}
+        for (const c of caseOrder) {
+          const env = byCase[c]
+          const match = env?.items.find((x) => x.item_id === it.item_id)
+          const mr = (match?.archetype_result?.results ?? match?.activity_result?.results ?? [])
+            .find((m) => m.method_label === selectedMethod)
+          if (mr) scores[c] = mr.score
+        }
+        return { itemId: it.item_id, label: it.label, byCase: scores }
+      })
+  }, [byCase, caseOrder, selectedMethod])
+
+  const sensitivityUnit = useMemo(() => {
+    if (!byCase || !selectedMethod) return ''
+    for (const it of byCase['Base']?.items ?? []) {
+      const mr = (it.archetype_result?.results ?? it.activity_result?.results ?? [])
+        .find((m) => m.method_label === selectedMethod)
+      if (mr) return mr.unit
+    }
+    return ''
+  }, [byCase, selectedMethod])
+
   // Patch 5S — Bar | Line chart-type toggle (Chart view only). Line is
   // meaningful only when the selection decomposes into a usable YEAR axis:
   // ≥2 distinct years across premise vintages (year + ssp present). Archetype
@@ -738,7 +803,9 @@ function ResultsSection({
   const handleExport = async () => {
     setExporting(true)
     try {
-      await exportMultiProductComparison(result, scope, { stageAmountsMeta, activityVintageMeta })
+      await exportMultiProductComparison(result, scope, {
+        resultsByCase: byCase,
+        caseOrder, stageAmountsMeta, activityVintageMeta })
     } catch (e) {
       // eslint-disable-next-line no-console
       console.error('Multi-product export failed', e)
@@ -832,7 +899,9 @@ function ResultsSection({
             borderRadius: 'var(--radius-sm)',
           }}
         >
-          {(['chart', 'table'] as const).map((v) => (
+          {((caseOrder.length > 1
+              ? ['chart', 'by case', 'table']
+              : ['chart', 'table']) as Array<'chart' | 'by case' | 'table'>).map((v) => (
             <button
               key={v}
               data-testid={`multi-product-view-${v}`}
@@ -872,6 +941,24 @@ function ResultsSection({
       {/* Errors banner (when partial / total failure) */}
       {result.error_count > 0 && (
         <ErrorsBanner result={result} />
+      )}
+
+      {/* Sensitivity: Base bar + range whisker sits ABOVE the existing chart
+          rather than replacing it. The existing bar answers "which item is
+          bigger"; the whisker answers "does that ordering survive the cases".
+          Only rendered when more than Base was actually run. */}
+      {view !== 'table' && caseOrder.length > 1 && selectedMethod && (
+        <div style={{ marginBottom: 'var(--space-4)' }}>
+          <MultiProductSensitivityChart
+            items={sensitivityItems}
+            cases={caseOrder}
+            unit={sensitivityUnit}
+            methodLabel={selectedMethod}
+            format={fmt}
+            filenameBase="multi_product"
+            mode={view === 'by case' ? 'by_case' : 'range'}
+          />
+        </div>
       )}
 
       {/* Visualisation pane — chart (bar|line) or table */}

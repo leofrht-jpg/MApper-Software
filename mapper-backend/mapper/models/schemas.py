@@ -310,6 +310,11 @@ class ArchetypeLCACalculateRequest(BaseModel):
     # resolved against that scenario's overrides; when None, the table's
     # base values are used (matches today's behavior).
     parameter_scenario: str | None = None
+    # {"per_unit": 1.0, "per_year": <lifetime>}. Consulted ONLY for nodes below
+    # a stage root -- i.e. a spliced child archetype's stage, which carries its
+    # own basis and must keep it. Absent → every material takes its stage
+    # root's amount, byte-identical to pre-composition behaviour.
+    basis_amounts: dict[str, float] | None = None
 
 
 class MaterialContribution(BaseModel):

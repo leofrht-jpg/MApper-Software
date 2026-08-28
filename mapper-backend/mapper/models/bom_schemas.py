@@ -193,6 +193,38 @@ class ValidationReport(BaseModel):
 # ── Archetype ────────────────────────────────────────────────────────────────
 
 
+# How deep a chain of archetype includes may go (parent -> pack -> cell -> ...).
+# Not a technical bound -- Python's recursion limit is far away -- but a
+# modelling one: past this a BOM is better expressed as a subsystem. Surfaced
+# verbatim in the error so the reader knows the rule that stopped them.
+MAX_INCLUDE_DEPTH = 4
+
+# Separator for keys that must stay distinct once a child archetype's rows are
+# spliced into a parent. Same convention (and same string) the subsystem
+# aggregation already uses -- see SUBSYSTEM_KEY_SEP in dsm_lca_engine.
+INCLUDE_KEY_SEP = "::"
+
+
+class ArchetypeInclude(BaseModel):
+    """A reference from one archetype to another, as a BOM input.
+
+    The reference is by ARCHETYPE id, never a node id: node ids are re-minted on
+    every import (``assign_node_ids`` only fills missing ones and the workbook
+    parser builds nodes without them), whereas a merge-mode import matches
+    archetypes by name and preserves their id.
+
+    ``quantity`` needs no special handling downstream: ``flatten_bom`` already
+    cascades ``effective = parent_quantity * node.quantity``, so a ref at 2
+    doubles the child's whole subtree.
+    """
+
+    archetype_id: str
+    quantity: float = 1.0
+    # Resolved exactly like any other node quantity, in the CALLER's parameter
+    # context. See the composition section in CLAUDE.md.
+    quantity_expression: str | None = None
+
+
 class Archetype(BaseModel):
     id: str | None = None  # set by server
     name: str
@@ -205,6 +237,12 @@ class Archetype(BaseModel):
     # Last upload-time validation outcome (Patch 2). ``None`` for legacy
     # archetypes that were imported before validation existed.
     validation_report: "ValidationReport | None" = None
+    # Archetype composition. Spliced stage-by-stage MATCHED ON SCOPE, so a
+    # child's Manufacturing lands in the parent's Manufacturing and its End of
+    # Life in the parent's End of Life -- a child that spans several stages
+    # (Battery Pack carries both) must not collapse into one of them.
+    # Additive: legacy archetypes deserialize with an empty list.
+    includes: list[ArchetypeInclude] = Field(default_factory=list)
 
 
 Archetype.model_rebuild()
@@ -240,6 +278,7 @@ class ArchetypeCreate(BaseModel):
     category: str | None = None
     folder: str | None = None
     bom: list[BOMNode] = Field(default_factory=list)
+    includes: list[ArchetypeInclude] = Field(default_factory=list)
 
 
 class BOMNodeCreate(BaseModel):

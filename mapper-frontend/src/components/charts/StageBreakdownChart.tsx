@@ -81,7 +81,14 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
           {methods.map((m) => {
             const subtotals = stageBreakdown[m.method_label] ?? {}
             const total = Object.values(subtotals).reduce((a, b) => a + b, 0)
-            const denom = Math.abs(total) > 1e-30 ? Math.abs(total) : 1
+            // GROSS denominator, so widths always sum to 100%. With |net| a
+            // mixed-sign bar overflows its container and the excess is clipped
+            // by `overflow: hidden` -- WP5's Fuel Station has an End of Life
+            // recycling credit of -92.78 against ~6.9e3 of positive stages, and
+            // any archetype with a credit large enough would silently lose
+            // segments off the end of the bar.
+            const gross = stageOrder.reduce((acc, st) => acc + Math.abs(subtotals[st] ?? 0), 0)
+            const denom = gross > 1e-30 ? gross : 1
             return (
               <div
                 key={m.method_label}
@@ -102,20 +109,35 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
                       const pct = (Math.abs(v) / denom) * 100
                       if (pct < 0.01) return null
                       const isHovered = hover?.method === m.method_label && hover.stage === stage
+                      // A negative stage is a CREDIT (avoided burden). Width is
+                      // |v| because the bar is proportional, so without a
+                      // distinct treatment a credit is indistinguishable from a
+                      // burden of the same size -- it would read as adding
+                      // impact when it subtracts. Hatched, not merely a
+                      // different colour, so it survives the print/greyscale
+                      // export re-theme.
+                      const credit = v < 0
                       return (
                         <div
                           key={stage}
                           data-testid={`stage-segment-${m.method_label}-${stage}`}
+                          data-credit={credit ? 'true' : undefined}
                           onMouseEnter={() => setHover({ method: m.method_label, stage })}
                           onMouseLeave={() => setHover(null)}
                           style={{
                             width: `${pct}%`,
                             backgroundColor: stageColors[stage],
+                            backgroundImage: credit
+                              ? 'repeating-linear-gradient(45deg, rgba(255,255,255,0.85) 0 3px, transparent 3px 6px)'
+                              : undefined,
                             opacity: isHovered ? 1 : 0.85,
                             transition: 'opacity var(--duration-fast) var(--ease-out)',
                             cursor: 'default',
                           }}
-                          title={`${stage}: ${format.format(v)} ${m.unit} (${pct.toFixed(1)}%)`}
+                          title={
+                            `${stage}: ${format.format(v)} ${m.unit} (${pct.toFixed(1)}% of gross)`
+                            + (credit ? ' — credit, subtracted from the total' : '')
+                          }
                         />
                       )
                     })}
@@ -128,6 +150,16 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
               </div>
             )
           })}
+
+          {methods.some((m) => Object.values(stageBreakdown[m.method_label] ?? {}).some((v) => v < 0)) && (
+            <div
+              data-testid="stage-breakdown-credit-note"
+              style={{ marginLeft: 212, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}
+            >
+              Hatched segments are credits (negative), sized by magnitude and
+              subtracted from the total.
+            </div>
+          )}
 
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginLeft: 212, paddingTop: 4 }}>
             {stageOrder.map((stage) => (

@@ -7549,6 +7549,174 @@ name is not the same as *gating* on it. The one conditional that legitimately
 wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
 resolve-once vs resolve-per-year — is pinned unflagged by its own test.
 
+## A negative quantity is a credit, not a reason to drop the row
+
+`calculate_archetype_lca` shares an activity's score among the materials using
+it. The guard was `if same_act_qty > 0`, so an activity group whose NET
+quantity was negative — a credit or avoided-burden row, ordinary in a
+circular-economy model — had its share sent to 0 and vanished from **both** the
+stage breakdown and the contributions list, while its real impact stayed in
+`total_score` from the bulk solve.
+
+Measured: Battery Circularity's `A - Circular EV` has
+`Battery-excluded glider shredding` summing to −0.0092125, and **6.5 %** of its
+total went unattributed (`sum(stages)` 0.07873 vs `total` 0.08420).
+
+The guard is now `!= 0`. Only an exactly-zero group is skipped, where the share
+is genuinely undefined.
+
+**Blast radius, measured across both real projects:** 33 of 36 archetypes are
+byte-identical. All 28 WP5 archetypes are unchanged, including `Fuel Station`,
+whose negative End of Life stage predates this — negative *contributions* were
+never dropped, only groups whose *net* was ≤ 0. Three Battery Circularity
+archetypes gain previously-unattributed impact in End of Life
+(`A - Circular EV`, `A0 - Reference EV`, `EV-I life`); every **total** is
+unchanged, because the bulk solve never had the bug.
+
+### Credits in the stage bar
+
+`StageBreakdownChart` is a proportional div stack, **not Recharts**, so a
+negative stage does not render below an axis — it renders at `|v|` and, left
+alone, is indistinguishable from a burden of the same size. It would read as
+*adding* impact when it subtracts. Two changes:
+
+- Credit segments are **hatched** (a repeating-linear-gradient), not merely
+  recoloured, so the distinction survives the print/greyscale export re-theme.
+  The tooltip says "credit, subtracted from the total", and a one-line note
+  appears below the bar only when a credit is present.
+- The denominator is the **gross** sum of `|v|`, not `|net|`. With `|net|` a
+  mixed-sign bar's segments sum to more than 100 % and the excess is clipped by
+  the container's `overflow: hidden` — segments silently disappear off the end.
+  WP5's Fuel Station is a live example (−92.78 against ~6.9 × 10³ positive).
+
+#### What NOT to do
+
+- **Don't guard a proportional share on `> 0`.** The undefined case is `== 0`,
+  not `< 0`. A negative share is meaningful and signed.
+- **Don't size a mixed-sign proportional bar by `|net|`.** Use gross, or
+  segments overflow and are clipped.
+- **Don't distinguish credits by colour alone.** Chart exports re-theme ink and
+  may be read in greyscale; the hatch is what survives.
+## Archetype composition — an archetype as another's BOM input
+
+`Archetype.includes: list[ArchetypeInclude]`. The reference is by **archetype
+id, never a node id**: node ids are re-minted on every import
+(`assign_node_ids` only fills missing ones, and the workbook parser builds
+nodes without them), while a merge-mode import matches archetypes by name and
+preserves their id.
+
+### Spliced stage-by-stage, MATCHED ON SCOPE
+
+A child's Manufacturing lands in the parent's Manufacturing, its End of Life in
+the parent's End of Life. This is the whole design constraint: `Battery Pack`
+carries both stages, and collapsing it into whichever stage the reference sat
+in would put end-of-life transport into manufacturing — wrong scope, wrong
+basis, wrong point in the DSM. A scope the parent lacks gets a new stage rather
+than being dropped into an unrelated one.
+
+### Parameters resolve in the CALLER's context
+
+There is one parameter table per project and one namespace, so the caller's
+context is the only context. **Compute the parent under `Optimistic` and the
+child's expressions take Optimistic values too.** A nested archetype is NOT a
+frozen sub-assembly, and someone will expect it to be. Cross-project references
+are forbidden in v1 precisely because two projects genuinely have two tables.
+
+### Eager splice, so no cache changes
+
+Splicing runs in `DSMLCAPipeline.__init__` before `self.archetypes` is set, and
+in `_build_archetype_source_demand` before parameter resolution — upstream of
+`_flat_cache` `(archetype_id, scope, year)`, `_flat_cache_year`
+`(archetype_id, year, scope, db)` and `_resolved_arc_cache`
+`(archetype_id, year)`. Every key therefore refers to an archetype whose
+children are already baked in, and no cache learns about references.
+`test_splicing_happens_upstream_of_every_flatten_cache` is the alarm if that
+ever moves.
+
+Quantity scaling is free: `flatten_bom` already cascades
+`effective = parent_quantity × node.quantity`, so a ref at 2 doubles the
+child's whole subtree. `ArchetypeInclude.quantity_expression` resolves like any
+other quantity — which is what lets a reference carry a functional-unit
+normaliser (see the acceptance case below).
+
+### Cycles and depth
+
+Detected at **save time and flatten time**, and the second is not redundant:
+archetype JSON is edited on disk, arrives by project import, and round-trips
+through Excel, none of which passes a save route. `MAX_INCLUDE_DEPTH = 4`,
+surfaced verbatim in the error. A cycle error names the chain.
+
+### Basis below the root
+
+A spliced child stage becomes a NON-root node while keeping its own `basis`,
+so basis had to become readable below the root. `flatten_root_with_amounts`
+inherits the multiplier down the tree and lets the nearest basis-declaring
+ancestor override it, so a per-year child under a per-unit parent stage still
+scales with the lifetime. Driven by `basis_amounts`
+(`{"per_unit": 1.0, "per_year": <lifetime>}`); absent, every material takes its
+stage root's amount, byte-identical to pre-composition behaviour.
+
+### Source-qualified material keys
+
+DSM aggregation keys by material NAME (`mat_qty[...]`, `material_totals[...]`),
+so a "Steel frame" in the parent and one in a child would merge into a single
+contribution line. `material_key()` qualifies the leaf with the **nearest**
+enclosing include using `INCLUDE_KEY_SEP = "::"` — the same string the
+subsystem aggregation already uses, not a second scheme — so a grandchild
+reports the grandchild and a reader recovers the source with
+`key.split(INCLUDE_KEY_SEP)`. Rows outside any include are unchanged.
+
+`lca.py` still reads only `path[0]` / `path[1]` for `stage` / `component`, so
+for a chain deeper than one level the intermediate names do not fit there. The
+**name** carries the nearest include instead; widening the contribution shape
+to a full path is a separate UI decision.
+
+### Dangling references are LOUD
+
+`dsm_lca_engine` used to `continue` past a cohort mapping pointing at a missing
+archetype while the API raised 404 for the same condition. That silent skip is
+the WP5 failure verbatim, and composition adds a second class of dangling id,
+so the engine now raises `DanglingArchetypeError`. A dangling include raises
+`ArchetypeCompositionError`.
+
+### Import modes
+
+**Merge is safe for a project using composition** — it matches by name and
+preserves the archetype id. **Replace orphans every reference**: it mints a
+fresh `uuid4()`. Both re-mint node ids.
+
+**The BOM workbook cannot express a reference**, so exporting a composed
+archetype is **refused** with a 400 rather than silently writing the child's
+spliced rows and re-importing a flattened copy that no longer tracks the child.
+Use project export/import, which carries `includes` intact.
+
+### Acceptance
+
+`B0 - Reference BESS` hand-duplicates `Battery Pack` inline. Rebuilt as a
+reference carrying `1 / b0_cumulative_ac_energy_delivered_kwh` as its include
+quantity, the composed twin reproduces the original at **rel-diff 0.000e+00**
+on GWP100 and acidification against the live project.
+
+**Why the divisor is needed, and the design limit it reveals:** the standalone
+`Battery Pack` is expressed per pack, while B0's inline copies are the same
+expressions divided by the FU normaliser. One include quantity reproduces both
+of its stages because both carry the same divisor. `BESS-Inverter` cannot be
+referenced the same way: its Manufacturing is divided by the normaliser and its
+Use Phase is not, and a single include quantity scales the whole child
+uniformly. **A child whose stages carry different normalisations cannot be a
+single reference** — split it, or leave it inline.
+
+#### What NOT to do
+
+- **Don't flatten a child into one of the parent's stages.** Match on scope.
+- **Don't splice lazily inside `_flatten`.** The cache keys would go stale.
+- **Don't reference a node id.** They are re-minted on every import.
+- **Don't let a dangling reference `continue`.** Silent shrinkage is
+  indistinguishable from a genuinely smaller result.
+- **Don't invent a second key separator.** `INCLUDE_KEY_SEP` is the subsystem
+  string on purpose.
+- **Don't export a composed archetype to the BOM workbook.** The format has no
+  reference row; the refusal is the feature.
 ## Use-phase basis is a PROJECT convention, with a per-stage override
 
 Battery Circularity's archetypes are uniformly whole-lifecycle, so declaring a

@@ -18,6 +18,7 @@ import {
   getDatabases,
   getProjects,
   importProject as apiImportProject,
+  renameProject as apiRenameProject,
   switchProject as apiSwitchProject,
   withTransientRetry,
 } from '../api/client'
@@ -46,6 +47,7 @@ interface ProjectStore {
 
   createProject: (name: string) => Promise<void>
   duplicateProject: (sourceName: string, newName: string) => Promise<void>
+  renameProject: (name: string, newName: string) => Promise<void>
   deleteProject: (name: string) => Promise<void>
   exportProject: (name: string) => Promise<void>
   importProject: (file: File) => Promise<void>
@@ -165,6 +167,19 @@ export const useProjectStore = create<ProjectStore>((set) => ({
     set({ isLoading: true })
     try {
       const res = await apiDuplicateProject(sourceName, newName)
+      await refreshProjectsAndDatabases(set, res.name)
+    } finally {
+      set({ isLoading: false })
+    }
+  },
+
+  renameProject: async (name: string, newName: string) => {
+    set({ isLoading: true })
+    try {
+      const res = await apiRenameProject(name, newName)
+      // The rename moves storage, so this refresh is not cosmetic: the backend
+      // has retired the old project key and the sidebar list, current project
+      // and database list all have to be re-read together.
       await refreshProjectsAndDatabases(set, res.name)
     } finally {
       set({ isLoading: false })

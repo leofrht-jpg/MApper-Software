@@ -37,6 +37,11 @@ class DuplicateProjectRequest(BaseModel):
     new_name: str
 
 
+class RenameProjectRequest(BaseModel):
+    name: str
+    new_name: str
+
+
 class ExportProjectRequest(BaseModel):
     name: str
 

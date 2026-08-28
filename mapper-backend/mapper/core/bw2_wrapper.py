@@ -79,6 +79,47 @@ def duplicate_project(source: str, new_name: str) -> str:
     return new_name
 
 
+def rename_project(name: str, new_name: str) -> str:
+    """Rename ``name`` to ``new_name``, carrying MApper's storage with it.
+
+    Implemented as copy-then-delete because Brightway has no rename:
+    ``bw2data.projects`` exposes ``copy_project`` / ``delete_project`` /
+    ``set_current`` and nothing else, and its project directory is named after
+    a hash of the project name, so there is no directory to move either.
+
+    Copy first is deliberate. The copy is the step that can fail -- disk space,
+    or two names that sanitise to one MApper storage directory -- and doing it
+    before the delete means a failure leaves the original completely intact.
+    The window in between is a project that exists under both names; a crash
+    there loses nothing.
+
+    Leaves ``new_name`` the active project.
+    """
+    new_name = (new_name or "").strip()
+    if not new_name:
+        raise ValueError("New project name is required")
+    existing = {p.name for p in bw2data.projects}
+    if name not in existing:
+        raise ValueError(f"Project '{name}' does not exist")
+    if new_name == name:
+        return name
+    if new_name in existing:
+        raise ValueError(f"Project '{new_name}' already exists")
+
+    # bw2 directory + every MApper storage root, ids verbatim. Raises
+    # ProjectStorageCollision when the two names share a storage directory,
+    # before anything has been written.
+    duplicate_project(name, new_name)
+
+    # Now drop the original. `duplicate_project` left `new_name` current, so
+    # `delete_project` will not switch away from it, and there are >= 2
+    # projects so its last-project guard cannot fire.
+    survivors = [p.name for p in bw2data.projects if p.name != name]
+    delete_project(name)
+    project_storage.delete_project_storage(name, survivors)
+    return new_name
+
+
 def delete_project(name: str) -> str:
     """Delete ``name``. Refuses to delete the only remaining project.
 

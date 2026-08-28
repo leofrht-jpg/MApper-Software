@@ -7517,6 +7517,85 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+## Renaming a project, and the registries that never prune
+
+Brightway has no rename. `bw2data.projects` exposes `copy_project` /
+`delete_project` / `set_current` and nothing else, and its project directory is
+named after a hash of the project name, so there is no directory to move either.
+`rename_project` (`mapper/core/bw2_wrapper.py`) is therefore copy-then-delete,
+reusing the machinery the duplicate and delete paths already have:
+`duplicate_project` (bw2 copy + `copy_project_storage`, ids verbatim), then
+`delete_project` + `delete_project_storage`.
+
+**Copy first, delete second.** The copy is the step that can fail — disk space,
+or two names that sanitise to one storage directory — and doing it before the
+delete means a failure leaves the original completely intact. The window in
+between is a project that exists under both names; a crash there loses nothing.
+Reversing the order turns a failed rename into data loss.
+
+### The registries never prune — this is the fifth appearance
+
+`hydrate_from_disk()` merges with `.update()`. Every earlier appearance of that
+was benign because nothing had been removed: demo/load, duplicate and import all
+ADD a project. **Rename is the first operation that MOVES storage**, so the old
+name keeps answering out of the nine project-keyed in-memory registries until
+the app restarts — and a rename that silently leaves the old project working is
+worse than one that fails outright.
+
+`_prune_registries(project)` in `mapper/api/databases.py` drops the key from all
+nine: `bom._archetypes`, `bom._cohort_mappings`, `bom._dsm_lca_results`,
+`dsm._systems`, `dsm._states`, `dsm._results`, `dsm._multi_results`,
+`subsystems._subsystems`, `subsystems._subsystem_results`. It lives in the API
+layer, not in `mapper/core/project_storage.py`, because core must not import
+from `mapper.api` (the same one-way rule the cancellation convention follows).
+Order at the route is **prune, then rehydrate** — the other way round, the
+rehydrate's merge just sits alongside the stale entries.
+
+Delete does the same, for the same reason: the storage is gone but the key
+survives, and it becomes live data the moment a project is created under that
+name again.
+
+### `_rehydrate_after_storage_write` also has to reload parameter tables
+
+`hydrate_from_disk()` does NOT cover `parameters._tables` — `main.py` hydrates
+that separately at startup via `install_parameters`. This was a latent data-loss
+path on the duplicate and import routes, not just rename: `_table_for` does
+`_tables.setdefault(project, ParameterTable())`, so an unloaded project does not
+read its file, it gets an **empty table**, and the next parameter write persists
+that empty table over the real one. `install_parameters` clears before it
+updates, so calling it is a full reload that both adds the new key and drops the
+stale one.
+
+### UI
+
+Rename is a `'rename'` mode on `ProjectSwitcher`'s existing `InlineForm` — the
+same inline pattern already behind "New project" and "Duplicate current",
+prefilled with the current name. **Not `window.prompt`**: it is a no-op in
+WKWebView, so the packaged desktop app would silently do nothing.
+
+#### What NOT to do
+
+- **Don't implement rename as anything other than copy-then-delete, and don't
+  reverse the order.** There is no `projects.rename` to find; check
+  `bw2data.projects`' surface before assuming otherwise. Copy-first is what
+  makes a failure non-destructive.
+- **Don't add a route that moves or removes a project's storage without
+  pruning the registries.** Adding storage only needs the rehydrate; moving or
+  removing it needs the prune as well. `test_project_rename.py` pins this from
+  both directions, including the negative
+  (`test_hydrate_alone_does_not_retire_the_old_name`) so the prune cannot be
+  deleted as redundant while `hydrate_from_disk` still merges.
+- **Don't re-mint ids on a rename.** Every registry is `dict[project][id]` and
+  every path is `{project}/…`, so ids are already namespaced; cohort mappings
+  reference archetype ids and AESA configs reference DSM system ids, and
+  re-keying orphans them exactly the way a re-import once orphaned the WP5
+  mapping.
+- **Don't drop the `install_parameters` call from the rehydrate** on the
+  grounds that `hydrate_from_disk` "already reloads everything". It does not
+  touch parameter tables, and the failure is silent and destructive.
+- **Don't reach for `window.prompt` for any rename in this app.** WKWebView
+  ignores it. Standard input events only.
+
 ## Client-server project state desync — `X-Mapper-Project` guard (Patch X1+++)
 
 The user's "lost WP5" bug was a **project-state desync**: the

@@ -8,7 +8,7 @@
  */
 
 import React, { useState } from 'react'
-import { BarChart3, Database, FlaskConical, GitBranch, Globe2, Settings, Sparkles } from 'lucide-react'
+import { BarChart3, Database, Dice5, FlaskConical, GitBranch, Globe2, Settings, Sparkles } from 'lucide-react'
 
 interface NavItem {
   id: string
@@ -24,6 +24,7 @@ const navItems: NavItem[] = [
   { id: 'dsm',       icon: <GitBranch size={18} strokeWidth={1.5} />, label: 'Dynamic Stock Modeller', color: 'var(--mod-dsm)' },
   { id: 'impact',    icon: <BarChart3 size={18} strokeWidth={1.5} />, label: 'Impact Assessment', color: 'var(--mod-lca)' },
   { id: 'aesa',      icon: <Globe2 size={18} strokeWidth={1.5} />, label: 'AESA', color: 'var(--mod-aesa)' },
+  { id: 'uncertainty', icon: <Dice5 size={18} strokeWidth={1.5} />, label: 'Uncertainty', color: 'var(--mod-lca)' },
 ]
 
 const settingsItem: NavItem = {

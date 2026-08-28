@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Download, Loader2 } from 'lucide-react'
+import { Download, Loader2, Dice5 } from 'lucide-react'
 import {
   calculateArchetypeLCA,
   exportSingleProductStatic,
@@ -27,9 +27,12 @@ import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { stageAmountsEqual } from './StageAmountsEditor'
+import { useMonteCarloStore } from '../../stores/monteCarloStore'
 
 interface Props {
   archetypeId: string | null
+  /** Lets the Results card hand this computation to the Uncertainty tab. */
+  onNavigate?: (id: string) => void
 }
 
 type Scope = 'inflows' | 'stock' | 'outflows' | 'all'
@@ -49,7 +52,7 @@ const SCOPE_OPTIONS: { value: Scope; label: string }[] = [
 // no DSM axis (it makes no sense to apply fleet dynamics to one product) and
 // no multi-LCI axis (Static is base ecoinvent only — that's what Projected
 // is for). So this panel ships only the parameter axis for fan-out.
-export function SingleProductStaticPanel({ archetypeId }: Props) {
+export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   const [scope, setScope] = useState<Scope>('all')
   const [selectedMethods, setSelectedMethods] = useState<string[][]>([])
   // Patch 4D — per-archetype config restore. The picker is uncontrolled
@@ -189,6 +192,28 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
   const isMulti = scenarioOrder.length > 1
   const activeResult = activeScenario ? resultsByScenario[activeScenario] : null
   const hasResults = scenarioOrder.length > 0 && activeResult != null
+
+  const setMonteCarloHandoff = useMonteCarloStore((st) => st.setHandoff)
+
+  // Hand this exact computation to the Uncertainty tab. Everything the Monte
+  // Carlo run needs is already pinned here -- archetype, indicators, scope,
+  // stage amounts and the active sensitivity case -- so arriving there
+  // requires no re-specification.
+  const handleRunUncertainty = useCallback(() => {
+    if (!archetypeId || !activeResult) return
+    setMonteCarloHandoff({
+      archetypeId,
+      archetypeName: activeResult.archetype_name,
+      methods: selectedMethods,
+      scope,
+      stageAmounts: currentStageAmounts ?? {},
+      basisAmounts: null,
+      parameterScenario: activeScenario === BASE_SCENARIO ? null : activeScenario,
+      computeDatabase: null,
+    })
+    onNavigate?.('uncertainty')
+  }, [archetypeId, activeResult, selectedMethods, scope, currentStageAmounts, activeScenario, setMonteCarloHandoff, onNavigate])
+
 
   // Patch 4G — Excel export for the Static Background sub-tab. Sends
   // every computed sensitivity case (not just active), so the workbook
@@ -354,6 +379,26 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
           onToggle={() => setResultsExpanded((v) => !v)}
           summary={`${activeResult.archetype_name} · ${activeResult.results.length} indicators · ${activeResult.elapsed_seconds.toFixed(1)}s`}
           actions={
+            <>
+            <button
+              type="button"
+              data-testid="single-product-run-uncertainty"
+              onClick={handleRunUncertainty}
+              title="Propagate uncertainty for this computation"
+              style={{
+                height: 32, padding: '0 12px', marginRight: 8,
+                border: '1px solid var(--border-default)',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-elevated)',
+                color: 'var(--text-primary)',
+                fontSize: 'var(--text-sm)', fontWeight: 500,
+                cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              <Dice5 size={14} strokeWidth={1.8} />
+              Run uncertainty
+            </button>
             <button
               type="button"
               data-testid="single-product-static-export"
@@ -379,6 +424,7 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
               )}
               <span>Export</span>
             </button>
+            </>
           }
         >
           <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>

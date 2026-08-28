@@ -14,18 +14,10 @@ import { boundaryLabel } from '../../utils/aesaBoundaryLabels'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { YearSlider } from '../ui/YearSlider'
+import { boxStats, type BoxStats } from '../../utils/boxStats'
 
 interface Props {
   result: AESAComputeResult
-}
-
-interface BoxStats {
-  min: number
-  q1: number
-  median: number
-  q3: number
-  max: number
-  values: number[]
 }
 
 const PRINCIPLES: SharingPrincipleId[] = ['EpC', 'IN', 'AGR', 'LA', 'AR']
@@ -249,26 +241,6 @@ export function BoxPlotView({ result }: Props) {
       </div>
     </div>
   )
-}
-
-function boxStats(values: number[]): BoxStats {
-  if (!values.length) return { min: 0, q1: 0, median: 0, q3: 0, max: 0, values: [] }
-  const sorted = [...values].sort((a, b) => a - b)
-  const q = (p: number) => {
-    const idx = (sorted.length - 1) * p
-    const lo = Math.floor(idx)
-    const hi = Math.ceil(idx)
-    if (lo === hi) return sorted[lo]
-    return sorted[lo] + (sorted[hi] - sorted[lo]) * (idx - lo)
-  }
-  return {
-    min: sorted[0],
-    max: sorted[sorted.length - 1],
-    median: q(0.5),
-    q1: q(0.25),
-    q3: q(0.75),
-    values: sorted,
-  }
 }
 
 function Empty({ msg }: { msg: string }) {

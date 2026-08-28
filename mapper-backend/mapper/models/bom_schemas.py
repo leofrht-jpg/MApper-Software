@@ -68,6 +68,34 @@ class MaterialEvolution(BaseModel):
     applies_to_stages: list[str] | None = None
 
 
+class RowUncertainty(BaseModel):
+    """Uncertainty on ONE BOM row's quantity (Monte Carlo, single-product).
+
+    Lognormal only, which is what ecoinvent uses for 88% of its own
+    technosphere exchanges -- keeping the foreground on the same family means
+    a foreground row and a background exchange are drawn the same way.
+
+    ``pedigree`` scores are 1..5 per indicator and compose through the classic
+    Weidema/Frischknecht factors in ``mapper.core.pedigree``; ``basic_variance``
+    is the underlying flow variance before any pedigree contribution.
+    Together they give ``sigma_total^2 = sigma_basic^2 + SUM_i sigma_i^2``.
+
+    ONLY VALID ON A LITERAL ROW. A row whose quantity comes from a
+    ``quantity_expression`` inherits its uncertainty from the PARAMETERS in
+    that expression -- see ``Parameter.uncertainty``. Letting an expression
+    row carry its own would draw the shared driver twice and, because the two
+    draws partly cancel, would NARROW the reported spread. The engine rejects
+    the combination rather than silently preferring one
+    (``monte_carlo_engine.UncertaintyConfigError``).
+    """
+    pedigree: dict[str, int] | None = None
+    basic_variance: float = 0.0006
+    # Escape hatch for a row whose spread is known directly from a data
+    # source rather than scored. Takes precedence over pedigree+basic when
+    # set, so the two cannot silently compound.
+    gsd2: float | None = None
+
+
 class BOMNode(BaseModel):
     """Recursive BOM tree node.
 
@@ -115,6 +143,13 @@ class BOMNode(BaseModel):
     # resolves to 1.0 (identity). Additive — legacy BOMs without the field
     # deserialize as ``None``.
     global_levers: list[str] | None = None
+    # Optional Monte Carlo uncertainty on THIS row's quantity (single-product
+    # uncertainty propagation). ``None`` -- the default and the state of every
+    # legacy BOM -- means the row is sampled as fixed, so untagged rows are
+    # provably unaffected. Same additive-optional-field precedent as
+    # ``evolution`` and ``global_levers`` above. Valid only on a LITERAL row;
+    # see RowUncertainty.
+    uncertainty: RowUncertainty | None = None
     # Upload-time validation status (Patch 2). "ok" | "warning" | "error".
     # Errors block LCA computation; warnings are surfaced but allowed.
     # Default "ok" so legacy persisted archetypes (no field) deserialise fine.
@@ -310,6 +345,13 @@ class FlattenedMaterial(BaseModel):
     unit: str
     ecoinvent_activity: EcoinventLink | None = None
     path: list[str] = Field(default_factory=list)  # parent component names down to material
+    # Carried down from the source BOMNode for Monte Carlo. Both additive and
+    # default None, so every existing consumer of a flattened BOM is
+    # unaffected. ``quantity_expression`` has to survive the flatten because
+    # the expression-row rule is enforced on the FLATTENED list -- without it
+    # the check reads None on every row and never fires.
+    quantity_expression: str | None = None
+    uncertainty: "RowUncertainty | None" = None
 
 
 class FlattenedBOM(BaseModel):

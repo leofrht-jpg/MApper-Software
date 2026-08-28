@@ -8359,6 +8359,148 @@ through the same callback.
   (`<ExpandedCohortChart>`) for the expanded path; the grid's
   `<Facet>` stays minimal for overview density.
 
+## Monte Carlo uncertainty propagation (single-product)
+
+`POST /lca/monte-carlo`, task-registry + WebSocket + per-iteration cancellation.
+Sidebar position 7 ("Uncertainty"). The methodology lives in
+`mapper/core/monte_carlo_engine.py`; read its module docstring before changing
+`mapper/api/monte_carlo.py`.
+
+**Entry point is a handoff, not a form.** "Run uncertainty" on the
+Single-product Static results card writes a `MonteCarloHandoff`
+(archetype, methods, scope, stage amounts, sensitivity case, database) into
+`useMonteCarloStore` and navigates. Arriving from a result must never require
+re-specifying anything. Opening the tab directly with no handoff shows guidance
+pointing back at Impact Assessment, not an empty form. The handoff does NOT
+auto-run — a minute of compute is the user's call.
+
+**What samples what.** `bw2calc.MonteCarloLCA` resamples the technosphere,
+biosphere AND characterisation factors, so the background is free. It does NOT
+touch the foreground, structurally: MApper writes no foreground database, so an
+archetype is a demand VECTOR over ecoinvent activities, not entries in A. The
+foreground enters by resampling the demand per iteration
+(`mc.demand = …; mc.build_demand_array(); next(mc)`), measured at ~1%.
+
+**ORDER OF OPERATIONS PER ITERATION — the part that must not be got wrong:**
+
+1. draw each PARAMETER once
+2. re-resolve every expression against those draws
+3. apply per-row uncertainty to LITERAL rows only
+
+Step 1 before 2 keeps a shared driver correlated. `d_annual` appears in many WP5
+expressions; drawing those rows independently averages the driver away and
+NARROWS the reported spread. Measured on real data with the same sigma:
+**GSD² 1.2170 with uncertainty on the parameters vs 1.0185 with it on the
+expression rows** — the spread nearly vanishes. Under-reporting uncertainty is
+the one direction that cannot be defended in a paper.
+
+Step 3's "literal rows only" is the same rule from the other side, and it is
+ENFORCED (`UncertaintyConfigError`, a 400), not documented. Row factors are keyed
+by `node_id` and applied DURING demand construction, before aggregation —
+several rows can link one ecoinvent code, and scaling the aggregated entry would
+leak one row's draw onto its neighbours.
+
+**Pedigree constants (`mapper/core/pedigree.py`).** Brightway ships no pedigree
+table — "pedigree" appears in exactly two files in the whole installed stack,
+both ecospold2 readers, and neither computes anything: ecoinvent applied the
+matrix upstream and `bw2io` just reads `varianceWithPedigreeUncertainty`. So
+MApper must ship its own, and they must be the ones ecoinvent used. Recovered by
+least squares over 35,844 exchanges carrying both `scale` and `scale without
+pedigree` (R² = 0.987, max deviation 0.02) → the **classic
+Weidema/Frischknecht** table, NOT the Ciroth et al. 2016 revision. Convention:
+
+    sigma_i^2 = [ln(f_i) / 2]^2      # the factor is a 95% RANGE, hence the /2
+    sigma_total^2 = sigma_basic^2 + SUM_i sigma_i^2
+
+Dropping the `/2` inflates every factor by ~30% and the output stays plausible.
+The recovery pass was run once without it and reported the entire table as a
+mismatch before the convention was spotted. Pinned by
+`test_pedigree.py::test_the_half_is_load_bearing`.
+
+**A median ABOVE the deterministic score is EXPECTED — do not "fix" it.**
+Measured 1.10x–1.55x across 16 indicators on PHEV-NMC811. It is not a sampling
+defect: `loc == ln(|amount|)` exactly for every ecoinvent exchange checked (so
+each exchange's median IS the deterministic amount), and a bare ecoinvent
+activity with no MApper involvement shows the same offset — 1.001x for a short
+supply chain, 1.142x for a long one. Aggregating lognormals up a supply chain
+pulls the total above the sum of medians, and the offset grows with depth. The
+UI therefore flags only ratios **< 0.9 or > 2.0**; flagging the ordinary offset
+would cry wolf on every run. A median BELOW the deterministic score is the shape
+that actually indicates a problem.
+
+**Performance.** `MonteCarloLCA` solves with CGS warm-started from the previous
+iteration, so it does NOT refactorise: **75.3 s for 1000 iterations x 16
+indicators** on PHEV-NMC811 (0.075 s/iter). `DirectSolvingMonteCarloLCA`
+refactorises every time — 1.76 s/iter, ~30 min for the same run — for
+numerically identical answers (same seed, 60 iterations, max relative difference
+9.4e-8). Extra indicators are ~0.2 ms each: one solved inventory, one CF dot
+product per method. Foreground parameter uncertainty adds ~8% (re-resolve +
+re-flatten per iteration). 1000 iterations sits at 0.18% drift on the
+percentiles vs a 1200-iteration reference.
+
+**Per-method CF sampling, two traps.** `load_lcia_data()` reads
+`self.method_filepath`, NOT `self.method` — assigning `mc.method = m` and
+reloading silently returns the ORIGINAL method's factors, which produced sixteen
+identical distributions on the first end-to-end run. `switch_method` is the call
+that recomputes the filepath. And `switch_method` replaces `cf_params` while the
+chain's `cf_rng` still holds the previous method's array, so the chain must be
+switched back and its `cf_rng` rebuilt before any iteration. Characterisation is
+diagonal, so a score is a dot product of sampled factors with per-flow inventory
+totals — every method gets its own sampled CFs, rather than one being sampled
+and the rest held fixed.
+
+**The lower bound is stated in the UI, not only here.** ~12% of ecoinvent's
+non-production exchanges carry undefined uncertainty and are sampled as fixed
+(88% lognormal with pedigree retained, 0.2% normal), so any reported spread is a
+LOWER BOUND. `mc-lower-bound-note` says so on every result, and also says when
+no foreground input is scored at all.
+
+**Both new fields are additive optionals** — `BOMNode.uncertainty` and
+`Parameter.uncertainty`, `None` by default, legacy data deserialising as `None`,
+untagged rows provably unaffected (`sigma_of(None) == 0.0`). Same precedent as
+`MaterialEvolution` and `global_levers`. `FlattenedMaterial` carries
+`quantity_expression` and `uncertainty` too, because the expression-row rule is
+enforced on the FLATTENED list — see below.
+
+**Stats are shared with AESA.** `boxStats` moved from `BoxPlotView` into
+`src/utils/boxStats.ts`; both tabs import it. Two quantile functions that
+disagree at the interpolation boundary would put identical data in visibly
+different boxes on two tabs.
+
+### What NOT to do
+
+- **Never `DirectSolvingMonteCarloLCA`.** It looks like the more rigorous
+  choice to anyone who does not know the iterative solver is warm-started here.
+  27x slower, identical numbers. `test_uses_the_warm_started_iterative_solver`
+  is AST-based, not a grep, because the docstring names the class in order to
+  explain why it is not used.
+- **Never let an expression row carry its own `uncertainty`.** It inherits from
+  its parameters; carrying its own too means either double-drawing the shared
+  driver or replacing it with independent draws, and BOTH mis-state the spread.
+  Rejected with a 400, not resolved by precedence — either precedence rule
+  produces a plausible-looking wrong number.
+- **Don't add a field to `BOMNode` for Monte Carlo without carrying it through
+  BOTH flatten paths.** `flatten_bom` and `flatten_root_with_amounts` are
+  separate implementations. `quantity_expression` was added to the first only,
+  and the expression-row guard then read `None` on every real row and never
+  fired — while a BOMNode-based unit test stayed green. The test now builds
+  `FlattenedMaterial`, which is what the call site actually passes.
+- **Don't scale an aggregated demand entry by a row factor.** Key by `node_id`
+  and apply before aggregation; several rows can share one ecoinvent code.
+- **Don't flag the ordinary median-above-deterministic offset as an error.** It
+  is a property of ecoinvent + lognormal aggregation, reproducible on a bare
+  activity. Flag `< 0.9` or `> 2.0`.
+- **Fleet-level Monte Carlo is out of scope.** 78x the cost (26 years x 3
+  scopes) and the DSM contributes its own uncertainty axis — a modelling
+  question, not a sampling one. `test_dsm_path_never_reaches_monte_carlo` sweeps
+  both directions, in the same family as the parameter-resolution and
+  stage-basis guards.
+- **Don't clear the result when the Monte Carlo tab mounts.** The tab is
+  navigated away from and back to; clearing on mount discards a finished
+  75-second run every time the user returns. Reset only when the handoff KEY
+  actually changes.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

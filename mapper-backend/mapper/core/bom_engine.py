@@ -213,6 +213,8 @@ def flatten_bom(node: BOMNode, parent_quantity: float = 1.0, path: list[str] | N
                 unit=node.unit,
                 ecoinvent_activity=node.ecoinvent_activity,
                 path=path + [node.name],
+                quantity_expression=node.quantity_expression,
+                uncertainty=node.uncertainty,
             )
         ]
 
@@ -413,6 +415,8 @@ def flatten_root_with_amounts(
                     unit=node.unit,
                     ecoinvent_activity=node.ecoinvent_activity,
                     path=path + [node.name],
+                    quantity_expression=node.quantity_expression,
+                    uncertainty=node.uncertainty,
                 ),
                 amount,
             ))
@@ -588,6 +592,8 @@ def flatten_bom_for_year(
                 unit=node.unit,
                 ecoinvent_activity=node.ecoinvent_activity,
                 path=path + [node.name],
+                quantity_expression=node.quantity_expression,
+                uncertainty=node.uncertainty,
             )
         ]
 

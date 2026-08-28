@@ -45,6 +45,7 @@ from mapper.models.schemas import (
     MonteCarloRequest,
     MonteCarloResult,
     MonteCarloStartResponse,
+    PedigreeTableResponse,
     VarianceContributor,
 )
 
@@ -410,6 +411,29 @@ def _method_cf_samplers(mc: Any, method_tuples: list[tuple], seed: int) -> dict:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/lca/pedigree", response_model=PedigreeTableResponse)
+async def get_pedigree_table() -> PedigreeTableResponse:
+    """Serve the pedigree constants to the UI.
+
+    The scoring UI needs the factors to show a live GSD^2 as a user picks
+    scores. Serving them keeps ONE table: a hard-coded copy in the frontend
+    would drift silently, since both copies would keep producing plausible
+    numbers.
+    """
+    from mapper.core.pedigree import (
+        DEFAULT_BASIC_VARIANCE,
+        INDICATORS,
+        UNCERTAINTY_FACTORS,
+    )
+
+    return PedigreeTableResponse(
+        indicators=list(INDICATORS),
+        factors={k: list(v) for k, v in UNCERTAINTY_FACTORS.items()},
+        default_basic_variance=DEFAULT_BASIC_VARIANCE,
+        convention="sigma_i^2 = [ln(f_i) / 2]^2 — the factor is a 95% range, hence the /2.",
+    )
 
 
 @router.post("/lca/monte-carlo", response_model=MonteCarloStartResponse)

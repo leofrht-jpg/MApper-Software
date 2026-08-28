@@ -70,6 +70,7 @@ from mapper.models.bom_schemas import (
     MaterialFlowResult,
     MaterialFlowScenarioRun,
     MultiMaterialFlowResult,
+    RowUncertainty,
     DSMLCABatchResult,
     DSMLCARequest,
     DSMLCAResult,
@@ -486,6 +487,26 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
     # one that breaks it. "unset" clears back to undeclared (multiplier 1).
     if body.basis is not None:
         node.basis = None if body.basis == "unset" else body.basis
+    # Per-row pedigree. The expression rule is enforced here as well as at
+    # import and at compute: an expression row inherits its uncertainty from
+    # the parameters it references, and carrying its own too would draw the
+    # shared driver twice. Rejecting at the edit boundary means the user finds
+    # out when they set it, not when they press Run.
+    if body.uncertainty is not None:
+        if body.uncertainty == "unset":
+            node.uncertainty = None
+        elif node.quantity_expression:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"'{node.name}' has a parameter expression, so its uncertainty comes "
+                    "from the parameters in that expression. Score those instead — "
+                    "carrying its own as well would draw the shared driver twice and "
+                    "narrow the reported spread."
+                ),
+            )
+        else:
+            node.uncertainty = body.uncertainty
     if body.ecoinvent_activity is not None:
         node.ecoinvent_activity = body.ecoinvent_activity
         # Linking an activity makes a node a material.
@@ -2539,7 +2560,27 @@ _BOM_COLUMNS = [
     "Milestone Years",
     "Milestone Values",
     "Rebound Applies To Stages",
+    # Monte Carlo pedigree, per row. Six columns rather than one packed string
+    # so a spreadsheet can sort, filter and fill-down them individually --
+    # which is the whole reason the bulk route is Excel and not the UI.
+    "Pedigree Reliability",
+    "Pedigree Completeness",
+    "Pedigree Temporal",
+    "Pedigree Geographical",
+    "Pedigree Technological",
+    "Basic Variance",
 ]
+
+#: Workbook column -> pedigree indicator key. The keys are the ones bw2io
+#: writes into an exchange's own ``pedigree`` dict, so a foreground score and a
+#: background one are directly comparable.
+_PEDIGREE_COLUMNS = {
+    "Pedigree Reliability": "reliability",
+    "Pedigree Completeness": "completeness",
+    "Pedigree Temporal": "temporal correlation",
+    "Pedigree Geographical": "geographical correlation",
+    "Pedigree Technological": "further technological correlation",
+}
 
 
 def _format_milestones(ms: list[QuantityMilestone]) -> tuple[str, str]:
@@ -2602,6 +2643,13 @@ def _walk_for_export(
     # defined with an expression, emit the expression string rather than the
     # last-resolved numeric value.
     quantity_cell = node.quantity_expression if node.quantity_expression else node.quantity
+    # Pedigree round-trips so an in-app edit survives a re-import. An
+    # unscored row writes blanks, which import back as unscored -- the
+    # column's presence must never turn an unscored row into a scored one.
+    unc = node.uncertainty
+    ped = (unc.pedigree or {}) if unc else {}
+    ped_cells = [ped.get(key, "") for key in _PEDIGREE_COLUMNS.values()]
+    basic_cell = unc.basic_variance if (unc and unc.pedigree) else ""
     rows.append([
         stage,
         scope_cell,
@@ -2622,6 +2670,8 @@ def _walk_for_export(
         ms_years,
         ms_values,
         rb_stages,
+        *ped_cells,
+        basic_cell,
     ])
     if node.children:
         for child in node.children:
@@ -2838,6 +2888,9 @@ async def download_bom_template() -> Response:
     instructions.append(["archetype_name (BOM sheet, first column)", "Points at an archetype defined in the Archetypes sheet."])
     instructions.append(["Stage", "Life cycle stage name. Examples: Manufacturing, Use Phase, Maintenance, End of Life. You can name them anything that fits your system. One row per unique Stage with empty Parent acts as that stage's root component."])
     instructions.append(["Basis", "What ONE ROW'S QUANTITY MEANS for the stage: 'per unit' (the whole-life amount for one functional unit) or 'per year' (one year's amount, multiplied by the years of life). Set ONLY on the stage root row. If empty the stage is UNDECLARED and computes at x1 -- it is never guessed from Scope. Scope is WHEN THE FLEET COUNTS IT; Basis is WHAT THE NUMBER MEANS."])
+    instructions.append(["Pedigree Reliability / Completeness / Temporal / Geographical / Technological", "Monte Carlo uncertainty on THIS row's quantity: a data-quality score 1-5 per indicator (1 = best, and adds no uncertainty). Leave BLANK to leave the row unscored -- an unscored row contributes no foreground variance. Scores compose as sigma_i^2 = [ln(factor_i)/2]^2 using the same Weidema/Frischknecht factors ecoinvent applied to the background, so a foreground score and a background exchange are on one matrix."])
+    instructions.append(["Basic Variance", "Underlying flow variance before any pedigree contribution (sigma_basic^2). Blank uses the default 0.0006. Only read when at least one pedigree score is set."])
+    instructions.append(["", "NOTE: pedigree columns are IGNORED on a row whose Quantity is a parameter expression. Such a row inherits its uncertainty from the parameters it references -- score those in the Parameters tab instead. Carrying both would draw the shared driver twice and NARROW the reported spread."])
     instructions.append(["Scope", "Explicit DSM scope for the stage: 'inflows' (manufacturing / one-time), 'stock' (per-year use-phase / maintenance), 'outflows' (end-of-life). Set ONLY on the stage root row; child rows leave it blank. If empty, the system falls back to keyword-matching on the stage name."])
     instructions.append(["Parent", "Direct parent component name within the same Stage. Empty for stage roots."])
     instructions.append(["Name", "Node name."])
@@ -3106,6 +3159,65 @@ def _parse_bom_workbook(
             elif ev_method and ev_method != "fixed":
                 warnings.append(f"Row {r_idx}: unknown Evolution Method '{ev_method}'; ignored.")
 
+        # ── Pedigree (Monte Carlo uncertainty on this row's quantity) ──────
+        # Six score columns plus a basic variance. Blank columns leave the row
+        # UNSCORED, which contributes no foreground variance -- an added column
+        # must never turn an unscored row into a scored one.
+        #
+        # The rule from the Monte Carlo patch is enforced HERE too, at the bulk
+        # route: an EXPRESSION row may not carry its own uncertainty. It
+        # inherits from the parameters in its expression; carrying its own as
+        # well would draw the shared driver twice. The engine already rejects
+        # it at compute time with a 400, but a workbook that silently imported
+        # the scores would leave the user with a file whose whole point failed
+        # only when they pressed Run.
+        ped_scores: dict[str, int] = {}
+        for col_name, indicator in _PEDIGREE_COLUMNS.items():
+            # NOT `col(...) or ""` -- a literal 0 is falsy, so that idiom reads
+            # an out-of-range 0 as a blank cell and drops it silently instead
+            # of warning. The column is numeric; the text columns above can use
+            # the shorter form because "" and None mean the same thing there.
+            raw = str(col(row, col_name, "")).strip()
+            if not raw:
+                continue
+            try:
+                score = int(float(raw))
+            except ValueError:
+                warnings.append(
+                    f"Row {r_idx}: '{col_name}' must be an integer 1-5, got {raw!r}. Ignored."
+                )
+                continue
+            if not 1 <= score <= 5:
+                warnings.append(
+                    f"Row {r_idx}: '{col_name}' must be 1-5, got {score}. Ignored."
+                )
+                continue
+            # Score 1 adds nothing, so recording it would only make an unscored
+            # row look scored.
+            if score > 1:
+                ped_scores[indicator] = score
+
+        uncertainty = None
+        if ped_scores:
+            if qty_expr:
+                warnings.append(
+                    f"Row {r_idx} ('{name}'): pedigree columns ignored — the quantity is an "
+                    "expression, so its uncertainty comes from the parameters it references. "
+                    "Score those instead."
+                )
+            else:
+                basic_raw = str(col(row, "Basic Variance", "")).strip()
+                kwargs: dict = {"pedigree": ped_scores}
+                if basic_raw:
+                    try:
+                        kwargs["basic_variance"] = float(basic_raw)
+                    except ValueError:
+                        warnings.append(
+                            f"Row {r_idx}: 'Basic Variance' must be a number, got {basic_raw!r}. "
+                            "Using the default."
+                        )
+                uncertainty = RowUncertainty(**kwargs)
+
         node = BOMNode(
             name=name,
             node_type=node_type,
@@ -3115,6 +3227,7 @@ def _parse_bom_workbook(
             children=[] if node_type == "component" else None,
             ecoinvent_activity=link,
             evolution=evolution,
+            uncertainty=uncertainty,
         )
 
         if not parent_name:

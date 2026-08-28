@@ -449,6 +449,23 @@ class MonteCarloStartResponse(BaseModel):
     task_id: str
 
 
+class PedigreeTableResponse(BaseModel):
+    """The pedigree constants, served so the UI has ONE table, not a copy.
+
+    A second hard-coded table in the frontend would drift the moment either
+    side is edited, and the drift would be invisible: both would produce
+    plausible GSD^2 values. The UI computes its live preview from this payload
+    and from nothing else.
+    """
+    indicators: list[str]
+    #: indicator -> factor by score 1..5. Score 1 is always 1.0 (no contribution).
+    factors: dict[str, list[float]]
+    default_basic_variance: float
+    #: Rendered for the UI's own explanatory text so the /2 convention is
+    #: stated where someone reading a score can see it.
+    convention: str
+
+
 class ArchetypeLCAExportRequest(BaseModel):
     results: list[ArchetypeLCACalculateResult]
 

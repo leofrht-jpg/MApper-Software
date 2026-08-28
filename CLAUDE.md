@@ -8501,6 +8501,82 @@ different boxes on two tabs.
   actually changes.
 
 
+### Pedigree scoring — two surfaces, one table
+
+The scoring half of the Monte Carlo feature. Two routes, because the two things
+being scored have very different cardinality: **44 parameters** (in-app) and
+**914 literal BOM rows across 28 archetypes** (Excel).
+
+**Parameters — in-app, and this is where the variance lives.** Expanding a row
+in the parameter table editor shows the keyframe editor AND a pedigree editor.
+A scored parameter carries a `σ` badge on the collapsed row, next to the
+time-varying clock, so it is visible without expanding. This is the
+high-value surface: measured, uncertainty on the parameters gives GSD² 1.2170
+where the same sigma on the expression rows gives 1.0185.
+
+**BOM rows — six Excel columns, read at import.** `Pedigree Reliability`,
+`… Completeness`, `… Temporal`, `… Geographical`, `… Technological`, plus
+`Basic Variance`. Six columns rather than one packed string so a spreadsheet
+can sort, filter and fill-down them individually — which is the entire reason
+the bulk route is Excel and not the UI. They round-trip on export, following
+the `Basis` precedent, so an in-app edit is not wiped by a re-import.
+
+There is also a per-row in-app override (`BOMNodeUpdate.uncertainty`, with
+`"unset"` to clear, exactly like `basis`), for the one-off correction that
+should not require a re-import.
+
+**ONE table, served — the UI holds no copy.** `GET /lca/pedigree` serves
+`mapper.core.pedigree`'s indicators, factors and default basic variance, and
+the editor computes its live GSD² preview from that payload and nothing else. A
+hard-coded copy in the frontend would drift the moment either side was edited,
+and the drift would be invisible because both copies would keep producing
+plausible GSD² values. `pedigreeEditor.test.tsx` serves a deliberately WRONG
+table and asserts the editor follows it, which is what proves there is no local
+constant.
+
+The composition rule (`σ² = σ_basic² + Σ [ln(fᵢ)/2]²`) IS duplicated in
+`utils/pedigree.ts` — three lines, pinned on both sides, and a round-trip per
+keystroke to preview a number is not worth it. Both sides assert the same four
+reference values so they cannot drift apart silently.
+
+**A single score round-trips to its own published factor**: with one indicator
+scored and zero basic variance, `GSD² == f` exactly, because `exp(2·ln(f)/2) =
+f`. A clean check that the `/2` in the variance and the `exp(2σ)` in the GSD²
+are exact inverses — drop either and it stops holding.
+
+**Adding the surfaces changed no number.** Verified on real data across the two
+commits: deterministic scores for 6 WP5 archetypes × 3 indicators, plus a
+seeded 120-iteration Monte Carlo, dumped and diffed — **byte-identical, same
+sha256**. An unscored row and an unscored parameter contribute no foreground
+variance, exactly as before.
+
+#### What NOT to do
+
+- **Don't hard-code the pedigree factors in the frontend.** Fetch them from
+  `GET /lca/pedigree`. Two tables drift silently because both keep producing
+  plausible numbers; there is no symptom until someone compares a foreground
+  score against a background exchange.
+- **Don't record a score of 1.** It adds no uncertainty, so storing it only
+  makes an unscored row LOOK scored in the UI and in the export. Both the
+  import and the editor drop it.
+- **Don't export a 0 for an unscored row.** It would import back as an
+  out-of-range score and warn on every row. Blank round-trips to unscored.
+- **Don't use `col(row, name) or ""` for a NUMERIC workbook column.** A literal
+  `0` is falsy, so that idiom reads an out-of-range zero as a blank cell and
+  drops it silently instead of warning. The text columns can use the short form
+  because there `""` and `None` mean the same thing; the pedigree columns use
+  `col(row, name, "")`.
+- **The expression rule is enforced at THREE boundaries, and all three are
+  needed.** Compute (400, from the engine), import (a warning, and the scores
+  are dropped), and the per-row PATCH route (400). Import-time matters because
+  silently accepting the scores would leave the user with a workbook whose
+  whole point fails only when they press Run. The UI must not OFFER the field
+  on an expression row either — `PedigreeEditor` renders a `disabledReason`
+  instead of the picker, and a test asserts the score buttons are absent.
+- **Don't let a bad score drop the row.** An invalid pedigree cell warns and
+  leaves the row unscored; the quantity, link and everything else survive.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

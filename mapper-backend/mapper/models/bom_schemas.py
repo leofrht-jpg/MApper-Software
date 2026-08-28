@@ -333,6 +333,13 @@ class BOMNodeUpdate(BaseModel):
     scope: str | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None
+    # Per-row Monte Carlo pedigree, editable in-app. The BULK route is the
+    # workbook's pedigree columns -- 914 literal rows is not a clicking job --
+    # but a single row often needs a one-off correction, and forcing that
+    # through a re-import is what orphaned the WP5 cohort mapping once.
+    # "unset" clears back to unscored; None means "leave as-is" (PATCH
+    # semantics), matching how `basis` above distinguishes the two.
+    uncertainty: RowUncertainty | Literal["unset"] | None = None
 
 
 # ── Flatten / standalone LCA ─────────────────────────────────────────────────

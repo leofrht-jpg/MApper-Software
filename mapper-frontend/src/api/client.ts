@@ -431,6 +431,10 @@ export interface BOMNode {
   // Opt-in named global levers (parameter names, e.g. "p_bp") that multiply
   // this node's per-year quantity after the MaterialEvolution factor (Phase 3).
   global_levers?: string[] | null
+  /** Per-row Monte Carlo pedigree. null → unscored, contributing no foreground
+   *  variance. Never set on a row with a quantity_expression: that row inherits
+   *  its uncertainty from the parameters in the expression. */
+  uncertainty?: RowUncertainty | null
   validation_status?: 'ok' | 'warning' | 'error'
   validation_message?: string | null
 }
@@ -2468,7 +2472,7 @@ export async function moveArchetype(
 export async function updateBOMNode(
   arcId: string,
   nodeId: string,
-  patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; basis?: 'per_unit' | 'per_year' | 'unset'; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null },
+  patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; basis?: 'per_unit' | 'per_year' | 'unset'; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null; uncertainty?: RowUncertainty | 'unset' | null },
 ): Promise<BOMNode> {
   return request<BOMNode>(`/bom/archetypes/${arcId}/nodes/${nodeId}`, {
     method: 'PUT',
@@ -3459,6 +3463,24 @@ export interface Parameter {
   scenario_overrides?: Record<string, number>
   // Optional year-varying trajectory (Phase 1). null/empty → scalar parameter.
   keyframes?: ParameterKeyframe[] | null
+  /** Monte Carlo uncertainty on this parameter. Drawn ONCE per iteration and
+   *  propagated through every expression referencing it, which is what keeps a
+   *  shared driver correlated across rows. null → held at its resolved value. */
+  uncertainty?: ParamUncertainty | null
+}
+
+export interface RowUncertainty {
+  pedigree?: Record<string, number> | null
+  basic_variance?: number
+  /** Direct 95% range multiplier. Wins over pedigree so the two never compound. */
+  gsd2?: number | null
+}
+
+export interface ParamUncertainty {
+  pedigree?: Record<string, number> | null
+  basic_variance?: number
+  /** Direct 95% range multiplier. Wins over pedigree so the two never compound. */
+  gsd2?: number | null
 }
 
 export interface ParameterTable {
@@ -4649,4 +4671,17 @@ export async function getMonteCarloResult(taskId: string): Promise<MonteCarloRes
 
 export function monteCarloWsUrl(taskId: string): string {
   return `${WS_BASE}/lca/monte-carlo/ws/${taskId}`
+}
+
+export interface PedigreeTable {
+  indicators: string[]
+  /** indicator → factor by score 1..5. Score 1 is always 1.0. */
+  factors: Record<string, number[]>
+  default_basic_variance: number
+  convention: string
+}
+
+/** The pedigree constants, served so the UI holds no second copy of them. */
+export async function getPedigreeTable(): Promise<PedigreeTable> {
+  return request('/lca/pedigree')
 }

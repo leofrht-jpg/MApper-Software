@@ -526,13 +526,24 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
             key = (m.ecoinvent_activity.database, m.ecoinvent_activity.code)  # type: ignore[union-attr]
             stage_amt = m._stage_amount  # type: ignore[attr-defined]
             act_score = activity_scores.get(key, {}).get(mt, 0.0)
-            # Share proportionally among materials sharing same activity
+            # Share proportionally among materials sharing same activity.
+            #
+            # The guard is `!= 0`, not `> 0`. A NEGATIVE net quantity is
+            # legitimate -- a credit or avoided-burden row, which is ordinary in
+            # a circular-economy model -- and `> 0` sent its share to 0, so the
+            # row was dropped from both the stage breakdown and the
+            # contributions list while its real impact stayed in `total_score`
+            # from the bulk solve. Measured on Battery Circularity's
+            # `A - Circular EV`: `Battery-excluded glider shredding` sums to
+            # -0.0092125, and 6.5% of the total went unattributed
+            # (sum(stages) 0.07873 vs total 0.08420). Only an exactly-zero group
+            # is still skipped, where the share is genuinely undefined.
             same_act_qty = sum(
                 x.quantity * x._stage_amount  # type: ignore[attr-defined]
                 for x in linked
                 if (x.ecoinvent_activity.database, x.ecoinvent_activity.code) == key  # type: ignore[union-attr]
             )
-            share = (m.quantity * stage_amt / same_act_qty) if same_act_qty > 0 else 0.0
+            share = (m.quantity * stage_amt / same_act_qty) if same_act_qty != 0 else 0.0
             impact = act_score * share
             stage_name = m.path[0] if m.path else ""
             if stage_breakdown is not None and stage_name:

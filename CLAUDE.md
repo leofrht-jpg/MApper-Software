@@ -7549,6 +7549,55 @@ name is not the same as *gating* on it. The one conditional that legitimately
 wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
 resolve-once vs resolve-per-year — is pinned unflagged by its own test.
 
+## A negative quantity is a credit, not a reason to drop the row
+
+`calculate_archetype_lca` shares an activity's score among the materials using
+it. The guard was `if same_act_qty > 0`, so an activity group whose NET
+quantity was negative — a credit or avoided-burden row, ordinary in a
+circular-economy model — had its share sent to 0 and vanished from **both** the
+stage breakdown and the contributions list, while its real impact stayed in
+`total_score` from the bulk solve.
+
+Measured: Battery Circularity's `A - Circular EV` has
+`Battery-excluded glider shredding` summing to −0.0092125, and **6.5 %** of its
+total went unattributed (`sum(stages)` 0.07873 vs `total` 0.08420).
+
+The guard is now `!= 0`. Only an exactly-zero group is skipped, where the share
+is genuinely undefined.
+
+**Blast radius, measured across both real projects:** 33 of 36 archetypes are
+byte-identical. All 28 WP5 archetypes are unchanged, including `Fuel Station`,
+whose negative End of Life stage predates this — negative *contributions* were
+never dropped, only groups whose *net* was ≤ 0. Three Battery Circularity
+archetypes gain previously-unattributed impact in End of Life
+(`A - Circular EV`, `A0 - Reference EV`, `EV-I life`); every **total** is
+unchanged, because the bulk solve never had the bug.
+
+### Credits in the stage bar
+
+`StageBreakdownChart` is a proportional div stack, **not Recharts**, so a
+negative stage does not render below an axis — it renders at `|v|` and, left
+alone, is indistinguishable from a burden of the same size. It would read as
+*adding* impact when it subtracts. Two changes:
+
+- Credit segments are **hatched** (a repeating-linear-gradient), not merely
+  recoloured, so the distinction survives the print/greyscale export re-theme.
+  The tooltip says "credit, subtracted from the total", and a one-line note
+  appears below the bar only when a credit is present.
+- The denominator is the **gross** sum of `|v|`, not `|net|`. With `|net|` a
+  mixed-sign bar's segments sum to more than 100 % and the excess is clipped by
+  the container's `overflow: hidden` — segments silently disappear off the end.
+  WP5's Fuel Station is a live example (−92.78 against ~6.9 × 10³ positive).
+
+#### What NOT to do
+
+- **Don't guard a proportional share on `> 0`.** The undefined case is `== 0`,
+  not `< 0`. A negative share is meaningful and signed.
+- **Don't size a mixed-sign proportional bar by `|net|`.** Use gross, or
+  segments overflow and are clipped.
+- **Don't distinguish credits by colour alone.** Chart exports re-theme ink and
+  may be read in greyscale; the hatch is what survives.
+
 ## A parameter scenario says WHICH values, never WHETHER to resolve
 
 A BOM row whose Quantity cell is a parameter expression is imported with

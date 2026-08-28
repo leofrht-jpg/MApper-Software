@@ -455,6 +455,12 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
             raise HTTPException(status_code=400, detail=f"Invalid scope: {body.scope!r}")
     if body.is_annual is not None:
         node.is_annual = body.is_annual
+    # Declare the basis in-app, per stage, with no re-import. Re-importing an
+    # archetype is what orphaned the WP5 cohort mapping on 2026-08-04, so the
+    # migration route for the project that most needs a basis must not be the
+    # one that breaks it. "unset" clears back to undeclared (multiplier 1).
+    if body.basis is not None:
+        node.basis = None if body.basis == "unset" else body.basis
     if body.ecoinvent_activity is not None:
         node.ecoinvent_activity = body.ecoinvent_activity
         # Linking an activity makes a node a material.
@@ -2491,6 +2497,7 @@ def purge_system(system_id: str) -> None:
 _BOM_COLUMNS = [
     "Stage",
     "Scope",
+    "Basis",
     "Parent",
     "Name",
     "Type",
@@ -2539,6 +2546,7 @@ def _walk_for_export(
     parent_name: str,
     rows: list[list],
     stage_scope: str = "",
+    stage_basis: str = "",
 ) -> None:
     link = node.ecoinvent_activity
     ev = node.evolution
@@ -2562,6 +2570,9 @@ def _walk_for_export(
     )
     # Scope is only emitted on the stage root row (parent_name == "").
     scope_cell = stage_scope if not parent_name else ""
+    # Basis likewise rides on the stage root row only. Round-tripping it is what
+    # lets an exported workbook carry the declaration back in.
+    basis_cell = (stage_basis.replace("_", " ") if stage_basis else "") if not parent_name else ""
     # Preserve parameter expressions across round-trip: if the node was
     # defined with an expression, emit the expression string rather than the
     # last-resolved numeric value.
@@ -2569,6 +2580,7 @@ def _walk_for_export(
     rows.append([
         stage,
         scope_cell,
+        basis_cell,
         parent_name,
         node.name,
         node.node_type,
@@ -2588,7 +2600,7 @@ def _walk_for_export(
     ])
     if node.children:
         for child in node.children:
-            _walk_for_export(child, stage, node.name, rows, stage_scope)
+            _walk_for_export(child, stage, node.name, rows, stage_scope, stage_basis)
 
 
 def _build_export_workbook(arc: Archetype) -> Workbook:
@@ -2600,7 +2612,8 @@ def _build_export_workbook(arc: Archetype) -> Workbook:
     rows: list[list] = []
     for root in arc.bom:
         # Stage root itself has empty parent; children use root.name as parent.
-        _walk_for_export(root, root.name, "", rows, stage_scope=root.scope or "")
+        _walk_for_export(root, root.name, "", rows, stage_scope=root.scope or "",
+                         stage_basis=root.basis or "")
     for r in rows:
         bom_ws.append(r)
 
@@ -2668,7 +2681,8 @@ def _build_multi_export_workbook(archetypes: list[Archetype]) -> Workbook:
     for arc in archetypes:
         per_arc_rows: list[list] = []
         for root in arc.bom:
-            _walk_for_export(root, root.name, "", per_arc_rows, stage_scope=root.scope or "")
+            _walk_for_export(root, root.name, "", per_arc_rows, stage_scope=root.scope or "",
+                             stage_basis=root.basis or "")
         for r in per_arc_rows:
             bom_ws.append([arc.name, *r])
 
@@ -2771,6 +2785,7 @@ async def download_bom_template() -> Response:
     instructions.append(["description (Archetypes sheet)", "Optional description."])
     instructions.append(["archetype_name (BOM sheet, first column)", "Points at an archetype defined in the Archetypes sheet."])
     instructions.append(["Stage", "Life cycle stage name. Examples: Manufacturing, Use Phase, Maintenance, End of Life. You can name them anything that fits your system. One row per unique Stage with empty Parent acts as that stage's root component."])
+    instructions.append(["Basis", "What ONE ROW'S QUANTITY MEANS for the stage: 'per unit' (the whole-life amount for one functional unit) or 'per year' (one year's amount, multiplied by the years of life). Set ONLY on the stage root row. If empty the stage is UNDECLARED and computes at x1 -- it is never guessed from Scope. Scope is WHEN THE FLEET COUNTS IT; Basis is WHAT THE NUMBER MEANS."])
     instructions.append(["Scope", "Explicit DSM scope for the stage: 'inflows' (manufacturing / one-time), 'stock' (per-year use-phase / maintenance), 'outflows' (end-of-life). Set ONLY on the stage root row; child rows leave it blank. If empty, the system falls back to keyword-matching on the stage name."])
     instructions.append(["Parent", "Direct parent component name within the same Stage. Empty for stage roots."])
     instructions.append(["Name", "Node name."])
@@ -2869,7 +2884,11 @@ def _parse_bom_workbook(
     # Process stage roots (empty Parent) first so children resolve.
     rows.sort(key=lambda r: 0 if not str(col(r, "Parent") or "").strip() else 1)
 
-    def _ensure_stage_root(stage_name: str, explicit_scope: str | None = None) -> BOMNode:
+    def _ensure_stage_root(
+        stage_name: str,
+        explicit_scope: str | None = None,
+        explicit_basis: str | None = None,
+    ) -> BOMNode:
         if stage_name in stages:
             root = stages[stage_name]
             # Late-arriving explicit scope from a root row processed out of order
@@ -2877,12 +2896,19 @@ def _parse_bom_workbook(
             if explicit_scope and not root.scope:
                 root.scope = explicit_scope
                 root.is_annual = explicit_scope == "stock"
+            # A Basis cell on any row of the stage declares it; first one wins.
+            if explicit_basis and root.basis is None:
+                root.basis = explicit_basis
             return root
         resolved = stage_to_scope(stage_name, explicit_scope)
         stage_root = BOMNode(
             name=stage_name, node_type="component", quantity=1, unit="piece",
             scope=explicit_scope or None,
+            # `is_annual` is the scope-derived SUGGESTION only. `basis` is the
+            # declaration, and it is left None unless the sheet says otherwise
+            # -- an undeclared stage computes at x1 rather than being guessed.
             is_annual=(resolved == "stock"),
+            basis=explicit_basis,
             children=[],
         )
         stages[stage_name] = stage_root
@@ -2903,6 +2929,19 @@ def _parse_bom_workbook(
             else:
                 warnings.append(
                     f"Row {r_idx}: invalid Scope '{scope_cell}'; must be inflows|stock|outflows. Ignored."
+                )
+        # Basis: what one row's quantity MEANS (see scope-vs-basis in CLAUDE.md).
+        # Blank leaves the stage undeclared, which computes at x1 -- never
+        # guessed from Scope.
+        basis_cell = str(col(row, "Basis") or "").strip().lower().replace(" ", "_").replace("-", "_")
+        explicit_basis: str | None = None
+        if basis_cell:
+            if basis_cell in ("per_unit", "per_year"):
+                explicit_basis = basis_cell
+            else:
+                warnings.append(
+                    f"Row {r_idx}: invalid Basis '{basis_cell}'; must be "
+                    f"'per unit' or 'per year'. Left undeclared."
                 )
         node_type = str(col(row, "Type") or "").strip().lower() or "component"
         raw_qty = col(row, "Quantity", 1)
@@ -3035,7 +3074,7 @@ def _parse_bom_workbook(
                 stages[stage] = node
                 node_by_name[(stage, stage)] = node
                 continue
-            parent = _ensure_stage_root(stage, explicit_scope)
+            parent = _ensure_stage_root(stage, explicit_scope, explicit_basis)
             parent.children = parent.children or []
             parent.children.append(node)
             node_by_name[(stage, name)] = node
@@ -3043,7 +3082,7 @@ def _parse_bom_workbook(
 
         # Non-root row: find parent by (stage, parent_name).
         if stage not in stages:
-            _ensure_stage_root(stage, explicit_scope)
+            _ensure_stage_root(stage, explicit_scope, explicit_basis)
             warnings.append(
                 f"Row {r_idx}: stage '{stage}' was not defined explicitly; created a default stage root."
             )

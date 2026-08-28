@@ -7517,6 +7517,38 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+### The class, and the guard that closes it
+
+The same false premise shipped **four** times:
+
+| # | site | gate | live? |
+|---|---|---|---|
+| 1 | `api/lca.py` single-product | `parameter_scenario is not None or table.has_time_varying()` | yes — 727× on WP5 use phase, ~1600× on Battery Circularity totals |
+| 2 | `api/bom.py` `material_flows` | `is not None and != "Base"` | yes — reported the **vehicle count as kilograms** |
+| 3 | `api/bom.py` dsm-lca | `param_table` assigned only inside `if body.parameter_set_id:` | latent |
+| 4 | `api/impact.py` | same | latent |
+
+3 and 4 are a **data-flow** gate, not a syntactic one: `DSMLCAPipeline`
+resolves iff it is handed a table, so a falsy `parameter_set_id` left
+`parameter_table=None` and silently disabled resolution for a whole
+system-level run. They were latent only because every UI path sends `"Base"`
+(truthy) and `/impact/calculate-scenarios` defaults to `"Base"`.
+
+`tests/test_parameter_resolution_never_gated.py` closes the class. It is
+AST-based, not textual — it finds every call to `resolve_archetype_with_engine`
+and walks the enclosing `if` statements, because all four gates lived in
+*enclosing scope* where a line-oriented grep cannot see them. A separate rule
+covers the data-flow shape (3 and 4) by asserting `param_table` is never
+assigned inside a `parameter_set_id` branch. `ALLOWED` is empty on purpose;
+an entry must say why a gate is correct, not merely that it exists.
+
+Anti-vacuity: `test_the_guard_catches_each_historical_gate` replays all four
+shapes through the same analyser and requires each to be flagged, and
+`test_the_guard_accepts_the_corrected_shape` pins that *validating* a scenario
+name is not the same as *gating* on it. The one conditional that legitimately
+wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
+resolve-once vs resolve-per-year — is pinned unflagged by its own test.
+
 ## A parameter scenario says WHICH values, never WHETHER to resolve
 
 A BOM row whose Quantity cell is a parameter expression is imported with

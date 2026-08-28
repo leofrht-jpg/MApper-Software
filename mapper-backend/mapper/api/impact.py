@@ -283,8 +283,15 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
         # (keyframe) parameters resolve per simulation year. For scalar tables
         # this is byte-identical to the pre-built engine.
         param_engine = ParameterEngine(pset.parameters)
-        param_table = _parameters._table_for(project)
         param_scenario = body.parameter_set_id
+    # OUTSIDE the branch: DSMLCAPipeline resolves iff it is handed a table, so
+    # leaving this None for a falsy parameter_set_id would silently disable
+    # resolution for the whole system-level run. Every UI path sends "Base"
+    # (truthy) and /impact/calculate-scenarios defaults to "Base", so this was
+    # latent rather than live -- but it is the same class as the gates removed
+    # from lca.py and material_flows, and a direct API call with
+    # parameter_set_id omitted would hit it.
+    param_table = _parameters._table_for(project)
 
     # Discover dependent subsystems of this primary system. Each yields its own
     # SimulationResult (computed against the primary sim) plus a user-defined

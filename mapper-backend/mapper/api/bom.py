@@ -1157,8 +1157,14 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
         # (compute_subsystem_result); the pipeline gets the raw table + scenario
         # so time-varying (keyframe) parameters resolve per simulation year.
         engine = ParameterEngine(pset.parameters)
-        param_table = _parameters._table_for(project)
         param_scenario = body.parameter_set_id
+    # OUTSIDE the branch: DSMLCAPipeline resolves iff it is handed a table, so
+    # leaving this None for a falsy parameter_set_id would silently disable
+    # resolution for the whole system-level run. Every UI path sends "Base"
+    # (truthy), so this was latent rather than live -- but it is the same class
+    # as the gates removed from lca.py and material_flows, and a direct API
+    # call with parameter_set_id omitted would hit it.
+    param_table = _parameters._table_for(project)
 
     # Discover dependent subsystems with user-defined cohort mappings so their
     # BOM impacts can be aggregated into the total (matches /impact/calculate).
@@ -1894,30 +1900,38 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
     # ``calculate_archetype`` (lca.py) pattern. ``None`` / "Base" keeps
     # base values — full backward compat.
     archetypes_raw = _proj_archetypes(project)
-    archetypes = archetypes_raw
-    if body.parameter_scenario is not None and body.parameter_scenario != "Base":
-        from mapper.api.parameters import _table_for
-        from mapper.core.bom_engine import resolve_archetype_with_engine
-        from mapper.core.parameter_engine import ParameterEngine, ParameterError
-        table = _table_for(project)
-        if body.parameter_scenario not in table.list_scenarios():
-            raise HTTPException(
-                status_code=400,
-                detail=(
-                    f"Parameter scenario '{body.parameter_scenario}' not found in active table"
-                ),
-            )
-        try:
-            engine = ParameterEngine(table, scenario=body.parameter_scenario)
-            archetypes = {
-                aid: resolve_archetype_with_engine(arc, engine)
-                for aid, arc in archetypes_raw.items()
-            }
-        except ParameterError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Parameter resolution failed: {e}",
-            )
+    from mapper.api.parameters import _table_for
+    from mapper.core.bom_engine import resolve_archetype_with_engine
+    from mapper.core.parameter_engine import ParameterEngine, ParameterError
+
+    table = _table_for(project)
+    if body.parameter_scenario not in (None, "Base") and (
+        body.parameter_scenario not in table.list_scenarios()
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Parameter scenario '{body.parameter_scenario}' not found in active table"
+            ),
+        )
+    # Resolve ALWAYS. The scenario selects which values to substitute, never
+    # whether to substitute. This used to skip resolution for None and "Base"
+    # under the comment "None / 'Base' keeps base values" -- which is false: a
+    # BOM row whose Quantity is an expression is imported with quantity = 1.0
+    # as a placeholder, so skipping does not keep the base values, it keeps 1.0.
+    # On the WP5 fleet that made every use-phase flow report the VEHICLE COUNT
+    # as kilograms: 1,962,976 "kg" of petrol in 2025 was 1.0 x 1,962,976 cars.
+    try:
+        engine = ParameterEngine(table, scenario=body.parameter_scenario)
+        archetypes = {
+            aid: resolve_archetype_with_engine(arc, engine)
+            for aid, arc in archetypes_raw.items()
+        }
+    except ParameterError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Parameter resolution failed: {e}",
+        )
     cohort_to_archetype: dict[str, tuple[str, float]] = {}
     for entry in mapping.mappings:
         if entry.archetype_id not in archetypes:

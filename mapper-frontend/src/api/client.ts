@@ -4574,3 +4574,79 @@ export async function importAESAConfig(file: File): Promise<AESAConfigBundle> {
   }
   return res.json()
 }
+
+// ── Monte Carlo uncertainty propagation (single-product) ─────────────────────
+
+export interface ArchetypeLCAMethodDistribution {
+  method: string[]
+  method_label: string
+  unit: string
+  /** The ordinary point score for the SAME configuration, carried alongside
+   *  so the two can be shown together. See MonteCarloPage for why the median
+   *  is EXPECTED to sit above it rather than on it. */
+  deterministic: number
+  median: number
+  mean: number
+  p2_5: number
+  p25: number
+  p75: number
+  p97_5: number
+  gsd2: number
+  n_iterations: number
+  seed: number
+  samples?: number[] | null
+}
+
+export interface VarianceContributor {
+  name: string
+  kind: 'row' | 'parameter'
+  share: number
+  gsd2: number
+}
+
+export interface MonteCarloResult {
+  archetype_id: string
+  archetype_name: string
+  scope: string
+  n_iterations: number
+  seed: number
+  elapsed_seconds: number
+  compute_database: string | null
+  parameter_scenario: string | null
+  distributions: ArchetypeLCAMethodDistribution[]
+  contributors: VarianceContributor[]
+  rows_with_uncertainty: number
+  parameters_with_uncertainty: number
+  warnings: string[]
+}
+
+export interface MonteCarloRequest {
+  archetype_id: string
+  methods: string[][]
+  scope?: 'inflows' | 'stock' | 'outflows' | 'all'
+  amount?: number
+  stage_amounts?: Record<string, number>
+  basis_amounts?: Record<string, number> | null
+  parameter_scenario?: string | null
+  compute_database?: string | null
+  iterations?: number
+  seed?: number | null
+  keep_samples?: boolean
+  variance_contributions?: boolean
+}
+
+export async function startMonteCarlo(body: MonteCarloRequest): Promise<{ task_id: string }> {
+  return request('/lca/monte-carlo', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export async function getMonteCarloResult(taskId: string): Promise<MonteCarloResult> {
+  return request(`/lca/monte-carlo/${taskId}`)
+}
+
+export function monteCarloWsUrl(taskId: string): string {
+  return `${WS_BASE}/lca/monte-carlo/ws/${taskId}`
+}

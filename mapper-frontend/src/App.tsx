@@ -20,6 +20,7 @@ import { useProjectStore } from './stores/projectStore'
 import { useThemeStore } from './stores/themeStore'
 import { OnboardingTour, hasCompletedOnboarding } from './components/OnboardingTour'
 import { configureProjectGuard } from './api/client'
+import { MonteCarloPage } from './pages/MonteCarlo'
 
 // Global helper so the Settings page can re-trigger the tour without
 // pulling App state into a context.
@@ -102,6 +103,9 @@ function App() {
           }
           if (activeItem === 'aesa') {
             return <AESADashboard />
+          }
+          if (activeItem === 'uncertainty') {
+            return <MonteCarloPage onNavigate={setActiveItem} />
           }
           if (activeItem === 'settings') {
             return <SettingsPage />

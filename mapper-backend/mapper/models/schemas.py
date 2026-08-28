@@ -362,6 +362,93 @@ class ArchetypeLCACalculateResult(BaseModel):
     stage_breakdown: dict[str, dict[str, float]] | None = None
 
 
+# ── Monte Carlo uncertainty propagation (single-product) ─────────────────────
+
+
+class ArchetypeLCAMethodDistribution(BaseModel):
+    """One indicator's Monte Carlo distribution.
+
+    ``deterministic`` is the ordinary point score for the SAME configuration,
+    carried alongside so the UI can show them together. The median should land
+    near it; a large gap means something is wrong with the sampling and is a
+    free correctness check, so it is surfaced rather than hidden.
+    """
+    method: list[str]
+    method_label: str
+    unit: str
+    deterministic: float
+    median: float
+    mean: float
+    p2_5: float
+    p25: float
+    p75: float
+    p97_5: float
+    #: Squared geometric standard deviation -- the 95% range multiplier an LCA
+    #: practitioner reads directly (1.5 == roughly median x/ 1.5).
+    gsd2: float
+    n_iterations: int
+    seed: int
+    #: Retained draws, in iteration order. Optional because 1000 floats per
+    #: indicator x 16 indicators is a large response; the UI asks for them only
+    #: when it needs a histogram.
+    samples: list[float] | None = None
+
+
+class VarianceContributor(BaseModel):
+    """One row's or parameter's share of the OUTPUT variance.
+
+    Estimated by the standard one-at-a-time correlation decomposition: the
+    squared Spearman correlation between that input's draws and the output,
+    normalised across contributors. It is an attribution of the spread, not an
+    exact variance decomposition -- the inputs are not orthogonal -- so the
+    shares are labelled as approximate in the UI.
+    """
+    name: str
+    kind: Literal["row", "parameter"]
+    share: float
+    gsd2: float
+
+
+class MonteCarloRequest(BaseModel):
+    archetype_id: str
+    methods: list[list[str]]
+    scope: Literal["inflows", "stock", "outflows", "all"] = "all"
+    amount: float = 1.0
+    stage_amounts: dict[str, float] = {}
+    basis_amounts: dict[str, float] | None = None
+    parameter_scenario: str | None = None
+    compute_database: str | None = None
+    iterations: int = 1000
+    seed: int | None = None
+    #: Retain and return the per-iteration draws (needed for the histogram).
+    keep_samples: bool = True
+    #: Also estimate which rows/parameters drive the spread.
+    variance_contributions: bool = True
+
+
+class MonteCarloResult(BaseModel):
+    archetype_id: str
+    archetype_name: str
+    scope: str
+    n_iterations: int
+    seed: int
+    elapsed_seconds: float = 0.0
+    compute_database: str | None = None
+    parameter_scenario: str | None = None
+    distributions: list[ArchetypeLCAMethodDistribution]
+    contributors: list[VarianceContributor] = []
+    #: How many foreground rows / parameters actually carried uncertainty.
+    #: Zero on both means the run varied the BACKGROUND only, which is a
+    #: legitimate configuration but worth saying out loud in the UI.
+    rows_with_uncertainty: int = 0
+    parameters_with_uncertainty: int = 0
+    warnings: list[str] = []
+
+
+class MonteCarloStartResponse(BaseModel):
+    task_id: str
+
+
 class ArchetypeLCAExportRequest(BaseModel):
     results: list[ArchetypeLCACalculateResult]
 

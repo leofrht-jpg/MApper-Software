@@ -7991,6 +7991,15 @@ their BOM trees are present **and a cohort mapping still RESOLVES** against
 them. Id equality alone passes while every pointer dangles, which is exactly
 how the WP5 mapping broke.
 
+**Composed archetypes are checked the same way.** Composition landed after this
+export was designed, and an `ArchetypeInclude` is an ARCHETYPE ID — the same
+class of pointer. So the round trip also requires that `includes` survive with
+ids verbatim, that the referenced id lands on a real archetype in the imported
+project, that the include quantity is intact (losing it silently rescales the
+child's whole subtree), and — the strongest form — that the imported tree still
+**splices**: resolving the reference must reproduce the child's rows at the
+include's scaling.
+
 #### What NOT to do
 
 - **Don't buffer an export in memory.** Stream to a temp file and let the route

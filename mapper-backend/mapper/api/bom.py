@@ -162,6 +162,27 @@ def _proj_dsm_lca_results(project: str | None = None) -> dict[str, list[DSMLCARe
     return _dsm_lca_results.setdefault(p, {})
 
 
+def _assert_includes_resolvable(arc: Archetype, project: str | None = None) -> None:
+    """Save-time gate for archetype composition.
+
+    Flatten-time detection is NOT redundant with this: archetype JSON is edited
+    on disk, arrives by project import, and round-trips through Excel, none of
+    which passes through here. This layer exists because it is the only one
+    that can name the cycle helpfully while the user is still looking at it.
+    """
+    from mapper.core.bom_engine import ArchetypeCompositionError, splice_includes
+
+    if not getattr(arc, "includes", None):
+        return
+    registry = dict(_proj_archetypes(project) if project else _proj_archetypes())
+    if arc.id:
+        registry[arc.id] = arc
+    try:
+        splice_includes(arc, registry)
+    except ArchetypeCompositionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 def _get_archetype(arc_id: str) -> Archetype:
     arc = _proj_archetypes().get(arc_id)
     if arc is None:
@@ -186,10 +207,12 @@ async def create_archetype(body: ArchetypeCreate) -> Archetype:
         category=body.category,
         folder=folder,
         bom=body.bom,
+        includes=body.includes,
         created_at=_now_iso(),
         updated_at=_now_iso(),
     )
     assign_ids_to_roots(arc.bom)
+    _assert_includes_resolvable(arc)
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
@@ -259,10 +282,12 @@ async def update_archetype(arc_id: str, body: ArchetypeCreate) -> Archetype:
         category=body.category,
         folder=folder,
         bom=body.bom,
+        includes=body.includes,
         created_at=existing.created_at,
         updated_at=_now_iso(),
     )
     assign_ids_to_roots(updated.bom)
+    _assert_includes_resolvable(updated)
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc_id] = updated
@@ -2603,7 +2628,32 @@ def _walk_for_export(
             _walk_for_export(child, stage, node.name, rows, stage_scope, stage_basis)
 
 
+def _assert_exportable(arc: Archetype) -> None:
+    """Refuse to export an archetype the workbook format cannot express.
+
+    The BOM sheet has no way to say "this row is a reference to another
+    archetype". Exporting one anyway would write out the child's SPLICED rows
+    (or nothing at all), and re-importing would produce a flattened copy that
+    no longer tracks the child -- silent loss of the composition, in a file the
+    user believes is a faithful round trip. That is the same class as every
+    other silent-loss defect this month, so it fails loudly instead.
+    """
+    if getattr(arc, "includes", None):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Archetype '{arc.name}' references "
+                f"{len(arc.includes)} other archetype(s) and cannot be written "
+                f"to the BOM workbook: the sheet format has no reference row, "
+                f"so the export would silently flatten the composition. Export "
+                f"the referenced archetypes separately, or use project "
+                f"export/import, which carries references intact."
+            ),
+        )
+
+
 def _build_export_workbook(arc: Archetype) -> Workbook:
+    _assert_exportable(arc)
     wb = Workbook()
     bom_ws = wb.active
     bom_ws.title = "BOM"
@@ -2667,6 +2717,8 @@ _MULTI_BOM_COLUMNS = ["archetype_name", *_BOM_COLUMNS]
 
 
 def _build_multi_export_workbook(archetypes: list[Archetype]) -> Workbook:
+    for a in archetypes:
+        _assert_exportable(a)
     wb = Workbook()
     # Archetypes metadata
     meta_ws = wb.active

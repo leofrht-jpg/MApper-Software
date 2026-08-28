@@ -45,6 +45,7 @@ from mapper.core.bom_engine import (
     flatten_roots_for_year_and_scope,
     has_evolution,
     has_global_levers,
+    material_key,
     resolve_archetype_with_engine,
     stages_in_scope,
 )
@@ -63,6 +64,15 @@ MultiMethodRunner = Callable[
     [dict[tuple[str, str], float], list[tuple]],
     dict[tuple, tuple[float, str]],
 ]
+
+
+class DanglingArchetypeError(ValueError):
+    """A cohort mapping (or archetype include) points at an id that is gone.
+
+    Raised rather than skipped. A dangling id that silently shrinks a result is
+    indistinguishable from a genuinely smaller fleet, which is what made the
+    WP5 orphaning invisible for weeks.
+    """
 
 
 class DSMLCAPipeline:
@@ -117,6 +127,16 @@ class DSMLCAPipeline:
         # Per-(archetype, year) resolved-archetype cache for the year-varying
         # path — one resolution per archetype per year, reused across cohorts.
         self._resolved_arc_cache: dict[tuple[str, int | None], Archetype] = {}
+        # Archetype composition, spliced EAGERLY and upstream of the resolve
+        # step and of _flat_cache / _flat_cache_year / _resolved_arc_cache, so
+        # a child's content is baked into the parent tree before any cache key
+        # is computed and no cache has to learn about references.
+        if any(getattr(a, "includes", None) for a in archetypes.values()):
+            from mapper.core.bom_engine import splice_includes
+            archetypes = {
+                k: splice_includes(a, archetypes) for k, a in archetypes.items()
+            }
+
         if not self._year_varying:
             eng = parameter_engine
             if eng is None and parameter_table is not None:
@@ -313,7 +333,21 @@ class DSMLCAPipeline:
                 continue
             archetype_id, scaling_factor = mapping
             if archetype_id not in self.archetypes:
-                continue
+                # LOUD, not `continue`. A cohort mapping pointing at an
+                # archetype that no longer exists used to be skipped in
+                # silence, so the run produced a smaller number with no
+                # warning -- that is exactly how the WP5 mapping lost its
+                # PHEV rows after a re-import minted new ids. The API layer
+                # already raises 404 for the same condition; the engine now
+                # agrees with it. Composition adds a second class of dangling
+                # id, which is why this had to close before that landed.
+                raise DanglingArchetypeError(
+                    f"Cohort '{cohort_key}' maps to archetype id "
+                    f"'{archetype_id}', which does not exist in this project. "
+                    f"Re-open the cohort mapping and re-link it; a re-import in "
+                    f"Replace mode mints new archetype ids and orphans the "
+                    f"mapping."
+                )
             flat = self._flatten(archetype_id, yr.year, scope, db=db)
             demand = compute_demand_vector(flat, count, scaling_factor)
             if not demand:
@@ -324,7 +358,8 @@ class DSMLCAPipeline:
             for mat in flat:
                 if mat.ecoinvent_activity is None:
                     continue
-                mat_qty[mat.name] = mat_qty.get(mat.name, 0.0) + mat.quantity * effective
+                mk = material_key(mat)
+                mat_qty[mk] = mat_qty.get(mk, 0.0) + mat.quantity * effective
             per_cohort_material_qty[cohort_key] = mat_qty
 
         if not per_cohort_demand:

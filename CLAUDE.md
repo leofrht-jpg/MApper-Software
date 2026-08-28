@@ -7517,6 +7517,70 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+## A parameter scenario says WHICH values, never WHETHER to resolve
+
+A BOM row whose Quantity cell is a parameter expression is imported with
+`quantity = 1.0` as a **pre-resolution placeholder** and the formula in
+`quantity_expression`. So skipping resolution does not fall back to the base
+values — it computes against 1.0.
+
+`_build_archetype_source_demand` (`mapper/api/lca.py`) used to gate resolution
+on `parameter_scenario is not None or table.has_time_varying()`, on the stated
+grounds that a scalar-only table "resolves identically anyway". That premise is
+false for any BOM holding expressions. Both single-product panels send `None`
+for Base — `SingleProductStaticPanel.tsx` (`sc === BASE_SCENARIO ? null : sc`)
+and `multiProductLCAStore.ts` (a field the UI never sets) — so on a scalar-only
+table the gate never opened and every expression row computed as its
+placeholder.
+
+**The system-level path never had this bug.** `DSMLCAPipeline` gates on
+`parameter_table is not None`, and `parameters._table_for` always returns a
+table (`setdefault`), so it always resolved. That asymmetry is what made the
+defect invisible: WP5's fleet numbers were right the whole time and only the
+single-product panels were wrong.
+
+Measured on the real projects before the fix:
+
+| | before | after | |
+|---|---|---|---|
+| WP5 ICEV-Petrol, Use Phase (1 yr) | 0.78 | 567.7 kg CO₂e | 727× |
+| Battery Circularity B0, total | 239.2 | 0.1499 kg CO₂e | ÷1596 |
+| B0 Manufacturing / Use split | 99.86 / 0.06 | 44.4 / 55.4 | |
+
+The Battery Circularity case is the clearer failure: its functional unit is
+1 kWh of AC service, produced by dividing every stage by
+`bess_ac_energy_delivered_kwh` (88 358). Unresolved, that divisor never
+applies, so a whole battery pack is charged against 1 kWh.
+
+**Resolution now always runs.** For an expression-free BOM,
+`resolve_archetype_with_engine` is a deep copy with no substitutions, so
+nothing moves — verified across every archetype in the demo, Wind Farm and
+`default` projects, none of which carries an expression.
+
+`tests/test_single_product_expression_resolution.py` is the guard, and
+`test_matches_the_system_level_path` is the load-bearing one: it flattens the
+same archetype through `DSMLCAPipeline` and through the single-product handler
+and requires the same quantity, so the two paths' agreement is a checked
+property rather than a coincidence.
+
+### What NOT to do
+
+- **Don't gate resolution on the scenario being non-None.** `None` and
+  `"Base"` are the same scenario; if they compute different numbers, that is
+  the bug. The scenario selects which values to substitute, never whether to
+  substitute.
+- **Don't treat `quantity` as meaningful when `quantity_expression` is set.**
+  It is a placeholder the importer writes so the node validates; only the
+  resolved value is real. Any code path that reads `quantity` without having
+  run the engine is computing on 1.0.
+- **Don't let the single-product and system-level paths diverge on parameter
+  handling.** They compute the same archetype and must agree. The alignment
+  test exists because a comment asserting equivalence is not a check.
+- **A visual "the chart looks broken" report can be a compute bug.** The
+  stacked bar rendering was correct throughout; it faithfully drew a use phase
+  that really was 0.002 % of the total, because the quantity behind it was a
+  placeholder. Read the values before touching the rendering.
+
 ## Renaming a project, and the registries that never prune
 
 Brightway has no rename. `bw2data.projects` exposes `copy_project` /

@@ -7943,6 +7943,69 @@ property rather than a coincidence.
   that really was 0.002 % of the total, because the quantity behind it was a
   placeholder. Read the values before touching the rendering.
 
+## Project export is modelling-only by DEFAULT, and streamed
+
+`export_project` buffered the whole tarball through `io.BytesIO`. Fine for an
+archive of kilobytes; fatal for one of 38 GB — exporting MAp-test wedged the
+backend. It now **streams to a temp file and returns a `Path`**; the route
+serves it with `FileResponse` and deletes it in a `BackgroundTask` after the
+response is sent.
+
+One endpoint, `mode ∈ {"modelling", "full"}`:
+
+- **`modelling` (default)** — MApper's own storage only: DSM systems,
+  archetypes and BOMs, cohort mappings, AESA configuration, parameter table,
+  pLCA registry. The archive still carries the project *folder* (with only
+  `__mapper__` inside) so the importer's `roots[0]` finds it — same layout as a
+  full archive, minus the bw2 payload.
+- **`full`** — everything. Marked as carrying licensed content in the manifest
+  **and in the filename** (`.full-LICENSED.mapperproj.tar.gz`), because a
+  recipient reads the filename first and this archive is not redistributable.
+
+Modelling-only is the default for two independent reasons: a full archive
+bundles licensed ecoinvent content the recipient is not entitled to, and it is
+the one that OOMs.
+
+### The manifest records database NAMES, not a version string
+
+`database_inventory()` writes per-database **link counts** taken from the
+archetypes' `ecoinvent_activity.database`, plus the installed database list
+split into base and premise.
+
+A version string is not actionable, because resolution is by
+`(database, code)`: **"ecoinvent 3.10 cutoff" will not match a link stored
+against `ecoinvent-3.10-cutoff`.** Counting links per name also shows which
+databases the project actually depends on rather than which happen to be
+installed.
+
+**Premise databases are listed separately** (`installed_premise`,
+`premise_count`) because a recipient cannot obtain them by licensing
+ecoinvent — they are derived by running premise against an IAM scenario, and
+must be regenerated rather than acquired.
+
+### Acceptance
+
+The round trip that caught the id-reminting problem in #37: export
+modelling-only, install under a NEW name, and require that the archetypes and
+their BOM trees are present **and a cohort mapping still RESOLVES** against
+them. Id equality alone passes while every pointer dangles, which is exactly
+how the WP5 mapping broke.
+
+#### What NOT to do
+
+- **Don't buffer an export in memory.** Stream to a temp file and let the route
+  clean up. `test_export_returns_a_path_not_bytes` asserts on the function
+  BODY, not its docstring — the docstring explains the fix and mentions
+  `BytesIO`.
+- **Don't make `full` the default.** Unshareable and it OOMs.
+- **Don't record only an ecoinvent version.** Resolution is by
+  `(database, code)`; names with counts are what a recipient can act on.
+- **Don't fold premise databases into the ecoinvent list.** Licensing ecoinvent
+  does not obtain them.
+- **Don't treat a modelling-only archive as truncated on import.** It carries
+  no bw2 payload by design; the recipient supplies their own licensed
+  databases.
+
 ## Renaming a project, and the registries that never prune
 
 Brightway has no rename. `bw2data.projects` exposes `copy_project` /

@@ -213,7 +213,67 @@ def delete_project_storage(project: str, other_projects) -> dict[str, int]:
     return removed
 
 
-def write_archive_storage(tf, project: str, arc_prefix: str) -> dict:
+# Modes for a project export.
+#   "modelling" — MApper's own storage only. The DEFAULT, because a full export
+#     bundles licensed ecoinvent content (unshareable) and, at WP5's 38 GB,
+#     buffers a tarball no process should hold.
+#   "full" — everything, including the bw2 project directory. Carries a
+#     licensed-content marker in the manifest AND in the filename so a recipient
+#     cannot mistake it for something redistributable.
+EXPORT_MODES = ("modelling", "full")
+
+# A premise-generated database cannot be obtained by licensing ecoinvent: it is
+# derived by running premise against an IAM scenario. Listed separately so a
+# recipient can see what they must regenerate rather than acquire.
+_PREMISE_MARKER = "_premise_"
+
+
+def database_inventory(project: str, archetypes) -> dict:
+    """What a recipient needs in order to resolve this project's links.
+
+    Records database NAMES with per-database link counts, not just an ecoinvent
+    version. Resolution is by ``(database, code)``, so "ecoinvent 3.10 cutoff"
+    will not match a link stored against ``ecoinvent-3.10-cutoff`` -- a version
+    string alone is not actionable. Counting links per name also shows which
+    databases actually matter to this project versus merely being installed.
+    """
+    linked: dict[str, int] = {}
+
+    def _walk(node):
+        act = getattr(node, "ecoinvent_activity", None)
+        if act is not None and getattr(act, "database", None):
+            linked[act.database] = linked.get(act.database, 0) + 1
+        for c in (getattr(node, "children", None) or []):
+            _walk(c)
+
+    for arc in (archetypes or {}).values():
+        for root in getattr(arc, "bom", []) or []:
+            _walk(root)
+
+    installed: list[str] = []
+    try:
+        import bw2data
+
+        installed = [str(d) for d in bw2data.databases]
+    except Exception:
+        pass
+
+    premise = sorted(d for d in installed if _PREMISE_MARKER in d)
+    base = sorted(d for d in installed if _PREMISE_MARKER not in d)
+    return {
+        # name -> number of BOM links resolved against it
+        "linked": dict(sorted(linked.items(), key=lambda kv: -kv[1])),
+        "installed_base": base,
+        # Separate: not obtainable by licensing ecoinvent.
+        "installed_premise": premise,
+        "premise_count": len(premise),
+    }
+
+
+def write_archive_storage(
+    tf, project: str, arc_prefix: str,
+    mode: str = "modelling", databases: dict | None = None,
+) -> dict:
     """Add ``{arc_prefix}/__mapper__/…`` to an open tarfile; return the manifest.
 
     The manifest is what makes an archive self-describing: its presence says the
@@ -236,6 +296,11 @@ def write_archive_storage(tf, project: str, arc_prefix: str) -> dict:
     manifest = {
         "format": ARCHIVE_FORMAT,
         "project": project,
+        "mode": mode,
+        # True only for a full export. The marker rides in the manifest AND the
+        # filename, because a recipient reads the filename first.
+        "contains_licensed_content": mode == "full",
+        "databases": databases or {},
         "storage_dir_name": safe,
         "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "roots": roots_written,

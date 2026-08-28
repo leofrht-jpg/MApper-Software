@@ -12,6 +12,7 @@ import io
 import logging
 import shutil
 import tarfile
+import os
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -138,31 +139,79 @@ def delete_project(name: str) -> str:
     return get_current_project()
 
 
-def export_project(name: str) -> bytes:
-    """Return a tar.gz of the project's data directory."""
+def export_project(name: str, mode: str = "modelling") -> Path:
+    """Write a project archive to a TEMP FILE and return its path.
+
+    Returns a path, not bytes. ``io.BytesIO`` held the whole tarball in memory,
+    which is fine for a modelling-only archive (kilobytes) and fatal for a full
+    one: MAp-test's bw2 directory is 38 GB and exporting it wedged the backend.
+    The caller is responsible for deleting the file (the route does it in a
+    background task after the response is sent).
+
+    ``mode``:
+      "modelling" (DEFAULT) -- MApper's own storage only: DSM systems,
+        archetypes and BOMs, cohort mappings, AESA configuration, parameter
+        table, pLCA registry. Shareable, small, and the only sensible default:
+        a full export bundles licensed ecoinvent content that the recipient is
+        not entitled to, and it OOMs.
+      "full" -- everything, including the bw2 project directory. Marked as
+        carrying licensed content in both the manifest and the filename.
+
+    Either way the manifest records the database NAMES the project's links
+    resolve against, with per-database counts, and lists premise databases
+    separately -- a recipient cannot obtain those by licensing ecoinvent.
+    """
+    if mode not in project_storage.EXPORT_MODES:
+        raise ValueError(
+            f"Unknown export mode {mode!r}; expected one of "
+            f"{project_storage.EXPORT_MODES}"
+        )
     projects = [p.name for p in bw2data.projects]
     if name not in projects:
         raise ValueError(f"Project '{name}' does not exist")
+
     original = get_current_project()
+    fd, tmp_path = tempfile.mkstemp(suffix=".tar.gz", prefix="mapper-export-")
+    os.close(fd)
+    out = Path(tmp_path)
     try:
         bw2data.projects.set_current(name)
-        src = Path(bw2data.projects.dir)
-        buf = io.BytesIO()
-        with tarfile.open(fileobj=buf, mode="w:gz") as tf:
-            tf.add(str(src), arcname=name)
+
+        from mapper.api.bom import _proj_archetypes
+
+        try:
+            archetypes = _proj_archetypes(name)
+        except Exception:
+            archetypes = {}
+        databases = project_storage.database_inventory(name, archetypes)
+
+        # Streamed to disk rather than buffered.
+        with tarfile.open(str(out), mode="w:gz") as tf:
+            if mode == "full":
+                tf.add(str(Path(bw2data.projects.dir)), arcname=name)
+            else:
+                # Modelling-only still needs the project folder to exist in the
+                # archive, so the importer's `roots[0]` finds it and the
+                # `__mapper__` tree lands inside it -- same layout as a full
+                # archive, minus the bw2 payload.
+                info = tarfile.TarInfo(name)
+                info.type = tarfile.DIRTYPE
+                info.mode = 0o755
+                tf.addfile(info)
             # MApper's own storage, plus a manifest, under `{name}/__mapper__/`.
             # NESTED inside the project directory rather than beside it: the
             # importer shipped before this feature takes `roots[0]` from the
             # archive's top level, and a sibling can be picked AS the project.
-            # Verified, not assumed -- see
-            # test_project_copy_roundtrip.py::test_a_new_archive_does_not_confuse_the_old_importer.
             #
             # Export does NOT refuse to write an archive with no modelling in
             # it: a project that legitimately has only databases is a valid
-            # export. The manifest is what makes that legible, distinguishing
-            # "nothing to carry" from "written before this existed".
-            project_storage.write_archive_storage(tf, name, name)
-        return buf.getvalue()
+            # export. The manifest is what makes that legible.
+            project_storage.write_archive_storage(
+                tf, name, name, mode=mode, databases=databases)
+        return out
+    except Exception:
+        out.unlink(missing_ok=True)
+        raise
     finally:
         if original != name and original in {p.name for p in bw2data.projects}:
             bw2data.projects.set_current(original)
@@ -181,6 +230,11 @@ def import_project(data: bytes) -> str:
         roots = [p for p in Path(tmp).iterdir() if p.is_dir()]
         if not roots:
             raise ValueError("Archive does not contain a project folder")
+        # A modelling-only archive carries the project folder with only
+        # `__mapper__` inside it -- no bw2 payload. That is a valid archive, not
+        # a truncated one: the recipient supplies their own licensed databases.
+        # The loop below already skips ARCHIVE_DIR, so it simply copies nothing,
+        # and `install_archive_storage` does the real work.
         src = roots[0]
         base_name = src.name
         existing = {p.name for p in bw2data.projects}

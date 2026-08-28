@@ -22,6 +22,7 @@ from mapper.core.bw2_wrapper import (
     import_project,
     list_databases,
     list_projects,
+    rename_project,
     switch_project,
 )
 from mapper.models.schemas import (
@@ -32,6 +33,7 @@ from mapper.models.schemas import (
     ExportProjectRequest,
     HealthResponse,
     ProjectResponse,
+    RenameProjectRequest,
     SwitchProjectRequest,
 )
 
@@ -83,8 +85,20 @@ def _rehydrate_after_storage_write() -> None:
     rather than rolling anything back.
     """
     from mapper.api import dsm as _dsm
+    from mapper.api import parameters as _parameters
+    from mapper.core import parameter_storage
 
     _dsm.hydrate_from_disk()
+    # `hydrate_from_disk` covers the DSM/BOM/subsystem registries but NOT the
+    # parameter table, which main.py hydrates separately at startup. Without
+    # this second call a copied project's parameter table stays on disk and
+    # invisible, because `parameters._table_for` does
+    # `_tables.setdefault(project, ParameterTable())` -- it does not read the
+    # file, it inserts an EMPTY table, and the next parameter write persists
+    # that empty table over the real one. `install_parameters` clears before
+    # it updates, so this is a full reload: it both adds keys and drops stale
+    # ones, which is what a rename needs.
+    _parameters.install_parameters(parameter_storage.load_all())
 
 
 @router.post("/projects/switch", response_model=ProjectResponse)
@@ -111,6 +125,58 @@ async def post_duplicate_project(body: DuplicateProjectRequest) -> ProjectRespon
         name = duplicate_project(body.source_name, body.new_name)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    _rehydrate_after_storage_write()
+    return ProjectResponse(name=name, is_current=True)
+
+
+def _prune_registries(project: str) -> None:
+    """Drop every in-memory entry keyed by ``project``.
+
+    The counterpart to ``_rehydrate_after_storage_write``. ``hydrate_from_disk``
+    merges with ``.update()`` and never prunes, so a project whose storage has
+    been MOVED stays in the registries under its old key until a restart. For a
+    duplicate or an import that is harmless -- nothing was removed. For a rename
+    it is the whole defect: the old name would keep answering with live data,
+    and a rename that silently leaves the old project working is worse than one
+    that fails.
+
+    Verified rather than assumed: ``test_project_rename.py`` asserts the old key
+    is gone from each registry immediately after the route returns, and that a
+    bare ``hydrate_from_disk()`` does NOT achieve it.
+
+    ``parameters._tables`` is deliberately absent here -- the rehydrate reloads
+    it with a clear-then-update, which prunes it as a side effect.
+    """
+    from mapper.api import bom as _bom
+    from mapper.api import dsm as _dsm
+    from mapper.api import subsystems as _subs
+
+    registries = (
+        _bom._archetypes,
+        _bom._cohort_mappings,
+        _bom._dsm_lca_results,
+        _dsm._systems,
+        _dsm._states,
+        _dsm._results,
+        _dsm._multi_results,
+        _subs._subsystems,
+        _subs._subsystem_results,
+    )
+    for reg in registries:
+        reg.pop(project, None)
+
+
+@router.post("/projects/rename", response_model=ProjectResponse)
+async def post_rename_project(body: RenameProjectRequest) -> ProjectResponse:
+    try:
+        name = rename_project(body.name, body.new_name)
+    except project_storage.ProjectStorageCollision as e:
+        raise HTTPException(status_code=409, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    # Order matters: prune the OLD key first, then reload, or the reload's
+    # merge would just sit alongside the stale entries.
+    _prune_registries(body.name)
     _rehydrate_after_storage_write()
     return ProjectResponse(name=name, is_current=True)
 
@@ -145,6 +211,12 @@ async def delete_project_endpoint(name: str) -> DeleteProjectResponse:
         # turn a completed delete into an error the caller can act on.
         logger.exception("project delete: storage cleanup failed for %r", name)
 
+    # Same reason as the rename: the storage is gone but the registries still
+    # hold the deleted project's key, and nothing prunes them. Harmless while
+    # the bw2 project is also gone -- no route can reach it -- but it leaves a
+    # deleted project's systems resident, and it becomes live data the moment a
+    # new project is created under the same name.
+    _prune_registries(name)
     _rehydrate_after_storage_write()
     return DeleteProjectResponse(deleted=True, current_project=current)
 

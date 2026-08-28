@@ -7517,6 +7517,233 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+### The class, and the guard that closes it
+
+The same false premise shipped **four** times:
+
+| # | site | gate | live? |
+|---|---|---|---|
+| 1 | `api/lca.py` single-product | `parameter_scenario is not None or table.has_time_varying()` | yes — 727× on WP5 use phase, ~1600× on Battery Circularity totals |
+| 2 | `api/bom.py` `material_flows` | `is not None and != "Base"` | yes — reported the **vehicle count as kilograms** |
+| 3 | `api/bom.py` dsm-lca | `param_table` assigned only inside `if body.parameter_set_id:` | latent |
+| 4 | `api/impact.py` | same | latent |
+
+3 and 4 are a **data-flow** gate, not a syntactic one: `DSMLCAPipeline`
+resolves iff it is handed a table, so a falsy `parameter_set_id` left
+`parameter_table=None` and silently disabled resolution for a whole
+system-level run. They were latent only because every UI path sends `"Base"`
+(truthy) and `/impact/calculate-scenarios` defaults to `"Base"`.
+
+`tests/test_parameter_resolution_never_gated.py` closes the class. It is
+AST-based, not textual — it finds every call to `resolve_archetype_with_engine`
+and walks the enclosing `if` statements, because all four gates lived in
+*enclosing scope* where a line-oriented grep cannot see them. A separate rule
+covers the data-flow shape (3 and 4) by asserting `param_table` is never
+assigned inside a `parameter_set_id` branch. `ALLOWED` is empty on purpose;
+an entry must say why a gate is correct, not merely that it exists.
+
+Anti-vacuity: `test_the_guard_catches_each_historical_gate` replays all four
+shapes through the same analyser and requires each to be flagged, and
+`test_the_guard_accepts_the_corrected_shape` pins that *validating* a scenario
+name is not the same as *gating* on it. The one conditional that legitimately
+wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
+resolve-once vs resolve-per-year — is pinned unflagged by its own test.
+
+## A parameter scenario says WHICH values, never WHETHER to resolve
+
+A BOM row whose Quantity cell is a parameter expression is imported with
+`quantity = 1.0` as a **pre-resolution placeholder** and the formula in
+`quantity_expression`. So skipping resolution does not fall back to the base
+values — it computes against 1.0.
+
+`_build_archetype_source_demand` (`mapper/api/lca.py`) used to gate resolution
+on `parameter_scenario is not None or table.has_time_varying()`, on the stated
+grounds that a scalar-only table "resolves identically anyway". That premise is
+false for any BOM holding expressions. Both single-product panels send `None`
+for Base — `SingleProductStaticPanel.tsx` (`sc === BASE_SCENARIO ? null : sc`)
+and `multiProductLCAStore.ts` (a field the UI never sets) — so on a scalar-only
+table the gate never opened and every expression row computed as its
+placeholder.
+
+**The system-level path never had this bug.** `DSMLCAPipeline` gates on
+`parameter_table is not None`, and `parameters._table_for` always returns a
+table (`setdefault`), so it always resolved. That asymmetry is what made the
+defect invisible: WP5's fleet numbers were right the whole time and only the
+single-product panels were wrong.
+
+Measured on the real projects before the fix:
+
+| | before | after | |
+|---|---|---|---|
+| WP5 ICEV-Petrol, Use Phase (1 yr) | 0.78 | 567.7 kg CO₂e | 727× |
+| Battery Circularity B0, total | 239.2 | 0.1499 kg CO₂e | ÷1596 |
+| B0 Manufacturing / Use split | 99.86 / 0.06 | 44.4 / 55.4 | |
+
+The Battery Circularity case is the clearer failure: its functional unit is
+1 kWh of AC service, produced by dividing every stage by
+`bess_ac_energy_delivered_kwh` (88 358). Unresolved, that divisor never
+applies, so a whole battery pack is charged against 1 kWh.
+
+**Resolution now always runs.** For an expression-free BOM,
+`resolve_archetype_with_engine` is a deep copy with no substitutions, so
+nothing moves — verified across every archetype in the demo, Wind Farm and
+`default` projects, none of which carries an expression.
+
+`tests/test_single_product_expression_resolution.py` is the guard, and
+`test_matches_the_system_level_path` is the load-bearing one: it flattens the
+same archetype through `DSMLCAPipeline` and through the single-product handler
+and requires the same quantity, so the two paths' agreement is a checked
+property rather than a coincidence.
+
+### What NOT to do
+
+- **Don't gate resolution on the scenario being non-None.** `None` and
+  `"Base"` are the same scenario; if they compute different numbers, that is
+  the bug. The scenario selects which values to substitute, never whether to
+  substitute.
+- **Don't treat `quantity` as meaningful when `quantity_expression` is set.**
+  It is a placeholder the importer writes so the node validates; only the
+  resolved value is real. Any code path that reads `quantity` without having
+  run the engine is computing on 1.0.
+- **Don't let the single-product and system-level paths diverge on parameter
+  handling.** They compute the same archetype and must agree. The alignment
+  test exists because a comment asserting equivalence is not a check.
+- **A visual "the chart looks broken" report can be a compute bug.** The
+  stacked bar rendering was correct throughout; it faithfully drew a use phase
+  that really was 0.002 % of the total, because the quantity behind it was a
+  placeholder. Read the values before touching the rendering.
+
+## Renaming a project, and the registries that never prune
+
+Brightway has no rename. `bw2data.projects` exposes `copy_project` /
+`delete_project` / `set_current` and nothing else, and its project directory is
+named after a hash of the project name, so there is no directory to move either.
+`rename_project` (`mapper/core/bw2_wrapper.py`) is therefore copy-then-delete,
+reusing the machinery the duplicate and delete paths already have:
+`duplicate_project` (bw2 copy + `copy_project_storage`, ids verbatim), then
+`delete_project` + `delete_project_storage`.
+
+**Copy first, delete second.** The copy is the step that can fail — disk space,
+or two names that sanitise to one storage directory — and doing it before the
+delete means a failure leaves the original completely intact. The window in
+between is a project that exists under both names; a crash there loses nothing.
+Reversing the order turns a failed rename into data loss.
+
+### The registries never prune — this is the fifth appearance
+
+`hydrate_from_disk()` merges with `.update()`. Every earlier appearance of that
+was benign because nothing had been removed: demo/load, duplicate and import all
+ADD a project. **Rename is the first operation that MOVES storage**, so the old
+name keeps answering out of the nine project-keyed in-memory registries until
+the app restarts — and a rename that silently leaves the old project working is
+worse than one that fails outright.
+
+`_prune_registries(project)` in `mapper/api/databases.py` drops the key from all
+nine: `bom._archetypes`, `bom._cohort_mappings`, `bom._dsm_lca_results`,
+`dsm._systems`, `dsm._states`, `dsm._results`, `dsm._multi_results`,
+`subsystems._subsystems`, `subsystems._subsystem_results`. It lives in the API
+layer, not in `mapper/core/project_storage.py`, because core must not import
+from `mapper.api` (the same one-way rule the cancellation convention follows).
+Order at the route is **prune, then rehydrate** — the other way round, the
+rehydrate's merge just sits alongside the stale entries.
+
+Delete does the same, for the same reason: the storage is gone but the key
+survives, and it becomes live data the moment a project is created under that
+name again.
+
+### `_rehydrate_after_storage_write` also has to reload parameter tables
+
+`hydrate_from_disk()` does NOT cover `parameters._tables` — `main.py` hydrates
+that separately at startup via `install_parameters`. This was a latent data-loss
+path on the duplicate and import routes, not just rename: `_table_for` does
+`_tables.setdefault(project, ParameterTable())`, so an unloaded project does not
+read its file, it gets an **empty table**, and the next parameter write persists
+that empty table over the real one. `install_parameters` clears before it
+updates, so calling it is a full reload that both adds the new key and drops the
+stale one.
+
+### UI
+
+Rename is a `'rename'` mode on `ProjectSwitcher`'s existing `InlineForm` — the
+same inline pattern already behind "New project" and "Duplicate current",
+prefilled with the current name. **Not `window.prompt`**: it is a no-op in
+WKWebView, so the packaged desktop app would silently do nothing.
+
+#### What NOT to do
+
+- **Don't implement rename as anything other than copy-then-delete, and don't
+  reverse the order.** There is no `projects.rename` to find; check
+  `bw2data.projects`' surface before assuming otherwise. Copy-first is what
+  makes a failure non-destructive.
+- **Don't add a route that moves or removes a project's storage without
+  pruning the registries.** Adding storage only needs the rehydrate; moving or
+  removing it needs the prune as well. `test_project_rename.py` pins this from
+  both directions, including the negative
+  (`test_hydrate_alone_does_not_retire_the_old_name`) so the prune cannot be
+  deleted as redundant while `hydrate_from_disk` still merges.
+- **Don't re-mint ids on a rename.** Every registry is `dict[project][id]` and
+  every path is `{project}/…`, so ids are already namespaced; cohort mappings
+  reference archetype ids and AESA configs reference DSM system ids, and
+  re-keying orphans them exactly the way a re-import once orphaned the WP5
+  mapping.
+- **Don't drop the `install_parameters` call from the rehydrate** on the
+  grounds that `hydrate_from_disk` "already reloads everything". It does not
+  touch parameter tables, and the failure is silent and destructive.
+- **Don't reach for `window.prompt` for any rename in this app.** WKWebView
+  ignores it. Standard input events only.
+
+## Truncated lists must be reachable
+
+A list that shows the first N and closes with a plain `…and M more` caption
+strands M items with no way to see them. The import panel
+(`pages/LCAManager.tsx`) did this twice — warnings at 10, archetypes at 8 — and
+`ValidationReportPanel` carried a third copy that was unreachable **code**: its
+`…and N more` sat inside a `{open && …}` branch and was itself guarded by
+`{!open && …}`, so it could never render.
+
+**Expand in place on click** is the convention, matching the two in-app
+precedents: `ValidationReportPanel`'s `GroupRow` (chevron header, expands to the
+full affected-row list) and `SimulationWarningsPanel` (collapse with a persistent
+count). Not "scroll the panel with everything present" — that keeps 14
+repetitive lines pushing the actual content off screen.
+
+**The truncation was frontend-only.** Nothing in `bom.py` caps the warnings
+list, so the displayed count was accurate and expanding the UI genuinely reaches
+more data. Check which side truncates before designing the fix: if the backend
+capped it, an expand control would be a lie.
+
+### Splitting informational warnings from real ones
+
+Import warnings are a flat `string[]` with no severity field — the same shape
+problem as the DSM simulation warnings. A parameterised BOM emits one
+`Quantity '…' stored as expression; resolved at pipeline time.` per row, so a
+dozen benign lines bury `parent '…' not found; attached to stage root instead`.
+
+`isInformationalImportWarning` (exported from `LCAManager.tsx`) matches on the
+**emitted suffix** of that one format string, not the whole sentence: the row
+number varies and the expression is user data. Real warnings render always;
+informational ones collapse behind a count that expands. That keeps the
+`SimulationWarningsPanel` rule ("don't default a warnings panel to collapsed —
+warnings signal data problems") intact, because nothing that signals a problem
+is hidden.
+
+The durable fix remains a structured `{severity, message}` shape from the
+backend; when that lands, read the field instead of pattern-matching.
+
+#### What NOT to do
+
+- **Don't ship a `…and N more` caption that is not a control.** Either make it
+  clickable or don't truncate.
+- **Don't classify by position (`warnings[0]`) or by matching a whole
+  sentence.** Reordering breaks the first; rephrasing breaks the second. Match
+  the stable part of the format string.
+- **Don't treat an unrecognised warning as informational.** Anything that does
+  not match is surfaced by default — a warning type added later must not be
+  silently collapsed out of sight.
+- **Don't collapse the real warnings too** to make the panel shorter. The
+  reason the informational class can be collapsed is precisely that the real
+  ones stay visible.
+
 ## Client-server project state desync — `X-Mapper-Project` guard (Patch X1+++)
 
 The user's "lost WP5" bug was a **project-state desync**: the

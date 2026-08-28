@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Download, Upload, Search, Loader2, CheckCircle, AlertTriangle,
+  ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
@@ -36,6 +37,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
   const [exporting, setExporting] = useState(false)
   const [exportFolder, setExportFolder] = useState<string>('')
   const [result, setResult] = useState<MultiImportResult | null>(null)
+  const [showAllArchetypes, setShowAllArchetypes] = useState(false)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated_at')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
@@ -61,6 +63,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
     if (!file) return
     setImporting(true)
     setResult(null)
+    setShowAllArchetypes(false)
     try {
       const res = await importFromFile(file, importMode)
       setResult(res)
@@ -231,7 +234,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
               })()}
               {result.archetypes.length > 0 && (
                 <ul style={{ margin: '6px 0 0 0', paddingLeft: 18 }}>
-                  {result.archetypes.slice(0, 8).map((a) => (
+                  {(showAllArchetypes ? result.archetypes : result.archetypes.slice(0, 8)).map((a) => (
                     <li key={a.id}>
                       <button
                         onClick={() => onOpenArchetype?.(a.id)}
@@ -268,7 +271,17 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                     </li>
                   ))}
                   {result.archetypes.length > 8 && (
-                    <li style={{ color: 'var(--text-tertiary)' }}>…and {result.archetypes.length - 8} more</li>
+                    <li style={{ listStyle: 'none', marginLeft: -18 }}>
+                      <button
+                        data-testid="import-archetypes-toggle"
+                        onClick={() => setShowAllArchetypes((v) => !v)}
+                        style={linkBtn}
+                      >
+                        {showAllArchetypes
+                          ? 'Show fewer'
+                          : `Show all ${result.archetypes.length} archetypes`}
+                      </button>
+                    </li>
                   )}
                 </ul>
               )}
@@ -285,18 +298,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                   />
                 )
               })}
-              {result.warnings.length > 0 && (
-                <div style={{ marginTop: 8, color: 'var(--warning)', display: 'flex', alignItems: 'flex-start', gap: 6 }}>
-                  <AlertTriangle size={12} style={{ marginTop: 2, flexShrink: 0 }} />
-                  <div>
-                    <strong>Warnings ({result.warnings.length}):</strong>
-                    <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
-                      {result.warnings.slice(0, 10).map((w, i) => <li key={i}>{w}</li>)}
-                      {result.warnings.length > 10 && <li>…and {result.warnings.length - 10} more</li>}
-                    </ul>
-                  </div>
-                </div>
-              )}
+              <ImportWarnings warnings={result.warnings} />
             </div>
           )}
         </CollapsibleCard>
@@ -446,4 +448,91 @@ const td: React.CSSProperties = { padding: '6px 10px', borderBottom: '1px solid 
 const codeStyle: React.CSSProperties = {
   fontFamily: 'var(--font-mono)', fontSize: 11, padding: '1px 4px',
   backgroundColor: 'var(--bg-elevated)', borderRadius: 'var(--radius-sm)',
+}
+
+// ── Import result helpers ───────────────────────────────────────────────────
+
+const linkBtn: React.CSSProperties = {
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  color: 'var(--mod-lca)',
+  cursor: 'pointer',
+  fontSize: 'inherit',
+  textDecoration: 'underline',
+}
+
+/** Warnings that are expected rather than problems.
+ *
+ * A BOM row whose Quantity is a parameter expression emits one of these per
+ * row, so a parameterised import produces a dozen or more. They sat in the
+ * same undifferentiated list as "parent not found; attached to stage root
+ * instead", and pushed the archetype summary off screen.
+ *
+ * Matched on the emitted suffix, not the whole sentence: the row number varies
+ * and the expression is user data, but the suffix is the fixed part of the
+ * format string in `bom.py`. Anything that does not match is treated as a real
+ * warning, so a new warning type is surfaced by default rather than hidden --
+ * the safe direction for an unknown string.
+ */
+export function isInformationalImportWarning(w: string): boolean {
+  return /stored as expression; resolved at pipeline time\.?$/.test(w.trim())
+}
+
+/** The import warnings, in full.
+ *
+ * Every warning is reachable: the real ones are always shown, and the
+ * informational ones sit behind a count that expands in place -- the same
+ * shape `ValidationReportPanel` uses for its affected-row lists, and the same
+ * collapse-with-a-count that `SimulationWarningsPanel` uses for the DSM's
+ * repetitive per-cohort lines. The list used to be cut at 10 with a dead
+ * "…and N more" caption that nothing could click.
+ */
+function ImportWarnings({ warnings }: { warnings: string[] }) {
+  const [showInfo, setShowInfo] = useState(false)
+  if (warnings.length === 0) return null
+
+  const info = warnings.filter(isInformationalImportWarning)
+  const real = warnings.filter((w) => !isInformationalImportWarning(w))
+
+  return (
+    <div
+      data-testid="import-warnings"
+      style={{ marginTop: 8, color: 'var(--warning)', display: 'flex', alignItems: 'flex-start', gap: 6 }}
+    >
+      <AlertTriangle size={12} style={{ marginTop: 2, flexShrink: 0 }} />
+      <div style={{ minWidth: 0 }}>
+        <strong data-testid="import-warnings-count">Warnings ({warnings.length}):</strong>
+        {real.length > 0 && (
+          <ul style={{ margin: '4px 0 0 0', paddingLeft: 18 }}>
+            {real.map((w, i) => <li key={`r${i}`}>{w}</li>)}
+          </ul>
+        )}
+        {info.length > 0 && (
+          <div style={{ marginTop: real.length > 0 ? 6 : 4 }}>
+            <button
+              data-testid="import-warnings-info-toggle"
+              onClick={() => setShowInfo((v) => !v)}
+              style={{
+                all: 'unset', cursor: 'pointer', display: 'flex',
+                alignItems: 'center', gap: 4, color: 'var(--text-secondary)',
+              }}
+            >
+              {showInfo ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
+              {info.length} informational · parameter expressions stored for
+              resolution at pipeline time
+            </button>
+            {showInfo && (
+              <ul
+                data-testid="import-warnings-info-list"
+                style={{ margin: '4px 0 0 0', paddingLeft: 18, color: 'var(--text-secondary)' }}
+              >
+                {info.map((w, i) => <li key={`i${i}`}>{w}</li>)}
+              </ul>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
 }

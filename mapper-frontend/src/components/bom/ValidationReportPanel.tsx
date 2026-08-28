@@ -146,8 +146,6 @@ function GroupList({ severity, groups }: { severity: ValidationSeverity; groups:
 function GroupRow({ group }: { group: ValidationGroup }) {
   const [open, setOpen] = useState(false)
   const color = group.severity === 'error' ? 'var(--danger)' : 'var(--warning)'
-  const visible = open ? group.affected : group.affected.slice(0, 5)
-  const hasMore = group.affected.length > 5
 
   return (
     <div style={{
@@ -186,7 +184,7 @@ function GroupRow({ group }: { group: ValidationGroup }) {
       </button>
       {open && (
         <ul style={{ margin: '6px 0 0 22px', paddingLeft: 0, listStyle: 'none' }}>
-          {visible.map((a, i) => (
+          {group.affected.map((a, i) => (
             <li key={i} style={{ color: 'var(--text-tertiary)', padding: '1px 0' }}>
               <span style={{ color: 'var(--text-secondary)' }}>{a.archetype}</span>
               {' / '}
@@ -196,9 +194,6 @@ function GroupRow({ group }: { group: ValidationGroup }) {
               <span style={{ color: 'var(--text-tertiary)', marginLeft: 6 }}>row {a.row_idx}</span>
             </li>
           ))}
-          {!open && hasMore && (
-            <li style={{ color: 'var(--text-tertiary)' }}>…and {group.affected.length - 5} more</li>
-          )}
         </ul>
       )}
     </div>

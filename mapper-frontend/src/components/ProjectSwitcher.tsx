@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Copy,
   Download,
+  Pencil,
   Plus,
   Trash2,
   Upload,
@@ -20,14 +21,16 @@ import {
 } from 'lucide-react'
 import { useProjectStore } from '../stores/projectStore'
 
-type Mode = 'idle' | 'new' | 'duplicate' | 'confirm-delete'
+type Mode = 'idle' | 'new' | 'duplicate' | 'rename' | 'confirm-delete'
 
 export function ProjectSwitcher() {
   const [open, setOpen] = useState(false)
   const [mode, setMode] = useState<Mode>('idle')
   const [inputValue, setInputValue] = useState('')
   const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState<null | 'create' | 'duplicate' | 'delete' | 'export' | 'import'>(null)
+  const [busy, setBusy] = useState<
+    null | 'create' | 'duplicate' | 'rename' | 'delete' | 'export' | 'import'
+  >(null)
 
   const ref = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -39,6 +42,7 @@ export function ProjectSwitcher() {
     switchProject,
     createProject,
     duplicateProject,
+    renameProject,
     deleteProject,
     exportProject,
     importProject,
@@ -69,7 +73,7 @@ export function ProjectSwitcher() {
   }, [])
 
   useEffect(() => {
-    if (mode === 'new' || mode === 'duplicate') {
+    if (mode === 'new' || mode === 'duplicate' || mode === 'rename') {
       inlineInputRef.current?.focus()
       inlineInputRef.current?.select()
     }
@@ -91,6 +95,13 @@ export function ProjectSwitcher() {
     if (!currentProject) return
     setMode('duplicate')
     setInputValue(`${currentProject} (copy)`)
+    setError(null)
+  }
+
+  function openRename() {
+    if (!currentProject) return
+    setMode('rename')
+    setInputValue(currentProject)
     setError(null)
   }
 
@@ -128,6 +139,30 @@ export function ProjectSwitcher() {
     setError(null)
     try {
       await duplicateProject(currentProject, name)
+      resetMode()
+      setOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function handleRename() {
+    const name = inputValue.trim()
+    if (!currentProject) return
+    if (!name) {
+      setError('Name is required')
+      return
+    }
+    if (name === currentProject) {
+      resetMode()
+      return
+    }
+    setBusy('rename')
+    setError(null)
+    try {
+      await renameProject(currentProject, name)
       resetMode()
       setOpen(false)
     } catch (e) {
@@ -341,6 +376,19 @@ export function ProjectSwitcher() {
             />
           )}
 
+          {mode === 'rename' && (
+            <InlineForm
+              placeholder="Rename to…"
+              value={inputValue}
+              onChange={setInputValue}
+              busy={busy === 'rename'}
+              onSubmit={handleRename}
+              onCancel={resetMode}
+              inputRef={inlineInputRef}
+              testId="project-rename"
+            />
+          )}
+
           {mode === 'confirm-delete' && (
             <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 8 }}>
               <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
@@ -377,6 +425,13 @@ export function ProjectSwitcher() {
                 label="Duplicate current"
                 onClick={openDuplicate}
                 disabled={!currentProject}
+              />
+              <ActionButton
+                icon={<Pencil size={14} strokeWidth={1.5} />}
+                label="Rename current"
+                onClick={openRename}
+                disabled={!currentProject}
+                testId="project-rename-open"
               />
               <ActionButton
                 icon={<Download size={14} strokeWidth={1.5} />}
@@ -452,15 +507,18 @@ function ActionButton({
   onClick,
   disabled,
   danger,
+  testId,
 }: {
   icon: React.ReactNode
   label: string
   onClick: () => void
   disabled?: boolean
   danger?: boolean
+  testId?: string
 }) {
   return (
     <button
+      data-testid={testId}
       onClick={onClick}
       disabled={disabled}
       style={{
@@ -501,6 +559,7 @@ function InlineForm({
   onSubmit,
   onCancel,
   inputRef,
+  testId,
 }: {
   placeholder: string
   value: string
@@ -509,11 +568,13 @@ function InlineForm({
   onSubmit: () => void
   onCancel: () => void
   inputRef: React.RefObject<HTMLInputElement | null>
+  testId?: string
 }) {
   return (
     <div style={{ padding: '10px 12px', display: 'flex', gap: 6, alignItems: 'center' }}>
       <input
         ref={inputRef}
+        data-testid={testId ? `${testId}-input` : undefined}
         type="text"
         placeholder={placeholder}
         value={value}
@@ -543,6 +604,7 @@ function InlineForm({
         }}
       />
       <button
+        data-testid={testId ? `${testId}-confirm` : undefined}
         onClick={onSubmit}
         disabled={busy}
         aria-label="Confirm"

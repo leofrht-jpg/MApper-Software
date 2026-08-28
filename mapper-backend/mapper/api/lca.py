@@ -363,27 +363,45 @@ def _build_archetype_source_demand(
     if scope not in ("inflows", "stock", "outflows", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid scope: {scope}")
 
-    # Resolve parameter expressions in the BOM if a scenario is requested OR the
-    # active table has time-varying (keyframe) parameters. Single-product mode in
-    # Impact Assessment uses this for parameter sensitivity fan-out. Year-varying
-    # parameters resolve at ``resolve_year`` (reference year, default 2025).
-    # Backward compat: scenario None AND no keyframes → no resolution, identical
-    # to pre-feature behavior (a scalar-only table resolves identically anyway).
+    # Resolve parameter expressions in the BOM. ALWAYS -- the scenario is what
+    # is being resolved, not whether to resolve at all.
+    #
+    # This used to be gated on ``parameter_scenario is not None or
+    # table.has_time_varying()``, on the stated grounds that "a scalar-only
+    # table resolves identically anyway". That premise is false whenever a BOM
+    # stores a quantity as an EXPRESSION: the import writes ``quantity = 1.0``
+    # as a pre-resolution placeholder and puts the real formula in
+    # ``quantity_expression``, so skipping resolution does not reproduce the
+    # base values -- it silently computes against 1.0. Both single-product
+    # panels send ``None`` for Base (``sc === BASE_SCENARIO ? null : sc``), so
+    # the gate never opened and every expression row computed as a placeholder:
+    # a WP5 use phase came out 727x low, and a Battery Circularity archetype
+    # lost its per-kWh functional-unit divisor entirely (~1600x on the total).
+    #
+    # The system-level path never had this bug -- ``DSMLCAPipeline`` gates on
+    # ``parameter_table is not None`` and ``_table_for`` always returns a table,
+    # so it always resolved. This aligns the two, and the alignment is checked:
+    # ``test_single_product_matches_system_path`` pins a single-product Use
+    # Phase against the quantity the DSM pipeline flattens for one vehicle-year.
+    #
+    # Cost of always resolving: for a BOM with no expressions,
+    # ``resolve_archetype_with_engine`` is a deep copy with no substitutions, so
+    # results are unchanged (verified across every archetype in the demo, Wind
+    # Farm and `default` projects -- none carries an expression).
     table = _table_for()
-    if parameter_scenario is not None or table.has_time_varying():
-        if parameter_scenario not in (None, "Base") and parameter_scenario not in table.list_scenarios():
-            raise HTTPException(
-                status_code=400,
-                detail=f"Parameter scenario '{parameter_scenario}' not found in active table",
-            )
-        try:
-            engine = ParameterEngine(table, scenario=parameter_scenario, year=resolve_year)
-            arc = resolve_archetype_with_engine(arc, engine)
-        except ParameterError as e:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Parameter resolution failed: {e}",
-            )
+    if parameter_scenario not in (None, "Base") and parameter_scenario not in table.list_scenarios():
+        raise HTTPException(
+            status_code=400,
+            detail=f"Parameter scenario '{parameter_scenario}' not found in active table",
+        )
+    try:
+        engine = ParameterEngine(table, scenario=parameter_scenario, year=resolve_year)
+        arc = resolve_archetype_with_engine(arc, engine)
+    except ParameterError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Parameter resolution failed: {e}",
+        )
 
     # Filter roots by scope
     scope_roots = filter_roots_by_scope(arc.bom, scope)

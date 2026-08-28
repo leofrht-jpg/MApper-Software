@@ -847,6 +847,14 @@ export async function duplicateProject(sourceName: string, newName: string): Pro
   })
 }
 
+export async function renameProject(name: string, newName: string): Promise<ProjectResponse> {
+  return request<ProjectResponse>('/projects/rename', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, new_name: newName }),
+  })
+}
+
 export async function deleteProject(name: string): Promise<{ deleted: boolean; current_project: string }> {
   return request<{ deleted: boolean; current_project: string }>(
     `/projects/${encodeURIComponent(name)}`,

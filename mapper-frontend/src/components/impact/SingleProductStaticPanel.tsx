@@ -7,7 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import {
   calculateArchetypeLCA,
@@ -16,6 +16,9 @@ import {
   type ArchetypeLCACalculateResult,
 } from '../../api/client'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
+import { useParameterStore } from '../../stores/parameterStore'
+import { SensitivityCases, hasVaryingParameters, varyingCases } from './SensitivityCases'
+import { SensitivityRangeChart } from '../charts/SensitivityRangeChart'
 import { MethodPicker } from '../MethodPicker'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
@@ -72,6 +75,17 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
 
   const [configExpanded, setConfigExpanded] = useState(true)
   const [resultsExpanded, setResultsExpanded] = useState(true)
+  const paramTable = useParameterStore((st) => st.table)
+  const fetchParamTable = useParameterStore((st) => st.fetchTable)
+  const selectedScenarios = useParameterStore((st) => st.selectedScenarios)
+  const toggleSelectedScenario = useParameterStore((st) => st.toggleSelectedScenario)
+  useEffect(() => { if (!paramTable) void fetchParamTable() }, [paramTable, fetchParamTable])
+  const effectiveCases = useMemo(() => {
+    if (!hasVaryingParameters(paramTable)) return []
+    const avail = varyingCases(paramTable)
+    return selectedScenarios.filter((c) => avail.includes(c) && c !== BASE_SCENARIO)
+  }, [paramTable, selectedScenarios])
+
   const [isCalculating, setIsCalculating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -144,7 +158,11 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
     setScenarioOrder([])
     setActiveScenario(null)
 
-    const scenariosToRun = [BASE_SCENARIO]   // static = Base only (no sensitivity fan-out)
+    // Base first, then each selected case. The endpoint takes one scenario, so
+    // N cases are N sequential calls -- the same shape the system-level
+    // orchestrator uses. Only meaningful since ab0c533: before that fix
+    // single-product ignored parameters and every case returned the same number.
+    const scenariosToRun = [BASE_SCENARIO, ...effectiveCases]
     setProgress({ done: 0, total: scenariosToRun.length })
     const acc: Record<string, ArchetypeLCACalculateResult> = {}
     try {
@@ -293,7 +311,15 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
             </div>
           </div>
 
-          {/* Sensitivity-cases box removed: Static is Base-only (Change 2). */}
+          {/* Sensitivity cases. Patch 5AW removed this box because Static was
+              Base-only; it is back because single-product now resolves
+              parameters (ab0c533) so the cases produce different numbers. */}
+          <SensitivityCases
+            table={paramTable}
+            selected={selectedScenarios}
+            onToggle={toggleSelectedScenario}
+            testId="single-product-static-sensitivity-cases"
+          />
 
           {error && (
             <div
@@ -411,6 +437,32 @@ export function SingleProductStaticPanel({ archetypeId }: Props) {
                 format={valueFormat}
                 filenameBase={activeResult.archetype_name.replace(/\s+/g, '_').toLowerCase()}
               />
+            )}
+
+            {/* Sensitivity: range around Base + a tornado of the cases that
+                actually move the total. Not grouped-by-stage: a case that
+                changes a functional-unit divisor moves every stage by the
+                same factor, so per-stage grouping would draw N near-identical
+                charts and hide which case matters. */}
+            {scenarioOrder.length > 1 && activeResult.results[0] && (
+              <div style={{ marginTop: 'var(--space-4)' }}>
+                <SensitivityRangeChart
+                  base={resultsByScenario[BASE_SCENARIO]?.results
+                    .find((r) => r.method_label === activeResult.results[0].method_label)?.score
+                    ?? activeResult.results[0].score}
+                  cases={scenarioOrder
+                    .filter((c) => c !== BASE_SCENARIO)
+                    .map((c) => ({
+                      case: c,
+                      value: resultsByScenario[c]?.results
+                        .find((r) => r.method_label === activeResult.results[0].method_label)?.score ?? 0,
+                    }))}
+                  unit={activeResult.results[0].unit}
+                  label={activeResult.results[0].method_label}
+                  format={valueFormat}
+                  filenameBase={activeResult.archetype_name.replace(/\s+/g, '_').toLowerCase()}
+                />
+              </div>
             )}
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
               <thead>

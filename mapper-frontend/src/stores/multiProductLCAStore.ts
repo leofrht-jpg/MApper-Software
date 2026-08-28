@@ -71,10 +71,16 @@ interface MultiProductLCAState {
   // error). Used on a within-type mode switch so a stale cross-mode chart
   // can't linger after the selection clears.
   clearResults: () => void
+  /** case name -> the full envelope for that case. Always contains 'Base'. */
+  multiByCase: Record<string, MultiProductLCAResult> | null
+  /** Cases actually run, in selection order, Base first. */
+  multiCaseOrder: string[]
   compute: (params: {
     scope: 'inflows' | 'stock' | 'outflows' | 'all'
     methods: string[][]
     computeDatabase?: string | null
+    /** Sensitivity cases to run. Absent/empty = Base only. */
+    cases?: string[]
   }) => Promise<void>
   reset: () => void
 }
@@ -99,6 +105,8 @@ export type VintageCoordMap = Record<string, {
 function toWireItem(
   item: ProductItem,
   stageAmountsByItem: Record<string, ArchetypeStageAmounts>,
+  /** Sensitivity case for this run. 'Base' resolves the table's base values. */
+  parameterScenario: string = 'Base',
 ): MultiProductRequestItem {
   if (item.type === 'archetype') {
     const arc = item as ArchetypeProductItem
@@ -109,7 +117,7 @@ function toWireItem(
       type: 'archetype',
       archetype_id: arc.archetype_id,
       stage_amounts: amounts,
-      parameter_scenario: arc.parameter_scenario ?? null,
+      parameter_scenario: parameterScenario,
     }
   }
   const act = item as ActivityProductItem
@@ -129,6 +137,8 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
   stageAmountsByItem: {},
   multiResult: null,
   multiVintageCoords: null,
+  multiByCase: null,
+  multiCaseOrder: [],
   multiLoading: false,
   multiError: null,
 
@@ -156,9 +166,13 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
 
   clearItems: () => set({ selectedItems: [] }),
 
-  clearResults: () => set({ multiResult: null, multiVintageCoords: null, multiError: null }),
+  clearResults: () => set({
+    multiResult: null, multiVintageCoords: null, multiError: null,
+    multiByCase: null, multiCaseOrder: [],
+  }),
 
-  compute: async ({ scope, methods, computeDatabase }) => {
+  compute: async (params) => {
+    const { scope, methods, computeDatabase } = params
     const { selectedItems } = get()
     if (selectedItems.length === 0) {
       set({ multiError: 'Select at least one item' })
@@ -185,15 +199,29 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
         year: a.year ?? null,
       }
     }
+    // One call per sensitivity case. The endpoint takes a single
+    // `parameter_scenario` per item, so N cases are N sequential calls -- the
+    // same shape the system-level orchestrator uses (it spawns one task per
+    // case), and cheap here because the endpoint is synchronous and N is small.
+    // Base is always first and always present: every other case is read
+    // against it.
+    const cases = ['Base', ...(params.cases ?? []).filter((c) => c !== 'Base')]
     set({ multiLoading: true, multiError: null })
     try {
-      const result = await calculateMultiProductLCA({
-        items: selectedItems.map((it) => toWireItem(it, stageAmountsByItem)),
-        methods,
-        scope,
-        compute_database: computeDatabase ?? null,
+      const byCase: Record<string, MultiProductLCAResult> = {}
+      for (const c of cases) {
+        byCase[c] = await calculateMultiProductLCA({
+          items: selectedItems.map((it) => toWireItem(it, stageAmountsByItem, c)),
+          methods,
+          scope,
+          compute_database: computeDatabase ?? null,
+        })
+      }
+      const result = byCase['Base']
+      set({
+        multiResult: result, multiVintageCoords: vintageCoords,
+        multiByCase: byCase, multiCaseOrder: cases, multiLoading: false,
       })
-      set({ multiResult: result, multiVintageCoords: vintageCoords, multiLoading: false })
     } catch (e) {
       set({
         multiLoading: false,
@@ -209,6 +237,8 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
     stageAmountsByItem: {},
     multiResult: null,
     multiVintageCoords: null,
+    multiByCase: null,
+    multiCaseOrder: [],
     multiLoading: false,
     multiError: null,
   }),

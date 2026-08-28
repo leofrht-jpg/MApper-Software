@@ -7596,6 +7596,58 @@ WKWebView, so the packaged desktop app would silently do nothing.
 - **Don't reach for `window.prompt` for any rename in this app.** WKWebView
   ignores it. Standard input events only.
 
+## Truncated lists must be reachable
+
+A list that shows the first N and closes with a plain `…and M more` caption
+strands M items with no way to see them. The import panel
+(`pages/LCAManager.tsx`) did this twice — warnings at 10, archetypes at 8 — and
+`ValidationReportPanel` carried a third copy that was unreachable **code**: its
+`…and N more` sat inside a `{open && …}` branch and was itself guarded by
+`{!open && …}`, so it could never render.
+
+**Expand in place on click** is the convention, matching the two in-app
+precedents: `ValidationReportPanel`'s `GroupRow` (chevron header, expands to the
+full affected-row list) and `SimulationWarningsPanel` (collapse with a persistent
+count). Not "scroll the panel with everything present" — that keeps 14
+repetitive lines pushing the actual content off screen.
+
+**The truncation was frontend-only.** Nothing in `bom.py` caps the warnings
+list, so the displayed count was accurate and expanding the UI genuinely reaches
+more data. Check which side truncates before designing the fix: if the backend
+capped it, an expand control would be a lie.
+
+### Splitting informational warnings from real ones
+
+Import warnings are a flat `string[]` with no severity field — the same shape
+problem as the DSM simulation warnings. A parameterised BOM emits one
+`Quantity '…' stored as expression; resolved at pipeline time.` per row, so a
+dozen benign lines bury `parent '…' not found; attached to stage root instead`.
+
+`isInformationalImportWarning` (exported from `LCAManager.tsx`) matches on the
+**emitted suffix** of that one format string, not the whole sentence: the row
+number varies and the expression is user data. Real warnings render always;
+informational ones collapse behind a count that expands. That keeps the
+`SimulationWarningsPanel` rule ("don't default a warnings panel to collapsed —
+warnings signal data problems") intact, because nothing that signals a problem
+is hidden.
+
+The durable fix remains a structured `{severity, message}` shape from the
+backend; when that lands, read the field instead of pattern-matching.
+
+#### What NOT to do
+
+- **Don't ship a `…and N more` caption that is not a control.** Either make it
+  clickable or don't truncate.
+- **Don't classify by position (`warnings[0]`) or by matching a whole
+  sentence.** Reordering breaks the first; rephrasing breaks the second. Match
+  the stable part of the format string.
+- **Don't treat an unrecognised warning as informational.** Anything that does
+  not match is surfaced by default — a warning type added later must not be
+  silently collapsed out of sight.
+- **Don't collapse the real warnings too** to make the panel shorter. The
+  reason the informational class can be collapsed is precisely that the real
+  ones stay visible.
+
 ## Client-server project state desync — `X-Mapper-Project` guard (Patch X1+++)
 
 The user's "lost WP5" bug was a **project-state desync**: the

@@ -133,7 +133,7 @@ export function ImpactAssessment({ onNavigate }: ImpactAssessmentProps = {}) {
             flexDirection: 'column', flex: 1, minHeight: 0,
           }}
         >
-          <SingleProductImpact />
+          <SingleProductImpact onNavigate={onNavigate} />
         </div>
       </div>
     </div>

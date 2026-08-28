@@ -99,6 +99,13 @@ def _rehydrate_after_storage_write() -> None:
     # it updates, so this is a full reload: it both adds keys and drops stale
     # ones, which is what a rename needs.
     _parameters.install_parameters(parameter_storage.load_all())
+    # Same class again: project settings live in a per-project registry, so a
+    # duplicated or renamed project's setting is invisible until restart unless
+    # this reloads it. `install_project_settings` clears before it updates, so
+    # it both adds keys and drops stale ones.
+    from mapper.api import project_settings as _project_settings
+    from mapper.core import project_settings_storage as _ps_storage
+    _project_settings.install_project_settings(_ps_storage.load_all())
 
 
 @router.post("/projects/switch", response_model=ProjectResponse)
@@ -116,6 +123,11 @@ async def post_create_project(body: CreateProjectRequest) -> ProjectResponse:
         name = create_project(body.name)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+    # A NEW project gets "life_cycle" written explicitly. Existing projects have
+    # no file and resolve to the legacy "one_year", so the difference between
+    # them is a stored fact rather than a guess at read time.
+    from mapper.api import project_settings as _project_settings
+    _project_settings.initialise_for_new_project(name)
     return ProjectResponse(name=name, is_current=True)
 
 
@@ -164,6 +176,11 @@ def _prune_registries(project: str) -> None:
     )
     for reg in registries:
         reg.pop(project, None)
+
+    # Project settings too -- the rehydrate above reloads with a clear, which
+    # prunes it, but doing it here keeps the prune complete on its own terms.
+    from mapper.api import project_settings as _project_settings
+    _project_settings._settings.pop(project, None)
 
 
 @router.post("/projects/rename", response_model=ProjectResponse)

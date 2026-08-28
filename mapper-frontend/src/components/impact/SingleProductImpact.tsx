@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBOMStore } from '../../stores/bomStore'
 import { useParameterStore } from '../../stores/parameterStore'
+import { useProjectSettingsStore } from '../../stores/projectSettingsStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { ArchetypeSelect } from '../archetypes/ArchetypeSelect'
 import { SingleProductStaticPanel } from './SingleProductStaticPanel'
@@ -31,10 +32,22 @@ type ViewMode = 'single' | 'multi'
 // this component owns its own per-tab visibility-toggle so each
 // SingleProduct{Static,Projected,Comparison}Panel keeps its local state when
 // the user moves between tabs within single-product mode.
-export function SingleProductImpact() {
+interface SingleProductImpactProps {
+  /** Navigate to another top-level tab, for the "change it in Manager" link. */
+  onNavigate?: (tab: string) => void
+}
+
+export function SingleProductImpact({ onNavigate }: SingleProductImpactProps = {}) {
   const archetypes = useBOMStore((s) => s.archetypes)
   const fetchArchetypes = useBOMStore((s) => s.fetchArchetypes)
   const setStageBasis = useBOMStore((s) => s.setStageBasis)
+  // Project convention: Life cycle means the BOM already holds whole-life
+  // quantities, so Stage amounts has nothing to multiply and is hidden.
+  const projectSettings = useProjectSettingsStore((st) => st.settings)
+  const fetchProjectSettings = useProjectSettingsStore((st) => st.fetchSettings)
+  useEffect(() => { if (!projectSettings) void fetchProjectSettings() }, [projectSettings, fetchProjectSettings])
+  const projectBasis = projectSettings?.use_phase_basis ?? 'one_year'
+  const lifeCycleBasis = projectBasis === 'life_cycle'
   // Integer-valued parameters are the plausible lifetime references (e.g.
   // Battery Circularity's `bess_lifetime_years = 15`), so the horizon can be
   // driven by the project's own parameter instead of a retyped duplicate.
@@ -200,7 +213,40 @@ export function SingleProductImpact() {
         value at Calculate time and surface a stale-result warning when the
         result's echoed `stage_amounts` diverges from the current value.
       */}
-      {activeArchetype && stageAmountsEntry && (activeArchetype.stages?.length ?? 0) > 0 && (
+      {/* Life cycle → the BOM already carries whole-life quantities, so there is
+          no multiplier to apply and the control is hidden entirely. The note
+          below is NOT optional: a user with an annual BOM notices the missing
+          control HERE, not in Manager, and a hidden affordance with no
+          explanation on the page where it is missing is the worst of both. */}
+      {activeArchetype && lifeCycleBasis && (activeArchetype.stages?.length ?? 0) > 0 && (
+        <div
+          data-testid="single-product-stage-amounts-hidden-note"
+          style={{
+            marginTop: 'var(--space-4)', padding: '10px 12px',
+            border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)',
+            backgroundColor: 'var(--bg-surface)',
+            fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+          }}
+        >
+          <strong style={{ color: 'var(--text-primary)' }}>Stage amounts is hidden.</strong>{' '}
+          This project&rsquo;s use phase basis is <strong>Life cycle</strong>, so the BOM
+          already contains whole-life quantities and no multiplier applies.{' '}
+          <button
+            type="button"
+            data-testid="single-product-stage-amounts-hidden-link"
+            onClick={() => onNavigate?.('archetypes')}
+            style={{
+              background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+              color: 'var(--mod-lca)', fontSize: 'inherit', textDecoration: 'underline',
+            }}
+          >
+            Change it in LCA Architect → Manager
+          </button>
+          {' '}if your BOM holds annual quantities instead.
+        </div>
+      )}
+
+      {activeArchetype && !lifeCycleBasis && stageAmountsEntry && (activeArchetype.stages?.length ?? 0) > 0 && (
         // Vertical gap from the Archetype card above (Patch 5U). The single-pane
         // is a plain block container (no flex gap), so spacing is a scale-token
         // marginTop on the lower element — same token + mechanism as the
@@ -226,6 +272,7 @@ export function SingleProductImpact() {
                 if (nodeId) void setStageBasis(activeArchetype.id, nodeId, basis)
               }}
               parameters={lifetimeParams}
+              projectBasis={projectBasis}
             />
           </CollapsibleCard>
         </div>

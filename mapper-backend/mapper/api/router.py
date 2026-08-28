@@ -20,6 +20,7 @@ from mapper.api.lca import router as lca_router
 from mapper.api.dsm import router as dsm_router
 from mapper.api.parameters import router as parameters_router
 from mapper.api.plca import router as plca_router
+from mapper.api.project_settings import router as project_settings_router
 from mapper.api.subsystems import router as subsystems_router
 from mapper.api.system import router as system_router
 from mapper.api.tasks import router as tasks_router
@@ -33,6 +34,7 @@ router.include_router(lca_router)
 router.include_router(dsm_router)
 router.include_router(subsystems_router)
 router.include_router(parameters_router)
+router.include_router(project_settings_router)
 router.include_router(bom_router)
 router.include_router(plca_router)
 router.include_router(impact_router)

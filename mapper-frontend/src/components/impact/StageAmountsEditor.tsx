@@ -25,6 +25,9 @@ interface Props {
   /** Parameter names + values, so the lifetime can reference one (e.g.
    *  Battery Circularity's `bess_lifetime_years`) instead of being retyped. */
   parameters?: Array<{ name: string; value: number }>
+  /** Project convention supplying the default basis for Use Phase /
+   *  Maintenance. A per-stage declaration still overrides it. */
+  projectBasis?: UsePhaseBasis
 }
 
 // Shared Stage Amounts editor — extracted from LCA Architect's inline block
@@ -34,10 +37,11 @@ interface Props {
 // input + per-stage rows.
 export function StageAmountsEditor({
   archetype, value, onChange, accent = 'var(--accent)', onDeclareBasis, parameters,
+  projectBasis,
 }: Props) {
   const stages = archetype.stages ?? []
-  const blocked = lifetimeBlockedReason(archetype)
-  const lifetimeAvailable = canApplyLifetime(archetype)
+  const blocked = lifetimeBlockedReason(archetype, projectBasis)
+  const lifetimeAvailable = canApplyLifetime(archetype, projectBasis)
   // A referenced parameter drives the lifetime; the typed box is the fallback.
   const paramLifetime = value.lifetimeParam
     ? parameters?.find((p) => p.name === value.lifetimeParam)?.value
@@ -46,9 +50,9 @@ export function StageAmountsEditor({
 
   const applyPreset = useCallback(
     (preset: AmountPreset, lifetime: number) => {
-      onChange({ preset, lifetime, amounts: stageAmountsForPreset(archetype, preset, lifetime, value.amounts) })
+      onChange({ preset, lifetime, amounts: stageAmountsForPreset(archetype, preset, lifetime, value.amounts, projectBasis) })
     },
-    [archetype, value.amounts, onChange],
+    [archetype, value.amounts, onChange, projectBasis],
   )
 
   if (stages.length === 0) return null
@@ -115,7 +119,7 @@ export function StageAmountsEditor({
                 onChange({
                   ...value, preset: 'lifetime', lifetimeParam: name,
                   lifetime: Math.max(1, Math.round(lt)),
-                  amounts: stageAmountsForPreset(archetype, 'lifetime', Math.max(1, Math.round(lt)), value.amounts),
+                  amounts: stageAmountsForPreset(archetype, 'lifetime', Math.max(1, Math.round(lt)), value.amounts, projectBasis),
                 })
               }}
               style={{
@@ -134,7 +138,7 @@ export function StageAmountsEditor({
       )}
       <div style={{ border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
         {stages.map((stage) => {
-          const basis = stageBasis(archetype, stage)
+          const basis = stageBasis(archetype, stage, projectBasis)
           const suggestion = archetype.stage_annual?.[stage] ? 'per_year' : 'per_unit'
           const stageId = archetype.stage_ids?.[stage]
           return (
@@ -232,30 +236,54 @@ export function StageAmountsEditor({
  * leaving its manufacturing at 1 -- an incoherent functional unit, not a
  * rescale. Undeclared means undeclared: multiplier 1, and say so.
  */
+/** Stages the PROJECT setting can supply a default for.
+ *
+ * Use Phase and Maintenance only. Manufacturing and End of Life are per-unit in
+ * every project examined, so the setting says nothing about them and an
+ * undeclared one stays undeclared. */
+const PROJECT_DEFAULTED = new Set(['Use Phase', 'Maintenance'])
+
+export type UsePhaseBasis = 'life_cycle' | 'one_year'
+
 export function stageBasis(
   arc: ArchetypeSummary,
   stage: string,
+  projectBasis?: UsePhaseBasis,
 ): 'per_unit' | 'per_year' | null {
-  return arc.stage_basis?.[stage] ?? null
+  // A per-stage declaration (PR #41) always wins -- it is the override for an
+  // archetype that mixes bases against its project's convention.
+  const declared = arc.stage_basis?.[stage] ?? null
+  if (declared) return declared
+  // Otherwise inherit the project setting, for Use Phase / Maintenance only.
+  if (projectBasis && PROJECT_DEFAULTED.has(stage)) {
+    return projectBasis === 'one_year' ? 'per_year' : 'per_unit'
+  }
+  return null
 }
 
 /** Stages whose basis has never been declared. */
-export function undeclaredStages(arc: ArchetypeSummary): string[] {
-  return (arc.stages ?? []).filter((s) => stageBasis(arc, s) === null)
+export function undeclaredStages(
+  arc: ArchetypeSummary, projectBasis?: UsePhaseBasis,
+): string[] {
+  return (arc.stages ?? []).filter((s) => stageBasis(arc, s, projectBasis) === null)
 }
 
 /** Lifetime is meaningless until every stage says what its quantity means. */
-export function canApplyLifetime(arc: ArchetypeSummary): boolean {
-  return undeclaredStages(arc).length === 0
+export function canApplyLifetime(
+  arc: ArchetypeSummary, projectBasis?: UsePhaseBasis,
+): boolean {
+  return undeclaredStages(arc, projectBasis).length === 0
 }
 
 /** Why the Lifetime preset is unavailable, or null when it is available. */
-export function lifetimeBlockedReason(arc: ArchetypeSummary): string | null {
-  const undeclared = undeclaredStages(arc)
+export function lifetimeBlockedReason(
+  arc: ArchetypeSummary, projectBasis?: UsePhaseBasis,
+): string | null {
+  const undeclared = undeclaredStages(arc, projectBasis)
   if (undeclared.length > 0) {
     return `Declare a basis for ${undeclared.join(', ')} to use Lifetime.`
   }
-  if (!(arc.stages ?? []).some((s) => stageBasis(arc, s) === 'per_year')) {
+  if (!(arc.stages ?? []).some((s) => stageBasis(arc, s, projectBasis) === 'per_year')) {
     return 'No per-year stages — lifetime has no effect.'
   }
   return null
@@ -266,6 +294,7 @@ export function stageAmountsForPreset(
   preset: AmountPreset,
   lifetime: number,
   prev?: Record<string, number> | null,
+  projectBasis?: UsePhaseBasis,
 ): Record<string, number> {
   const amounts: Record<string, number> = {}
   for (const s of arc.stages ?? []) {
@@ -273,7 +302,7 @@ export function stageAmountsForPreset(
     // Only a stage DECLARED per_year scales with the lifetime. per_unit and
     // undeclared both stay at 1 -- the identity multiplier is the one value
     // both conventions agree on, which is what makes it safe as a default.
-    else if (preset === 'lifetime') amounts[s] = stageBasis(arc, s) === 'per_year' ? lifetime : 1
+    else if (preset === 'lifetime') amounts[s] = stageBasis(arc, s, projectBasis) === 'per_year' ? lifetime : 1
     else amounts[s] = prev?.[s] ?? 1
   }
   return amounts

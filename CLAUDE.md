@@ -2852,12 +2852,17 @@ Every chart in the frontend must use `<ChartExportButton>` from
 as the capture target). When adding a new visualization panel, audit chart
 coverage as part of the patch — don't ship a new chart without export.
 
-Conventions: button placed top-right of the chart container; filename pattern
-is lowercase `<topic>_<context>` snake_case, no `mapper_` prefix (e.g.
-`multiyear_evolution_<target>_<method>_<years>`,
+Conventions: button placed top-right of the chart container; the `filename`
+PROP is lowercase `<topic>_<context>` snake_case and carries no prefix of its
+own (e.g. `multiyear_evolution_<target>_<method>_<years>`,
 `dsm_survival_default_k<k>_lambda<λ>`,
 `timeline_<archetype>_<yearStart>-<yearEnd>`). Match existing siblings in the
 same panel before inventing a new naming scheme.
+
+`buildFilename` then adds the `mapper_` prefix, a mode suffix and, for raster
+formats, the scale — so the file on disk is
+`mapper_<prop>[_chart|_legend][@Nx].<ext>` (and `jpeg` writes `.jpg`). Don't
+put `mapper_` in the prop; it would double.
 
 Every chart with numeric axes uses `<NumberFormatControl>` for live display
 formatting, placed in the same flex row as `<ChartExportButton>` (button row,

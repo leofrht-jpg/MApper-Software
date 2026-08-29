@@ -430,6 +430,26 @@ class MonteCarloRequest(BaseModel):
     variance_contributions: bool = True
 
 
+class ScoredInput(BaseModel):
+    """One row or parameter that carried uncertainty, as SCORED AT RUN TIME.
+
+    Captured on the result rather than resolved at export time. The material
+    library and the parameter table are both editable, so resolving later would
+    describe the CURRENT scores and silently mis-describe the run -- which is
+    the opposite of what a reproducibility record is for.
+    """
+    name: str
+    kind: Literal["row", "parameter"]
+    #: indicator -> 1..5. Empty when the uncertainty came from a direct gsd2.
+    pedigree: dict[str, int] = {}
+    basic_variance: float = 0.0
+    #: The resulting 95% range multiplier, exp(2 sigma).
+    gsd2: float = 1.0
+    #: True when a row inherited its score from the material-name library
+    #: rather than carrying its own. Display only; the draw is identical.
+    inherited: bool = False
+
+
 class MonteCarloResult(BaseModel):
     archetype_id: str
     archetype_name: str
@@ -450,6 +470,8 @@ class MonteCarloResult(BaseModel):
     #: exactly like a typed one.
     rows_inherited: int = 0
     parameters_with_uncertainty: int = 0
+    #: Exactly what carried uncertainty, so the workbook is self-contained.
+    scored_inputs: list[ScoredInput] = []
     warnings: list[str] = []
 
 
@@ -504,6 +526,14 @@ class PedigreeCoverage(BaseModel):
     unit: str
     #: Biggest unscored contributors first — where scoring pays most.
     top_unscored: list[UnscoredMaterial] = []
+
+
+class MonteCarloExportRequest(BaseModel):
+    result: MonteCarloResult
+    #: Impact-weighted scoring coverage for the same archetype and indicator.
+    #: Optional because the export must still work if the coverage call failed;
+    #: the Summary then says so rather than omitting the row.
+    coverage: PedigreeCoverage | None = None
 
 
 class ArchetypeLCAExportRequest(BaseModel):

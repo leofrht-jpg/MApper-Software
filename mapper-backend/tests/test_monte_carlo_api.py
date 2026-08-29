@@ -52,6 +52,78 @@ def test_iteration_count_is_bounded(n):
     assert "iterations" in r.json()["detail"]
 
 
+def test_the_route_actually_SPAWNS_a_worker():
+    """The gap that let a 500 ship.
+
+    Every other test here exercises a 4xx path -- missing methods, bad
+    iteration count -- and all of those return BEFORE the worker is launched.
+    So the launch itself was never executed by a test, and it was wrong:
+    ``run_in_thread(work)`` passed a zero-arg closure to a helper whose
+    signature is ``run_in_thread(task, fn, *args)``, raising
+    ``missing 1 required positional argument: 'fn'`` on every call. The
+    endpoint 500'd before any sampling began, and the feature was dead in the
+    packaged app.
+
+    This drives the route far enough to launch the thread. The archetype is
+    bogus, so the worker fails inside -- which is fine and is the point: the
+    failure must surface as a task error, not as a 500 from the POST.
+    """
+    r = client.post(
+        "/api/lca/monte-carlo",
+        json={
+            "archetype_id": "does-not-exist",
+            "methods": [["EF v3.1", "climate change", "GWP100"]],
+            "iterations": 2,
+        },
+    )
+    assert r.status_code == 200, f"POST must return a task id, got {r.status_code}: {r.text}"
+    task_id = r.json()["task_id"]
+    assert task_id
+
+    # The worker runs in a daemon thread; give it a moment to reach its own
+    # error handling rather than asserting on a race.
+    import time
+
+    for _ in range(50):
+        got = client.get(f"/api/lca/monte-carlo/{task_id}")
+        if got.status_code != 409:      # 409 == still running
+            break
+        time.sleep(0.1)
+    # A bogus archetype fails INSIDE the worker, reported as a task error.
+    # What must not happen is the POST itself throwing.
+    assert got.status_code in (200, 500), got.status_code
+
+
+def test_the_worker_is_not_launched_through_core_tasks_run_in_thread():
+    """`core.tasks.run_in_thread` drives a `core.tasks.Task` and calls
+    ``fn(task, ...)``. This route owns a WS-oriented `_TaskState` and a
+    zero-arg closure, so it launches a plain daemon thread the way `plca` and
+    `impact` do. Mixing the two is what broke it."""
+    import ast
+    from pathlib import Path
+
+    # AST, not a substring: the comment at the call site NAMES run_in_thread in
+    # order to explain why it is not used, and a textual check cannot tell
+    # prose from a call. Same reason the solver guard in
+    # test_monte_carlo_guards.py is AST-based.
+    src = (Path(__file__).resolve().parents[1] / "mapper" / "api" / "monte_carlo.py").read_text()
+    tree = ast.parse(src)
+    fn = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)) and n.name == "post_monte_carlo"
+    )
+    called = set()
+    for node in ast.walk(fn):
+        if isinstance(node, ast.Call):
+            f = node.func
+            if isinstance(f, ast.Name):
+                called.add(f.id)
+            elif isinstance(f, ast.Attribute):
+                called.add(f.attr)
+    assert "run_in_thread" not in called
+    assert "Thread" in called and "start" in called
+
+
 def test_unknown_task_id_is_404_not_500():
     assert client.get("/api/lca/monte-carlo/does-not-exist").status_code == 404
 

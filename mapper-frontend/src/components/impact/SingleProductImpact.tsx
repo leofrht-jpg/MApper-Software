@@ -170,7 +170,7 @@ export function SingleProductImpact({ onNavigate }: SingleProductImpactProps = {
         data-testid="single-product-multi-pane"
         style={{ display: viewMode === 'multi' ? 'block' : 'none' }}
       >
-        <MultiProductLCA />
+        <MultiProductLCA onNavigate={onNavigate} />
       </div>
 
       {/* Single-item subtree — the existing UX, also mounted always

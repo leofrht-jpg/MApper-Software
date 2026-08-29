@@ -536,6 +536,81 @@ class MonteCarloExportRequest(BaseModel):
     coverage: PedigreeCoverage | None = None
 
 
+class ItemDistribution(BaseModel):
+    """One comparison item's marginal, per indicator."""
+    archetype_id: str
+    archetype_name: str
+    distributions: list[ArchetypeLCAMethodDistribution]
+
+
+class PairwiseDifference(BaseModel):
+    """The distribution of (a - b), which is what a comparison is asking.
+
+    The headline result of a paired run, not a derived extra. Because both
+    items are solved against the SAME sampled matrices each iteration, this
+    difference is meaningful -- under independent draws a shared driver takes
+    two different values in one iteration and the difference is inflated by the
+    decorrelation rather than by any real uncertainty.
+    """
+    method: list[str]
+    method_label: str
+    unit: str
+    a_id: str
+    a_name: str
+    b_id: str
+    b_name: str
+    #: Deterministic a - b, for the same comparison the distribution makes.
+    deterministic: float
+    median: float
+    mean: float
+    p2_5: float
+    p25: float
+    p75: float
+    p97_5: float
+    #: Share of iterations where a < b. The statement the run supports:
+    #: "A is lower than A0 in 100% of iterations".
+    fraction_a_lower: float
+    #: Pearson correlation of the two items' per-iteration scores.
+    #: INFORMATIVE, not a warning. A weakly correlated pair gives a genuinely
+    #: wide difference and that is correct; the correlation tells the reader
+    #: where the precision comes from.
+    correlation: float
+
+
+class MonteCarloMultiRequest(BaseModel):
+    """Paired multi-item uncertainty. There is no independent mode."""
+    archetype_ids: list[str]
+    methods: list[list[str]]
+    scope: Literal["inflows", "stock", "outflows", "all"] = "all"
+    stage_amounts: dict[str, dict[str, float]] = {}
+    basis_amounts: dict[str, float] | None = None
+    parameter_scenario: str | None = None
+    compute_database: str | None = None
+    iterations: int = 1000
+    #: ONE seed for the whole job. It defines the shared draw sequence every
+    #: item is solved against, so it cannot be per-item.
+    seed: int | None = None
+    keep_samples: bool = True
+
+
+class MonteCarloMultiResult(BaseModel):
+    scope: str
+    n_iterations: int
+    seed: int
+    elapsed_seconds: float = 0.0
+    compute_database: str | None = None
+    parameter_scenario: str | None = None
+    #: In the order the comparison listed them.
+    items: list[ItemDistribution]
+    #: Every ordered pair (i, j) with i before j in comparison order.
+    differences: list[PairwiseDifference]
+    warnings: list[str] = []
+
+
+class MonteCarloMultiExportRequest(BaseModel):
+    result: MonteCarloMultiResult
+
+
 class ArchetypeLCAExportRequest(BaseModel):
     results: list[ArchetypeLCACalculateResult]
 

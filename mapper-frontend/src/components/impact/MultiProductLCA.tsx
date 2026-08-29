@@ -27,7 +27,7 @@
 //   - Archetype feed reads `useBOMStore.archetypes` synchronously
 //     (already loaded when the LCA module is entered).
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Calculator, Download, Loader2 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
@@ -57,6 +57,7 @@ import {
   exportMultiProductComparison,
   type MultiProductItemResult,
 } from '../../api/client'
+import { useMonteCarloStore } from '../../stores/monteCarloStore'
 
 type Scope = 'inflows' | 'stock' | 'outflows' | 'all'
 // Within-type comparison: a comparison is of ONE type (archetypes OR
@@ -83,7 +84,7 @@ const SCOPE_LABELS: Record<Scope, string> = {
   outflows: 'End of Life',
 }
 
-export function MultiProductLCA() {
+export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => void } = {}) {
   const archetypes = useBOMStore((s) => s.archetypes)
   const setStageBasis = useBOMStore((s) => s.setStageBasis)
   // Sensitivity cases -- same store slice, label and chip as the system-level
@@ -184,6 +185,7 @@ export function MultiProductLCA() {
   const [scopeOpen, setScopeOpen] = useState(true)
   const [itemsOpen, setItemsOpen] = useState(true)
   const [resultsOpen, setResultsOpen] = useState(true)
+  const setMultiHandoff = useMonteCarloStore((st) => st.setMultiHandoff)
 
   // Archetype items only carry stage amounts (activities have no BOM stages).
   const archetypeItems = useMemo(
@@ -330,6 +332,28 @@ export function MultiProductLCA() {
       {compareMode === 'activity' ? methodsSummary : `${SCOPE_LABELS[scope]} · ${methodsSummary}`}
     </span>
   )
+
+  // Hand this comparison to the Uncertainty tab. Items go over in COMPARISON
+  // ORDER, because the paired run's box plot and pairwise table both preserve
+  // that order and the reader's mental ordering should carry across.
+  const handleRunUncertainty = useCallback(() => {
+    const archetypeItems = selectedItems.filter((it) => it.type === 'archetype')
+    if (archetypeItems.length === 0) return
+    setMultiHandoff({
+      items: archetypeItems.map((it) => ({
+        archetypeId: it.archetype_id,
+        archetypeName: it.display_name ?? it.archetype_id,
+      })),
+      methods,
+      scope: scopeForMode(compareMode, scope),
+      stageAmounts: Object.fromEntries(
+        archetypeItems.map((it) => [it.archetype_id, stageAmountsByItem[productItemKey(it)]?.amounts ?? {}]),
+      ),
+      parameterScenario: null,
+      computeDatabase: null,
+    })
+    onNavigate?.('uncertainty')
+  }, [selectedItems, methods, scope, compareMode, stageAmountsByItem, setMultiHandoff, onNavigate])
 
   return (
     <div data-testid="multi-product-lca" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
@@ -683,6 +707,25 @@ export function MultiProductLCA() {
               {multiResult.success_count} successful, {multiResult.error_count} failed
             </span>
           ) : undefined}
+          actions={
+            <button
+              type="button"
+              data-testid="multi-product-run-uncertainty"
+              onClick={handleRunUncertainty}
+              title="Propagate uncertainty across these items"
+              style={{
+                height: 32, padding: '0 12px',
+                border: '1px solid var(--border-default)',
+                borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-elevated)',
+                color: 'var(--text-primary)',
+                fontSize: 'var(--text-sm)', fontWeight: 500, cursor: 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 6,
+              }}
+            >
+              Run uncertainty
+            </button>
+          }
         >
           <ResultsSection result={multiResult} scope={scope} stageAmountsMeta={stageAmountsMeta} activityVintageMeta={activityVintageMeta} byCase={multiByCase} caseOrder={multiCaseOrder} />
         </CollapsibleCard>

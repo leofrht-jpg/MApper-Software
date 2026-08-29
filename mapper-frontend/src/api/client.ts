@@ -4780,3 +4780,93 @@ export async function exportMonteCarlo(
     buildExportFilename(result.archetype_name, [], 'MC'),
   )
 }
+
+// ── Paired multi-item uncertainty ────────────────────────────────────────────
+
+export interface ItemDistribution {
+  archetype_id: string
+  archetype_name: string
+  distributions: ArchetypeLCAMethodDistribution[]
+}
+
+export interface PairwiseDifference {
+  method: string[]
+  method_label: string
+  unit: string
+  a_id: string; a_name: string
+  b_id: string; b_name: string
+  deterministic: number
+  median: number; mean: number
+  p2_5: number; p25: number; p75: number; p97_5: number
+  /** Share of iterations where a < b. */
+  fraction_a_lower: number
+  /** Informative, not a warning: says where the precision comes from. */
+  correlation: number
+}
+
+export interface MonteCarloMultiResult {
+  scope: string
+  n_iterations: number
+  seed: number
+  elapsed_seconds: number
+  compute_database: string | null
+  parameter_scenario: string | null
+  items: ItemDistribution[]
+  differences: PairwiseDifference[]
+  warnings: string[]
+}
+
+export interface MonteCarloMultiRequest {
+  archetype_ids: string[]
+  methods: string[][]
+  scope?: 'inflows' | 'stock' | 'outflows' | 'all'
+  stage_amounts?: Record<string, Record<string, number>>
+  basis_amounts?: Record<string, number> | null
+  parameter_scenario?: string | null
+  compute_database?: string | null
+  iterations?: number
+  /** ONE seed for the whole job: it defines the shared draw sequence. */
+  seed?: number | null
+  keep_samples?: boolean
+}
+
+export async function startMonteCarloMulti(
+  body: MonteCarloMultiRequest,
+): Promise<{ task_id: string }> {
+  return request('/lca/monte-carlo/multi', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+  })
+}
+
+export async function getMonteCarloMultiResult(taskId: string): Promise<MonteCarloMultiResult> {
+  return request(`/lca/monte-carlo/multi/${taskId}`)
+}
+
+export async function exportMonteCarloMulti(result: MonteCarloMultiResult): Promise<void> {
+  const names = result.items.map((i) => i.archetype_name)
+  await _downloadXlsx(
+    `${API_BASE}/lca/monte-carlo/multi/export`,
+    { result },
+    buildExportFilename(names[0] ?? 'comparison', names.slice(1), 'MC'),
+  )
+}
+
+/**
+ * Wall-clock estimate for a paired run, from measurement rather than a guess.
+ *
+ * Paired samples the matrices ONCE per iteration and re-solves each demand
+ * against them, so the marginal cost of an extra item is far below a whole
+ * run. Measured on Battery Circularity: 59 s for one item per 1000 iterations,
+ * then ~39 s per additional item.
+ */
+export function estimatePairedSeconds(itemCount: number, iterations: number): number {
+  if (itemCount < 1) return 0
+  return ((59 + 39 * (itemCount - 1)) * iterations) / 1000
+}
+
+export function formatEstimate(seconds: number): string {
+  if (seconds < 90) return `~${Math.round(seconds)} s`
+  return `~${Math.round(seconds / 60)} min`
+}

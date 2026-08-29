@@ -18,6 +18,11 @@ import { Button } from '../components/ui/Button'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
 import { useMonteCarloStore } from '../stores/monteCarloStore'
+import {
+  CoverageBanner,
+  MaterialPedigreeTable,
+} from '../components/uncertainty/MaterialPedigreeTable'
+import { getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
 
 const DEFAULT_ITERATIONS = 1000
 
@@ -44,6 +49,24 @@ export function MonteCarloPage({ onNavigate }: Props) {
   const [configOpen, setConfigOpen] = useState(true)
   const [resultsOpen, setResultsOpen] = useState(true)
   const [selectedMethod, setSelectedMethod] = useState(0)
+  const [scoringOpen, setScoringOpen] = useState(false)
+  const [coverage, setCoverage] = useState<PedigreeCoverage | null>(null)
+  const [coverageNonce, setCoverageNonce] = useState(0)
+
+  // Coverage is per (archetype, indicator), so it follows the indicator the
+  // user is looking at rather than being pinned to the first one.
+  const coverageMethod = handoff?.methods[Math.min(selectedMethod, (handoff?.methods.length ?? 1) - 1)]
+  useEffect(() => {
+    if (!handoff || !coverageMethod) { setCoverage(null); return }
+    let alive = true
+    void getPedigreeCoverage(handoff.archetypeId, coverageMethod, {
+      scope: handoff.scope,
+      computeDatabase: handoff.computeDatabase,
+    })
+      .then((c) => { if (alive) setCoverage(c) })
+      .catch(() => { if (alive) setCoverage(null) })
+    return () => { alive = false }
+  }, [handoff, coverageMethod, coverageNonce])
 
   // A CHANGED handoff invalidates whatever is on screen -- the previous result
   // belongs to a different archetype or configuration. Keyed against a ref
@@ -181,6 +204,30 @@ export function MonteCarloPage({ onNavigate }: Props) {
         </div>
       </CollapsibleCard>
 
+      {coverage && (
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <CoverageBanner coverage={coverage} />
+        </div>
+      )}
+
+      <div style={{ marginTop: 'var(--space-4)' }}>
+        <CollapsibleCard
+          title="Material scoring"
+          expanded={scoringOpen}
+          onToggle={() => setScoringOpen((v) => !v)}
+          summary={
+            coverage
+              ? `${coverage.materials_scored} of ${coverage.materials_total} materials scored`
+              : 'Score by material name'
+          }
+        >
+          <MaterialPedigreeTable
+            coverage={coverage}
+            onLibraryChange={() => setCoverageNonce((n) => n + 1)}
+          />
+        </CollapsibleCard>
+      </div>
+
       <ComputeProgress
         label={stage || 'Sampling…'}
         active={running}
@@ -287,7 +334,7 @@ export function MonteCarloPage({ onNavigate }: Props) {
 
 // ── pieces ───────────────────────────────────────────────────────────────────
 
-function LowerBoundNote({ result }: { result: { rows_with_uncertainty: number; parameters_with_uncertainty: number } }) {
+function LowerBoundNote({ result }: { result: { rows_with_uncertainty: number; rows_inherited: number; parameters_with_uncertainty: number } }) {
   const fg = result.rows_with_uncertainty + result.parameters_with_uncertainty
   return (
     <div
@@ -308,7 +355,11 @@ function LowerBoundNote({ result }: { result: { rows_with_uncertainty: number; p
         are sampled as fixed, so their contribution to the spread is missing.
         {fg === 0
           ? ' No foreground row or parameter is scored either, so this run varies the background alone.'
-          : ` ${result.rows_with_uncertainty} row${result.rows_with_uncertainty === 1 ? '' : 's'} and ${result.parameters_with_uncertainty} parameter${result.parameters_with_uncertainty === 1 ? '' : 's'} carry foreground uncertainty.`}
+          : ` ${result.rows_with_uncertainty} row${result.rows_with_uncertainty === 1 ? '' : 's'}${
+              result.rows_inherited
+                ? ` (${result.rows_inherited} inheriting a material score)`
+                : ''
+            } and ${result.parameters_with_uncertainty} parameter${result.parameters_with_uncertainty === 1 ? '' : 's'} carry foreground uncertainty.`}
       </div>
     </div>
   )

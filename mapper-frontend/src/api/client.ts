@@ -4638,6 +4638,10 @@ export interface MonteCarloResult {
   distributions: ArchetypeLCAMethodDistribution[]
   contributors: VarianceContributor[]
   rows_with_uncertainty: number
+  /** How many of those inherited from the material library rather than
+   *  carrying their own score. Display only — an inherited score is drawn
+   *  exactly like a typed one. */
+  rows_inherited: number
   parameters_with_uncertainty: number
   warnings: string[]
 }
@@ -4684,4 +4688,60 @@ export interface PedigreeTable {
 /** The pedigree constants, served so the UI holds no second copy of them. */
 export async function getPedigreeTable(): Promise<PedigreeTable> {
   return request('/lca/pedigree')
+}
+
+// ── Material pedigree library ────────────────────────────────────────────────
+
+export interface MaterialPedigreeLibrary {
+  /** material name → score. A name absent here is unscored. */
+  entries: Record<string, RowUncertainty>
+}
+
+export interface UnscoredMaterial {
+  name: string
+  share: number
+  impact: number
+}
+
+export interface PedigreeCoverage {
+  materials_total: number
+  materials_scored: number
+  archetype_materials_total: number
+  archetype_materials_scored: number
+  /** Share of this archetype's total |impact| carried by SCORED rows. The
+   *  figure that matters — a row count reports clicking, this reports how
+   *  much of the answer is assessed. */
+  impact_share: number
+  method_label: string
+  unit: string
+  top_unscored: UnscoredMaterial[]
+}
+
+export async function getMaterialPedigree(): Promise<MaterialPedigreeLibrary> {
+  return request('/lca/material-pedigree')
+}
+
+export async function saveMaterialPedigree(
+  library: MaterialPedigreeLibrary,
+): Promise<MaterialPedigreeLibrary> {
+  return request('/lca/material-pedigree', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(library),
+  })
+}
+
+export async function listProjectMaterials(): Promise<string[]> {
+  return request('/lca/material-pedigree/materials')
+}
+
+export async function getPedigreeCoverage(
+  archetypeId: string,
+  method: string[],
+  opts: { scope?: string; computeDatabase?: string | null } = {},
+): Promise<PedigreeCoverage> {
+  const q = new URLSearchParams({ archetype_id: archetypeId, method: method.join('|') })
+  if (opts.scope) q.set('scope', opts.scope)
+  if (opts.computeDatabase) q.set('compute_database', opts.computeDatabase)
+  return request(`/lca/material-pedigree/coverage?${q.toString()}`)
 }

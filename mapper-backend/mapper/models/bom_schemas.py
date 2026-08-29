@@ -68,6 +68,37 @@ class MaterialEvolution(BaseModel):
     applies_to_stages: list[str] | None = None
 
 
+class MaterialPedigreeLibrary(BaseModel):
+    """Pedigree scores keyed by MATERIAL NAME, per project.
+
+    The primary scoring surface. WP5 has 914 literal rows but only 148 distinct
+    names -- a name recurs across ~6 archetypes -- so scoring "Steel frame"
+    once covers 21 rows. That is the whole job: 148 entries, not 914.
+
+    AN AUTHORING CONVENIENCE, NOT A SAMPLING CHANGE. Inheriting a score from
+    this library is exactly equivalent to typing the same scores onto the row.
+    Rows are drawn INDEPENDENTLY either way, because ``collect_row_draws`` keys
+    a draw by ``node_id``, never by name. Two rows sharing a name get two
+    independent draws.
+
+    That distinction is worth stating because the expression-row rule makes the
+    opposite assumption reasonable: there, a shared PARAMETER genuinely does
+    mean a shared draw, and drawing per-row instead collapses the spread
+    (measured GSD^2 1.2170 -> 1.0185). A shared NAME is not a shared driver --
+    it is two separate quantities that happen to be equally well known. In
+    practice the distinction barely arises inside one archetype (1.007 rows per
+    name across WP5; only Fuel Station repeats a name at all), but the
+    guarantee comes from the node_id keying, not from that statistic.
+
+    If a future fleet-level Monte Carlo ever needs a shared name to imply a
+    shared draw -- across archetypes it plausibly should, since it IS the same
+    material dataset -- that is a deliberate methodological change with its own
+    measurement, not something to slip in by keying draws differently.
+    """
+    #: material name -> score. A name absent here is unscored.
+    entries: dict[str, "RowUncertainty"] = Field(default_factory=dict)
+
+
 class RowUncertainty(BaseModel):
     """Uncertainty on ONE BOM row's quantity (Monte Carlo, single-product).
 
@@ -158,6 +189,7 @@ class BOMNode(BaseModel):
 
 
 BOMNode.model_rebuild()
+MaterialPedigreeLibrary.model_rebuild()
 
 
 # ── Validation report (upload-time, Patch 2) ─────────────────────────────────

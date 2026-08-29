@@ -38,15 +38,22 @@ API = BACKEND / "mapper" / "api"
 #: Sites with no test reaching them, each with the reason it is not worth one
 #: YET. Every entry is a real gap, not an exemption on principle -- the point of
 #: the list is that shrinking it is visible and growing it needs a sentence.
+#: Covered ONLY where a bw2 technosphere exists. Their tests skip in CI, so
+#: from the environment that gates merges they read as uncovered. Kept separate
+#: from KNOWN_UNCOVERED because they are not gaps -- they are measurements the
+#: CI environment cannot make. Discovered the hard way: the guard passed
+#: locally and failed in CI on exactly this.
+ENV_DEPENDENT: dict[str, str] = {
+    "lca.py:start_multi_year_contribution":
+        "reached by tests/test_contribution_multi_year.py, which skip without a "
+        "technosphere database",
+}
+
 KNOWN_UNCOVERED: dict[str, str] = {
     "ecoinvent.py:start_import":
         "needs a live ecoinvent archive + credentials; no fixture exists",
     "ecoinvent.py:start_local_import":
         "needs a real 7z/spold archive on disk",
-    "impact.py:post_calculate":
-        "GAP, and the highest-value one left. Same shape as the Monte Carlo bug: "
-        "the system-level Impact Assessment worker. Needs a DSM system plus "
-        "linked archetypes in a bw2 project, which no fixture builds yet",
     "lcia_methods.py:post_install":
         "downloads a .bw2package from Zenodo",
     "lcia_methods.py:post_install_custom":
@@ -103,7 +110,9 @@ def test_every_worker_launch_is_either_covered_or_declared():
     """The guard. A new worker-launching route with no test reaching its launch
     fails here, naming itself."""
     sites = _launch_sites()
-    undeclared = sorted(set(sites) - set(KNOWN_UNCOVERED) - set(_covered_sites()))
+    undeclared = sorted(
+        set(sites) - set(KNOWN_UNCOVERED) - set(ENV_DEPENDENT) - set(_covered_sites())
+    )
     assert not undeclared, (
         "these routes launch a background worker but no test reaches the launch, "
         "and they are not declared in KNOWN_UNCOVERED: "
@@ -188,9 +197,17 @@ threading.Thread.start = _patched
 '''
 
 
-@pytest.mark.parametrize("site", ["monte_carlo.py:post_monte_carlo"])
-def test_the_route_that_shipped_broken_is_covered(site):
-    """Named explicitly. If its coverage is ever removed, this says which."""
+@pytest.mark.parametrize(
+    "site",
+    [
+        "monte_carlo.py:post_monte_carlo",
+        # Every Sustainability Ratio comes through this one, and it is the same
+        # shape as the route that shipped dead.
+        "impact.py:post_calculate",
+    ],
+)
+def test_the_load_bearing_routes_are_covered(site):
+    """Named explicitly. If either loses its coverage, this says which."""
     assert site in _covered_sites(), (
         f"{site} launches a worker and nothing reaches the launch. This is the "
         "exact gap that let a 500 ship on every call."

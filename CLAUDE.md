@@ -8893,15 +8893,35 @@ remembering:
   `subsystems.py`, which launches no worker at all. Match against the
   discovered launch LINES.
 
-**Measured state at the time of writing** -- 7 of 10 launches unreached:
-covered are `monte_carlo.py:post_monte_carlo` and
-`lca.py:start_multi_year_contribution`. `KNOWN_UNCOVERED` declares the rest
-with a reason each; the highest-value gap is **`impact.py:post_calculate`**,
-the system-level Impact Assessment worker, which is the same shape as the bug
-that shipped and needs a DSM system plus linked archetypes in a bw2 project.
+**Three categories, and the third was learned in CI.** Covered:
+`monte_carlo.py:post_monte_carlo` and `impact.py:post_calculate`.
+`ENV_DEPENDENT` holds `lca.py:start_multi_year_contribution`, which is covered
+locally but whose tests SKIP without a technosphere database -- so from CI, the
+environment that gates merges, it reads as uncovered. The guard passed locally
+and failed in CI on exactly that, which is why the category exists.
+`KNOWN_UNCOVERED` declares the six real gaps with a reason each.
+
+**`impact.py:post_calculate` is covered deliberately and needs no bw2.** Every
+Sustainability Ratio comes through it and it is the same shape as the route
+that shipped dead. Its gates -- system, simulation, cohort mapping, methods,
+archetype validation, unlinked materials -- are all satisfiable in memory,
+because the LCA happens INSIDE the worker. A test that needed real databases
+would skip in CI, which is the hole `ENV_DEPENDENT` documents.
+
+**Spy on `Thread.start` by calling THROUGH, never by stubbing.** `TestClient`
+runs the ASGI app on its own portal thread; replacing `start` with something
+that does not start deadlocks `client.post`, which waits forever for a portal
+that never ran. Calling through is also safe for these workers -- they catch
+every exception and mark the task errored, so they fail fast on fake ecoinvent
+links.
+
+**Seed registries under the ACTUAL current project.** `dsm`, `bom` and
+`impact` each resolve the project through their own helper, so a fake name
+patched into one leaves `_get_system` looking elsewhere and the route 404s
+before reaching anything worth testing.
 
 A declared gap that later gains coverage must be REMOVED from the list --
-`test_declared_gaps_are_still_gaps` fails otherwise, so the list cannot rot
+`test_declared_gaps_are_still_gaps` fails naming it, so the list cannot rot
 into a set of permanent exemptions.
 
 #### What NOT to do

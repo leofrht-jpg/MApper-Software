@@ -83,7 +83,7 @@ export function UncertaintyBoxPlot({ distributions, filenameBase }: BoxProps) {
         <ChartExportButton chartRef={chartRef} filename={`uncertainty_boxplot_${filenameBase}`} />
       </div>
       <ChartExportContainer ref={chartRef}>
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Uncertainty by indicator">
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Uncertainty by indicator" data-chart-export-target>
           {tickVals.map((t, i) => (
             <g key={i}>
               <line
@@ -187,7 +187,7 @@ export function UncertaintyHistogram({ distribution, filenameBase }: HistProps) 
         <ChartExportButton chartRef={chartRef} filename={`uncertainty_histogram_${filenameBase}`} />
       </div>
       <ChartExportContainer ref={chartRef}>
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Distribution of sampled scores">
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Distribution of sampled scores" data-chart-export-target>
           <line x1={M.left} x2={W - M.right} y1={M.top + plotH} y2={M.top + plotH} stroke="var(--border-default)" />
           <line x1={M.left} x2={M.left} y1={M.top} y2={M.top + plotH} stroke="var(--border-default)" />
           {bins.map((b, i) => (
@@ -272,7 +272,7 @@ export function VarianceContributionBar({ contributors, filenameBase }: VarProps
         <ChartExportButton chartRef={chartRef} filename={`uncertainty_variance_${filenameBase}`} />
       </div>
       <ChartExportContainer ref={chartRef}>
-        <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Contribution to variance">
+        <svg width="100%" viewBox={`0 0 ${W} ${H}`} role="img" aria-label="Contribution to variance" data-chart-export-target>
           {rows.map((r, i) => {
             const cy = 8 + i * ROW_H
             const w = (r.share / max) * plotW

@@ -39,6 +39,14 @@ interface Props {
    * mode. Charts without a legend should omit this prop — the menu
    * then renders in its original chart-only shape, behavior unchanged.
    */
+  /**
+   * This chart draws with `<div>`s, not SVG, so only raster formats are
+   * possible. Hides SVG and PDF from the menu rather than letting someone pick
+   * one and get an error: the four div-based charts (Stage breakdown,
+   * Sensitivity range, Multi-item sensitivity, Contribution supply tree) are
+   * reading aids and diagnostics, and a PNG is the right output for them.
+   */
+  rasterOnly?: boolean
   legendRef?: RefObject<HTMLElement | null>
   /**
    * Patch 4I — alternative to ``legendRef`` for charts whose legend is
@@ -63,7 +71,7 @@ function getInitialBg(): BgOption {
   return v === 'dark' || v === 'light' || v === 'transparent' ? v : 'light'
 }
 
-export function ChartExportButton({ chartRef, filename, title = 'Export chart', legendRef, legendSelector }: Props) {
+export function ChartExportButton({ chartRef, filename, title = 'Export chart', rasterOnly = false, legendRef, legendSelector }: Props) {
   const hasLegendAffordance = !!(legendRef || legendSelector)
   const [open, setOpen] = useState(false)
   const [bg, setBg] = useState<BgOption>(getInitialBg)
@@ -245,8 +253,12 @@ export function ChartExportButton({ chartRef, filename, title = 'Export chart', 
           <div style={{ padding: '4px 12px 6px', fontSize: 10, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
             Export as
           </div>
-          <FormatItem icon={<FileText size={14} />} label="SVG (vector)" onClick={() => handleExport('svg')} busy={busy === 'svg'} />
-          <FormatItem icon={<FileText size={14} />} label="PDF (vector)" onClick={() => handleExport('pdf')} busy={busy === 'pdf'} />
+          {!rasterOnly && (
+            <>
+              <FormatItem icon={<FileText size={14} />} label="SVG (vector)" onClick={() => handleExport('svg')} busy={busy === 'svg'} />
+              <FormatItem icon={<FileText size={14} />} label="PDF (vector)" onClick={() => handleExport('pdf')} busy={busy === 'pdf'} />
+            </>
+          )}
           <FormatItem icon={<FileImage size={14} />} label={`PNG (${scale}×)`} onClick={() => handleExport('png')} busy={busy === 'png'} />
           <FormatItem icon={<FileImage size={14} />} label={`JPEG (${scale}×)`} onClick={() => handleExport('jpeg')} busy={busy === 'jpeg'} />
 

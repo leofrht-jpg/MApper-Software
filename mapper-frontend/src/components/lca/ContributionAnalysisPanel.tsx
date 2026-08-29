@@ -315,7 +315,7 @@ export function ContributionAnalysisPanel({ result, loadingPhase, stageBreakdown
         {tab === 'supply' && supplyView === 'tree' && (
           <div style={{ position: 'relative' }}>
             <div style={{ position: 'absolute', top: -4, right: 4, zIndex: 5 }}>
-              <ChartExportButton chartRef={supplyTreeRef} filename={`contribution_tree_${result.method.join('_')}`} />
+              <ChartExportButton rasterOnly chartRef={supplyTreeRef} filename={`contribution_tree_${result.method.join('_')}`} />
             </div>
             <ChartExportContainer ref={supplyTreeRef} style={{ maxHeight: 520, overflow: 'auto', paddingTop: 4 }}>
               <SupplyChainTree node={filteredTree} unit={result.method_unit} formatValue={valueFormat.format} />

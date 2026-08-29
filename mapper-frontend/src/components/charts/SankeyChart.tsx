@@ -106,7 +106,7 @@ export function SankeyChart({ data }: Props) {
 
   return (
     <div style={{ height: 420, width: '100%', overflow: 'hidden', position: 'relative' }}>
-      <svg ref={svgRef} style={{ width: '100%', height: '100%' }} />
+      <svg ref={svgRef} style={{ width: '100%', height: '100%' }} data-chart-export-target />
       {layoutFailed && (
         <div
           role="status"

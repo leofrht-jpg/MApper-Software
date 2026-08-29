@@ -84,7 +84,7 @@ export function SensitivityRangeChart({
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <NumberFormatControl settings={format.settings} onChange={format.setSettings} />
-          <ChartExportButton chartRef={chartRef} filename={`single_product_sensitivity_${filenameBase}`} />
+          <ChartExportButton rasterOnly chartRef={chartRef} filename={`single_product_sensitivity_${filenameBase}`} />
         </div>
       </div>
 

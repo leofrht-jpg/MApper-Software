@@ -8784,6 +8784,82 @@ works.
   chart needs an SVG rendition before its export means anything.
 
 
+### Chart export resolution is OPT-IN, not largest-by-area
+
+`findChartSvg` returns the `<svg>` matching
+`svg.recharts-surface, svg[data-chart-export-target]` and nothing else.
+Recharts marks its own surface, so Recharts-based charts need no action;
+anything hand-drawn opts in with `CHART_EXPORT_ATTR`.
+
+**Why the old rule was dangerous.** It took the LARGEST `<svg>` in the
+container, so a container holding no chart still returned something if it held
+any icon: the Contribution supply tree is indented `<div>`s plus lucide
+chevrons, and its export silently wrote a **12px chevron** to disk as the
+user's contribution tree. A file nobody would necessarily open and check.
+
+**Why opt-in rather than a size threshold.** A threshold ("ignore anything
+under 32×32") was the other candidate and lost on two counts. It fails by
+GUESSING — a decorative graphic or logo dropped into a chart card silently
+becomes the export, and nobody finds out until a figure looks wrong — where
+the marker fails by THROWING, on the first click. And it depends on layout
+measurement, so it cannot be tested: jsdom reports every rect as 0×0, which is
+why this function had no test for its entire life. The selector rule is pure
+DOM, so the behaviour is now checkable, including the supply-tree regression.
+
+The cost is that a NEW hand-drawn chart must add the attribute, and forgetting
+it produces a loud immediate error rather than a wrong file. That is the
+intended trade.
+
+**Marked today**: AESA `RadarView` + `BoxPlotView`, the three
+`UncertaintyCharts`, `MultiScenarioImpactChart`'s faceted view, `SankeyChart`.
+NOT marked, deliberately: `TimelineView`'s three 14px legend swatches (its
+chart is Recharts), `ConfigSidebar`'s preview and `FlowSankey` (no export
+button).
+
+### Div-based charts export as raster
+
+Four charts draw with positioned `<div>`s and have no vector source:
+**Stage breakdown**, **Sensitivity range/tornado**, **Multi-item sensitivity**
+(both views), **Contribution supply tree**. They pass `rasterOnly` to
+`<ChartExportButton>`, which hides SVG and PDF from the menu, and
+`exportChart` falls through to `exportContainerAsRaster` (html2canvas,
+dynamically imported so the ~200 KB stays out of the initial bundle).
+
+`html2canvas` is now a DIRECT dependency. It was already present transitively
+via jspdf; relying on that would break silently the day jspdf drops it.
+
+**Stage breakdown is raster by decision, not by omission.** Rendering it as
+SVG would mean turning the credit hatch from a CSS `repeating-linear-gradient`
+into an SVG `<pattern>` — re-rendering something that shipped in #43, on the
+one chart where a hatch silently reverting to solid would read as a burden
+rather than a credit. A working PNG beats a vector figure carrying that risk.
+If it is ever needed as vector for a paper figure, that is its own change with
+the hatch verified.
+
+**The error string names an action, not a precondition**: "This chart can't be
+exported as SVG or PDF. Try PNG." The old text named `findChartSvg`'s internal
+requirement and told the user nothing to do.
+
+**Multi-scenario impact hides its export button when every series is hidden** —
+the container holds only the empty-state placeholder, so there is nothing to
+export.
+
+#### What NOT to do
+
+- **Don't restore largest-by-area, or add a size heuristic beside the
+  selector.** Either reintroduces silent wrong-file exports. Locked by
+  `tests/chartExportResolution.test.tsx`, verified load-bearing (restoring the
+  old rule fails 3 tests).
+- **Don't add a hand-drawn chart export without `data-chart-export-target`.**
+  It will throw on first click. The coverage guard in the same file fails CI
+  for a chart that is neither svg-based nor `rasterOnly`.
+- **Don't mark a legend swatch or an icon.** The marker means "this is THE
+  chart". `TimelineView`'s swatches are deliberately unmarked.
+- **Don't offer a vector format on a div-based chart.** `rasterOnly` hides
+  them; letting someone pick SVG and get an error is the behaviour being
+  removed.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

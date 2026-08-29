@@ -93,7 +93,7 @@ export function RadarView({ results, size = 480 }: Props) {
         <ChartExportButton chartRef={radarRef} filename={`aesa_radar_${year}`} />
       </div>
       <ChartExportContainer ref={radarRef} style={{ width: size, height: size }}>
-      <svg width={size} height={size} style={{ display: 'block' }} role="img">
+      <svg width={size} height={size} style={{ display: 'block' }} role="img" data-chart-export-target>
         {/* Zone-shaded background: safe → uncertainty → high_risk */}
         <circle cx={cx} cy={cy} r={radius} fill={ZONE_COLOR.high_risk} fillOpacity={0.08} />
         <circle cx={cx} cy={cy} r={rUncert} fill={ZONE_COLOR.zone_of_uncertainty} fillOpacity={0.12} />

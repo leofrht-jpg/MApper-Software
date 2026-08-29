@@ -103,7 +103,7 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <NumberFormatControl settings={format.settings} onChange={format.setSettings} />
-          <ChartExportButton chartRef={chartRef} filename={`single_product_stage_breakdown_${filenameBase}${caseLabel ? `_${caseLabel.replace(/\s+/g, '_').toLowerCase()}` : ''}`} />
+          <ChartExportButton rasterOnly chartRef={chartRef} filename={`single_product_stage_breakdown_${filenameBase}${caseLabel ? `_${caseLabel.replace(/\s+/g, '_').toLowerCase()}` : ''}`} />
         </div>
       </div>
 

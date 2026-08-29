@@ -22,6 +22,12 @@ import {
   CoverageBanner,
   MaterialPedigreeTable,
 } from '../components/uncertainty/MaterialPedigreeTable'
+import {
+  ItemPicker,
+  MultiItemBoxPlot,
+  PairwiseDifferences,
+} from '../components/uncertainty/MultiItemUncertainty'
+import { exportMonteCarloMulti } from '../api/client'
 import { exportMonteCarlo, getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
 
 const DEFAULT_ITERATIONS = 1000
@@ -41,8 +47,10 @@ interface Props {
 }
 
 export function MonteCarloPage({ onNavigate }: Props) {
-  const { handoff, running, pct, stage, error, cancelled, result, run, cancel, reset } =
-    useMonteCarloStore()
+  const {
+    handoff, multiHandoff, multiResult, running, pct, stage, error, cancelled,
+    result, run, runMulti, cancel, reset,
+  } = useMonteCarloStore()
 
   const [iterations, setIterations] = useState(DEFAULT_ITERATIONS)
   const [seedText, setSeedText] = useState('')
@@ -104,6 +112,24 @@ export function MonteCarloPage({ onNavigate }: Props) {
       }),
     [distributions],
   )
+
+  // Multi-item is a separate mode, not a variant of the single-item panel:
+  // its headline is the pairwise difference, which has no single-item analogue.
+  if (multiHandoff) {
+    return (
+      <MultiItemMode
+        handoff={multiHandoff}
+        result={multiResult}
+        running={running}
+        pct={pct}
+        stage={stage}
+        error={error}
+        cancelled={cancelled}
+        onRun={runMulti}
+        onCancel={cancel}
+      />
+    )
+  }
 
   if (!handoff) {
     return <NoHandoff onNavigate={onNavigate} />
@@ -516,4 +542,173 @@ const tdStyle: React.CSSProperties = {
 const tdNum: React.CSSProperties = {
   ...tdStyle, textAlign: 'right', fontVariantNumeric: 'tabular-nums',
   fontFamily: 'var(--font-mono, monospace)',
+}
+
+// ── Multi-item (paired) ──────────────────────────────────────────────────────
+
+/**
+ * Paired multi-item uncertainty.
+ *
+ * PAIRED IS THE ONLY MODE, deliberately: one draw set per iteration applied to
+ * every item. Independent draws let a shared driver take two different values
+ * in the same iteration, which inflated sd(A−A0) by 6.8× on Battery
+ * Circularity and pushed the interval across zero — reporting "not
+ * distinguishable" where the paired run says A is lower in 100% of iterations.
+ * There is no toggle because an independent option would exist only to produce
+ * the wrong answer.
+ */
+function MultiItemMode({
+  handoff, result, running, pct, stage, error, cancelled, onRun, onCancel,
+}: {
+  handoff: import('../stores/monteCarloStore').MonteCarloMultiHandoff
+  result: import('../api/client').MonteCarloMultiResult | null
+  running: boolean
+  pct: number
+  stage: string
+  error: string | null
+  cancelled: boolean
+  onRun: (b: import('../api/client').MonteCarloMultiRequest) => Promise<void>
+  onCancel: () => Promise<void>
+}) {
+  // Defaults to the comparison's current selection.
+  const [selected, setSelected] = useState<string[]>(() => handoff.items.map((i) => i.archetypeId))
+  const [iterations, setIterations] = useState(DEFAULT_ITERATIONS)
+  const [seedText, setSeedText] = useState('')
+  const [configOpen, setConfigOpen] = useState(true)
+  const [resultsOpen, setResultsOpen] = useState(true)
+  const [exporting, setExporting] = useState(false)
+
+  const ordered = handoff.items.filter((i) => selected.includes(i.archetypeId))
+
+  return (
+    <div style={{ padding: 'var(--space-6)', maxWidth: 1200 }} data-testid="monte-carlo-multi">
+      <header style={{ marginBottom: 'var(--space-5)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Dice5 size={20} strokeWidth={1.5} color="var(--mod-lca)" />
+          <h1 style={{ fontSize: 'var(--text-xl)', fontWeight: 600, margin: 0 }}>
+            Uncertainty across a comparison
+          </h1>
+        </div>
+        <p style={{ color: 'var(--text-secondary)', fontSize: 'var(--text-sm)', marginTop: 6 }}>
+          Every item is solved against the same sampled world each iteration, so the
+          differences between them are meaningful and not an artefact of separate draws.
+        </p>
+      </header>
+
+      <CollapsibleCard
+        title="Configuration"
+        expanded={configOpen}
+        onToggle={() => setConfigOpen((v) => !v)}
+        summary={`${ordered.length} of ${handoff.items.length} items · ${handoff.methods.length} indicators · ${iterations} iterations`}
+      >
+        <div style={{ display: 'grid', gap: 'var(--space-4)' }}>
+          <FieldRow label="Indicators" value={`${handoff.methods.length} selected`} />
+          <FieldRow label="Scope" value={scopeLabel(handoff.scope)} />
+          <FieldRow label="Sensitivity case" value={handoff.parameterScenario ?? 'Base'} />
+          <FieldRow label="Background database" value={handoff.computeDatabase ?? 'base ecoinvent'} />
+
+          <ItemPicker
+            handoff={handoff}
+            selected={selected}
+            iterations={iterations}
+            onToggle={(id) =>
+              setSelected((cur) =>
+                cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])}
+          />
+
+          <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Iterations</span>
+              <input
+                data-testid="mc-multi-iterations" type="number" min={1} max={20000}
+                value={iterations}
+                onChange={(e) => setIterations(Math.max(1, Number(e.target.value) || 1))}
+                style={inputStyle}
+              />
+            </label>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Seed</span>
+              <input
+                data-testid="mc-multi-seed" type="text" placeholder="random"
+                value={seedText} onChange={(e) => setSeedText(e.target.value)}
+                style={{ ...inputStyle, width: 140 }}
+              />
+            </label>
+            <Button
+              variant="primary"
+              data-testid="mc-multi-run"
+              disabled={running || ordered.length === 0}
+              onClick={() => {
+                const seed = seedText.trim() === '' ? null : Number(seedText.trim())
+                void onRun({
+                  archetype_ids: ordered.map((i) => i.archetypeId),
+                  methods: handoff.methods,
+                  scope: handoff.scope,
+                  stage_amounts: handoff.stageAmounts,
+                  parameter_scenario: handoff.parameterScenario,
+                  compute_database: handoff.computeDatabase,
+                  iterations,
+                  seed: Number.isFinite(seed as number) ? seed : null,
+                  keep_samples: true,
+                })
+              }}
+            >
+              <Play size={14} strokeWidth={2} />
+              {running ? 'Running…' : 'Run'}
+            </Button>
+          </div>
+          <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0 }}>
+            One seed for the whole job: it defines the shared draw sequence every item is
+            solved against, so it cannot be per-item.
+          </p>
+        </div>
+      </CollapsibleCard>
+
+      <ComputeProgress
+        label={stage || 'Sampling…'} active={running} bar="determinate" pct={pct}
+        statusColor="var(--mod-lca)" onCancel={() => void onCancel()}
+      />
+      {error && <Banner tone="danger" testId="mc-multi-error">{error}</Banner>}
+      {cancelled && !result && (
+        <Banner tone="muted" testId="mc-multi-cancelled">
+          Run stopped. Cancellation applies to the whole job, so no item was left partly sampled.
+        </Banner>
+      )}
+
+      {result && (
+        <div style={{ marginTop: 'var(--space-4)' }}>
+          <CollapsibleCard
+            title="Results"
+            expanded={resultsOpen}
+            onToggle={() => setResultsOpen((v) => !v)}
+            summary={`${result.items.length} items · ${result.n_iterations} iterations · seed ${result.seed}`}
+            actions={
+              <Button
+                variant="secondary" data-testid="mc-multi-export" disabled={exporting}
+                onClick={() => {
+                  setExporting(true)
+                  void exportMonteCarloMulti(result).finally(() => setExporting(false))
+                }}
+              >
+                <Download size={14} strokeWidth={1.8} />
+                {exporting ? 'Exporting…' : 'Export'}
+              </Button>
+            }
+          >
+            <div style={{ display: 'grid', gap: 'var(--space-5)' }}>
+              <Section
+                title="Pairwise differences"
+                note="The headline of a paired run: what the comparison is actually asking."
+              >
+                <PairwiseDifferences result={result} />
+              </Section>
+              <Section title="Distribution per item" note="In comparison order.">
+                <MultiItemBoxPlot result={result} />
+              </Section>
+            </div>
+          </CollapsibleCard>
+        </div>
+      )}
+    </div>
+  )
 }

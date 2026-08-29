@@ -42,11 +42,16 @@ from mapper.core.monte_carlo_engine import (
 from mapper.models.bom_schemas import MaterialPedigreeLibrary
 from mapper.models.schemas import (
     ArchetypeLCAMethodDistribution,
+    ItemDistribution,
     MonteCarloExportRequest,
+    MonteCarloMultiExportRequest,
+    MonteCarloMultiRequest,
+    MonteCarloMultiResult,
     MonteCarloRequest,
     MonteCarloResult,
     MaterialScoringScope,
     MonteCarloStartResponse,
+    PairwiseDifference,
     PedigreeCoverage,
     ScoredInput,
     PedigreeTableResponse,
@@ -67,6 +72,7 @@ class _TaskState:
         self.error: str | None = None
         self.cancelled: bool = False
         self.result: MonteCarloResult | None = None
+        self.multi_result: "MonteCarloMultiResult | None" = None
         self.subscribers: list[asyncio.Queue] = []
 
 
@@ -475,6 +481,170 @@ async def get_pedigree_table() -> PedigreeTableResponse:
 
 
 
+
+# ── Paired multi-item ─────────────────────────────────────────────────────────
+
+
+def _run_monte_carlo_multi(
+    body: MonteCarloMultiRequest,
+    task: _TaskState,
+    task_id: str,
+) -> MonteCarloMultiResult:
+    """One sampled world per iteration, every item solved against it.
+
+    PAIRED IS THE ONLY MODE. Independent draws let a shared driver take two
+    different values in the same iteration, so a difference that is
+    structurally near-certain reads as noise: measured on Battery Circularity,
+    A and A0 share 23 parameters and all 27 ecoinvent activities, and
+    independent sampling widened sd(A-A0) by 6.8x and pushed the 95% interval
+    across zero -- reporting "not distinguishable" where the paired run says A
+    is lower in 100% of iterations. It is also CHEAPER, because sampling the
+    matrices is the expensive part and this does it once per iteration rather
+    than once per item.
+
+    The marginals are unaffected, and that is asserted rather than assumed:
+    the RNG sequence depends only on the seed, not on which demand is solved
+    against it, so item i's per-iteration scores match a single-item run at the
+    same seed. See ``test_paired_marginals_match_single_item``.
+    """
+    import bw2calc
+
+    from mapper.api.lca import _build_archetype_source_demand, _translate_demand_to_database
+    from mapper.core.bw2_wrapper import PersistentLCARunner
+
+    t_start = time.perf_counter()
+    _emit(task, "preparing", 0.01)
+
+    if not body.archetype_ids:
+        raise HTTPException(status_code=400, detail="At least one item is required")
+    if not body.methods:
+        raise HTTPException(status_code=400, detail="At least one method is required")
+
+    method_tuples = [tuple(m) for m in body.methods]
+    warnings: list[str] = []
+    items: list[dict] = []
+    runner = PersistentLCARunner()
+
+    for aid in body.archetype_ids:
+        bundle = _build_archetype_source_demand(
+            archetype_id=aid, scope=body.scope, amount=1.0,
+            stage_amounts=body.stage_amounts.get(aid, {}),
+            methods=body.methods, parameter_scenario=body.parameter_scenario,
+            basis_amounts=body.basis_amounts,
+        )
+        demand, w = _translate_demand_to_database(bundle.total_demand, body.compute_database)
+        warnings.extend(w)
+        if not demand:
+            raise HTTPException(
+                status_code=400,
+                detail=f"'{bundle.arc.name}' has no linked materials in this scope.",
+            )
+        items.append({
+            "id": aid, "name": bundle.arc.name, "demand": demand,
+            "det": runner(demand, method_tuples),
+            "samples": {m: [] for m in method_tuples},
+        })
+
+    seed = body.seed if body.seed is not None else int(uuid.uuid4().int % (2**31 - 1))
+    n = body.iterations
+
+    mc = bw2calc.MonteCarloLCA(items[0]["demand"], method_tuples[0], seed=seed)
+    next(mc)
+    cf_samplers = _method_cf_samplers(mc, method_tuples, seed)
+
+    for i in range(n):
+        # Cancellation stops the WHOLE job, not one item: the check is at the
+        # iteration boundary, before any item is solved, so a stop never leaves
+        # a half-populated world where some items have i draws and others i-1.
+        if task_registry.is_cancelled(task_id):
+            raise CancelledOperation(task_id)
+
+        next(mc)                       # ONE sampled world for this iteration
+        for idx, it in enumerate(items):
+            if idx > 0:
+                # Same sampled matrices, next demand.
+                mc.demand = it["demand"]
+                mc.build_demand_array()
+                mc.lci_calculation()
+            flow_totals = mc.biosphere_matrix * mc.supply_array
+            for m in method_tuples:
+                rows, cf_rng = cf_samplers[m]
+                # The CF draw belongs to the ITERATION, not the item: every
+                # item must be characterised with the same sampled factors or
+                # the difference reacquires the decorrelation pairing removes.
+                if idx == 0:
+                    it["_cf"] = {}
+                    vals = cf_rng.next()
+                    items[0]["_cf"][m] = vals
+                else:
+                    vals = items[0]["_cf"][m]
+                it["samples"][m].append(float(vals @ flow_totals[rows]))
+        # Restore item 0's demand so the next iteration's warm start is stable.
+        if len(items) > 1:
+            mc.demand = items[0]["demand"]
+            mc.build_demand_array()
+
+        if (i + 1) % 10 == 0 or i + 1 == n:
+            _emit(task, f"iteration {i + 1}/{n}", 0.02 + 0.96 * (i + 1) / n)
+
+    if task_registry.is_cancelled(task_id):
+        raise CancelledOperation(task_id)
+    _emit(task, "summarising", 0.99)
+
+    out_items: list[ItemDistribution] = []
+    for it in items:
+        dists = []
+        for m in method_tuples:
+            st = summarize(it["samples"][m])
+            det, unit = it["det"].get(m, (0.0, ""))
+            dists.append(ArchetypeLCAMethodDistribution(
+                method=list(m), method_label=" | ".join(m[1:]) or m[0], unit=unit,
+                deterministic=det, n_iterations=n, seed=seed,
+                samples=it["samples"][m] if body.keep_samples else None, **st,
+            ))
+        out_items.append(ItemDistribution(
+            archetype_id=it["id"], archetype_name=it["name"], distributions=dists))
+
+    diffs = _pairwise_differences(items, method_tuples)
+
+    return MonteCarloMultiResult(
+        scope=body.scope, n_iterations=n, seed=seed,
+        elapsed_seconds=round(time.perf_counter() - t_start, 3),
+        compute_database=body.compute_database,
+        parameter_scenario=body.parameter_scenario,
+        items=out_items, differences=diffs, warnings=warnings,
+    )
+
+
+def _pairwise_differences(items: list[dict], method_tuples: list[tuple]) -> list[PairwiseDifference]:
+    """Every ordered pair in comparison order, per indicator."""
+    out: list[PairwiseDifference] = []
+    for i in range(len(items)):
+        for j in range(i + 1, len(items)):
+            a, b = items[i], items[j]
+            for m in method_tuples:
+                sa = np.asarray(a["samples"][m])
+                sb = np.asarray(b["samples"][m])
+                d = sa - sb
+                q = np.percentile(d, [2.5, 25, 50, 75, 97.5])
+                corr = 0.0
+                if sa.size > 1 and sa.std() > 0 and sb.std() > 0:
+                    corr = float(np.corrcoef(sa, sb)[0, 1])
+                det_a = a["det"].get(m, (0.0, ""))
+                det_b = b["det"].get(m, (0.0, ""))
+                out.append(PairwiseDifference(
+                    method=list(m), method_label=" | ".join(m[1:]) or m[0],
+                    unit=det_a[1],
+                    a_id=a["id"], a_name=a["name"], b_id=b["id"], b_name=b["name"],
+                    deterministic=det_a[0] - det_b[0],
+                    median=float(q[2]), mean=float(d.mean()),
+                    p2_5=float(q[0]), p25=float(q[1]), p75=float(q[3]), p97_5=float(q[4]),
+                    fraction_a_lower=float(np.mean(sa < sb)),
+                    correlation=corr,
+                ))
+    return out
+
+
 # ── Excel export ──────────────────────────────────────────────────────────────
 
 #: Field acronym for the shared filename scheme, alongside LCA / pLCA / AESA /
@@ -681,6 +851,131 @@ async def post_monte_carlo_export(body: MonteCarloExportRequest) -> Any:
     filename = build_export_filename(body.result.archetype_name, [], MC_DOMAIN)
     return excel_response(wb, filename, kind="data")
 
+
+
+
+def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workbook":
+    """Multi-item paired results.
+
+    The Item column sits alongside Sensitivity case, matching how every other
+    multi-axis export carries its discriminator. Pairwise differences get their
+    OWN sheet rather than extra columns: they are the headline of a paired run,
+    not an annotation on the per-item rows, and one row per (pair x indicator)
+    does not fit beside one row per (item x indicator).
+    """
+    from openpyxl import Workbook
+
+    from mapper.api.cohort_export import apply_sci, autosize, style_header
+
+    wb = Workbook()
+
+    ws = wb.active
+    ws.title = "Summary"
+    ws.append(["Field", "Value"])
+    style_header(ws)
+    for k, v in [
+        ("Items", len(result.items)),
+        ("Sensitivity case", result.parameter_scenario or "Base"),
+        ("Scope", _scope_label(result.scope)),
+        ("Background database", result.compute_database or "base ecoinvent"),
+        ("Iterations", result.n_iterations),
+        ("Seed", result.seed),
+        ("Elapsed (s)", round(result.elapsed_seconds, 2)),
+        ("", ""),
+        ("Sampling", "PAIRED. One draw set per iteration, applied to every "
+                     "item, so the pairwise differences are meaningful. "
+                     "Marginals are unaffected."),
+        ("Caveat", LOWER_BOUND_NOTE),
+    ]:
+        ws.append([k, v])
+    if result.warnings:
+        ws.append(["Warnings", " | ".join(result.warnings)])
+    autosize(ws)
+
+    ws = wb.create_sheet("Distributions")
+    ws.append([
+        "Item", "Sensitivity case", "Indicator", "Unit", "Deterministic", "Median",
+        "Median / deterministic", "Mean", "p2.5", "p25", "p75", "p97.5", "GSD2",
+        "Iterations", "Seed",
+    ])
+    style_header(ws)
+    case = result.parameter_scenario or "Base"
+    for it in result.items:
+        for d in it.distributions:
+            ratio = (d.median / d.deterministic) if d.deterministic else None
+            ws.append([
+                it.archetype_name, case, d.method_label, d.unit,
+                d.deterministic, d.median,
+                round(ratio, 4) if ratio is not None else "n/a",
+                d.mean, d.p2_5, d.p25, d.p75, d.p97_5,
+                round(d.gsd2, 4) if d.gsd2 else "n/a",
+                d.n_iterations, d.seed,
+            ])
+    if result.items:
+        apply_sci(ws, min_row=2, min_col=5, max_col=6)
+        apply_sci(ws, min_row=2, min_col=8, max_col=12)
+    autosize(ws)
+
+    ws = wb.create_sheet("Pairwise differences")
+    ws.append([
+        "A", "B", "Indicator", "Unit", "Deterministic (A-B)", "Median (A-B)",
+        "Mean", "p2.5", "p25", "p75", "p97.5",
+        "A lower in", "Correlation(A,B)",
+    ])
+    style_header(ws)
+    for d in result.differences:
+        ws.append([
+            d.a_name, d.b_name, d.method_label, d.unit,
+            d.deterministic, d.median, d.mean, d.p2_5, d.p25, d.p75, d.p97_5,
+            f"{d.fraction_a_lower * 100:.1f}%", round(d.correlation, 4),
+        ])
+    if result.differences:
+        apply_sci(ws, min_row=2, min_col=5, max_col=11)
+        ws.append([])
+        ws.append([
+            "Correlation is INFORMATIVE, not a warning. A weakly correlated "
+            "pair gives a genuinely wide difference and that is correct; the "
+            "correlation says where the precision comes from.",
+        ])
+    else:
+        ws.append(["A single item has no pairwise difference."])
+    autosize(ws)
+
+    ws = wb.create_sheet("Samples")
+    cols: list[tuple[str, list[float]]] = []
+    for it in result.items:
+        for d in it.distributions:
+            if d.samples:
+                cols.append((f"{it.archetype_name} — {d.method_label}", d.samples))
+    if not cols:
+        ws.append(["Samples were not retained for this run."])
+        style_header(ws)
+        ws.append([
+            "Re-run with samples retained to populate this sheet; the "
+            "percentiles on Distributions are unaffected."
+        ])
+    else:
+        ws.append(["Iteration"] + [c[0] for c in cols])
+        style_header(ws)
+        n = max(len(c[1]) for c in cols)
+        for i in range(n):
+            ws.append([i + 1] + [(c[1][i] if i < len(c[1]) else None) for c in cols])
+        apply_sci(ws, min_row=2, min_col=2, max_col=1 + len(cols))
+    autosize(ws)
+
+    return wb
+
+
+@router.post("/lca/monte-carlo/multi/export")
+async def post_monte_carlo_multi_export(body: MonteCarloMultiExportRequest) -> Any:
+    from mapper.api.bom import build_export_filename
+    from mapper.api.cohort_export import excel_response
+
+    wb = _build_monte_carlo_multi_workbook(body.result)
+    names = [i.archetype_name for i in body.result.items]
+    head = names[0] if names else "comparison"
+    filename = build_export_filename(head, names[1:], MC_DOMAIN)
+    return excel_response(wb, filename, kind="data")
 
 
 # ── Material pedigree library ────────────────────────────────────────────────
@@ -929,6 +1224,64 @@ async def post_monte_carlo(body: MonteCarloRequest) -> MonteCarloStartResponse:
     # on every call, so the endpoint 500'd before any sampling began.
     threading.Thread(target=work, daemon=True).start()
     return MonteCarloStartResponse(task_id=task_id)
+
+
+
+@router.post("/lca/monte-carlo/multi", response_model=MonteCarloStartResponse)
+async def post_monte_carlo_multi(body: MonteCarloMultiRequest) -> MonteCarloStartResponse:
+    if not body.archetype_ids:
+        raise HTTPException(status_code=400, detail="At least one item is required")
+    if not body.methods:
+        raise HTTPException(status_code=400, detail="At least one method is required")
+    if body.iterations < 1 or body.iterations > MAX_ITERATIONS:
+        raise HTTPException(
+            status_code=400, detail=f"iterations must be between 1 and {MAX_ITERATIONS}")
+
+    task_id = str(uuid.uuid4())
+    task = _TaskState()
+    with _TASK_LOCK:
+        _TASKS[task_id] = task
+    task_registry.register(task_id)
+
+    def work() -> None:
+        try:
+            task.multi_result = _run_monte_carlo_multi(body, task, task_id)
+            task.done = True
+            _notify_all(task, {"type": "done", "task_id": task_id})
+        except CancelledOperation:
+            # ONE task id for the whole job, so a single cancel stops every
+            # item rather than leaving the rest running.
+            task.cancelled = True
+            task.done = True
+            _notify_all(task, {"type": "cancelled", "task_id": task_id})
+        except HTTPException as e:
+            task.error = str(e.detail)
+            task.done = True
+            _notify_all(task, {"type": "error", "error": task.error})
+        except Exception as e:  # noqa: BLE001 - surfaced to the client
+            task.error = f"{type(e).__name__}: {e}"
+            task.done = True
+            _notify_all(task, {"type": "error", "error": task.error})
+        finally:
+            task_registry.unregister(task_id)
+
+    threading.Thread(target=work, daemon=True).start()
+    return MonteCarloStartResponse(task_id=task_id)
+
+
+@router.get("/lca/monte-carlo/multi/{task_id}", response_model=MonteCarloMultiResult | dict)
+async def get_monte_carlo_multi(task_id: str) -> Any:
+    with _TASK_LOCK:
+        task = _TASKS.get(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Unknown task id")
+    if task.cancelled:
+        return {"cancelled": True, "task_id": task_id}
+    if task.error:
+        raise HTTPException(status_code=500, detail=task.error)
+    if not task.done or task.multi_result is None:
+        raise HTTPException(status_code=409, detail="Task is still running")
+    return task.multi_result
 
 
 @router.get("/lca/monte-carlo/{task_id}", response_model=MonteCarloResult | dict)

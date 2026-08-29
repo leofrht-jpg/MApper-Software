@@ -9073,6 +9073,84 @@ the whole list down with it.
   test asserting that it does will pass with the splice removed.
 
 
+### Multi-item uncertainty is PAIRED, and only paired
+
+One sampled world per iteration, every item solved against it. There is no
+independent mode and no toggle, because the alternative exists only to produce
+the wrong answer.
+
+**Measured on Battery Circularity**, where A and A0 share 23 parameters and
+ALL 27 ecoinvent activities (identical activity sets, differing only in
+quantities):
+
+| | paired | independent |
+|---|---|---|
+| corr(A, A0) | 0.9860 | −0.0258 |
+| sd(A−A0) | 0.00117 | 0.00797 — 6.8× wider |
+| 95% CI | [−0.0160, −0.0112] | [−0.0288, **+0.0024**] |
+| P(A < A0) | **100.0%** | 95.0% |
+
+The independent interval CROSSES ZERO: it reports "not distinguishable" where
+the paired run says A is lower in every iteration. An opposite conclusion, not
+a wider error bar. Same correlation error the expression-row rule prevents, one
+level up.
+
+**Paired is also CHEAPER**, because sampling the matrices is the expensive part
+and it happens once per iteration rather than once per item: 59 s for one item
+per 1000 iterations, then ~39 s per additional item (4 items = 176 s, 1.34×
+cheaper than four independent runs). That formula IS the picker's estimate --
+`estimatePairedSeconds` in `client.ts`.
+
+**ONE seed for the whole job.** It defines the shared draw sequence every item
+is solved against, so a per-item seed would decorrelate them and undo the
+pairing. `MonteCarloMultiRequest` has no `seeds` field and no mode field;
+`test_no_sampling_mode_toggle_exists` guards both.
+
+**Pairing alters only the JOINT distribution**, and that is asserted rather
+than assumed. The RNG sequence depends only on the seed, not on which demand
+consumes it, so item i sees the same sampled worlds as a single-item run at the
+same seed. Measured: item 0 is **bit-identical** (max relative difference
+0.000e+00); later items agree to **2.3e-05**, not bit-exactly, because
+`MonteCarloLCA` warm-starts CGS from the previous solve and in a paired run
+that previous solve is a different item. CGS converges to the same answer
+within tolerance, so the residual is solver noise, not a distribution change.
+`test_the_measured_residual_is_solver_noise_not_a_distribution_change` records
+the number to compare against.
+
+**The CF draw belongs to the ITERATION, not the item.** Every item is
+characterised with the same sampled factors; drawing per item would reacquire
+exactly the decorrelation pairing removes.
+
+**Correlation is reported as INFORMATION, not a warning.** A weakly correlated
+pair gives a genuinely wide difference and that is correct; the correlation
+tells the reader where the precision comes from. The UI says "little shared
+structure, so this difference is genuinely wide" -- never "unreliable".
+
+**Cancellation stops the whole job.** One task id, and the check sits at the
+iteration boundary BEFORE any item is solved, so a stop never leaves some items
+with i draws and others with i−1.
+`test_cancellation_is_checked_at_the_ITERATION_boundary` pins the ordering.
+
+**Export**: `Item` column beside `Sensitivity case` on Distributions, matching
+how every other multi-axis export carries its discriminator, and pairwise
+differences on their OWN sheet -- they are the headline of a paired run, not an
+annotation, and one row per (pair × indicator) does not fit beside one row per
+(item × indicator).
+
+#### What NOT to do
+
+- **Don't add an independent-sampling option.** It exists only to produce the
+  wrong answer; the measurement above is why.
+- **Don't seed per item.** One seed governs the shared sequence.
+- **Don't draw characterisation factors per item.** Per iteration, shared.
+- **Don't sort the box plot or the pairwise table by value.** Comparison order,
+  so the reader's mental ordering carries across.
+- **Don't present correlation as a caveat.** It explains the width; it does not
+  undermine it.
+- **Don't claim paired marginals are bit-identical for every item.** Item 0 is;
+  later items agree to solver tolerance because of the CGS warm start.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

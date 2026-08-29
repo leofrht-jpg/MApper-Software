@@ -9013,6 +9013,65 @@ with blanks rather than truncating to the shortest.
 - **Don't add a domain token to one side only.** `ExportDomain`, both
   `PARITY_FIXTURES` sets, or the two filename implementations drift silently.
 
+### The material-scoring table says what it cannot reach
+
+An expression row inherits its uncertainty from the parameters in its
+expression and can never carry its own score, so it is not listed in the
+material table. On a heavily parameterised project that leaves the table nearly
+empty while the whole model's uncertainty lives in the parameter editor, and a
+bare short list gives no hint why.
+
+`GET /lca/material-pedigree/materials` therefore returns a
+`MaterialScoringScope` -- the names PLUS `expression_rows`,
+`expression_names`, `literal_rows`, `archetypes` -- so the UI states the
+project's ACTUAL numbers rather than a generic sentence. The two real projects
+read as opposites, which is the point:
+
+- **Battery Circularity**: 2 scoreable materials, 140 expression rows. The
+  note also says the table is *not where this project's uncertainty lives* and
+  links to the parameter editor.
+- **MAp-test**: 148 scoreable materials, 38 expression rows. Same note, no
+  such warning, because here the table IS the right place.
+
+The extra warning fires on `expression_rows > literal_rows`; when
+`expression_rows == 0` the note does not render at all.
+
+**`impact_share` is `float | None`, and `None` is not 0%.** `None` means the
+archetype has NO scoreable rows -- every row is a parameter expression -- and
+the banner says "Nothing scoreable in this archetype", explicitly adding that
+this is not 0% coverage. A zero percentage tells the user they are missing
+something fixable; on `A - Circular EV` (0 literal rows of 43) there is nothing
+on that table to fix.
+
+**The names walk is SPLICED, and shared with coverage.** Both derive from
+`_project_scoring_scope()`, so the count and the impact-weighted denominator
+cannot be computed over different row sets. Coverage was already spliced (it
+comes from `_build_archetype_source_demand`); the list was not.
+
+**Honest scope of that splice: project-wide totals do NOT change.** An
+`ArchetypeInclude` references an archetype id, so every child is itself a
+registered archetype and its materials were already counted on their own pass.
+A first version of the tests asserted otherwise and PASSED with the splice
+removed -- vacuous for exactly that reason. What the splice fixes is
+per-archetype reach (`_spliced_roots`) and the shared derivation; the guard
+that bites is `test_count_and_coverage_use_the_SAME_spliced_row_set`, which
+fails if coverage re-derives its own walk.
+
+A dangling include degrades to the archetype's own rows rather than 500-ing --
+compute reports the broken reference loudly, and this endpoint should not take
+the whole list down with it.
+
+#### What NOT to do
+
+- **Don't list expression rows in the material table.** They cannot carry a
+  score; listing them offers a control that does nothing.
+- **Don't render 0% when `impact_share` is null.** They mean different things
+  and the difference is the whole point of the field being nullable.
+- **Don't let coverage re-derive the project name set.** One walk, or the two
+  drift on a composed archetype.
+- **Don't claim the splice changes project-wide counts.** It does not, and a
+  test asserting that it does will pass with the splice removed.
+
 
 ## Future Extension: Product Systems (deferred to v1.1)
 

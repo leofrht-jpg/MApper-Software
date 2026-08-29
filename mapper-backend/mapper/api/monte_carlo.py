@@ -39,7 +39,6 @@ from mapper.core.monte_carlo_engine import (
     summarize,
     variance_shares,
 )
-from mapper.core.tasks import run_in_thread
 from mapper.models.bom_schemas import MaterialPedigreeLibrary
 from mapper.models.schemas import (
     ArchetypeLCAMethodDistribution,
@@ -626,7 +625,13 @@ async def post_monte_carlo(body: MonteCarloRequest) -> MonteCarloStartResponse:
         finally:
             task_registry.unregister(task_id)
 
-    run_in_thread(work)
+    # A plain daemon thread, as `plca` and `impact` do for the same shape.
+    # NOT `core.tasks.run_in_thread`: that drives a `core.tasks.Task`
+    # (status/finish/fail) and calls `fn(task, ...)`, whereas this route owns a
+    # WS-oriented `_TaskState` and a zero-arg closure. Passing the closure
+    # alone raised `run_in_thread() missing 1 required positional argument`
+    # on every call, so the endpoint 500'd before any sampling began.
+    threading.Thread(target=work, daemon=True).start()
     return MonteCarloStartResponse(task_id=task_id)
 
 

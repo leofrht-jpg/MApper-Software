@@ -119,11 +119,23 @@ export PATH="$HOME/.cargo/bin:/opt/homebrew/bin:$PATH"
 conda activate map
 
 # 1. Build the frontend with the same-origin base (gets bundled into the freeze).
-( cd mapper-frontend && VITE_API_BASE=http://localhost:8765 npm run build )
+#    `build:desktop` bakes :8765 in per mode, so the origin cannot be forgotten;
+#    VITE_API_BASE still overrides it if you need a different one.
+( cd mapper-frontend && rm -rf dist && npm run build:desktop )
 
-# 2. Freeze the backend ONEDIR (arm64; bundles dist/ + mapper/data). Produces the
+# 2. CLEAR STALE BYTECODE, then freeze. Not optional, and not paranoia: Python
+#    treats a .pyc as fresh when the source's (mtime, size) match what the .pyc
+#    recorded. A version bump that changes 0.1.8 -> 0.2.0 keeps the size
+#    IDENTICAL, and a merge or branch switch can write the source inside the
+#    same second the .pyc was written. That combination happened here on
+#    2026-08-29: `inspect.getsource` showed the new literal while the executing
+#    bytecode returned the old one. A freeze that picks that up is invisible —
+#    the frozen app reports a version nothing in the tree contains.
+( cd mapper-backend && find . -name '__pycache__' -type d -prune -exec rm -rf {} + )
+
+#    Freeze the backend ONEDIR (arm64; bundles dist/ + mapper/data). Produces the
 #    DIRECTORY dist/mapper-backend/ (entrypoint + _internal/), NOT a single file.
-( cd mapper-backend && pyinstaller mapper-desktop.spec --noconfirm )
+( cd mapper-backend && rm -rf build dist && pyinstaller mapper-desktop.spec --noconfirm --clean )
 
 # 3. Stage the onedir as a Tauri resource, DEREFERENCING symlinks (cp -RL).
 #    PyInstaller creates ~53 versioned-dylib symlinks; tauri-build's resource

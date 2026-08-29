@@ -8865,6 +8865,97 @@ export.
   removed.
 
 
+### Every worker-launching route needs a test that REACHES the launch
+
+Written here twice as prose and walked into twice, most recently as a 500 on
+every `POST /lca/monte-carlo` that shipped to a packaged build. It is now a
+test: `tests/test_worker_launch_coverage.py`.
+
+**The bug shape.** A worker route validates, then launches. Tests that only
+exercise the 4xx paths -- missing methods, bad iteration count, unknown id --
+all return BEFORE the launch, so the launch line is never executed and a wiring
+error there is invisible. That is exactly how `run_in_thread(work)` (wrong
+arity for that helper, which is `run_in_thread(task, fn, *args)` and calls
+`fn(task, ...)`) reached a build: the sampling was tested directly and
+correctly, the wiring was never run.
+
+**Coverage is MEASURED, not read.** The guard discovers launch sites by AST,
+then runs the suite in a subprocess with `threading.Thread.start`
+instrumented; a site counts as covered only if it appears in a real call
+stack. Two things that broke a naive version of this probe, both worth
+remembering:
+
+- **Walk the FULL stack, not the innermost frame.** A `run_in_thread` caller
+  sits several frames up, so innermost-frame attribution credits
+  `core/tasks.py` and loses the route.
+- **anyio's threadpool is not one of ours.** `await file.read()` in an upload
+  route starts threads; matching on any mapper frame attributed those to
+  `subsystems.py`, which launches no worker at all. Match against the
+  discovered launch LINES.
+
+**Three categories, and the third was learned in CI.** Covered:
+`monte_carlo.py:post_monte_carlo` and `impact.py:post_calculate`.
+`ENV_DEPENDENT` holds `lca.py:start_multi_year_contribution`, which is covered
+locally but whose tests SKIP without a technosphere database -- so from CI, the
+environment that gates merges, it reads as uncovered. The guard passed locally
+and failed in CI on exactly that, which is why the category exists.
+`KNOWN_UNCOVERED` declares the six real gaps with a reason each.
+
+**`impact.py:post_calculate` is covered deliberately and needs no bw2.** Every
+Sustainability Ratio comes through it and it is the same shape as the route
+that shipped dead. Its gates -- system, simulation, cohort mapping, methods,
+archetype validation, unlinked materials -- are all satisfiable in memory,
+because the LCA happens INSIDE the worker. A test that needed real databases
+would skip in CI, which is the hole `ENV_DEPENDENT` documents.
+
+**Spy on `Thread.start` by calling THROUGH, never by stubbing.** `TestClient`
+runs the ASGI app on its own portal thread; replacing `start` with something
+that does not start deadlocks `client.post`, which waits forever for a portal
+that never ran. Calling through is also safe for these workers -- they catch
+every exception and mark the task errored, so they fail fast on fake ecoinvent
+links.
+
+**Seed registries under the ACTUAL current project.** `dsm`, `bom` and
+`impact` each resolve the project through their own helper, so a fake name
+patched into one leaves `_get_system` looking elsewhere and the route 404s
+before reaching anything worth testing.
+
+A declared gap that later gains coverage must be REMOVED from the list --
+`test_declared_gaps_are_still_gaps` fails naming it, so the list cannot rot
+into a set of permanent exemptions.
+
+#### What NOT to do
+
+- **Don't add a worker-launching route without a test that reaches the
+  launch.** The guard fails, naming the route. Declaring it in
+  `KNOWN_UNCOVERED` is allowed but needs the reason written down.
+- **Don't assert a route is covered by reading its tests.** That is what let
+  this through twice. The probe measures.
+- **Don't use `core.tasks.run_in_thread` for a route that owns its own
+  WS-oriented `_TaskState`.** It drives a `core.tasks.Task`
+  (status/finish/fail) and calls `fn(task, ...)`. `plca`, `impact` and
+  `monte_carlo` all start a plain daemon thread instead.
+
+### Clear `__pycache__` before a PyInstaller freeze
+
+A standing step in DESKTOP.md, because the failure is invisible. Python treats
+a `.pyc` as fresh when the source's `(mtime, size)` match what the `.pyc`
+recorded. A version bump from `0.1.8` to `0.2.0` leaves the size IDENTICAL,
+and a merge or branch switch can write the source inside the same second the
+`.pyc` was written.
+
+That combination occurred on 2026-08-29: `inspect.getsource` showed
+`return "0.2.0"` while the executing bytecode returned `0.1.8`, and two
+version tests failed locally while CI (a fresh checkout, no cache) stayed
+green. No source change was needed -- the code was right throughout.
+
+    ( cd mapper-backend && find . -name '__pycache__' -type d -prune -exec rm -rf {} + )
+
+**A frozen build that picks up stale bytecode reports a version nothing in the
+tree contains**, which is the kind of thing that surfaces months later against
+a released artefact.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

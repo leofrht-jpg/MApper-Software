@@ -32,6 +32,10 @@ export interface MethodSelection {
   allCategories: MethodFamily['categories']
   totalIndicators: number
   count: number
+  /** Seeded tuples dropped because they are not in the installed registry.
+   *  Surfaced in the UI -- silently narrowing a selection is the same
+   *  silent-loss class we have been closing. */
+  droppedSeed: string[][]
 }
 
 export function useMethodSelection(
@@ -61,6 +65,15 @@ export function useMethodSelection(
     }
     return {}
   })
+
+  // A seeded tuple is trusted verbatim, including one whose family is not in
+  // the installed registry -- e.g. carried over from a project or method
+  // library where it WAS installed. That tuple then rides the handoff into
+  // Monte Carlo's `switch_method`, where bw2calc raises a bare KeyError deep
+  // inside the worker. Reconcile the seed against the registry once methods
+  // load, and REPORT what was dropped rather than narrowing in silence.
+  const [droppedSeed, setDroppedSeed] = useState<string[][]>([])
+  const reconciledRef = useRef(false)
 
   useEffect(() => {
     const load = () => {
@@ -115,6 +128,26 @@ export function useMethodSelection(
   }, [defaultAllSelected, initialSelected, family, allCategories])
 
   useEffect(() => {
+    if (reconciledRef.current || methods.length === 0) return
+    reconciledRef.current = true
+    const registered = new Set<string>()
+    for (const f of methods)
+      for (const c of f.categories)
+        for (const i of c.indicators) registered.add(indicatorKey(i.tuple))
+    setSelected((prev) => {
+      const kept: Record<string, string[]> = {}
+      const dropped: string[][] = []
+      for (const [k, t] of Object.entries(prev)) {
+        if (registered.has(k)) kept[k] = t
+        else dropped.push(t)
+      }
+      if (dropped.length === 0) return prev
+      setDroppedSeed(dropped)
+      return kept
+    })
+  }, [methods])
+
+  useEffect(() => {
     onChange(Object.values(selected))
   }, [selected, onChange])
 
@@ -163,7 +196,7 @@ export function useMethodSelection(
   return {
     methods, family, setFamily, selected, toggle,
     selectAll, clearAll, selectRecommended,
-    allCategories, totalIndicators, count: Object.keys(selected).length,
+    allCategories, totalIndicators, droppedSeed, count: Object.keys(selected).length,
   }
 }
 
@@ -286,6 +319,23 @@ export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelect
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <MethodFamilySelect selection={selection} style={{ width: '100%' }} />
+      {selection.droppedSeed.length > 0 && (
+        <div
+          data-testid="method-picker-dropped-seed"
+          style={{
+            padding: '6px 10px', fontSize: 'var(--text-xs)',
+            color: 'var(--warning)', borderRadius: 'var(--radius-sm)',
+            backgroundColor: 'color-mix(in srgb, var(--warning) 10%, transparent)',
+            border: '1px solid color-mix(in srgb, var(--warning) 30%, transparent)',
+          }}
+        >
+          {selection.droppedSeed.length} previously selected indicator
+          {selection.droppedSeed.length === 1 ? ' is' : 's are'} not installed in
+          this project and {selection.droppedSeed.length === 1 ? 'was' : 'were'}{' '}
+          removed: {selection.droppedSeed.slice(0, 3).map((t) => t.join(' | ')).join(', ')}
+          {selection.droppedSeed.length > 3 && ` (and ${selection.droppedSeed.length - 3} more)`}
+        </div>
+      )}
       <IndicatorChecklist selection={selection} accent={accent} maxHeight={300} />
       {count > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>

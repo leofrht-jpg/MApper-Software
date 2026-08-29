@@ -52,7 +52,7 @@ def test_iteration_count_is_bounded(n):
     assert "iterations" in r.json()["detail"]
 
 
-def test_the_route_actually_SPAWNS_a_worker():
+def test_the_route_actually_SPAWNS_a_worker(monkeypatch):
     """The gap that let a 500 ship.
 
     Every other test here exercises a 4xx path -- missing methods, bad
@@ -68,6 +68,14 @@ def test_the_route_actually_SPAWNS_a_worker():
     bogus, so the worker fails inside -- which is fine and is the point: the
     failure must surface as a task error, not as a 500 from the POST.
     """
+    # The route now validates method tuples against the installed registry
+    # up front, so this test must declare the tuple it POSTs as registered --
+    # otherwise it 400s before the launch and stops measuring the launch.
+    import bw2data
+
+    monkeypatch.setattr(
+        bw2data, "methods", {("EF v3.1", "climate change", "GWP100"): {}}
+    )
     r = client.post(
         "/api/lca/monte-carlo",
         json={

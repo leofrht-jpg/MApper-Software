@@ -154,15 +154,19 @@ export function MultiScenarioImpactChart({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <ViewToggle view={view} onChange={setView} />
           <NumberFormatControl settings={format.settings} onChange={format.setSettings} />
-          <ChartExportButton
-            chartRef={chartRef}
-            // Faceted view doesn't render a sibling legend (facets
-            // self-label), so the legend ref is omitted in that mode.
-            // The button degrades to chart-only when legendRef is
-            // undefined.
-            legendRef={view === 'total' ? legendRef : undefined}
-            filename={`${filenameBase}_${fileSuffix}`}
-          />
+          {/* No visible series means there is nothing to export — the container
+            holds only the empty-state placeholder. */}
+          {!allHidden && (
+            <ChartExportButton
+              chartRef={chartRef}
+              // Faceted view doesn't render a sibling legend (facets
+              // self-label), so the legend ref is omitted in that mode.
+              // The button degrades to chart-only when legendRef is
+              // undefined.
+              legendRef={view === 'total' ? legendRef : undefined}
+              filename={`${filenameBase}_${fileSuffix}`}
+            />
+          )}
         </div>
       </div>
 
@@ -519,6 +523,7 @@ function FacetedView({
         width="100%"
         style={{ display: 'block', maxHeight: rows * 240 }}
         preserveAspectRatio="xMidYMid meet"
+        data-chart-export-target
       >
         {scenarios.map((sc, i) => {
           const col = i % cols

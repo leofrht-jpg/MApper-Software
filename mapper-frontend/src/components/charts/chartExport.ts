@@ -199,11 +199,50 @@ function triggerDownload(blob: Blob, filename: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
-function findChartSvg(container: HTMLElement): SVGSVGElement | null {
-  const svgs = container.querySelectorAll<SVGSVGElement>('svg')
-  let best: SVGSVGElement | null = null
-  let bestArea = 0
-  svgs.forEach((s) => {
+/**
+ * Attribute marking a hand-drawn `<svg>` as THE chart to export.
+ *
+ * Recharts marks its own surface with `recharts-surface`, so charts built on it
+ * need nothing. Anything hand-drawn opts in explicitly.
+ */
+export const CHART_EXPORT_ATTR = 'data-chart-export-target'
+
+const CHART_SVG_SELECTOR = `svg.recharts-surface, svg[${CHART_EXPORT_ATTR}]`
+
+/**
+ * The chart `<svg>` inside an export container, or null.
+ *
+ * OPT-IN, NOT LARGEST-BY-AREA. The previous rule took the biggest `<svg>` in
+ * the container, which meant a container holding NO chart still returned
+ * something if it held any icon at all: the Contribution supply tree is
+ * divs plus lucide chevrons, so its export silently produced a 12px chevron
+ * instead of the tree. A file the user might never open and check.
+ *
+ * A size threshold ("ignore anything under 32x32") was the other candidate and
+ * was rejected. Two reasons, and the second is the one that decided it:
+ *
+ *  - It fails by GUESSING. A decorative illustration or a logo dropped into a
+ *    chart card would silently become the export, and nobody would find out
+ *    until a figure looked wrong. The marker fails by THROWING, which is a
+ *    complaint you get on the first click.
+ *  - It depends on layout measurement, so it cannot be tested: jsdom reports
+ *    every rect as 0x0, which is why this function had no test for its whole
+ *    life. The selector rule is pure DOM, so the behaviour below is now
+ *    checkable, including the supply-tree regression.
+ *
+ * The cost is that a NEW hand-drawn chart must add the attribute. That is the
+ * intended trade: forgetting it produces a loud, immediate, actionable error
+ * rather than a plausible-looking wrong file.
+ */
+export function findChartSvg(container: HTMLElement): SVGSVGElement | null {
+  const marked = container.querySelectorAll<SVGSVGElement>(CHART_SVG_SELECTOR)
+  if (marked.length === 0) return null
+  if (marked.length === 1) return marked[0]
+  // Several marked charts in one container (faceted views): take the largest,
+  // falling back to the first when layout is unavailable.
+  let best: SVGSVGElement = marked[0]
+  let bestArea = -1
+  marked.forEach((s) => {
     const r = s.getBoundingClientRect()
     const a = r.width * r.height
     if (a > bestArea) { bestArea = a; best = s }
@@ -661,7 +700,10 @@ export async function exportChartWithLegend(
   scale: RasterScale = 2,
 ): Promise<void> {
   const chartSvg = findChartSvg(container)
-  if (!chartSvg) throw new Error('No <svg> found inside chart container')
+  // Only charts that ship a separate legend block reach this path, and every
+  // one of those is svg-based. If that ever stops being true the message is
+  // still the actionable one rather than an internal precondition.
+  if (!chartSvg) throw new Error(NO_VECTOR_MESSAGE)
   const { svgString: chartString, width: cw, height: ch } = serializeSvgForExport(chartSvg, bg)
   const { svgString: legendString, width: lw, height: lh } = serializeLegendForExport(legend, bg)
   const { svgString, width, height } = buildCombinedSvg(chartString, cw, ch, legendString, lw, lh)
@@ -677,6 +719,63 @@ export async function exportChartWithLegend(
   await svgToRaster(svgString, width, height, bg, format, filename, scale)
 }
 
+
+/** Formats that need a vector source. A div-based chart cannot produce these. */
+export const VECTOR_FORMATS: ExportFormat[] = ['svg', 'pdf']
+
+export const NO_VECTOR_MESSAGE =
+  'This chart can\'t be exported as SVG or PDF. Try PNG.'
+
+/**
+ * Rasterise an HTML container that has no chart `<svg>` to export.
+ *
+ * The four div-based charts (Stage breakdown, Sensitivity range, Multi-item
+ * sensitivity, Contribution supply tree) draw with positioned `<div>`s, so
+ * there is no vector source to serialise. html2canvas paints the live DOM
+ * instead, which is exactly right for them: they are reading aids and
+ * diagnostics, not paper figures.
+ *
+ * Imported dynamically so the ~200 KB library stays out of the initial bundle
+ * and loads only when someone actually exports one of these four.
+ */
+export async function exportContainerAsRaster(
+  container: HTMLElement,
+  filenameBase: string,
+  format: ExportFormat,
+  bg: BgOption,
+  scale: RasterScale = 2,
+  mode: ExportMode = 'chart',
+): Promise<void> {
+  if (VECTOR_FORMATS.includes(format)) throw new Error(NO_VECTOR_MESSAGE)
+
+  const { default: html2canvas } = await import('html2canvas')
+  // Matches the vector path's backgrounds: light exports on white, dark keeps
+  // the app surface, transparent paints nothing.
+  const background =
+    bg === 'transparent'
+      ? null
+      : bg === 'dark'
+        ? (getComputedStyle(document.documentElement).getPropertyValue('--bg-surface').trim() || '#0b0f14')
+        : '#ffffff'
+
+  const canvas = await html2canvas(container, {
+    backgroundColor: background,
+    scale,
+    logging: false,
+    // The live DOM is already laid out; letting html2canvas re-fetch remote
+    // resources would only risk a taint. Everything here is local markup.
+    useCORS: false,
+    allowTaint: false,
+  })
+
+  const mime = format === 'jpeg' ? 'image/jpeg' : 'image/png'
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, mime, format === 'jpeg' ? 0.95 : undefined),
+  )
+  if (!blob) throw new Error('Could not render this chart to an image.')
+  triggerDownload(blob, buildFilename(filenameBase, format, scale, mode))
+}
+
 export async function exportChart(
   container: HTMLElement,
   filenameBase: string,
@@ -686,7 +785,12 @@ export async function exportChart(
   mode: ExportMode = 'chart',
 ): Promise<void> {
   const svg = findChartSvg(container)
-  if (!svg) throw new Error('No <svg> found inside chart container')
+  if (!svg) {
+    // No vector source. Raster formats can still be produced from the live DOM;
+    // vector ones cannot, and say so in words the user can act on rather than
+    // naming an internal precondition.
+    return exportContainerAsRaster(container, filenameBase, format, bg, scale, mode)
+  }
 
   const { svgString, width, height } = serializeSvgForExport(svg, bg)
   const filename = buildFilename(filenameBase, format, scale, mode)

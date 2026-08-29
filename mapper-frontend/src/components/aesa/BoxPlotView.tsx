@@ -118,7 +118,7 @@ export function BoxPlotView({ result }: Props) {
       )}
 
       <ChartExportContainer ref={boxRef} style={{ overflow: 'auto', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)' }}>
-        <svg width={W} height={H} style={{ display: 'block' }}>
+        <svg width={W} height={H} style={{ display: 'block' }} data-chart-export-target>
           {/* Zone shading */}
           <rect x={xFor(0)} y={0} width={xFor(1) - xFor(0)} height={H} fill={ZONE_COLOR.safe} fillOpacity={0.06} />
           <rect x={xFor(1)} y={0} width={xFor(2) - xFor(1)} height={H} fill={ZONE_COLOR.zone_of_uncertainty} fillOpacity={0.06} />

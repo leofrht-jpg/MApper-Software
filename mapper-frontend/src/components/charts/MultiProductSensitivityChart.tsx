@@ -93,6 +93,7 @@ export function MultiProductSensitivityChart({
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <NumberFormatControl settings={format.settings} onChange={format.setSettings} />
           <ChartExportButton
+            rasterOnly
             chartRef={chartRef}
             legendRef={mode === 'by_case' ? legendRef : undefined}
             filename={`multi_product_sensitivity_${mode}_${filenameBase}`}

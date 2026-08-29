@@ -52,6 +52,23 @@ class ParameterKeyframe(BaseModel):
     value: float
 
 
+class ParamUncertainty(BaseModel):
+    """Uncertainty on a PARAMETER's value (Monte Carlo, single-product).
+
+    Same lognormal + pedigree shape as ``RowUncertainty``, but drawn ONCE per
+    iteration and then propagated through every expression that references the
+    parameter. That is the whole point: ``d_annual`` appears in many WP5
+    expressions, and drawing those rows independently averages the shared
+    driver away. Measured on PHEV-NMC811 at the same marginal spread --
+    35 independent row draws gave GSD^2 1.273, one shared driver gave 1.415.
+    Independent sampling UNDER-reports the spread, which is the one direction
+    that cannot be defended.
+    """
+    pedigree: dict[str, int] | None = None
+    basic_variance: float = 0.0006
+    gsd2: float | None = None
+
+
 class Parameter(BaseModel):
     name: str  # unique within the table; snake_case
     base_value: float = 0.0
@@ -68,6 +85,13 @@ class Parameter(BaseModel):
     # win as a flat, year-invariant value when a scenario override is set — see
     # :func:`resolve_parameter`.
     keyframes: list[ParameterKeyframe] | None = None
+    # Optional Monte Carlo uncertainty on this parameter's value. ``None`` --
+    # the default and the state of every legacy table -- means the parameter
+    # is held at its resolved value, so untagged parameters are provably
+    # unaffected. Drawn once per iteration; every expression referencing this
+    # parameter then sees the SAME draw, which is what keeps a shared driver
+    # correlated across rows.
+    uncertainty: ParamUncertainty | None = None
 
     @model_validator(mode="before")
     @classmethod

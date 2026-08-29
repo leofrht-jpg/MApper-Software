@@ -288,7 +288,7 @@ export function SingleProductImpact({ onNavigate }: SingleProductImpactProps = {
           data-testid="single-product-tab-pane-static"
           style={{ display: activeTab === 'static' ? 'block' : 'none' }}
         >
-          <SingleProductStaticPanel archetypeId={archetypeId} />
+          <SingleProductStaticPanel archetypeId={archetypeId} onNavigate={onNavigate} />
         </div>
         <div
           data-testid="single-product-tab-pane-projected"

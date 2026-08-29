@@ -68,6 +68,65 @@ class MaterialEvolution(BaseModel):
     applies_to_stages: list[str] | None = None
 
 
+class MaterialPedigreeLibrary(BaseModel):
+    """Pedigree scores keyed by MATERIAL NAME, per project.
+
+    The primary scoring surface. WP5 has 914 literal rows but only 148 distinct
+    names -- a name recurs across ~6 archetypes -- so scoring "Steel frame"
+    once covers 21 rows. That is the whole job: 148 entries, not 914.
+
+    AN AUTHORING CONVENIENCE, NOT A SAMPLING CHANGE. Inheriting a score from
+    this library is exactly equivalent to typing the same scores onto the row.
+    Rows are drawn INDEPENDENTLY either way, because ``collect_row_draws`` keys
+    a draw by ``node_id``, never by name. Two rows sharing a name get two
+    independent draws.
+
+    That distinction is worth stating because the expression-row rule makes the
+    opposite assumption reasonable: there, a shared PARAMETER genuinely does
+    mean a shared draw, and drawing per-row instead collapses the spread
+    (measured GSD^2 1.2170 -> 1.0185). A shared NAME is not a shared driver --
+    it is two separate quantities that happen to be equally well known. In
+    practice the distinction barely arises inside one archetype (1.007 rows per
+    name across WP5; only Fuel Station repeats a name at all), but the
+    guarantee comes from the node_id keying, not from that statistic.
+
+    If a future fleet-level Monte Carlo ever needs a shared name to imply a
+    shared draw -- across archetypes it plausibly should, since it IS the same
+    material dataset -- that is a deliberate methodological change with its own
+    measurement, not something to slip in by keying draws differently.
+    """
+    #: material name -> score. A name absent here is unscored.
+    entries: dict[str, "RowUncertainty"] = Field(default_factory=dict)
+
+
+class RowUncertainty(BaseModel):
+    """Uncertainty on ONE BOM row's quantity (Monte Carlo, single-product).
+
+    Lognormal only, which is what ecoinvent uses for 88% of its own
+    technosphere exchanges -- keeping the foreground on the same family means
+    a foreground row and a background exchange are drawn the same way.
+
+    ``pedigree`` scores are 1..5 per indicator and compose through the classic
+    Weidema/Frischknecht factors in ``mapper.core.pedigree``; ``basic_variance``
+    is the underlying flow variance before any pedigree contribution.
+    Together they give ``sigma_total^2 = sigma_basic^2 + SUM_i sigma_i^2``.
+
+    ONLY VALID ON A LITERAL ROW. A row whose quantity comes from a
+    ``quantity_expression`` inherits its uncertainty from the PARAMETERS in
+    that expression -- see ``Parameter.uncertainty``. Letting an expression
+    row carry its own would draw the shared driver twice and, because the two
+    draws partly cancel, would NARROW the reported spread. The engine rejects
+    the combination rather than silently preferring one
+    (``monte_carlo_engine.UncertaintyConfigError``).
+    """
+    pedigree: dict[str, int] | None = None
+    basic_variance: float = 0.0006
+    # Escape hatch for a row whose spread is known directly from a data
+    # source rather than scored. Takes precedence over pedigree+basic when
+    # set, so the two cannot silently compound.
+    gsd2: float | None = None
+
+
 class BOMNode(BaseModel):
     """Recursive BOM tree node.
 
@@ -115,6 +174,13 @@ class BOMNode(BaseModel):
     # resolves to 1.0 (identity). Additive — legacy BOMs without the field
     # deserialize as ``None``.
     global_levers: list[str] | None = None
+    # Optional Monte Carlo uncertainty on THIS row's quantity (single-product
+    # uncertainty propagation). ``None`` -- the default and the state of every
+    # legacy BOM -- means the row is sampled as fixed, so untagged rows are
+    # provably unaffected. Same additive-optional-field precedent as
+    # ``evolution`` and ``global_levers`` above. Valid only on a LITERAL row;
+    # see RowUncertainty.
+    uncertainty: RowUncertainty | None = None
     # Upload-time validation status (Patch 2). "ok" | "warning" | "error".
     # Errors block LCA computation; warnings are surfaced but allowed.
     # Default "ok" so legacy persisted archetypes (no field) deserialise fine.
@@ -123,6 +189,7 @@ class BOMNode(BaseModel):
 
 
 BOMNode.model_rebuild()
+MaterialPedigreeLibrary.model_rebuild()
 
 
 # ── Validation report (upload-time, Patch 2) ─────────────────────────────────
@@ -298,6 +365,13 @@ class BOMNodeUpdate(BaseModel):
     scope: str | None = None
     ecoinvent_activity: EcoinventLink | None = None
     evolution: MaterialEvolution | None = None
+    # Per-row Monte Carlo pedigree, editable in-app. The BULK route is the
+    # workbook's pedigree columns -- 914 literal rows is not a clicking job --
+    # but a single row often needs a one-off correction, and forcing that
+    # through a re-import is what orphaned the WP5 cohort mapping once.
+    # "unset" clears back to unscored; None means "leave as-is" (PATCH
+    # semantics), matching how `basis` above distinguishes the two.
+    uncertainty: RowUncertainty | Literal["unset"] | None = None
 
 
 # ── Flatten / standalone LCA ─────────────────────────────────────────────────
@@ -310,6 +384,13 @@ class FlattenedMaterial(BaseModel):
     unit: str
     ecoinvent_activity: EcoinventLink | None = None
     path: list[str] = Field(default_factory=list)  # parent component names down to material
+    # Carried down from the source BOMNode for Monte Carlo. Both additive and
+    # default None, so every existing consumer of a flattened BOM is
+    # unaffected. ``quantity_expression`` has to survive the flatten because
+    # the expression-row rule is enforced on the FLATTENED list -- without it
+    # the check reads None on every row and never fires.
+    quantity_expression: str | None = None
+    uncertainty: "RowUncertainty | None" = None
 
 
 class FlattenedBOM(BaseModel):

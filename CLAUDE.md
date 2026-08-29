@@ -8431,6 +8431,300 @@ through the same callback.
   (`<ExpandedCohortChart>`) for the expanded path; the grid's
   `<Facet>` stays minimal for overview density.
 
+## Monte Carlo uncertainty propagation (single-product)
+
+`POST /lca/monte-carlo`, task-registry + WebSocket + per-iteration cancellation.
+Sidebar position 7 ("Uncertainty"). The methodology lives in
+`mapper/core/monte_carlo_engine.py`; read its module docstring before changing
+`mapper/api/monte_carlo.py`.
+
+**Entry point is a handoff, not a form.** "Run uncertainty" on the
+Single-product Static results card writes a `MonteCarloHandoff`
+(archetype, methods, scope, stage amounts, sensitivity case, database) into
+`useMonteCarloStore` and navigates. Arriving from a result must never require
+re-specifying anything. Opening the tab directly with no handoff shows guidance
+pointing back at Impact Assessment, not an empty form. The handoff does NOT
+auto-run — a minute of compute is the user's call.
+
+**What samples what.** `bw2calc.MonteCarloLCA` resamples the technosphere,
+biosphere AND characterisation factors, so the background is free. It does NOT
+touch the foreground, structurally: MApper writes no foreground database, so an
+archetype is a demand VECTOR over ecoinvent activities, not entries in A. The
+foreground enters by resampling the demand per iteration
+(`mc.demand = …; mc.build_demand_array(); next(mc)`), measured at ~1%.
+
+**ORDER OF OPERATIONS PER ITERATION — the part that must not be got wrong:**
+
+1. draw each PARAMETER once
+2. re-resolve every expression against those draws
+3. apply per-row uncertainty to LITERAL rows only
+
+Step 1 before 2 keeps a shared driver correlated. `d_annual` appears in many WP5
+expressions; drawing those rows independently averages the driver away and
+NARROWS the reported spread. Measured on real data with the same sigma:
+**GSD² 1.2170 with uncertainty on the parameters vs 1.0185 with it on the
+expression rows** — the spread nearly vanishes. Under-reporting uncertainty is
+the one direction that cannot be defended in a paper.
+
+Step 3's "literal rows only" is the same rule from the other side, and it is
+ENFORCED (`UncertaintyConfigError`, a 400), not documented. Row factors are keyed
+by `node_id` and applied DURING demand construction, before aggregation —
+several rows can link one ecoinvent code, and scaling the aggregated entry would
+leak one row's draw onto its neighbours.
+
+**Pedigree constants (`mapper/core/pedigree.py`).** Brightway ships no pedigree
+table — "pedigree" appears in exactly two files in the whole installed stack,
+both ecospold2 readers, and neither computes anything: ecoinvent applied the
+matrix upstream and `bw2io` just reads `varianceWithPedigreeUncertainty`. So
+MApper must ship its own, and they must be the ones ecoinvent used. Recovered by
+least squares over 35,844 exchanges carrying both `scale` and `scale without
+pedigree` (R² = 0.987, max deviation 0.02) → the **classic
+Weidema/Frischknecht** table, NOT the Ciroth et al. 2016 revision. Convention:
+
+    sigma_i^2 = [ln(f_i) / 2]^2      # the factor is a 95% RANGE, hence the /2
+    sigma_total^2 = sigma_basic^2 + SUM_i sigma_i^2
+
+Dropping the `/2` inflates every factor by ~30% and the output stays plausible.
+The recovery pass was run once without it and reported the entire table as a
+mismatch before the convention was spotted. Pinned by
+`test_pedigree.py::test_the_half_is_load_bearing`.
+
+**A median ABOVE the deterministic score is EXPECTED — do not "fix" it.**
+Measured 1.10x–1.55x across 16 indicators on PHEV-NMC811. It is not a sampling
+defect: `loc == ln(|amount|)` exactly for every ecoinvent exchange checked (so
+each exchange's median IS the deterministic amount), and a bare ecoinvent
+activity with no MApper involvement shows the same offset — 1.001x for a short
+supply chain, 1.142x for a long one. Aggregating lognormals up a supply chain
+pulls the total above the sum of medians, and the offset grows with depth. The
+UI therefore flags only ratios **< 0.9 or > 2.0**; flagging the ordinary offset
+would cry wolf on every run. A median BELOW the deterministic score is the shape
+that actually indicates a problem.
+
+**Performance.** `MonteCarloLCA` solves with CGS warm-started from the previous
+iteration, so it does NOT refactorise: **75.3 s for 1000 iterations x 16
+indicators** on PHEV-NMC811 (0.075 s/iter). `DirectSolvingMonteCarloLCA`
+refactorises every time — 1.76 s/iter, ~30 min for the same run — for
+numerically identical answers (same seed, 60 iterations, max relative difference
+9.4e-8). Extra indicators are ~0.2 ms each: one solved inventory, one CF dot
+product per method. Foreground parameter uncertainty adds ~8% (re-resolve +
+re-flatten per iteration). 1000 iterations sits at 0.18% drift on the
+percentiles vs a 1200-iteration reference.
+
+**Per-method CF sampling, two traps.** `load_lcia_data()` reads
+`self.method_filepath`, NOT `self.method` — assigning `mc.method = m` and
+reloading silently returns the ORIGINAL method's factors, which produced sixteen
+identical distributions on the first end-to-end run. `switch_method` is the call
+that recomputes the filepath. And `switch_method` replaces `cf_params` while the
+chain's `cf_rng` still holds the previous method's array, so the chain must be
+switched back and its `cf_rng` rebuilt before any iteration. Characterisation is
+diagonal, so a score is a dot product of sampled factors with per-flow inventory
+totals — every method gets its own sampled CFs, rather than one being sampled
+and the rest held fixed.
+
+**The lower bound is stated in the UI, not only here.** ~12% of ecoinvent's
+non-production exchanges carry undefined uncertainty and are sampled as fixed
+(88% lognormal with pedigree retained, 0.2% normal), so any reported spread is a
+LOWER BOUND. `mc-lower-bound-note` says so on every result, and also says when
+no foreground input is scored at all.
+
+**Both new fields are additive optionals** — `BOMNode.uncertainty` and
+`Parameter.uncertainty`, `None` by default, legacy data deserialising as `None`,
+untagged rows provably unaffected (`sigma_of(None) == 0.0`). Same precedent as
+`MaterialEvolution` and `global_levers`. `FlattenedMaterial` carries
+`quantity_expression` and `uncertainty` too, because the expression-row rule is
+enforced on the FLATTENED list — see below.
+
+**Stats are shared with AESA.** `boxStats` moved from `BoxPlotView` into
+`src/utils/boxStats.ts`; both tabs import it. Two quantile functions that
+disagree at the interpolation boundary would put identical data in visibly
+different boxes on two tabs.
+
+### What NOT to do
+
+- **Never `DirectSolvingMonteCarloLCA`.** It looks like the more rigorous
+  choice to anyone who does not know the iterative solver is warm-started here.
+  27x slower, identical numbers. `test_uses_the_warm_started_iterative_solver`
+  is AST-based, not a grep, because the docstring names the class in order to
+  explain why it is not used.
+- **Never let an expression row carry its own `uncertainty`.** It inherits from
+  its parameters; carrying its own too means either double-drawing the shared
+  driver or replacing it with independent draws, and BOTH mis-state the spread.
+  Rejected with a 400, not resolved by precedence — either precedence rule
+  produces a plausible-looking wrong number.
+- **Don't add a field to `BOMNode` for Monte Carlo without carrying it through
+  BOTH flatten paths.** `flatten_bom` and `flatten_root_with_amounts` are
+  separate implementations. `quantity_expression` was added to the first only,
+  and the expression-row guard then read `None` on every real row and never
+  fired — while a BOMNode-based unit test stayed green. The test now builds
+  `FlattenedMaterial`, which is what the call site actually passes.
+- **Don't scale an aggregated demand entry by a row factor.** Key by `node_id`
+  and apply before aggregation; several rows can share one ecoinvent code.
+- **Don't flag the ordinary median-above-deterministic offset as an error.** It
+  is a property of ecoinvent + lognormal aggregation, reproducible on a bare
+  activity. Flag `< 0.9` or `> 2.0`.
+- **Fleet-level Monte Carlo is out of scope.** 78x the cost (26 years x 3
+  scopes) and the DSM contributes its own uncertainty axis — a modelling
+  question, not a sampling one. `test_dsm_path_never_reaches_monte_carlo` sweeps
+  both directions, in the same family as the parameter-resolution and
+  stage-basis guards.
+- **Don't clear the result when the Monte Carlo tab mounts.** The tab is
+  navigated away from and back to; clearing on mount discards a finished
+  75-second run every time the user returns. Reset only when the handoff KEY
+  actually changes.
+
+
+### Pedigree scoring — two surfaces, one table
+
+The scoring half of the Monte Carlo feature. Two routes, because the two things
+being scored have very different cardinality: **44 parameters** (in-app) and
+**914 literal BOM rows across 28 archetypes** (Excel).
+
+**Parameters — in-app, and this is where the variance lives.** Expanding a row
+in the parameter table editor shows the keyframe editor AND a pedigree editor.
+A scored parameter carries a `σ` badge on the collapsed row, next to the
+time-varying clock, so it is visible without expanding. This is the
+high-value surface: measured, uncertainty on the parameters gives GSD² 1.2170
+where the same sigma on the expression rows gives 1.0185.
+
+**BOM rows — six Excel columns, read at import.** `Pedigree Reliability`,
+`… Completeness`, `… Temporal`, `… Geographical`, `… Technological`, plus
+`Basic Variance`. Six columns rather than one packed string so a spreadsheet
+can sort, filter and fill-down them individually — which is the entire reason
+the bulk route is Excel and not the UI. They round-trip on export, following
+the `Basis` precedent, so an in-app edit is not wiped by a re-import.
+
+There is also a per-row in-app override (`BOMNodeUpdate.uncertainty`, with
+`"unset"` to clear, exactly like `basis`), for the one-off correction that
+should not require a re-import.
+
+**ONE table, served — the UI holds no copy.** `GET /lca/pedigree` serves
+`mapper.core.pedigree`'s indicators, factors and default basic variance, and
+the editor computes its live GSD² preview from that payload and nothing else. A
+hard-coded copy in the frontend would drift the moment either side was edited,
+and the drift would be invisible because both copies would keep producing
+plausible GSD² values. `pedigreeEditor.test.tsx` serves a deliberately WRONG
+table and asserts the editor follows it, which is what proves there is no local
+constant.
+
+The composition rule (`σ² = σ_basic² + Σ [ln(fᵢ)/2]²`) IS duplicated in
+`utils/pedigree.ts` — three lines, pinned on both sides, and a round-trip per
+keystroke to preview a number is not worth it. Both sides assert the same four
+reference values so they cannot drift apart silently.
+
+**A single score round-trips to its own published factor**: with one indicator
+scored and zero basic variance, `GSD² == f` exactly, because `exp(2·ln(f)/2) =
+f`. A clean check that the `/2` in the variance and the `exp(2σ)` in the GSD²
+are exact inverses — drop either and it stops holding.
+
+**Adding the surfaces changed no number.** Verified on real data across the two
+commits: deterministic scores for 6 WP5 archetypes × 3 indicators, plus a
+seeded 120-iteration Monte Carlo, dumped and diffed — **byte-identical, same
+sha256**. An unscored row and an unscored parameter contribute no foreground
+variance, exactly as before.
+
+#### What NOT to do
+
+- **Don't hard-code the pedigree factors in the frontend.** Fetch them from
+  `GET /lca/pedigree`. Two tables drift silently because both keep producing
+  plausible numbers; there is no symptom until someone compares a foreground
+  score against a background exchange.
+- **Don't record a score of 1.** It adds no uncertainty, so storing it only
+  makes an unscored row LOOK scored in the UI and in the export. Both the
+  import and the editor drop it.
+- **Don't export a 0 for an unscored row.** It would import back as an
+  out-of-range score and warn on every row. Blank round-trips to unscored.
+- **Don't use `col(row, name) or ""` for a NUMERIC workbook column.** A literal
+  `0` is falsy, so that idiom reads an out-of-range zero as a blank cell and
+  drops it silently instead of warning. The text columns can use the short form
+  because there `""` and `None` mean the same thing; the pedigree columns use
+  `col(row, name, "")`.
+- **The expression rule is enforced at THREE boundaries, and all three are
+  needed.** Compute (400, from the engine), import (a warning, and the scores
+  are dropped), and the per-row PATCH route (400). Import-time matters because
+  silently accepting the scores would leave the user with a workbook whose
+  whole point fails only when they press Run. The UI must not OFFER the field
+  on an expression row either — `PedigreeEditor` renders a `disabledReason`
+  instead of the picker, and a test asserts the score buttons are absent.
+- **Don't let a bad score drop the row.** An invalid pedigree cell warns and
+  leaves the row unscored; the quantity, link and everything else survive.
+
+
+#### Score by material NAME — the primary surface
+
+WP5 has 914 literal BOM rows but only **148 distinct names** (a name recurs
+across ~6 archetypes), so the scoring job is 148 entries, not 914. The Material
+scoring table on the Uncertainty tab is that list; scoring "Steel frame" once
+covers the 21 rows that use it.
+
+Resolution order per row: the row's **own** `uncertainty` (Excel column or
+in-app override) → the **material-name library** → **unscored**, contributing
+no foreground variance exactly as before.
+
+**AN AUTHORING CONVENIENCE, NOT A SAMPLING CHANGE — and say so, because after
+the expression-row finding the opposite assumption is reasonable.** Inheriting
+a score is exactly equivalent to typing the same scores onto the row.
+`collect_row_draws` keys every draw by `node_id`, never by name, so two rows
+sharing a name get two INDEPENDENT draws. A shared PARAMETER genuinely is a
+shared driver (drawing per-row instead collapsed GSD² 1.2170 → 1.0185); a
+shared NAME is two separate quantities that happen to be equally well known.
+In practice the distinction barely arises inside one archetype — measured
+**1.007 rows per name** across WP5, with only `Fuel Station` repeating a name
+at all — but the guarantee comes from the `node_id` keying, not from that
+statistic. Locked by `test_inheritance_shares_the_SCORE_not_the_DRAW` and
+`test_a_shared_name_does_NOT_behave_like_a_shared_parameter`, both verified
+load-bearing by re-keying draws to the name.
+
+If a fleet-level Monte Carlo ever needs a shared name to imply a shared draw —
+across archetypes it plausibly should, since it IS the same material dataset —
+that is a deliberate methodological change with its own measurement, not
+something to slip in by keying draws differently.
+
+**Coverage is impact-weighted, and that is the point.**
+`GET /lca/material-pedigree/coverage` returns both figures; the banner leads
+with the weighted one:
+
+    47 of 148 materials scored — covering 82% of this archetype's GWP100
+
+A row count reports how much clicking has been done. The impact-weighted share
+reports how much of the ANSWER rests on assessed data — which is where the next
+hour of scoring is worth spending, and what makes a reported GSD² legible
+rather than implied. Measured on BEV-LFP: scoring the top **5** names of 148
+covers **55%** of its GWP100. The banner also names the biggest unscored
+contributors, and the table sorts by that share so the costly ones are first.
+Expression rows are excluded from the denominator — they cannot be scored, so
+counting them would understate coverage and point the user at a row they cannot
+fix.
+
+**Storage** is `dsm/{project}/material_pedigree.json` — a FILE inside an
+existing root, for the reasons in `project_settings_storage`: carried by
+duplicate / rename / export / import with zero changes to
+`project_storage.py`, whereas a new root could be silently DROPPED from an
+archive by an older build. A missing or corrupt file reads as an EMPTY
+library: unscored is the safe reading because it changes no number.
+
+**Still byte-identical with nothing scored** — the same sha256 as the
+pre-Monte-Carlo baseline, re-verified after the library landed.
+
+##### What NOT to do
+
+- **Don't key a Monte Carlo draw by material name.** Score-sharing and
+  draw-sharing are different things, and conflating them silently widens every
+  reported spread. Draws are keyed by `node_id`.
+- **Don't give an expression row a library score.** It inherits from the
+  parameters in its expression; a name-based score would reintroduce exactly
+  the double-draw the expression rule bans. `collect_row_draws` skips
+  expression rows before consulting the library.
+- **Don't report coverage as a row count alone.** "47 of 148 scored" says
+  nothing about whether those 47 matter. The weighted share is the headline;
+  the count is context.
+- **Don't ship a blanket project-level default pedigree.** It was measured and
+  rejected: applying one to every row moved BEV-LFP's total GSD² by only
+  0.4–8.3% (1.2181 → 1.2224–1.3192), because independent per-row draws average
+  away. It manufactures a number without adding information, and a reader
+  cannot tell an assessed 1.24 from a ticked-checkbox 1.24. Scoring 148 names
+  is the real answer.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

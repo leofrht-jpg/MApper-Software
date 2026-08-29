@@ -190,6 +190,13 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   }, [archetypeId, scope, selectedMethods, currentStageAmounts])
 
   const isMulti = scenarioOrder.length > 1
+  // Same derivation the Sensitivity cases checklist uses, so a case marked
+  // inert there is marked inert here too.
+  const varying = useMemo(() => varyingCases(paramTable), [paramTable])
+  const isInertCase = useCallback(
+    (s: string) => s !== BASE_SCENARIO && !varying.includes(s),
+    [varying],
+  )
   const activeResult = activeScenario ? resultsByScenario[activeScenario] : null
   const hasResults = scenarioOrder.length > 0 && activeResult != null
 
@@ -433,6 +440,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
                 scenarios={scenarioOrder}
                 active={activeScenario}
                 onChange={setActiveScenario}
+                isInert={isInertCase}
               />
             )}
             {!hasStageBreakdown && (
@@ -482,6 +490,8 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
                 }))}
                 format={valueFormat}
                 filenameBase={activeResult.archetype_name.replace(/\s+/g, '_').toLowerCase()}
+                caseLabel={isMulti ? activeScenario : null}
+                caseInert={activeScenario ? isInertCase(activeScenario) : false}
               />
             )}
 
@@ -513,6 +523,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
+                  {isMulti && <th style={th}>Sensitivity case</th>}
                   <th style={th}>Indicator</th>
                   <th style={{ ...th, textAlign: 'right' }}>Score</th>
                   <th style={{ ...th, textAlign: 'left' }}>Unit</th>
@@ -521,6 +532,14 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
               <tbody>
                 {activeResult.results.map((r) => (
                   <tr key={r.method.join('|')} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                    {isMulti && (
+                      <td
+                        data-testid="single-product-static-row-case"
+                        style={{ ...td, fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}
+                      >
+                        {activeScenario}
+                      </td>
+                    )}
                     <td style={td}>{r.method_label}</td>
                     <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
                       {valueFormat.format(r.score)}
@@ -538,8 +557,13 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
 }
 
 function ScenarioTabBar({
-  scenarios, active, onChange,
-}: { scenarios: string[]; active: string | null; onChange: (s: string) => void }) {
+  scenarios, active, onChange, isInert,
+}: {
+  scenarios: string[]
+  active: string | null
+  onChange: (s: string) => void
+  isInert?: (s: string) => boolean
+}) {
   return (
     <div
       data-testid="single-product-static-scenario-tabs"
@@ -547,25 +571,30 @@ function ScenarioTabBar({
     >
       {scenarios.map((s) => {
         const isActive = active === s
+        const inert = isInert?.(s) ?? false
         return (
           <button
             key={s}
             type="button"
             data-testid={`single-product-static-scenario-${s}`}
             onClick={() => onChange(s)}
+            title={inert ? 'No parameter varies in this case — it duplicates Base.' : undefined}
             style={{
               border: 'none', background: 'transparent',
               borderBottom: isActive ? '2px solid var(--mod-lca)' : '2px solid transparent',
               padding: '6px 10px',
               fontSize: 'var(--text-xs)',
               fontWeight: isActive ? 600 : 500,
-              color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+              color: inert
+                ? 'var(--text-tertiary)'
+                : isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
               cursor: 'pointer',
               marginBottom: -1,
               fontFamily: s === BASE_SCENARIO ? 'inherit' : 'var(--font-mono)',
             }}
           >
             {s}
+            {inert && <span style={{ fontSize: 9 }}> · inert</span>}
           </button>
         )
       })}

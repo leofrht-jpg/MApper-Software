@@ -30,9 +30,23 @@ interface Props {
   format: NumberFormatterAPI
   // Used as part of the chart export filename suffix.
   filenameBase: string
+  /**
+   * Which sensitivity case these subtotals belong to.
+   *
+   * The chart already follows the Results card's case tab bar, so its numbers
+   * change when the user switches case. Nothing on the chart said WHICH case,
+   * which made an exported image indistinguishable from Base. Passing the
+   * label puts it in the header and in the export filename.
+   *
+   * Omitted (or Base) renders exactly as before, so single-case runs are
+   * untouched.
+   */
+  caseLabel?: string | null
+  /** Marks a case no parameter varies over, matching the checklist. */
+  caseInert?: boolean
 }
 
-export function StageBreakdownChart({ stageBreakdown, methods, format, filenameBase }: Props) {
+export function StageBreakdownChart({ stageBreakdown, methods, format, filenameBase, caseLabel, caseInert }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ method: string; stage: string } | null>(null)
 
@@ -67,12 +81,29 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
   return (
     <div data-testid="stage-breakdown-chart" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-          Stage breakdown
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, minWidth: 0 }}>
+          <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
+            Stage breakdown
+          </div>
+          {caseLabel && (
+            <span
+              data-testid="stage-breakdown-case"
+              title={caseInert ? 'No parameter varies in this case, so it duplicates Base.' : undefined}
+              style={{
+                fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+                color: caseInert ? 'var(--text-tertiary)' : 'var(--mod-lca)',
+                border: `1px solid ${caseInert ? 'var(--border-subtle)' : 'var(--mod-lca)'}`,
+                borderRadius: 'var(--radius-sm)', padding: '1px 6px',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {caseLabel}{caseInert ? ' · inert' : ''}
+            </span>
+          )}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <NumberFormatControl settings={format.settings} onChange={format.setSettings} />
-          <ChartExportButton chartRef={chartRef} filename={`single_product_stage_breakdown_${filenameBase}`} />
+          <ChartExportButton chartRef={chartRef} filename={`single_product_stage_breakdown_${filenameBase}${caseLabel ? `_${caseLabel.replace(/\s+/g, '_').toLowerCase()}` : ''}`} />
         </div>
       </div>
 

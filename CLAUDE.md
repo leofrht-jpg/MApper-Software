@@ -8725,6 +8725,65 @@ pre-Monte-Carlo baseline, re-verified after the library landed.
   is the real answer.
 
 
+### Reading a single sensitivity case (Single-product Static)
+
+**The case tab bar already switches the stage breakdown.** `activeScenario`
+drives `activeResult`, and `activeResult` drives BOTH the stacked
+`<StageBreakdownChart>` and the indicators table, so clicking a case in
+`single-product-static-scenario-tabs` re-renders both with that case's numbers.
+This was believed unreachable and is not; verified by render probe (Base
+5.00e+2, sa_early 9.00e+2 on the same chart) and pinned by
+`tests/singleProductCaseReadout.test.tsx`. Do NOT add a second case selector.
+
+The three views read the same computed results differently and none replaces
+another: the stacked chart is one case in stage detail, the sensitivity
+range/tornado is all cases as totals, the table is one case per indicator.
+
+**What was missing was provenance, not the switch.** The chart and table showed
+a case's numbers without saying WHICH case, so an exported image or a
+screenshot was indistinguishable from Base. Now: a mono badge beside the
+"Stage breakdown" heading (`stage-breakdown-case`), the case appended to the
+export filename, and a `Sensitivity case` column on the table matching the
+Excel export's header. All three render only when more than Base ran, so a
+single-case run is byte-identical to before.
+
+**Inert cases can reach the tab bar, by one route only.** `effectiveCases`
+filters to `varyingCases(...)` BEFORE a run, so an inert case can never be
+selected into a run. It becomes reachable when the user runs a case and THEN
+edits the parameter table so it stops varying: the results are still on screen
+and the tab is now inert. That is the state the marking exists for, and the
+state the test constructs. Marking derives from the same `varyingCases` the
+checklist uses, so the two can't disagree.
+
+#### The Stage breakdown chart's Export button is BROKEN (pre-existing)
+
+`exportChart` does `findChartSvg(container)` and throws
+`No <svg> found inside chart container` when there is none.
+`<StageBreakdownChart>` is a **proportional div stack** — zero `<svg>` elements
+— and `<ChartExportContainer>` is a plain `<div>`, so its export button throws
+in production. The lucide icons in the button row are SVGs but sit OUTSIDE the
+ref'd container.
+
+Fixing it means rendering the bars as SVG (with the credit hatch becoming an
+SVG `<pattern>` rather than a `repeating-linear-gradient`), which changes how
+the chart draws on screen. Deliberately NOT done alongside a provenance change
+whose brief said not to change the default view. The case label is in the
+filename and the badge regardless, so it will be carried the moment the export
+works.
+
+#### What NOT to do
+
+- **Don't add a case selector to Single-product Static.** One exists. Look for
+  `ScenarioTabBar` before concluding a per-case view is unreachable.
+- **Don't render the case badge or the table column for a single-case run.**
+  Both gate on `isMulti`, so the default view is untouched.
+- **Don't derive "inert" independently of the checklist.** Both call
+  `varyingCases(paramTable)`; a second derivation would drift.
+- **Don't assume a chart with a ChartExportButton has a working export.** The
+  button renders regardless; `findChartSvg` decides at click time. A div-based
+  chart needs an SVG rendition before its export means anything.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

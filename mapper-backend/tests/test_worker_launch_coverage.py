@@ -26,11 +26,21 @@ from __future__ import annotations
 
 import ast
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
+
+#: The measurement runs the whole suite in a subprocess. What it measures --
+#: which tests reach which lines -- does not vary by platform, and Windows CI
+#: already runs one process per file, so measuring there would roughly double
+#: a 12-minute job to learn nothing new. The AST discovery tests still run
+#: everywhere.
+_MEASURE = pytest.mark.skipif(
+    os.name == "nt", reason="measurement is platform-independent; run it on posix"
+)
 
 BACKEND = Path(__file__).resolve().parents[1]
 API = BACKEND / "mapper" / "api"
@@ -69,7 +79,7 @@ def _launch_sites() -> dict[str, tuple[Path, int]]:
     """Route handlers that start a background worker, by ``file.py:handler``."""
     sites: dict[str, tuple[Path, int]] = {}
     for f in sorted(API.glob("*.py")):
-        tree = ast.parse(f.read_text())
+        tree = ast.parse(f.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
@@ -106,6 +116,7 @@ def test_the_discovery_finds_the_known_launch_sites():
     assert "impact.py:post_calculate" in sites
 
 
+@_MEASURE
 def test_every_worker_launch_is_either_covered_or_declared():
     """The guard. A new worker-launching route with no test reaching its launch
     fails here, naming itself."""
@@ -122,6 +133,7 @@ def test_every_worker_launch_is_either_covered_or_declared():
     )
 
 
+@_MEASURE
 def test_declared_gaps_are_still_gaps():
     """A declared gap that has since gained coverage must leave the list, or it
     rots into a permanent exemption."""
@@ -151,16 +163,31 @@ def _covered_sites() -> list[str]:
     spec = {k: f"{v[0].name}:{v[1]}" for k, v in sites.items()}
     probe = BACKEND / "launch_probe.py"
     out = BACKEND / ".launch_hits.json"
-    probe.write_text(_PROBE_SRC.replace("__SPEC__", json.dumps(spec)).replace("__OUT__", str(out)))
+    probe.write_text(
+        _PROBE_SRC.replace("__SPEC__", json.dumps(spec)).replace("__OUT__", out.as_posix()),
+        encoding="utf-8",
+    )
     try:
-        subprocess.run(
+        proc = subprocess.run(
             [sys.executable, "-m", "pytest", "tests/", "-q", "-p", "launch_probe",
              "--ignore=tests/test_worker_launch_coverage.py"],
             cwd=BACKEND,
-            env={**_env(), "PYTHONPATH": str(BACKEND), "MAPPER_LAUNCH_PROBE": "1"},
-            capture_output=True, timeout=900,
+            env={**_env(), "PYTHONPATH": str(BACKEND)},
+            capture_output=True, timeout=1800, text=True,
         )
-        _CACHE = sorted(json.loads(out.read_text())) if out.exists() else []
+        if not out.exists():
+            # A measurement that produced nothing is not "nothing is covered" --
+            # it is a broken probe, and reporting it as coverage would either
+            # fail the guard confusingly or let it pass vacuously. An earlier
+            # revision wrote the probe from a NON-raw string, so its backslash
+            # escape collapsed and the plugin was a SyntaxError; the subprocess
+            # failed and this returned [].
+            raise AssertionError(
+                "the launch probe produced no output, so coverage could not be "
+                f"measured.\nstdout tail:\n{proc.stdout[-2000:]}\n"
+                f"stderr tail:\n{proc.stderr[-2000:]}"
+            )
+        _CACHE = sorted(json.loads(out.read_text(encoding="utf-8")))
     finally:
         probe.unlink(missing_ok=True)
         out.unlink(missing_ok=True)
@@ -172,7 +199,7 @@ def _env() -> dict:
     return dict(os.environ)
 
 
-_PROBE_SRC = '''
+_PROBE_SRC = r'''
 import threading, traceback, json
 SPEC = __SPEC__
 OUT = r"__OUT__"
@@ -183,9 +210,11 @@ def _patched(self):
     # FULL stack, not the innermost frame: a run_in_thread caller sits several
     # frames up, and anyio's threadpool starts threads that are not ours.
     for fr in traceback.extract_stack():
-        if "/mapper/api/" not in fr.filename:
+        # Separator-independent: Windows reports backslashes.
+        fname = fr.filename.replace("\\", "/")
+        if "/mapper/api/" not in fname:
             continue
-        key = BY_LINE.get(f"{fr.filename.split('/')[-1]}:{fr.lineno}")
+        key = BY_LINE.get(f"{fname.split('/')[-1]}:{fr.lineno}")
         if key:
             HITS.add(key)
     if HITS:
@@ -206,6 +235,7 @@ threading.Thread.start = _patched
         "impact.py:post_calculate",
     ],
 )
+@_MEASURE
 def test_the_load_bearing_routes_are_covered(site):
     """Named explicitly. If either loses its coverage, this says which."""
     assert site in _covered_sites(), (

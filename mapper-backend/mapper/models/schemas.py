@@ -441,12 +441,65 @@ class MonteCarloResult(BaseModel):
     #: Zero on both means the run varied the BACKGROUND only, which is a
     #: legitimate configuration but worth saying out loud in the UI.
     rows_with_uncertainty: int = 0
+    #: How many of those inherited from the material library rather than
+    #: carrying their own score. Display only -- an inherited score is drawn
+    #: exactly like a typed one.
+    rows_inherited: int = 0
     parameters_with_uncertainty: int = 0
     warnings: list[str] = []
 
 
 class MonteCarloStartResponse(BaseModel):
     task_id: str
+
+
+class PedigreeTableResponse(BaseModel):
+    """The pedigree constants, served so the UI has ONE table, not a copy.
+
+    A second hard-coded table in the frontend would drift the moment either
+    side is edited, and the drift would be invisible: both would produce
+    plausible GSD^2 values. The UI computes its live preview from this payload
+    and from nothing else.
+    """
+    indicators: list[str]
+    #: indicator -> factor by score 1..5. Score 1 is always 1.0 (no contribution).
+    factors: dict[str, list[float]]
+    default_basic_variance: float
+    #: Rendered for the UI's own explanatory text so the /2 convention is
+    #: stated where someone reading a score can see it.
+    convention: str
+
+
+class UnscoredMaterial(BaseModel):
+    """An unscored material and what it costs in coverage."""
+    name: str
+    #: Share of the archetype's total |impact| this material accounts for.
+    share: float
+    impact: float
+
+
+class PedigreeCoverage(BaseModel):
+    """How much of a result's basis is actually assessed.
+
+    Two figures, and the second is the one that matters. A row count says how
+    much clicking has been done; an IMPACT-WEIGHTED share says how much of the
+    answer rests on assessed data — which is both where the next hour of
+    scoring is worth spending, and what makes a reported GSD^2 legible instead
+    of implied.
+    """
+    #: Distinct literal material names across the whole project — the size of
+    #: the scoring job, not of this archetype.
+    materials_total: int
+    materials_scored: int
+    #: Distinct names in THIS archetype, and how many of them are scored.
+    archetype_materials_total: int
+    archetype_materials_scored: int
+    #: Share of this archetype's total |impact| carried by scored rows.
+    impact_share: float
+    method_label: str
+    unit: str
+    #: Biggest unscored contributors first — where scoring pays most.
+    top_unscored: list[UnscoredMaterial] = []
 
 
 class ArchetypeLCAExportRequest(BaseModel):

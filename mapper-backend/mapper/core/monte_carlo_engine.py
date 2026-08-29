@@ -131,15 +131,22 @@ def lognormal_factor(rng: np.random.Generator, sigma: float) -> float:
 class _RowDraw:
     """A literal row that carries uncertainty.
 
-    Keyed by ``node_id``, not by ``(database, code)``. Several rows can link
-    the SAME ecoinvent activity -- a demand dict aggregates them -- so scaling
-    an aggregated demand entry would apply one row's factor to every other row
-    sharing its code. The factor is applied per material during demand
-    construction instead.
+    Keyed by ``node_id``, not by ``(database, code)`` and not by NAME. Several
+    rows can link the same ecoinvent activity -- a demand dict aggregates them
+    -- so scaling an aggregated demand entry would apply one row's factor to
+    every other row sharing its code. The factor is applied per material during
+    demand construction instead.
+
+    The node_id keying is ALSO what makes the material-name library a pure
+    authoring convenience: two rows inheriting one name's score still get two
+    independent draws, exactly as if the scores had been typed onto each row.
     """
     node_id: str
     name: str
     sigma: float
+    #: True when the score came from the material library rather than the row.
+    #: Display only -- the draw is identical either way.
+    inherited: bool = False
 
 
 @dataclass
@@ -166,17 +173,38 @@ class MonteCarloPlan:
         return bool(self.params)
 
 
-def collect_row_draws(linked_materials: Iterable[Any]) -> list[_RowDraw]:
+def collect_row_draws(
+    linked_materials: Iterable[Any],
+    library: dict[str, Any] | None = None,
+) -> list[_RowDraw]:
     """Literal rows carrying uncertainty, with the expression rule enforced.
 
-    Raises rather than picking a winner when a row has BOTH a
-    ``quantity_expression`` and its own ``uncertainty``: silently preferring
-    either one mis-states the spread, and the failure would be invisible in
-    the output.
+    Resolution order per row:
+
+    1. the row's OWN ``uncertainty`` (an Excel column or an in-app override)
+    2. the material-name ``library``, if the name is scored there
+    3. unscored -- no foreground variance, exactly as before
+
+    An expression row is skipped at every level: it inherits its uncertainty
+    from the parameters in its expression, so it takes no library score either.
+    Carrying its own raises rather than picking a winner -- silently preferring
+    either one mis-states the spread, and the failure would be invisible in the
+    output.
+
+    INHERITANCE SHARES THE SCORE, NEVER THE DRAW. Each returned ``_RowDraw``
+    carries its own ``node_id`` and is drawn independently, so two rows
+    inheriting one name's score behave exactly as if the scores had been typed
+    onto each row separately. See ``MaterialPedigreeLibrary`` for why that is
+    the right semantics here and why it differs from a shared PARAMETER.
     """
+    lib = library or {}
     out: list[_RowDraw] = []
     for m in linked_materials:
         unc = getattr(m, "uncertainty", None)
+        inherited = False
+        if unc is None and not getattr(m, "quantity_expression", None):
+            unc = lib.get(getattr(m, "name", None))
+            inherited = unc is not None
         if unc is None:
             continue
         if getattr(m, "quantity_expression", None):
@@ -190,7 +218,10 @@ def collect_row_draws(linked_materials: Iterable[Any]) -> list[_RowDraw]:
         if getattr(m, "ecoinvent_activity", None) is None:
             continue
         out.append(
-            _RowDraw(node_id=m.node_id, name=m.name, sigma=sigma_of(unc))
+            _RowDraw(
+                node_id=m.node_id, name=m.name,
+                sigma=sigma_of(unc), inherited=inherited,
+            )
         )
     return out
 

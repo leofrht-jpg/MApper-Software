@@ -40,11 +40,15 @@ from mapper.core.monte_carlo_engine import (
     variance_shares,
 )
 from mapper.core.tasks import run_in_thread
+from mapper.models.bom_schemas import MaterialPedigreeLibrary
 from mapper.models.schemas import (
     ArchetypeLCAMethodDistribution,
     MonteCarloRequest,
     MonteCarloResult,
     MonteCarloStartResponse,
+    PedigreeCoverage,
+    PedigreeTableResponse,
+    UnscoredMaterial,
     VarianceContributor,
 )
 
@@ -135,8 +139,11 @@ def _run_monte_carlo(
     # expression-row rule is enforced.
     table = _table_for()
     referenced = _referenced_parameters(bundle.arc)
+    from mapper.core.material_pedigree_storage import load_library
+
+    library = load_library(_current_project())
     try:
-        row_draws = collect_row_draws(bundle.linked)
+        row_draws = collect_row_draws(bundle.linked, library.entries)
         param_draws = collect_param_draws(table, referenced)
     except UncertaintyConfigError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -283,6 +290,7 @@ def _run_monte_carlo(
         distributions=distributions,
         contributors=contributors,
         rows_with_uncertainty=len(row_draws),
+        rows_inherited=sum(1 for r in row_draws if r.inherited),
         parameters_with_uncertainty=len(param_draws),
         warnings=warnings,
     )
@@ -410,6 +418,176 @@ def _method_cf_samplers(mc: Any, method_tuples: list[tuple], seed: int) -> dict:
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.get("/lca/pedigree", response_model=PedigreeTableResponse)
+async def get_pedigree_table() -> PedigreeTableResponse:
+    """Serve the pedigree constants to the UI.
+
+    The scoring UI needs the factors to show a live GSD^2 as a user picks
+    scores. Serving them keeps ONE table: a hard-coded copy in the frontend
+    would drift silently, since both copies would keep producing plausible
+    numbers.
+    """
+    from mapper.core.pedigree import (
+        DEFAULT_BASIC_VARIANCE,
+        INDICATORS,
+        UNCERTAINTY_FACTORS,
+    )
+
+    return PedigreeTableResponse(
+        indicators=list(INDICATORS),
+        factors={k: list(v) for k, v in UNCERTAINTY_FACTORS.items()},
+        default_basic_variance=DEFAULT_BASIC_VARIANCE,
+        convention="sigma_i^2 = [ln(f_i) / 2]^2 — the factor is a 95% range, hence the /2.",
+    )
+
+
+# ── Material pedigree library ────────────────────────────────────────────────
+
+
+def _current_project() -> str:
+    import bw2data
+
+    return bw2data.projects.current
+
+
+@router.get("/lca/material-pedigree", response_model=MaterialPedigreeLibrary)
+async def get_material_pedigree() -> MaterialPedigreeLibrary:
+    from mapper.core.material_pedigree_storage import load_library
+
+    return load_library(_current_project())
+
+
+@router.put("/lca/material-pedigree", response_model=MaterialPedigreeLibrary)
+async def put_material_pedigree(body: MaterialPedigreeLibrary) -> MaterialPedigreeLibrary:
+    from mapper.core.material_pedigree_storage import load_library, save_library
+
+    save_library(_current_project(), body)
+    return load_library(_current_project())
+
+
+@router.get("/lca/material-pedigree/materials", response_model=list[str])
+async def list_project_materials() -> list[str]:
+    """Every distinct LITERAL material name in the project, sorted.
+
+    The rows of the scoring table. Expression rows are excluded: they inherit
+    their uncertainty from the parameters in their expression and can never
+    carry a score, so listing them would offer a control that does nothing.
+    """
+    from mapper.api.bom import _proj_archetypes
+
+    names: set[str] = set()
+    for arc in _proj_archetypes().values():
+        for root in arc.bom:
+            _collect_names(root, names)
+    return sorted(names)
+
+
+def _collect_names(node: Any, out: set[str]) -> None:
+    if node.node_type == "material" and not node.quantity_expression:
+        out.add(node.name)
+    for c in (node.children or []):
+        _collect_names(c, out)
+
+
+@router.get("/lca/material-pedigree/coverage", response_model=PedigreeCoverage)
+async def get_pedigree_coverage(
+    archetype_id: str,
+    method: str,
+    scope: str = "all",
+    compute_database: str | None = None,
+) -> PedigreeCoverage:
+    """How much of one archetype's impact rests on scored data.
+
+    ``method`` is the ``|``-joined tuple, e.g.
+    ``EF v3.1|climate change|global warming potential (GWP100)``.
+
+    The impact weighting is the point. A row count reports clicking; this
+    reports how much of the ANSWER is assessed, which is where the next hour of
+    scoring is worth spending and what makes a reported GSD^2 legible.
+    """
+    from mapper.api.lca import _build_archetype_source_demand, _translate_demand_to_database
+    from mapper.core.bw2_wrapper import PersistentLCARunner
+    from mapper.core.material_pedigree_storage import load_library
+
+    method_tuple = tuple(method.split("|"))
+    if len(method_tuple) < 2:
+        raise HTTPException(status_code=400, detail="method must be a '|'-joined tuple")
+
+    bundle = _build_archetype_source_demand(
+        archetype_id=archetype_id, scope=scope, amount=1.0, stage_amounts={},
+        methods=[list(method_tuple)], parameter_scenario=None,
+    )
+    library = load_library(_current_project())
+
+    # Per-(db, code) UNIT score, one back-substitution each after the first
+    # factorization -- so contributions cost ~0.02 s per distinct activity
+    # rather than a solve per row.
+    runner = PersistentLCARunner()
+    unit: dict[tuple[str, str], float] = {}
+    for m in bundle.linked:
+        link = m.ecoinvent_activity
+        key = (link.database, link.code)
+        if key in unit:
+            continue
+        d, _ = _translate_demand_to_database({key: 1.0}, compute_database)
+        if not d:
+            unit[key] = 0.0
+            continue
+        scores = runner(d, [method_tuple])
+        unit[key] = scores.get(method_tuple, (0.0, ""))[0]
+
+    unit_label = ""
+    if bundle.linked:
+        first = bundle.linked[0].ecoinvent_activity
+        d, _ = _translate_demand_to_database({(first.database, first.code): 1.0}, compute_database)
+        if d:
+            unit_label = runner(d, [method_tuple]).get(method_tuple, (0.0, ""))[1]
+
+    # |impact| per material NAME, and whether that row is scored.
+    by_name: dict[str, float] = {}
+    scored_names: set[str] = set()
+    for m in bundle.linked:
+        if m.quantity_expression:
+            # Not scoreable -- it inherits from its parameters. Counting it as
+            # unscored would understate coverage and point the user at a row
+            # they cannot fix.
+            continue
+        link = m.ecoinvent_activity
+        amt = getattr(m, "_stage_amount", 1.0)
+        contrib = abs(m.quantity * amt * unit[(link.database, link.code)])
+        by_name[m.name] = by_name.get(m.name, 0.0) + contrib
+        if m.uncertainty is not None or m.name in library.entries:
+            scored_names.add(m.name)
+
+    total = sum(by_name.values())
+    covered = sum(v for k, v in by_name.items() if k in scored_names)
+    top = sorted(
+        ((k, v) for k, v in by_name.items() if k not in scored_names),
+        key=lambda kv: -kv[1],
+    )[:10]
+
+    project_names: set[str] = set()
+    from mapper.api.bom import _proj_archetypes
+
+    for arc in _proj_archetypes().values():
+        for root in arc.bom:
+            _collect_names(root, project_names)
+
+    return PedigreeCoverage(
+        materials_total=len(project_names),
+        materials_scored=len(set(library.entries) & project_names),
+        archetype_materials_total=len(by_name),
+        archetype_materials_scored=len(scored_names),
+        impact_share=(covered / total) if total > 0 else 0.0,
+        method_label=" | ".join(method_tuple[1:]) or method_tuple[0],
+        unit=unit_label,
+        top_unscored=[
+            UnscoredMaterial(name=k, share=(v / total) if total else 0.0, impact=v)
+            for k, v in top if v > 0
+        ],
+    )
 
 
 @router.post("/lca/monte-carlo", response_model=MonteCarloStartResponse)

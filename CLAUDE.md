@@ -8501,6 +8501,158 @@ different boxes on two tabs.
   actually changes.
 
 
+### Pedigree scoring — two surfaces, one table
+
+The scoring half of the Monte Carlo feature. Two routes, because the two things
+being scored have very different cardinality: **44 parameters** (in-app) and
+**914 literal BOM rows across 28 archetypes** (Excel).
+
+**Parameters — in-app, and this is where the variance lives.** Expanding a row
+in the parameter table editor shows the keyframe editor AND a pedigree editor.
+A scored parameter carries a `σ` badge on the collapsed row, next to the
+time-varying clock, so it is visible without expanding. This is the
+high-value surface: measured, uncertainty on the parameters gives GSD² 1.2170
+where the same sigma on the expression rows gives 1.0185.
+
+**BOM rows — six Excel columns, read at import.** `Pedigree Reliability`,
+`… Completeness`, `… Temporal`, `… Geographical`, `… Technological`, plus
+`Basic Variance`. Six columns rather than one packed string so a spreadsheet
+can sort, filter and fill-down them individually — which is the entire reason
+the bulk route is Excel and not the UI. They round-trip on export, following
+the `Basis` precedent, so an in-app edit is not wiped by a re-import.
+
+There is also a per-row in-app override (`BOMNodeUpdate.uncertainty`, with
+`"unset"` to clear, exactly like `basis`), for the one-off correction that
+should not require a re-import.
+
+**ONE table, served — the UI holds no copy.** `GET /lca/pedigree` serves
+`mapper.core.pedigree`'s indicators, factors and default basic variance, and
+the editor computes its live GSD² preview from that payload and nothing else. A
+hard-coded copy in the frontend would drift the moment either side was edited,
+and the drift would be invisible because both copies would keep producing
+plausible GSD² values. `pedigreeEditor.test.tsx` serves a deliberately WRONG
+table and asserts the editor follows it, which is what proves there is no local
+constant.
+
+The composition rule (`σ² = σ_basic² + Σ [ln(fᵢ)/2]²`) IS duplicated in
+`utils/pedigree.ts` — three lines, pinned on both sides, and a round-trip per
+keystroke to preview a number is not worth it. Both sides assert the same four
+reference values so they cannot drift apart silently.
+
+**A single score round-trips to its own published factor**: with one indicator
+scored and zero basic variance, `GSD² == f` exactly, because `exp(2·ln(f)/2) =
+f`. A clean check that the `/2` in the variance and the `exp(2σ)` in the GSD²
+are exact inverses — drop either and it stops holding.
+
+**Adding the surfaces changed no number.** Verified on real data across the two
+commits: deterministic scores for 6 WP5 archetypes × 3 indicators, plus a
+seeded 120-iteration Monte Carlo, dumped and diffed — **byte-identical, same
+sha256**. An unscored row and an unscored parameter contribute no foreground
+variance, exactly as before.
+
+#### What NOT to do
+
+- **Don't hard-code the pedigree factors in the frontend.** Fetch them from
+  `GET /lca/pedigree`. Two tables drift silently because both keep producing
+  plausible numbers; there is no symptom until someone compares a foreground
+  score against a background exchange.
+- **Don't record a score of 1.** It adds no uncertainty, so storing it only
+  makes an unscored row LOOK scored in the UI and in the export. Both the
+  import and the editor drop it.
+- **Don't export a 0 for an unscored row.** It would import back as an
+  out-of-range score and warn on every row. Blank round-trips to unscored.
+- **Don't use `col(row, name) or ""` for a NUMERIC workbook column.** A literal
+  `0` is falsy, so that idiom reads an out-of-range zero as a blank cell and
+  drops it silently instead of warning. The text columns can use the short form
+  because there `""` and `None` mean the same thing; the pedigree columns use
+  `col(row, name, "")`.
+- **The expression rule is enforced at THREE boundaries, and all three are
+  needed.** Compute (400, from the engine), import (a warning, and the scores
+  are dropped), and the per-row PATCH route (400). Import-time matters because
+  silently accepting the scores would leave the user with a workbook whose
+  whole point fails only when they press Run. The UI must not OFFER the field
+  on an expression row either — `PedigreeEditor` renders a `disabledReason`
+  instead of the picker, and a test asserts the score buttons are absent.
+- **Don't let a bad score drop the row.** An invalid pedigree cell warns and
+  leaves the row unscored; the quantity, link and everything else survive.
+
+
+#### Score by material NAME — the primary surface
+
+WP5 has 914 literal BOM rows but only **148 distinct names** (a name recurs
+across ~6 archetypes), so the scoring job is 148 entries, not 914. The Material
+scoring table on the Uncertainty tab is that list; scoring "Steel frame" once
+covers the 21 rows that use it.
+
+Resolution order per row: the row's **own** `uncertainty` (Excel column or
+in-app override) → the **material-name library** → **unscored**, contributing
+no foreground variance exactly as before.
+
+**AN AUTHORING CONVENIENCE, NOT A SAMPLING CHANGE — and say so, because after
+the expression-row finding the opposite assumption is reasonable.** Inheriting
+a score is exactly equivalent to typing the same scores onto the row.
+`collect_row_draws` keys every draw by `node_id`, never by name, so two rows
+sharing a name get two INDEPENDENT draws. A shared PARAMETER genuinely is a
+shared driver (drawing per-row instead collapsed GSD² 1.2170 → 1.0185); a
+shared NAME is two separate quantities that happen to be equally well known.
+In practice the distinction barely arises inside one archetype — measured
+**1.007 rows per name** across WP5, with only `Fuel Station` repeating a name
+at all — but the guarantee comes from the `node_id` keying, not from that
+statistic. Locked by `test_inheritance_shares_the_SCORE_not_the_DRAW` and
+`test_a_shared_name_does_NOT_behave_like_a_shared_parameter`, both verified
+load-bearing by re-keying draws to the name.
+
+If a fleet-level Monte Carlo ever needs a shared name to imply a shared draw —
+across archetypes it plausibly should, since it IS the same material dataset —
+that is a deliberate methodological change with its own measurement, not
+something to slip in by keying draws differently.
+
+**Coverage is impact-weighted, and that is the point.**
+`GET /lca/material-pedigree/coverage` returns both figures; the banner leads
+with the weighted one:
+
+    47 of 148 materials scored — covering 82% of this archetype's GWP100
+
+A row count reports how much clicking has been done. The impact-weighted share
+reports how much of the ANSWER rests on assessed data — which is where the next
+hour of scoring is worth spending, and what makes a reported GSD² legible
+rather than implied. Measured on BEV-LFP: scoring the top **5** names of 148
+covers **55%** of its GWP100. The banner also names the biggest unscored
+contributors, and the table sorts by that share so the costly ones are first.
+Expression rows are excluded from the denominator — they cannot be scored, so
+counting them would understate coverage and point the user at a row they cannot
+fix.
+
+**Storage** is `dsm/{project}/material_pedigree.json` — a FILE inside an
+existing root, for the reasons in `project_settings_storage`: carried by
+duplicate / rename / export / import with zero changes to
+`project_storage.py`, whereas a new root could be silently DROPPED from an
+archive by an older build. A missing or corrupt file reads as an EMPTY
+library: unscored is the safe reading because it changes no number.
+
+**Still byte-identical with nothing scored** — the same sha256 as the
+pre-Monte-Carlo baseline, re-verified after the library landed.
+
+##### What NOT to do
+
+- **Don't key a Monte Carlo draw by material name.** Score-sharing and
+  draw-sharing are different things, and conflating them silently widens every
+  reported spread. Draws are keyed by `node_id`.
+- **Don't give an expression row a library score.** It inherits from the
+  parameters in its expression; a name-based score would reintroduce exactly
+  the double-draw the expression rule bans. `collect_row_draws` skips
+  expression rows before consulting the library.
+- **Don't report coverage as a row count alone.** "47 of 148 scored" says
+  nothing about whether those 47 matter. The weighted share is the headline;
+  the count is context.
+- **Don't ship a blanket project-level default pedigree.** It was measured and
+  rejected: applying one to every row moved BEV-LFP's total GSD² by only
+  0.4–8.3% (1.2181 → 1.2224–1.3192), because independent per-row draws average
+  away. It manufactures a number without adding information, and a reader
+  cannot tell an assessed 1.24 from a ticked-checkbox 1.24. Scoring 148 names
+  is the real answer.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

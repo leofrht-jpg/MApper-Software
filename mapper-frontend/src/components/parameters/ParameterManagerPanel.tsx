@@ -23,6 +23,8 @@ import {
   type Archetype, type Parameter,
 } from '../../api/client'
 import { findLeverReferenceMaterials, type LeverReferenceMaterial } from '../../utils/keyframes'
+import { PedigreeEditor } from '../uncertainty/PedigreeEditor'
+import { scoreSummary, usePedigreeTable } from '../../utils/pedigree'
 
 /** Lazily fetch full archetype BOMs and scan them for nodes tagged with the
  *  ``p_bp`` global lever — the reference materials for the composed-rate
@@ -899,6 +901,13 @@ function ParameterRow({
     if (trimmed !== param.name) onRename(trimmed)
   }
 
+  // A scored parameter is worth seeing without expanding the row: it is the
+  // difference between a run that varies the foreground and one that does not.
+  const pedigreeTable = usePedigreeTable()
+  const pedigreeBadge = pedigreeTable
+    ? scoreSummary(pedigreeTable, param.uncertainty?.pedigree ?? null)
+    : ''
+
   return (
     <>
     <div
@@ -926,6 +935,15 @@ function ParameterRow({
         {isTimeVarying && (
           <span data-testid={`param-timevarying-badge-${param.name}`} title="Time-varying (keyframes)" style={{ color: 'var(--mod-lca)', display: 'flex' }}>
             <Clock size={11} />
+          </span>
+        )}
+        {pedigreeBadge && (
+          <span
+            data-testid={`param-pedigree-badge-${param.name}`}
+            title={`Scored ${pedigreeBadge} — GSD² shown in the expanded row`}
+            style={{ color: 'var(--mod-lca)', fontSize: 10, fontFamily: 'var(--font-mono)', letterSpacing: '-0.02em' }}
+          >
+            σ
           </span>
         )}
         <input
@@ -984,13 +1002,32 @@ function ParameterRow({
         <Trash2 size={12} />
       </button>
     </div>
-    {/* Keyframe editor — visibility-toggle (kept mounted once opened). */}
+    {/* Expanded row: keyframes AND uncertainty. */}
     {rowExpanded && (
-      <KeyframeEditor
-        param={param}
-        onPatch={onPatchField}
-        taggedMaterials={taggedMaterials}
-      />
+      <>
+        <KeyframeEditor
+          param={param}
+          onPatch={onPatchField}
+          taggedMaterials={taggedMaterials}
+        />
+        <div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border-subtle)' }}>
+          <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', color: 'var(--text-secondary)', marginBottom: 8 }}>
+            Uncertainty (pedigree)
+          </div>
+          <PedigreeEditor
+            testIdPrefix={`param-pedigree-${param.name}`}
+            scores={param.uncertainty?.pedigree ?? null}
+            basicVariance={param.uncertainty?.basic_variance ?? null}
+            onChange={(scores, basic) => {
+              onPatchField({
+                uncertainty: scores === null && basic === null
+                  ? null
+                  : { pedigree: scores, basic_variance: basic ?? undefined },
+              })
+            }}
+          />
+        </div>
+      </>
     )}
     </>
   )

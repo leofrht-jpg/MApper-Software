@@ -42,6 +42,7 @@ import {
   updateArchetype,
   updateBOMNode,
 } from '../api/client'
+import type { RowUncertainty } from '../api/client'
 
 interface BOMStore {
   archetypes: ArchetypeSummary[]
@@ -61,6 +62,12 @@ interface BOMStore {
     nodeId: string,
     basis: 'per_unit' | 'per_year' | 'unset',
   ) => Promise<void>
+  /** Per-row pedigree override. The workbook columns are the bulk route; this
+   *  is the one-off correction that must not require a re-import. */
+  setRowUncertainty: (
+    nodeId: string,
+    uncertainty: RowUncertainty | 'unset',
+  ) => Promise<void>
   fetchFolders: () => Promise<void>
   selectArchetype: (id: string) => Promise<void>
   createNew: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[] }) => Promise<Archetype>
@@ -69,7 +76,7 @@ interface BOMStore {
 
   addNode: (parentId: string | null, node: BOMNode) => Promise<void>
   addRootStage: (name: string) => Promise<void>
-  patchNode: (nodeId: string, patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null }) => Promise<void>
+  patchNode: (nodeId: string, patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null; uncertainty?: RowUncertainty | 'unset' }) => Promise<void>
   removeNode: (nodeId: string) => Promise<void>
 
   flatten: (year?: number | null) => Promise<void>
@@ -201,6 +208,10 @@ export const useBOMStore = create<BOMStore>((set, get) => ({
   setStageBasis: async (arcId, nodeId, basis) => {
     await updateBOMNode(arcId, nodeId, { basis })
     await get().fetchArchetypes()
+  },
+
+  setRowUncertainty: async (nodeId, uncertainty) => {
+    await get().patchNode(nodeId, { uncertainty })
   },
 
   patchNode: async (nodeId, patch) => {

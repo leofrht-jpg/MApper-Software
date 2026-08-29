@@ -8,10 +8,13 @@
 
 import bw2data
 import logging
+from pathlib import Path
+
+from starlette.background import BackgroundTask
 
 from mapper.core import project_storage
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from mapper.core.bw2_wrapper import (
     create_project,
@@ -241,14 +244,25 @@ async def delete_project_endpoint(name: str) -> DeleteProjectResponse:
 @router.post("/projects/export")
 async def post_export_project(body: ExportProjectRequest) -> Response:
     try:
-        data = export_project(body.name)
+        path = export_project(body.name, mode=body.mode)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     safe = "".join(c if c.isalnum() or c in "._-" else "_" for c in body.name) or "project"
-    return Response(
-        content=data,
+    # The licensed-content marker rides in the FILENAME as well as the
+    # manifest, because a recipient reads the filename first and a full archive
+    # is not redistributable.
+    suffix = "full-LICENSED" if body.mode == "full" else "modelling"
+    filename = f"{safe}.{suffix}.mapperproj.tar.gz"
+    # Streamed from disk, not buffered: a full export of a 38 GB bw2 project
+    # cannot be held in memory. The temp file is removed after the response is
+    # sent.
+    return FileResponse(
+        path=str(path),
         media_type="application/gzip",
-        headers={"Content-Disposition": f'attachment; filename="{safe}.mapperproj.tar.gz"'},
+        filename=filename,
+        background=BackgroundTask(lambda: Path(path).unlink(missing_ok=True)),
     )
 
 

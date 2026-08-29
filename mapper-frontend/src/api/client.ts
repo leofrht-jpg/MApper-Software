@@ -892,11 +892,22 @@ export async function deleteProject(name: string): Promise<{ deleted: boolean; c
   )
 }
 
-export async function exportProject(name: string): Promise<void> {
+export type ProjectExportMode = 'modelling' | 'full'
+
+/** Export a project.
+ *
+ * `modelling` is the DEFAULT: it carries MApper's own modelling only, which is
+ * shareable. `full` additionally bundles the bw2 project directory, which
+ * contains LICENSED ecoinvent content and is not redistributable — the server
+ * marks that in both the manifest and the filename.
+ */
+export async function exportProject(
+  name: string, mode: ProjectExportMode = 'modelling',
+): Promise<void> {
   const res = await fetch(`${API_BASE}/projects/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, mode }),
   })
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
@@ -904,7 +915,7 @@ export async function exportProject(name: string): Promise<void> {
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = `${safe}.mapperproj.tar.gz`
+  a.download = `${safe}.${mode === 'full' ? 'full-LICENSED' : 'modelling'}.mapperproj.tar.gz`
   a.click()
   URL.revokeObjectURL(url)
 }

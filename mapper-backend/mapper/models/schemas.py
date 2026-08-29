@@ -44,6 +44,10 @@ class RenameProjectRequest(BaseModel):
 
 class ExportProjectRequest(BaseModel):
     name: str
+    # "modelling" is the DEFAULT: a full export bundles licensed ecoinvent
+    # content the recipient is not entitled to, and buffering a 38 GB project
+    # wedges the backend. "full" is opt-in and marked as licensed.
+    mode: Literal["modelling", "full"] = "modelling"
 
 
 class DeleteProjectResponse(BaseModel):

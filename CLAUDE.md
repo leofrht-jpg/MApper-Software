@@ -8956,6 +8956,63 @@ tree contains**, which is the kind of thing that surfaces months later against
 a released artefact.
 
 
+### Monte Carlo Excel export
+
+`POST /lca/monte-carlo/export`. Routed through the shared helpers, not a
+private builder: `build_export_filename(archetype_name, [], "MC")` for the one
+filename scheme and `excel_response(..., kind="data")` so the demo stamping is
+by construction rather than by remembering.
+
+**Domain token `MC`**, alongside `LCA` / `pLCA` / `AESA` / `DSM` / `MFA`. Added
+to `ExportDomain` on the frontend and to the SHARED `PARITY_FIXTURES` on both
+sides, so the two filename implementations cannot drift on the new token.
+Single-product has no DSM system, so the ARCHETYPE takes the system slot and
+there is never a subsystem segment.
+
+**Five sheets.** Summary (configuration, scoring provenance, seed, caveat),
+Distributions (per indicator, with the deterministic score and the
+median/deterministic ratio beside it), Variance contribution, Pedigree scores,
+Samples.
+
+**The seed is in the workbook twice** -- Summary and beside every indicator on
+Distributions -- because a Monte Carlo result nobody can reproduce is not a
+research output, and one sheet should be enough to reproduce it.
+
+**`ScoredInput` is captured at RUN time, not resolved at export time.** The
+material library and the parameter table are both editable, so resolving later
+would describe the CURRENT scores and silently mis-describe the run -- the
+opposite of what a reproducibility record is for. Each entry carries the six
+indicator values, the basic variance, the resulting GSD² and whether the row
+inherited from the material library or carried its own score.
+
+**Summary states the LOWER BOUND** -- ~12% of ecoinvent's technosphere
+exchanges carry no distribution and are sampled as fixed -- and says so when
+NOTHING was scored, because a background-only run is a real but partial result
+that the numbers alone do not distinguish.
+
+**Impact-weighted coverage is in the Summary**, with a line saying it is
+weighted by impact and not row count. A distribution is not interpretable
+without knowing what share of the foreground carried uncertainty. `coverage`
+is optional on the request; when absent the sheet SAYS it was not recorded
+rather than omitting the row.
+
+**Samples writes a NOTE sheet when draws were not retained, never omits it.**
+An absent sheet is ambiguous with "this build does not produce one", and a
+reader comparing two workbooks could not tell which. Ragged sample lengths pad
+with blanks rather than truncating to the shortest.
+
+#### What NOT to do
+
+- **Don't write a new builder or a new filename scheme.** Every Excel export
+  goes through `build_export_filename` + `excel_response`; that is what makes
+  the demo warning impossible to forget.
+- **Don't resolve pedigree scores at export time.** Capture them on the result
+  at run time; the library and the parameter table move underneath.
+- **Don't omit the Samples sheet.** Write the note.
+- **Don't drop the seed** from either place it appears.
+- **Don't add a domain token to one side only.** `ExportDomain`, both
+  `PARITY_FIXTURES` sets, or the two filename implementations drift silently.
+
 ### The material-scoring table says what it cannot reach
 
 An expression row inherits its uncertainty from the parameters in its

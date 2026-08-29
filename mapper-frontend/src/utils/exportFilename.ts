@@ -13,7 +13,7 @@
 // parity test on shared fixtures (tests/exportFilename.test.ts).
 
 /** Domain acronym (exact casing — these are field acronyms). */
-export type ExportDomain = 'LCA' | 'pLCA' | 'AESA' | 'DSM' | 'MFA'
+export type ExportDomain = 'LCA' | 'pLCA' | 'AESA' | 'DSM' | 'MFA' | 'MC'
 
 /** Sanitise a name for a filename: strip filename-invalid characters
  *  (/ \ : * ? " < > |) and collapse whitespace runs to underscores. */

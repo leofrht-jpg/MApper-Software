@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 import { describe, it, expect, beforeEach, vi } from 'vitest'
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import { MonteCarloPage } from '../src/pages/MonteCarlo'
 import { useMonteCarloStore } from '../src/stores/monteCarloStore'
 import { boxStats, histogram } from '../src/utils/boxStats'
@@ -8,7 +8,12 @@ import type { MonteCarloResult } from '../src/api/client'
 
 vi.mock('../src/api/client', async (orig) => {
   const actual = await orig<typeof import('../src/api/client')>()
-  return { ...actual, startMonteCarlo: vi.fn(), getMonteCarloResult: vi.fn(), cancelTask: vi.fn() }
+  return {
+    ...actual,
+    startMonteCarlo: vi.fn(), getMonteCarloResult: vi.fn(), cancelTask: vi.fn(),
+    getPedigreeCoverage: vi.fn().mockRejectedValue(new Error('no coverage in test')),
+    exportMonteCarlo: vi.fn().mockResolvedValue(undefined),
+  }
 })
 
 const HANDOFF = {
@@ -112,6 +117,34 @@ describe('Monte Carlo tab', () => {
     render(<MonteCarloPage />)
     expect(screen.getByTestId('mc-no-contributors').textContent)
       .toMatch(/background database/i)
+  })
+})
+
+describe('export', () => {
+  it('offers an Export button once a result is on screen', () => {
+    useMonteCarloStore.setState({ handoff: HANDOFF, result: result() })
+    render(<MonteCarloPage />)
+    expect(screen.getByTestId('mc-export')).toBeInTheDocument()
+  })
+
+  it('has no Export button before a run', () => {
+    useMonteCarloStore.setState({ handoff: HANDOFF, result: null })
+    render(<MonteCarloPage />)
+    expect(screen.queryByTestId('mc-export')).toBeNull()
+  })
+
+  it('sends the result and the coverage', async () => {
+    const c = await import('../src/api/client')
+    const r = result()
+    useMonteCarloStore.setState({ handoff: HANDOFF, result: r })
+    render(<MonteCarloPage />)
+    fireEvent.click(screen.getByTestId('mc-export'))
+    await waitFor(() => expect(vi.mocked(c.exportMonteCarlo)).toHaveBeenCalled())
+    const [sentResult] = vi.mocked(c.exportMonteCarlo).mock.calls[0]
+    // The seed travels: a Monte Carlo result nobody can reproduce is not a
+    // research output.
+    expect(sentResult.seed).toBe(42)
+    expect(sentResult.n_iterations).toBe(1000)
   })
 })
 

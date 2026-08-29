@@ -8,7 +8,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AlertTriangle, Dice5, Play } from 'lucide-react'
+import { AlertTriangle, Dice5, Download, Play } from 'lucide-react'
 import {
   UncertaintyBoxPlot,
   UncertaintyHistogram,
@@ -22,7 +22,7 @@ import {
   CoverageBanner,
   MaterialPedigreeTable,
 } from '../components/uncertainty/MaterialPedigreeTable'
-import { getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
+import { exportMonteCarlo, getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
 
 const DEFAULT_ITERATIONS = 1000
 
@@ -52,6 +52,8 @@ export function MonteCarloPage({ onNavigate }: Props) {
   const [scoringOpen, setScoringOpen] = useState(false)
   const [coverage, setCoverage] = useState<PedigreeCoverage | null>(null)
   const [coverageNonce, setCoverageNonce] = useState(0)
+  const [exporting, setExporting] = useState(false)
+  const [exportError, setExportError] = useState<string | null>(null)
 
   // Coverage is per (archetype, indicator), so it follows the indicator the
   // user is looking at rather than being pinned to the first one.
@@ -238,6 +240,9 @@ export function MonteCarloPage({ onNavigate }: Props) {
         onCancel={() => void cancel()}
       />
 
+      {exportError && (
+        <Banner tone="danger" testId="mc-export-error">{exportError}</Banner>
+      )}
       {error && (
         <Banner tone="danger" testId="mc-error">
           {error}
@@ -256,6 +261,22 @@ export function MonteCarloPage({ onNavigate }: Props) {
             expanded={resultsOpen}
             onToggle={() => setResultsOpen((v) => !v)}
             summary={`${result.n_iterations} iterations · seed ${result.seed} · ${result.elapsed_seconds.toFixed(1)}s`}
+            actions={
+              <Button
+                variant="secondary"
+                data-testid="mc-export"
+                disabled={exporting}
+                onClick={() => {
+                  setExporting(true)
+                  void exportMonteCarlo(result, coverage)
+                    .catch((e) => setExportError(e instanceof Error ? e.message : String(e)))
+                    .finally(() => setExporting(false))
+                }}
+              >
+                <Download size={14} strokeWidth={1.8} />
+                {exporting ? 'Exporting…' : 'Export'}
+              </Button>
+            }
           >
             <div style={{ display: 'grid', gap: 'var(--space-5)' }}>
               <LowerBoundNote result={result} />

@@ -4630,6 +4630,15 @@ export interface ArchetypeLCAMethodDistribution {
   samples?: number[] | null
 }
 
+export interface ScoredInput {
+  name: string
+  kind: 'row' | 'parameter'
+  pedigree?: Record<string, number>
+  basic_variance?: number
+  gsd2?: number
+  inherited?: boolean
+}
+
 export interface VarianceContributor {
   name: string
   kind: 'row' | 'parameter'
@@ -4654,6 +4663,8 @@ export interface MonteCarloResult {
    *  exactly like a typed one. */
   rows_inherited: number
   parameters_with_uncertainty: number
+  /** Exactly what carried uncertainty, so the workbook is self-contained. */
+  scored_inputs?: ScoredInput[]
   warnings: string[]
 }
 
@@ -4769,4 +4780,17 @@ export async function getPedigreeCoverage(
   if (opts.scope) q.set('scope', opts.scope)
   if (opts.computeDatabase) q.set('compute_database', opts.computeDatabase)
   return request(`/lca/material-pedigree/coverage?${q.toString()}`)
+}
+
+/** Monte Carlo results as an Excel workbook. Filename comes from the shared
+ *  scheme with the MC domain token, mirroring `build_export_filename`. */
+export async function exportMonteCarlo(
+  result: MonteCarloResult,
+  coverage: PedigreeCoverage | null,
+): Promise<void> {
+  await _downloadXlsx(
+    `${API_BASE}/lca/monte-carlo/export`,
+    { result, coverage },
+    buildExportFilename(result.archetype_name, [], 'MC'),
+  )
 }

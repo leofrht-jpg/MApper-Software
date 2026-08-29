@@ -474,6 +474,28 @@ class PedigreeTableResponse(BaseModel):
     convention: str
 
 
+class MaterialScoringScope(BaseModel):
+    """What the material-name table can and cannot reach, for THIS project.
+
+    The table lists only LITERAL rows: an expression row inherits its
+    uncertainty from the parameters in its expression and can never carry its
+    own. On a heavily parameterised project that makes the table nearly empty
+    while most of the model is elsewhere, and a bare list gives no hint why --
+    Battery Circularity shows 2 names against 140 expression rows. The counts
+    travel with the list so the UI can say which situation the user is in
+    instead of a generic sentence.
+    """
+    #: Distinct literal material names, computed on the SPLICED tree.
+    materials: list[str] = []
+    #: Material rows whose quantity is a parameter expression.
+    expression_rows: int = 0
+    #: Distinct names among those, which is what the user would scroll.
+    expression_names: int = 0
+    #: Literal material ROWS, as opposed to distinct names.
+    literal_rows: int = 0
+    archetypes: int = 0
+
+
 class UnscoredMaterial(BaseModel):
     """An unscored material and what it costs in coverage."""
     name: str
@@ -499,7 +521,11 @@ class PedigreeCoverage(BaseModel):
     archetype_materials_total: int
     archetype_materials_scored: int
     #: Share of this archetype's total |impact| carried by scored rows.
-    impact_share: float
+    #: ``None`` when the archetype has NO scoreable rows at all -- every row is
+    #: a parameter expression. That is categorically different from 0%, which
+    #: says there is something here you could score and have not; None says
+    #: there is nothing to score and the uncertainty lives in the parameters.
+    impact_share: float | None
     method_label: str
     unit: str
     #: Biggest unscored contributors first — where scoring pays most.

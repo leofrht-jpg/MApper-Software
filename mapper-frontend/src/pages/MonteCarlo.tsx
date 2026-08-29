@@ -224,6 +224,7 @@ export function MonteCarloPage({ onNavigate }: Props) {
           <MaterialPedigreeTable
             coverage={coverage}
             onLibraryChange={() => setCoverageNonce((n) => n + 1)}
+            onNavigate={onNavigate}
           />
         </CollapsibleCard>
       </div>

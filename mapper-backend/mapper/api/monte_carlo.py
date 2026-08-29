@@ -44,6 +44,7 @@ from mapper.models.schemas import (
     ArchetypeLCAMethodDistribution,
     MonteCarloRequest,
     MonteCarloResult,
+    MaterialScoringScope,
     MonteCarloStartResponse,
     PedigreeCoverage,
     PedigreeTableResponse,
@@ -466,28 +467,82 @@ async def put_material_pedigree(body: MaterialPedigreeLibrary) -> MaterialPedigr
     return load_library(_current_project())
 
 
-@router.get("/lca/material-pedigree/materials", response_model=list[str])
-async def list_project_materials() -> list[str]:
-    """Every distinct LITERAL material name in the project, sorted.
+@router.get("/lca/material-pedigree/materials", response_model=MaterialScoringScope)
+async def list_project_materials() -> MaterialScoringScope:
+    """The rows of the scoring table, plus what it cannot reach.
 
-    The rows of the scoring table. Expression rows are excluded: they inherit
-    their uncertainty from the parameters in their expression and can never
-    carry a score, so listing them would offer a control that does nothing.
+    SPLICED. A composed archetype's children are part of what it computes, so
+    they must be part of what it can score -- and the impact-weighted
+    denominator has always been spliced (it comes from
+    ``_build_archetype_source_demand``). Walking the unspliced tree here made
+    the count and the percentage disagree on a composed archetype.
+
+    Expression rows are excluded from ``materials`` because they can never
+    carry their own score, but they are COUNTED, so the UI can say where the
+    uncertainty actually lives instead of showing a short list with no
+    explanation.
     """
+    return _project_scoring_scope()
+
+
+def _project_scoring_scope() -> MaterialScoringScope:
     from mapper.api.bom import _proj_archetypes
 
+    arcs = _proj_archetypes()
     names: set[str] = set()
-    for arc in _proj_archetypes().values():
-        for root in arc.bom:
-            _collect_names(root, names)
-    return sorted(names)
+    expr_names: set[str] = set()
+    literal_rows = 0
+    expr_rows = 0
+    for arc in arcs.values():
+        for root in _spliced_roots(arc, arcs):
+            literal_rows, expr_rows = _collect_names(
+                root, names, expr_names, literal_rows, expr_rows
+            )
+    return MaterialScoringScope(
+        materials=sorted(names),
+        expression_rows=expr_rows,
+        expression_names=len(expr_names),
+        literal_rows=literal_rows,
+        archetypes=len(arcs),
+    )
 
 
-def _collect_names(node: Any, out: set[str]) -> None:
-    if node.node_type == "material" and not node.quantity_expression:
-        out.add(node.name)
+def _spliced_roots(arc: Any, registry: dict) -> list:
+    """``arc.bom`` with any ``includes`` resolved.
+
+    A dangling or cyclic reference must not take the whole materials list down
+    -- the archetype is broken and compute will say so loudly; this endpoint
+    degrades to that archetype's own rows.
+    """
+    from mapper.core.bom_engine import ArchetypeCompositionError, splice_includes
+
+    if not getattr(arc, "includes", None):
+        return arc.bom
+    try:
+        return splice_includes(arc, registry).bom
+    except ArchetypeCompositionError:
+        return arc.bom
+
+
+def _collect_names(
+    node: Any,
+    out: set[str],
+    expr_out: set[str],
+    literal_rows: int,
+    expr_rows: int,
+) -> tuple[int, int]:
+    if node.node_type == "material":
+        if node.quantity_expression:
+            expr_out.add(node.name)
+            expr_rows += 1
+        else:
+            out.add(node.name)
+            literal_rows += 1
     for c in (node.children or []):
-        _collect_names(c, out)
+        literal_rows, expr_rows = _collect_names(
+            c, out, expr_out, literal_rows, expr_rows
+        )
+    return literal_rows, expr_rows
 
 
 @router.get("/lca/material-pedigree/coverage", response_model=PedigreeCoverage)
@@ -567,19 +622,20 @@ async def get_pedigree_coverage(
         key=lambda kv: -kv[1],
     )[:10]
 
-    project_names: set[str] = set()
-    from mapper.api.bom import _proj_archetypes
-
-    for arc in _proj_archetypes().values():
-        for root in arc.bom:
-            _collect_names(root, project_names)
+    # The SAME spliced walk the materials list uses, so the count and the
+    # percentage can never be computed over different row sets.
+    scope = _project_scoring_scope()
+    project_names = set(scope.materials)
 
     return PedigreeCoverage(
         materials_total=len(project_names),
         materials_scored=len(set(library.entries) & project_names),
         archetype_materials_total=len(by_name),
         archetype_materials_scored=len(scored_names),
-        impact_share=(covered / total) if total > 0 else 0.0,
+        # None, not 0.0, when there is nothing here to score: every row is a
+        # parameter expression. 0% would tell the user they are missing
+        # something fixable.
+        impact_share=(covered / total) if by_name and total > 0 else None,
         method_label=" | ".join(method_tuple[1:]) or method_tuple[0],
         unit=unit_label,
         top_unscored=[

@@ -4721,8 +4721,12 @@ export interface PedigreeCoverage {
   archetype_materials_scored: number
   /** Share of this archetype's total |impact| carried by SCORED rows. The
    *  figure that matters — a row count reports clicking, this reports how
-   *  much of the answer is assessed. */
-  impact_share: number
+   *  much of the answer is assessed.
+   *
+   *  `null` when the archetype has NO scoreable rows: every row is a parameter
+   *  expression. Categorically different from 0%, which says there is
+   *  something here you could score and have not. */
+  impact_share: number | null
   method_label: string
   unit: string
   top_unscored: UnscoredMaterial[]
@@ -4742,7 +4746,17 @@ export async function saveMaterialPedigree(
   })
 }
 
-export async function listProjectMaterials(): Promise<string[]> {
+export interface MaterialScoringScope {
+  /** Distinct literal material names, computed on the SPLICED tree. */
+  materials: string[]
+  /** Material rows whose quantity is a parameter expression. */
+  expression_rows: number
+  expression_names: number
+  literal_rows: number
+  archetypes: number
+}
+
+export async function listProjectMaterials(): Promise<MaterialScoringScope> {
   return request('/lca/material-pedigree/materials')
 }
 

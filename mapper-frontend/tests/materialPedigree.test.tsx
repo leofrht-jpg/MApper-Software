@@ -54,7 +54,10 @@ function coverage(over: Partial<PedigreeCoverage> = {}): PedigreeCoverage {
 beforeEach(async () => {
   __resetPedigreeCache()
   const c = await import('../src/api/client')
-  vi.mocked(c.listProjectMaterials).mockResolvedValue([...MATERIALS])
+  vi.mocked(c.listProjectMaterials).mockResolvedValue({
+    materials: [...MATERIALS], expression_rows: 0, expression_names: 0,
+    literal_rows: MATERIALS.length, archetypes: 2,
+  })
   vi.mocked(c.getMaterialPedigree).mockResolvedValue({ entries: {} })
   vi.mocked(c.saveMaterialPedigree).mockImplementation(async (l) => l)
 })
@@ -89,6 +92,77 @@ describe('coverage', () => {
   it('reads zero coverage without dividing by zero', () => {
     render(<CoverageBanner coverage={coverage({ impact_share: 0, materials_scored: 0, top_unscored: [] })} />)
     expect(screen.getByTestId('pedigree-coverage-headline').textContent).toContain('0%')
+  })
+})
+
+describe('the short list explains itself', () => {
+  async function withScope(over: Partial<import('../src/api/client').MaterialScoringScope>) {
+    const c = await import('../src/api/client')
+    vi.mocked(c.listProjectMaterials).mockResolvedValue({
+      materials: ['PV electricity'], expression_rows: 140, expression_names: 55,
+      literal_rows: 2, archetypes: 8, ...over,
+    })
+  }
+
+  it('states the ACTUAL counts, not a generic sentence', async () => {
+    await withScope({})
+    render(<MaterialPedigreeTable />)
+    const note = await screen.findByTestId('material-scope-note')
+    expect(note.textContent).toContain('1 scoreable material')
+    expect(note.textContent).toContain('140 rows use parameter expressions')
+    expect(note.textContent).toMatch(/inherit uncertainty from\s+their parameters/)
+  })
+
+  it('says the table is not where the uncertainty lives when parameters dominate', async () => {
+    // Battery Circularity: 2 literal rows against 140 expression rows.
+    await withScope({})
+    render(<MaterialPedigreeTable />)
+    const note = await screen.findByTestId('material-scope-note')
+    expect(note.textContent).toMatch(/not where its uncertainty lives/i)
+  })
+
+  it('does NOT say that when the project is mostly literal', async () => {
+    // MAp-test: 914 literal rows against 38 expression rows.
+    await withScope({ materials: [...MATERIALS], expression_rows: 38, literal_rows: 914 })
+    render(<MaterialPedigreeTable />)
+    const note = await screen.findByTestId('material-scope-note')
+    expect(note.textContent).toContain('38 rows use parameter expressions')
+    expect(note.textContent).not.toMatch(/not where its uncertainty lives/i)
+  })
+
+  it('is absent entirely when nothing is parameterised', async () => {
+    await withScope({ materials: [...MATERIALS], expression_rows: 0, literal_rows: 4 })
+    render(<MaterialPedigreeTable />)
+    await screen.findByTestId('material-pedigree-table')
+    expect(screen.queryByTestId('material-scope-note')).toBeNull()
+  })
+
+  it('points at the parameter editor', async () => {
+    await withScope({})
+    const onNavigate = vi.fn()
+    render(<MaterialPedigreeTable onNavigate={onNavigate} />)
+    fireEvent.click(await screen.findByTestId('material-scope-goto-parameters'))
+    expect(onNavigate).toHaveBeenCalledWith('lca')
+  })
+})
+
+describe('nothing scoreable is not zero percent', () => {
+  it('says so, rather than showing 0%', () => {
+    // 0% implies there is something here you could score and have not.
+    render(<CoverageBanner coverage={coverage({ impact_share: null })} />)
+    const el = screen.getByTestId('pedigree-coverage-none-scoreable')
+    expect(el.textContent).toMatch(/nothing scoreable/i)
+    // The sentence deliberately says "not 0% coverage", so the check is that
+    // no percentage READOUT is rendered -- the headline is absent entirely.
+    expect(el.textContent).toMatch(/not 0% coverage/i)
+    expect(screen.queryByTestId('pedigree-coverage-headline')).toBeNull()
+    expect(screen.queryByTestId('pedigree-coverage-next')).toBeNull()
+  })
+
+  it('still shows 0% when there ARE scoreable rows and none is scored', () => {
+    render(<CoverageBanner coverage={coverage({ impact_share: 0 })} />)
+    expect(screen.getByTestId('pedigree-coverage-headline').textContent).toContain('0%')
+    expect(screen.queryByTestId('pedigree-coverage-none-scoreable')).toBeNull()
   })
 })
 

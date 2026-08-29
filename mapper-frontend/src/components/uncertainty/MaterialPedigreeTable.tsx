@@ -14,6 +14,7 @@ import {
   listProjectMaterials,
   saveMaterialPedigree,
   type MaterialPedigreeLibrary,
+  type MaterialScoringScope,
   type PedigreeCoverage,
   type RowUncertainty,
 } from '../../api/client'
@@ -39,11 +40,13 @@ interface Props {
   /** Rendered above the table when a computation is on screen. */
   coverage?: PedigreeCoverage | null
   onLibraryChange?: () => void
+  /** Where the parameter editor lives, for the pointer in the scope note. */
+  onNavigate?: (id: string) => void
 }
 
-export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
+export function MaterialPedigreeTable({ coverage, onLibraryChange, onNavigate }: Props) {
   const table = usePedigreeTable()
-  const [materials, setMaterials] = useState<string[] | null>(null)
+  const [scope, setScope] = useState<MaterialScoringScope | null>(null)
   const [library, setLibrary] = useState<MaterialPedigreeLibrary>({ entries: {} })
   const [filter, setFilter] = useState('')
   const [onlyUnscored, setOnlyUnscored] = useState(false)
@@ -53,7 +56,7 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
 
   useEffect(() => {
     void Promise.all([listProjectMaterials(), getMaterialPedigree()])
-      .then(([names, lib]) => { setMaterials(names); setLibrary(lib) })
+      .then(([sc, lib]) => { setScope(sc); setLibrary(lib) })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
   }, [])
 
@@ -66,7 +69,7 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
   }, [coverage])
 
   const rows = useMemo(() => {
-    const all = materials ?? []
+    const all = scope?.materials ?? []
     const q = filter.trim().toLowerCase()
     return all
       .filter((n) => (!q || n.toLowerCase().includes(q)))
@@ -77,11 +80,11 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
         if (ia !== ib) return ib - ia
         return a.localeCompare(b)
       })
-  }, [materials, filter, onlyUnscored, library, impactRank])
+  }, [scope, filter, onlyUnscored, library, impactRank])
 
   const scoredCount = useMemo(
-    () => (materials ?? []).filter((n) => library.entries[n]).length,
-    [materials, library],
+    () => (scope?.materials ?? []).filter((n) => library.entries[n]).length,
+    [scope, library],
   )
 
   const persist = async (next: MaterialPedigreeLibrary) => {
@@ -111,7 +114,7 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
       </div>
     )
   }
-  if (!materials || !table) {
+  if (!scope || !table) {
     return <div style={{ padding: 'var(--space-3)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}>Loading materials…</div>
   }
 
@@ -119,11 +122,13 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
     <div data-testid="material-pedigree-table" style={{ display: 'grid', gap: 'var(--space-3)' }}>
       {coverage && <CoverageBanner coverage={coverage} />}
 
+      <ScopeNote scope={scope} onNavigate={onNavigate} />
+
       <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', margin: 0 }}>
-        Scoring a material here applies to every BOM row that uses it — {materials.length} names
-        cover the project&apos;s literal rows. A row with its own score (set in the workbook or
-        on the row) keeps it. <strong>Inheritance shares the score, not the draw:</strong> each
-        row is still sampled independently, exactly as if the scores had been typed onto it.
+        Scoring a material here applies to every BOM row that uses it. A row with its own score
+        (set in the workbook or on the row) keeps it. <strong>Inheritance shares the score, not
+        the draw:</strong> each row is still sampled independently, exactly as if the scores had
+        been typed onto it.
       </p>
 
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -152,7 +157,7 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
           Unscored only
         </label>
         <span data-testid="material-pedigree-count" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-          {scoredCount} of {materials.length} scored{saving ? ' · saving…' : ''}
+          {scoredCount} of {scope.materials.length} scored{saving ? ' · saving…' : ''}
         </span>
       </div>
 
@@ -222,12 +227,97 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange }: Props) {
 }
 
 /**
+ * What this table can and cannot reach, in this project's actual numbers.
+ *
+ * An expression row inherits its uncertainty from the parameters in its
+ * expression and can never carry its own score, so it is not listed here. On a
+ * heavily parameterised project that leaves the table nearly empty while the
+ * model's uncertainty lives entirely in the parameter editor -- Battery
+ * Circularity shows 2 names against 140 expression rows. A generic sentence
+ * would not tell the user which situation they are in; the counts do.
+ */
+function ScopeNote({
+  scope, onNavigate,
+}: { scope: MaterialScoringScope; onNavigate?: (id: string) => void }) {
+  const n = scope.materials.length
+  const expr = scope.expression_rows
+  if (expr === 0) return null
+
+  // Where the uncertainty actually lives, for this project.
+  const parameterDominant = expr > scope.literal_rows
+  return (
+    <div
+      data-testid="material-scope-note"
+      style={{
+        padding: 'var(--space-3)',
+        border: `1px solid ${parameterDominant ? 'var(--warning)' : 'var(--border-subtle)'}`,
+        borderRadius: 'var(--radius-md)',
+        background: 'var(--bg-elevated)',
+        fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+      }}
+    >
+      <strong style={{ color: 'var(--text-primary)' }}>
+        {n} scoreable material{n === 1 ? '' : 's'}
+      </strong>
+      {'; '}
+      {expr} row{expr === 1 ? '' : 's'} use parameter expressions and inherit uncertainty from
+      their parameters
+      {parameterDominant
+        ? '. Most of this project is parameterised, so this table is not where its uncertainty lives.'
+        : '.'}
+      {onNavigate && (
+        <>
+          {' '}
+          <button
+            type="button"
+            data-testid="material-scope-goto-parameters"
+            onClick={() => onNavigate('lca')}
+            style={{
+              background: 'none', border: 'none', padding: 0,
+              color: 'var(--mod-lca)', cursor: 'pointer',
+              fontSize: 'var(--text-xs)', textDecoration: 'underline',
+            }}
+          >
+            Score them in the parameter editor
+          </button>
+          {' (LCA Architect → Parameters).'}
+        </>
+      )}
+    </div>
+  )
+}
+
+/**
  * Coverage, stated in both figures, with the impact-weighted one as the
  * headline. The row count says how much clicking has been done; the weighted
  * share says how much of the ANSWER rests on assessed data — which is what
  * makes a reported GSD² legible rather than implied.
  */
 export function CoverageBanner({ coverage }: { coverage: PedigreeCoverage }) {
+  // null is not 0%. 0% says there is something here you could score and have
+  // not; null says there is nothing to score, because every row of this
+  // archetype is a parameter expression.
+  if (coverage.impact_share === null) {
+    return (
+      <div
+        data-testid="pedigree-coverage-none-scoreable"
+        style={{
+          padding: 'var(--space-3)',
+          border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+          background: 'var(--bg-elevated)',
+        }}
+      >
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+          <strong>Nothing scoreable in this archetype.</strong>
+        </div>
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4 }}>
+          Every row here takes its quantity from a parameter expression, so none can carry a
+          material score. Its foreground uncertainty comes from the parameters instead. This is
+          not 0% coverage: there is nothing on this table to fix.
+        </div>
+      </div>
+    )
+  }
   const pct = Math.round(coverage.impact_share * 100)
   const tone = pct >= 80 ? 'var(--success)' : pct >= 40 ? 'var(--warning)' : 'var(--danger)'
   return (

@@ -18,7 +18,7 @@ const STORAGE_KEY = 'mapper-onboarding-complete'
 // goal is to teach what MApper *does*, not enumerate features. New tabs or
 // features should not automatically gain tour steps — the tour stays
 // focused on the canonical research workflow.
-const STEPS: Step[] = [
+export const STEPS: Step[] = [
   {
     target: 'body',
     title: 'Welcome to MApper',
@@ -64,6 +64,14 @@ const STEPS: Step[] = [
     title: '5. Compare against planetary boundaries',
     content:
       'AESA is what makes MApper distinct from other LCA tools. It downscales planetary boundaries to your system using category-specific sharing principles, and reports a Sustainability Ratio (SR) per indicator. SR ≤ 1 means within Earth\'s safe operating space; SR > 1 means the system exceeds its fair share of the budget.',
+    placement: 'right',
+    skipBeacon: true,
+  },
+  {
+    target: '[data-tour="nav-uncertainty"]',
+    title: '6. Put error bars on it',
+    content:
+      'Monte Carlo uncertainty propagation for a single-product assessment. Reach it from the "Run uncertainty" button on a Single-product result, which carries that archetype, its indicators and scope across, or open the tab directly. Unscored, a run varies the background only: ecoinvent\'s own exchange uncertainty. Foreground uncertainty needs your materials and parameters scored, in the Material scoring section here.',
     placement: 'right',
     skipBeacon: true,
   },

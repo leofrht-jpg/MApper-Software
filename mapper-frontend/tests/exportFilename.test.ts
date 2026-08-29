@@ -22,6 +22,10 @@ export const PARITY_FIXTURES: [string, string[], string, number | null, string][
   ['Car Fleet', [], 'AESA', null, 'Car_Fleet_AESA.xlsx'],
   ['Car Fleet', [], 'DSM', null, 'Car_Fleet_DSM.xlsx'],
   ['Car Fleet', [], 'MFA', null, 'Car_Fleet_MFA.xlsx'],
+  // Monte Carlo. Single-product, so the ARCHETYPE takes the system slot and
+  // there is never a subsystem.
+  ['Car Fleet', [], 'MC', null, 'Car_Fleet_MC.xlsx'],
+  ['A - Circular EV', [], 'MC', null, 'A_-_Circular_EV_MC.xlsx'],
   ['Car Fleet', ['Fueling Infrastructure'], 'LCA', null, 'Car_Fleet+Fueling_Infrastructure_LCA.xlsx'],
   ['Car Fleet', ['Fueling Infrastructure'], 'pLCA', null, 'Car_Fleet+Fueling_Infrastructure_pLCA.xlsx'],
   // AESA + contributing subsystem — the SR numerator sums primary + subsystem

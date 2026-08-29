@@ -42,10 +42,12 @@ from mapper.core.monte_carlo_engine import (
 from mapper.models.bom_schemas import MaterialPedigreeLibrary
 from mapper.models.schemas import (
     ArchetypeLCAMethodDistribution,
+    MonteCarloExportRequest,
     MonteCarloRequest,
     MonteCarloResult,
     MonteCarloStartResponse,
     PedigreeCoverage,
+    ScoredInput,
     PedigreeTableResponse,
     UnscoredMaterial,
     VarianceContributor,
@@ -277,6 +279,24 @@ def _run_monte_carlo(
                 )
             )
 
+    scored: list[ScoredInput] = []
+    for r in row_draws:
+        unc = _uncertainty_for_row(bundle.linked, r.node_id, library.entries)
+        scored.append(ScoredInput(
+            name=r.name, kind="row",
+            pedigree=dict((unc.pedigree or {}) if unc else {}),
+            basic_variance=(unc.basic_variance if unc else 0.0),
+            gsd2=mce.gsd2_from_sigma(r.sigma), inherited=r.inherited,
+        ))
+    for p in param_draws:
+        pu = getattr(table.parameters.get(p.name), "uncertainty", None)
+        scored.append(ScoredInput(
+            name=p.name, kind="parameter",
+            pedigree=dict((pu.pedigree or {}) if pu else {}),
+            basic_variance=(pu.basic_variance if pu else 0.0),
+            gsd2=mce.gsd2_from_sigma(p.sigma),
+        ))
+
     return MonteCarloResult(
         archetype_id=body.archetype_id,
         archetype_name=bundle.arc.name,
@@ -291,11 +311,22 @@ def _run_monte_carlo(
         rows_with_uncertainty=len(row_draws),
         rows_inherited=sum(1 for r in row_draws if r.inherited),
         parameters_with_uncertainty=len(param_draws),
+        scored_inputs=scored,
         warnings=warnings,
     )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
+
+
+def _uncertainty_for_row(materials: Any, node_id: str, library: dict) -> Any:
+    """The RowUncertainty a given node actually used: its own, else the
+    material-library entry it inherited."""
+    for m in materials:
+        if getattr(m, "node_id", None) != node_id:
+            continue
+        return m.uncertainty or library.get(m.name)
+    return None
 
 
 def _referenced_parameters(arc: Any) -> set[str]:
@@ -440,6 +471,215 @@ async def get_pedigree_table() -> PedigreeTableResponse:
         default_basic_variance=DEFAULT_BASIC_VARIANCE,
         convention="sigma_i^2 = [ln(f_i) / 2]^2 — the factor is a 95% range, hence the /2.",
     )
+
+
+
+# ── Excel export ──────────────────────────────────────────────────────────────
+
+#: Field acronym for the shared filename scheme, alongside LCA / pLCA / AESA /
+#: DSM / MFA. Single-product Monte Carlo has no DSM system, so the archetype
+#: name takes the ``system`` slot and there are never subsystems.
+MC_DOMAIN = "MC"
+
+#: Repeated in the Summary because a distribution read without it is
+#: over-confident: roughly 12% of ecoinvent's non-production exchanges carry no
+#: uncertainty distribution and are sampled as fixed.
+LOWER_BOUND_NOTE = (
+    "LOWER BOUND. About 12% of ecoinvent's technosphere exchanges carry no "
+    "uncertainty distribution and are sampled as FIXED, so their contribution "
+    "to the spread is missing from every figure in this workbook."
+)
+
+
+def _scope_label(scope: str) -> str:
+    """Reuse Impact Assessment's labels so one scope never reads two ways."""
+    from mapper.api.impact import _SCOPE_LABELS
+
+    return _SCOPE_LABELS.get(scope, "Full Lifecycle" if scope == "all" else scope)
+
+
+def _build_monte_carlo_workbook(
+    result: MonteCarloResult,
+    coverage: PedigreeCoverage | None,
+) -> "Workbook":
+    from openpyxl import Workbook
+
+    from mapper.api.cohort_export import apply_sci, autosize, style_header
+
+    wb = Workbook()
+
+    # ── Summary ───────────────────────────────────────────────────────────────
+    ws = wb.active
+    ws.title = "Summary"
+    ws.append(["Field", "Value"])
+    style_header(ws)
+
+    rows: list[tuple[str, object]] = [
+        ("Archetype", result.archetype_name),
+        ("Sensitivity case", result.parameter_scenario or "Base"),
+        ("Scope", _scope_label(result.scope)),
+        ("Background database", result.compute_database or "base ecoinvent"),
+        ("Iterations", result.n_iterations),
+        # Not optional. A Monte Carlo result nobody can reproduce is not a
+        # research output, and the seed is the whole of the reproduction.
+        ("Seed", result.seed),
+        ("Elapsed (s)", round(result.elapsed_seconds, 2)),
+        ("", ""),
+        ("SCORING PROVENANCE", ""),
+        ("Rows scored", result.rows_with_uncertainty),
+        ("  ...inheriting a material score", result.rows_inherited),
+        ("Parameters scored", result.parameters_with_uncertainty),
+    ]
+    if coverage is not None:
+        rows += [
+            ("Materials scored (project)",
+             f"{coverage.materials_scored} of {coverage.materials_total}"),
+            ("Materials scored (this archetype)",
+             f"{coverage.archetype_materials_scored} of {coverage.archetype_materials_total}"),
+            ("Impact-weighted coverage",
+             f"{coverage.impact_share * 100:.1f}% of {coverage.method_label}"),
+            ("Coverage basis",
+             "Weighted by impact, not row count: the share of THIS archetype's "
+             "total |impact| carried by rows whose uncertainty was scored."),
+        ]
+    else:
+        rows.append(
+            ("Impact-weighted coverage",
+             "not recorded for this export — re-export with coverage available")
+        )
+    if result.rows_with_uncertainty == 0 and result.parameters_with_uncertainty == 0:
+        rows.append(
+            ("Foreground uncertainty",
+             "NONE scored. This run varied the BACKGROUND only, so the spread "
+             "reflects ecoinvent's own exchange uncertainty and nothing about "
+             "the foreground data.")
+        )
+    rows += [("", ""), ("Caveat", LOWER_BOUND_NOTE)]
+    if result.warnings:
+        rows.append(("Warnings", " | ".join(result.warnings)))
+
+    for k, v in rows:
+        ws.append([k, v])
+    autosize(ws)
+
+    # ── Distributions ─────────────────────────────────────────────────────────
+    ws = wb.create_sheet("Distributions")
+    ws.append([
+        "Indicator", "Unit", "Deterministic", "Median", "Median / deterministic",
+        "Mean", "p2.5", "p25", "p75", "p97.5", "GSD2", "Iterations", "Seed",
+    ])
+    style_header(ws)
+    for d in result.distributions:
+        ratio = (d.median / d.deterministic) if d.deterministic else None
+        ws.append([
+            d.method_label, d.unit, d.deterministic, d.median,
+            round(ratio, 4) if ratio is not None else "n/a",
+            d.mean, d.p2_5, d.p25, d.p75, d.p97_5,
+            round(d.gsd2, 4) if d.gsd2 else "n/a",
+            d.n_iterations, d.seed,
+        ])
+    if result.distributions:
+        # Scores span orders of magnitude across indicators; the ratio and GSD2
+        # columns are small and stay readable as plain numbers.
+        apply_sci(ws, min_row=2, min_col=3, max_col=4)
+        apply_sci(ws, min_row=2, min_col=6, max_col=10)
+    autosize(ws)
+
+    # ── Variance contribution ─────────────────────────────────────────────────
+    ws = wb.create_sheet("Variance contribution")
+    ws.append(["Input", "Kind", "Share of spread", "GSD2"])
+    style_header(ws)
+    for c in result.contributors:
+        ws.append([c.name, c.kind, round(c.share, 6), round(c.gsd2, 4)])
+    if not result.contributors:
+        ws.append([
+            "No foreground input carried uncertainty, so the whole spread comes "
+            "from the background database.", "", "", "",
+        ])
+    else:
+        ws.append([])
+        ws.append([
+            "Shares are an approximate attribution (squared rank correlation, "
+            "normalised) — the inputs are not orthogonal.", "", "", "",
+        ])
+    autosize(ws)
+
+    # ── Pedigree scores ───────────────────────────────────────────────────────
+    ws = wb.create_sheet("Pedigree scores")
+    ws.append([
+        "Input", "Kind", "Source",
+        "Reliability", "Completeness", "Temporal", "Geographical",
+        "Technological", "Basic variance", "GSD2",
+    ])
+    style_header(ws)
+    for si in result.scored_inputs:
+        ped = si.pedigree or {}
+        ws.append([
+            si.name, si.kind,
+            "material library" if si.inherited else "own",
+            ped.get("reliability", ""),
+            ped.get("completeness", ""),
+            ped.get("temporal correlation", ""),
+            ped.get("geographical correlation", ""),
+            ped.get("further technological correlation", ""),
+            si.basic_variance, round(si.gsd2, 4),
+        ])
+    if not result.scored_inputs:
+        ws.append([
+            "Nothing was scored. Every foreground row and parameter was held at "
+            "its resolved value.", "", "", "", "", "", "", "", "", "",
+        ])
+    else:
+        ws.append([])
+        ws.append([
+            "Scores compose as sigma_i^2 = [ln(factor_i)/2]^2 using the "
+            "Weidema/Frischknecht factors ecoinvent applied to the background, "
+            "so a foreground score and a background exchange share one matrix.",
+            "", "", "", "", "", "", "", "", "",
+        ])
+    autosize(ws)
+
+    # ── Samples ───────────────────────────────────────────────────────────────
+    # Written as a NOTE sheet when the draws were not retained, never omitted.
+    # An absent sheet is ambiguous with "this build does not produce one", and
+    # a reader comparing two workbooks would have no way to tell which.
+    ws = wb.create_sheet("Samples")
+    with_samples = [d for d in result.distributions if d.samples]
+    if not with_samples:
+        ws.append(["Samples were not retained for this run."])
+        style_header(ws)
+        ws.append([
+            "The run was launched with keep_samples disabled, so the "
+            "per-iteration values were summarised and discarded. Re-run with "
+            "samples retained to populate this sheet; the percentiles on "
+            "Distributions are unaffected."
+        ])
+    else:
+        ws.append(["Iteration"] + [d.method_label for d in with_samples])
+        style_header(ws)
+        n = max(len(d.samples or []) for d in with_samples)
+        for i in range(n):
+            ws.append(
+                [i + 1]
+                + [(d.samples[i] if d.samples and i < len(d.samples) else None)
+                   for d in with_samples]
+            )
+        apply_sci(ws, min_row=2, min_col=2, max_col=1 + len(with_samples))
+    autosize(ws)
+
+    return wb
+
+
+@router.post("/lca/monte-carlo/export")
+async def post_monte_carlo_export(body: MonteCarloExportRequest) -> Any:
+    from mapper.api.bom import build_export_filename
+    from mapper.api.cohort_export import excel_response
+
+    wb = _build_monte_carlo_workbook(body.result, body.coverage)
+    # Single-product: the archetype takes the system slot, never a subsystem.
+    filename = build_export_filename(body.result.archetype_name, [], MC_DOMAIN)
+    return excel_response(wb, filename, kind="data")
+
 
 
 # ── Material pedigree library ────────────────────────────────────────────────

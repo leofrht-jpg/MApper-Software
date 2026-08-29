@@ -24,6 +24,10 @@ PARITY_FIXTURES = [
     ("Car Fleet", [], "AESA", None, "Car_Fleet_AESA.xlsx"),
     ("Car Fleet", [], "DSM", None, "Car_Fleet_DSM.xlsx"),
     ("Car Fleet", [], "MFA", None, "Car_Fleet_MFA.xlsx"),
+    # Monte Carlo. Single-product, so the ARCHETYPE takes the system slot and
+    # there is never a subsystem.
+    ("Car Fleet", [], "MC", None, "Car_Fleet_MC.xlsx"),
+    ("A - Circular EV", [], "MC", None, "A_-_Circular_EV_MC.xlsx"),
     ("Car Fleet", ["Fueling Infrastructure"], "LCA", None, "Car_Fleet+Fueling_Infrastructure_LCA.xlsx"),
     ("Car Fleet", ["Fueling Infrastructure"], "pLCA", None, "Car_Fleet+Fueling_Infrastructure_pLCA.xlsx"),
     # AESA + contributing subsystem — the SR numerator sums primary + subsystem

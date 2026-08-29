@@ -183,6 +183,12 @@ def test_the_route_reaches_its_worker_launch(monkeypatch):
         return orig(self)
 
     monkeypatch.setattr(threading.Thread, "start", _spy)
+    # Methods are validated against the installed registry before the launch,
+    # so declare the tuple this test POSTs -- otherwise it 400s and stops
+    # measuring what it exists to measure.
+    import bw2data
+
+    monkeypatch.setattr(bw2data, "methods", {("EF v3.1", "climate change"): {}})
     r = client.post("/api/lca/monte-carlo/multi",
                     json={"archetype_ids": ["nope"], "methods": [["EF v3.1", "climate change"]],
                           "iterations": 2})

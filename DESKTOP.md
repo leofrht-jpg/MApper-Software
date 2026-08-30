@@ -157,6 +157,70 @@ cp -RL mapper-backend/dist/mapper-backend mapper-tauri/resources/mapper-backend
 # Dev run instead of bundling:  ( cd mapper-tauri && tauri dev )
 ```
 
+## Installing a build — clear Caches, NEVER WebKit
+
+```bash
+# 5. Install over /Applications and clear the HTTP cache. Quit the app first.
+osascript -e 'tell application "MApper" to quit'; pkill -KILL -f mapper-backend
+rm -rf /Applications/MApper.app
+cp -R mapper-tauri/target/aarch64-apple-darwin/release/bundle/macos/MApper.app /Applications/
+xattr -dr com.apple.quarantine /Applications/MApper.app      # unsigned build
+rm -rf ~/Library/Caches/com.leonardoferhati.mapper           # HTTP cache ONLY
+open -a /Applications/MApper.app
+```
+
+**Do NOT delete `~/Library/WebKit/com.leonardoferhati.mapper`.** It is not a
+cache. It is the app's `localStorage`, and deleting it destroys every persisted
+setting while doing nothing whatsoever for the stale-SPA problem. The two
+directories hold different things and only one of them can go stale:
+
+| Path | Holds | Clear it? |
+|---|---|---|
+| `~/Library/Caches/<bundle-id>/WebKit/` | `NetworkCache`, `CacheStorage`, `HSTS`, `AlternativeServices` — the **HTTP cache** | **Yes.** Regenerated on next launch, costs nothing. |
+| `~/Library/WebKit/<bundle-id>/WebsiteData/` | `LocalStorage`, `IndexedDB`, `ResourceLoadStatistics` — **persistent site data** | **No.** Never. See the loss list below. |
+
+**Why only `index.html` can go stale.** Vite content-hashes every asset
+(`index-DRjrvAU9.js` → `index-vbhBHsde.js`), so a new build changes their URLs
+and a cached copy can never be served in place of a new one. `index.html` is the
+one fixed URL. Starlette's `StaticFiles` sends `etag` + `last-modified` but **no
+`Cache-Control`**, so WebKit is free to apply heuristic freshness and serve it
+from `NetworkCache` without revalidating. A stale `index.html` then references
+asset hashes the new bundle no longer contains — every one 404s, and the app
+comes up blank. That is the entire failure mode, and it lives wholly inside
+`NetworkCache`.
+
+**What deleting the WebKit directory costs** (all of it, on every build):
+
+- `mapper-onboarding-complete` — the tour re-runs on the next launch. Its
+  overlay is a 65%-opaque black sheet over the whole viewport, so the app looks
+  broken rather than freshly onboarded. This was diagnosed as a "black tab" bug
+  before the cause was traced back to this instruction.
+- `mapper-color-assignments-<project>` + `mapper-color-overrides-<project>` —
+  per-project chart colours **including every user colour override** (the
+  per-dimension and per-row pickers).
+- `mapper-upload-derived-dims-<project>` — dim colours derived at cohort-mapping
+  upload time.
+- `mapper.chartExport.bg.v2` — chart-export background preference.
+- `mapper-theme`, `mapper.aesa.sidebarWidth`, `mapper.archetype-folder-expansion`.
+- `mapper.active-scenario`, `mapper.selected-scenarios` — parameter scenario picks.
+- `mapper-country`, `mapper-lifetime-co2`, `mapper-tdp-override` — carbon badge.
+
+**Measured, on a real install (2026-08-29).** Built with a changed asset hash
+(`DRjrvAU9` → `vbhBHsde`) and the old asset absent from the new bundle, so a
+stale `index.html` could not have rendered:
+
+- Clear **nothing**: new SPA served, UI correct. Staleness did not reproduce —
+  WebKit revalidated. So the `Caches` wipe is a cheap precaution, not a
+  guaranteed necessity.
+- Clear **`Caches` only**: new SPA served, UI correct, and `localStorage`
+  survived intact (`mapper-onboarding-complete` still `1`, no tour). `NetworkCache`
+  repopulated on its own.
+
+**The durable fix is a header, not a ritual.** Sending `Cache-Control: no-cache`
+on `index.html` from `_mount_frontend` would force revalidation and remove the
+need to clear anything. Until that ships, clearing `Caches` is the belt-and-braces
+step; clearing `WebKit` never was.
+
 ## First-run / ecoinvent guard
 
 The health endpoint deliberately does **not** touch Brightway2, so the UI loads

@@ -165,7 +165,9 @@ osascript -e 'tell application "MApper" to quit'; pkill -KILL -f mapper-backend
 rm -rf /Applications/MApper.app
 cp -R mapper-tauri/target/aarch64-apple-darwin/release/bundle/macos/MApper.app /Applications/
 xattr -dr com.apple.quarantine /Applications/MApper.app      # unsigned build
-rm -rf ~/Library/Caches/com.leonardoferhati.mapper           # HTTP cache ONLY
+rm -rf ~/Library/Caches/com.leonardoferhati.mapper           # HTTP cache ONLY (see below:
+                                                             # time-limited, delete once the
+                                                             # no-cache header is bedded in)
 open -a /Applications/MApper.app
 ```
 
@@ -216,10 +218,32 @@ stale `index.html` could not have rendered:
   survived intact (`mapper-onboarding-complete` still `1`, no tour). `NetworkCache`
   repopulated on its own.
 
-**The durable fix is a header, not a ritual.** Sending `Cache-Control: no-cache`
-on `index.html` from `_mount_frontend` would force revalidation and remove the
-need to clear anything. Until that ships, clearing `Caches` is the belt-and-braces
-step; clearing `WebKit` never was.
+**The header has shipped, and the clearing step is now time-limited.**
+`_SPAStaticFiles` in `desktop_entry.py` sends `Cache-Control: no-cache` on
+`index.html` and on nothing else, so the entry document must be revalidated
+before it is reused. Verified end-to-end through the real mount: `/index.html`
+answers `200` + `cache-control: no-cache`, a hashed asset answers `200` with no
+`cache-control` at all, and a conditional request on the entry document answers
+`304`. Scope is the point -- a blanket header would re-download the whole bundle
+on every launch for nothing, since hashed assets cannot go stale.
+
+**Keep the `rm -rf ~/Library/Caches/...` line for now anyway, and here is the
+one reason why.** A cached response's reuse is governed by the headers it was
+STORED with. Anything already sitting in `NetworkCache` was stored by a build
+that sent no `Cache-Control`, so on the FIRST launch of a header-carrying build
+the webview may still reuse the old entry without ever asking the server -- the
+new header never gets a chance to be seen. The changeover build is precisely the
+one the header cannot protect.
+
+So: clear once, on the first install of a build that carries the header. After
+that entry has been replaced by one stored WITH `no-cache`, the step is dead
+weight.
+
+**Delete the line when:** two or three consecutive installs have been done
+WITHOUT clearing `Caches` and the app came up on the new SPA each time. At that
+point the header is doing the work and the ritual can go. (Note the measured
+result above: staleness did not reproduce even before the header existed, so a
+single clean install is weak evidence -- give it a couple.)
 
 ## First-run / ecoinvent guard
 

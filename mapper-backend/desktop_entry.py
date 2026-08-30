@@ -110,12 +110,47 @@ def _anchor_writable_cwd() -> None:
 _anchor_writable_cwd()
 
 import uvicorn  # noqa: E402
+from fastapi.staticfiles import StaticFiles  # noqa: E402
 
 # Import the app object directly (not the "mapper.main:app" import string) so the
 # frozen binary doesn't depend on uvicorn re-importing by name at runtime.
 from mapper.main import app  # noqa: E402
 
 DEFAULT_PORT = 8765
+
+
+class _SPAStaticFiles(StaticFiles):
+    """StaticFiles that forces revalidation of ``index.html`` -- and ONLY it.
+
+    Vite content-hashes every asset (``index-DRjrvAU9.js`` ->
+    ``index-vbhBHsde.js``), so a new build changes their URLs and a cached
+    asset can never be served in place of a new one. Those files are exactly
+    what an HTTP cache is for, and they keep their default cacheability.
+
+    ``index.html`` is the one fixed URL, and it is the one that can go stale.
+    Starlette sends ``etag`` + ``last-modified`` but no ``Cache-Control``,
+    which leaves WebKit free to apply HEURISTIC freshness and serve a stored
+    copy without asking. A stale ``index.html`` then references asset hashes
+    the new bundle does not contain; every one 404s and the app comes up
+    blank. That was the "clear the caches before every launch" ritual, and
+    this header is what removes the need for it.
+
+    ``no-cache`` -- not ``no-store``. The response may still be stored; it
+    just may not be reused without revalidating. Paired with the etag
+    Starlette already sends, the common case is a 304 with no body, so this
+    costs one conditional request per launch rather than a re-download.
+
+    Keyed on the file actually served rather than on the request path, so it
+    covers both a direct ``/index.html`` and the ``html=True`` directory
+    fallback, and cannot accidentally match an asset that merely has
+    "index" in its name.
+    """
+
+    def file_response(self, full_path, stat_result, scope, status_code=200):  # type: ignore[override]
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        if os.path.basename(os.fspath(full_path)) == "index.html":
+            response.headers["Cache-Control"] = "no-cache"
+        return response
 
 
 def _mount_frontend() -> None:
@@ -136,8 +171,6 @@ def _mount_frontend() -> None:
     """
     import sys
 
-    from fastapi.staticfiles import StaticFiles
-
     meipass = getattr(sys, "_MEIPASS", None)
     if meipass:  # frozen: dist is bundled next to the binary (see the .spec datas)
         dist = Path(meipass) / "frontend"
@@ -145,7 +178,7 @@ def _mount_frontend() -> None:
         dist = Path(__file__).resolve().parent.parent / "mapper-frontend" / "dist"
 
     if (dist / "index.html").is_file():
-        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
+        app.mount("/", _SPAStaticFiles(directory=str(dist), html=True), name="frontend")
 
 
 def main() -> None:

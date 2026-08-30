@@ -48,6 +48,32 @@ export interface MonteCarloHandoff {
   computeDatabase: string | null
 }
 
+/**
+ * A handoff is USABLE only if it carries the fields the panel dereferences.
+ *
+ * The tab must have exactly two render states: the empty state, or a populated
+ * form. A truthy-but-incomplete handoff produced a third one -- it skipped the
+ * `!handoff` empty-state branch, then threw on the first field the populated
+ * path read, because `h?.methods[...]` short-circuits to `undefined` but the
+ * `.length` inside is still evaluated. Treating an unusable handoff as absent
+ * collapses that third state back into the empty state, which is the branch
+ * that already tells the user how to arrive here properly.
+ *
+ * Deliberately a shape check, not a deep validation: it guards exactly the
+ * fields the render dereferences, so it cannot drift into rejecting a handoff
+ * the panel would in fact have drawn.
+ */
+export function isUsableHandoff(h: MonteCarloHandoff | null | undefined): h is MonteCarloHandoff {
+  return !!h && typeof h.archetypeId === 'string' && Array.isArray(h.methods)
+}
+
+/** Same contract for the multi-item mode, whose render maps over `items`. */
+export function isUsableMultiHandoff(
+  h: MonteCarloMultiHandoff | null | undefined,
+): h is MonteCarloMultiHandoff {
+  return !!h && Array.isArray(h.items) && Array.isArray(h.methods)
+}
+
 interface MonteCarloState {
   handoff: MonteCarloHandoff | null
   multiHandoff: MonteCarloMultiHandoff | null

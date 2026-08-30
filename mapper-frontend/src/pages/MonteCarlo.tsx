@@ -17,7 +17,11 @@ import {
 import { Button } from '../components/ui/Button'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
-import { useMonteCarloStore } from '../stores/monteCarloStore'
+import {
+  isUsableHandoff,
+  isUsableMultiHandoff,
+  useMonteCarloStore,
+} from '../stores/monteCarloStore'
 import {
   CoverageBanner,
   MaterialPedigreeTable,
@@ -48,9 +52,17 @@ interface Props {
 
 export function MonteCarloPage({ onNavigate }: Props) {
   const {
-    handoff, multiHandoff, multiResult, running, pct, stage, error, cancelled,
-    result, run, runMulti, cancel, reset,
+    handoff: rawHandoff, multiHandoff: rawMultiHandoff, multiResult, running, pct,
+    stage, error, cancelled, result, run, runMulti, cancel, reset,
   } = useMonteCarloStore()
+
+  // Normalised ONCE, above every hook that dereferences them. An unusable
+  // handoff is treated as absent so the render is total: every input draws
+  // either the empty state or a populated form, never a third thing. Doing
+  // this at the branch instead would be too late -- `coverageMethod` below
+  // reads `.length` during the hook phase.
+  const handoff = isUsableHandoff(rawHandoff) ? rawHandoff : null
+  const multiHandoff = isUsableMultiHandoff(rawMultiHandoff) ? rawMultiHandoff : null
 
   const [iterations, setIterations] = useState(DEFAULT_ITERATIONS)
   const [seedText, setSeedText] = useState('')

@@ -567,13 +567,17 @@ def _run_monte_carlo_multi(
                 mc.build_demand_array()
                 mc.lci_calculation()
             flow_totals = mc.biosphere_matrix * mc.supply_array
+            # Reset the per-iteration CF cache ONCE, before the method loop.
+            # Resetting inside it left only the LAST method's draw, so item 2
+            # raised KeyError(<first method tuple>) -- the reported crash.
+            if idx == 0:
+                items[0]["_cf"] = {}
             for m in method_tuples:
                 rows, cf_rng = cf_samplers[m]
                 # The CF draw belongs to the ITERATION, not the item: every
                 # item must be characterised with the same sampled factors or
                 # the difference reacquires the decorrelation pairing removes.
                 if idx == 0:
-                    it["_cf"] = {}
                     vals = cf_rng.next()
                     items[0]["_cf"][m] = vals
                 else:
@@ -1181,36 +1185,11 @@ async def get_pedigree_coverage(
 
 
 def _validate_methods_registered(methods: list[list[str]]) -> None:
-    """Reject unregistered method tuples UP FRONT, naming the offender.
+    """Delegates to the shared api-layer validator. Both MC routes share
+    ``_method_cf_samplers``, so both call this."""
+    from mapper.api.method_validation import validate_methods_registered
 
-    ``_method_cf_samplers`` calls ``mc.switch_method(m)``, and bw2calc's
-    ``load_lcia_data`` does ``methods[self.method]`` -- so an unregistered tuple
-    surfaces as a bare ``KeyError(('EF v3.1', 'acidification', ...))`` from deep
-    inside the worker, minutes into a run, with nothing naming the cause.
-
-    This is NOT skip-with-warning: silently dropping an indicator would return a
-    result the user believes covers N indicators when it covers fewer. Fail
-    loudly, name the tuple, and let them fix the selection.
-
-    Reached by BOTH the single and the paired route, which share the sampler.
-    """
-    import bw2data
-
-    registered = set(bw2data.methods)
-    missing = [tuple(m) for m in methods if tuple(m) not in registered]
-    if not missing:
-        return
-    shown = ", ".join(" | ".join(m) for m in missing[:3])
-    more = f" (and {len(missing) - 3} more)" if len(missing) > 3 else ""
-    raise HTTPException(
-        status_code=400,
-        detail=(
-            f"{len(missing)} selected indicator(s) are not installed in this "
-            f"project: {shown}{more}. This usually means the selection was "
-            f"carried over from a project or method library where they were "
-            f"installed. Re-pick the indicators for the current method family."
-        ),
-    )
+    validate_methods_registered(methods)
 
 
 @router.post("/lca/monte-carlo", response_model=MonteCarloStartResponse)

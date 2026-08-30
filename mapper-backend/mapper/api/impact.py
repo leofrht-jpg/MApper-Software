@@ -182,6 +182,9 @@ def _year_to_database_map(
 
 @router.post("/calculate")
 async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
+    from mapper.api.method_validation import validate_methods_registered
+
+    validate_methods_registered(body.methods)
     mode = (body.mode or "").lower()
     if mode not in {"static", "projected"}:
         raise HTTPException(status_code=400, detail="mode must be 'static' or 'projected'")

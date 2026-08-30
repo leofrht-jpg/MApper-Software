@@ -4847,6 +4847,35 @@ amounts still come from the result echo. Same backward-compat fallback as
   sheets.** It's additive; existing tests assert sheets by name. Keep
   Configuration / Comparison (wide|long) / SB_* / Errors exactly as they are.
 
+## Two independent dimensions need a test on the CROSS, not only the margins
+
+**Where a feature has two independent dimensions, at least one test must
+exercise the CROSS, not only each margin.**
+
+The paired Monte Carlo `_cf` cache bug needed **2 items AND 2 methods** to
+fire. The suite covered both margins — multi-item runs with one method, and
+multi-method runs with one item — and every one of them passed while the
+feature crashed on the first real 2x2 a user tried. Margin coverage reads as
+thorough and is blind to exactly the interaction the second dimension exists
+to create.
+
+The cache was reset inside the per-method loop, so after item 0 it retained
+only the LAST method's draw and item 2 raised `KeyError(<first method
+tuple>)`. One test at 2 items x 2 methods would have caught it on the day it
+shipped.
+
+Dimensions already in this codebase that pair this way: (items x methods),
+(scenarios x indicators), (years x scopes), (axis fan-out x parameter cases).
+
+### What NOT to do
+
+- **Don't count two margin tests as covering their cross.** N=1 on either axis
+  collapses the interaction. If a loop is nested, a test must enter it at
+  depth >= 2 on both levels.
+- **Don't reach for the cross only after a bug.** When adding a second
+  dimension to an existing feature, the 2x2 is part of shipping it — the
+  paired work shipped margins only, and the cross came from a user's crash.
+
 ## A route taking externally-keyed identifiers needs one test per identifier-space
 
 **A route accepting a list of externally-keyed identifiers needs one test per

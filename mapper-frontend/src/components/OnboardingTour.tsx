@@ -132,6 +132,34 @@ export function OnboardingTour({ run, onFinish }: Props) {
     }
   }
 
+  // ESCAPE IS THE ESCAPE HATCH, and it has to live here rather than in
+  // Joyride's own key handling.
+  //
+  // The overlay is a 65%-opaque black sheet over the whole viewport at
+  // z-index 10000, and `overlayClickAction: false` / `dismissKeyAction: false`
+  // deliberately block dismissal so a stray click cannot skip the tour. That is
+  // fine while a tooltip is on screen -- "Skip tour" is right there. It is not
+  // fine when there is no tooltip: Joyride silently drops a step whose target
+  // is missing, and the result is a near-black app with no visible control and
+  // no way out, which reads as a hung window rather than a tour.
+  //
+  // So: keep the click/key guards (no accidental dismissal), and add ONE
+  // deliberate exit. Escape ends the tour the same way "Skip tour" does --
+  // through `markOnboardingComplete()` + `onFinish()`, so a tour escaped this
+  // way does not re-arm on the next launch.
+  useEffect(() => {
+    if (!run) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      markOnboardingComplete()
+      onFinish()
+    }
+    // Capture phase: the overlay sits above everything, and nothing else in the
+    // app should be able to swallow the one key that gets the user out.
+    window.addEventListener('keydown', onKey, true)
+    return () => window.removeEventListener('keydown', onKey, true)
+  }, [run, onFinish])
+
   if (!ready) return null
 
   return (

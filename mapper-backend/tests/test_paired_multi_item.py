@@ -207,3 +207,48 @@ def test_cancellation_is_checked_at_the_ITERATION_boundary():
     cancel_at = loop.index("is_cancelled")
     first_solve = loop.index("next(mc)")
     assert cancel_at < first_solve, "cancel must be checked before the iteration's first solve"
+
+
+def test_the_per_iteration_CF_cache_survives_MULTIPLE_methods():
+    """Regression: the reported KeyError.
+
+    ``it["_cf"] = {}`` sat INSIDE ``for m in method_tuples``, so after item 0
+    the cache retained only the LAST method's draw. Item 2 then looked up the
+    FIRST method and raised
+    ``KeyError(('EF v3.1', 'acidification', 'accumulated exceedance (AE)'))``.
+
+    It needs BOTH >=2 items AND >=2 methods to fire, which is exactly why the
+    original paired tests missed it -- they exercised one or the other.
+    """
+    method_tuples = [
+        ("EF v3.1", "acidification", "accumulated exceedance (AE)"),
+        ("EF v3.1", "climate change", "GWP100"),
+    ]
+    items = [{"_cf": {}, "samples": {m: [] for m in method_tuples}},
+             {"samples": {m: [] for m in method_tuples}}]
+
+    # The shipped control flow, with the fix applied.
+    for idx, it in enumerate(items):
+        if idx == 0:
+            items[0]["_cf"] = {}
+        for m in method_tuples:
+            if idx == 0:
+                items[0]["_cf"][m] = f"vals-{m[1]}"
+            else:
+                vals = items[0]["_cf"][m]          # must not raise
+                assert vals == f"vals-{m[1]}"
+
+    # Every method retained, not just the last.
+    assert set(items[0]["_cf"]) == set(method_tuples)
+
+
+def test_the_cf_reset_is_not_inside_the_method_loop():
+    """Source guard: the reset must precede `for m in method_tuples`."""
+    import inspect
+
+    import mapper.api.monte_carlo as mc
+
+    src = inspect.getsource(mc._run_monte_carlo_multi)
+    reset = src.index('items[0]["_cf"] = {}')
+    loop = src.index("for m in method_tuples:", src.index("for idx, it in enumerate(items):"))
+    assert reset < loop, "the CF cache reset must sit OUTSIDE the per-method loop"

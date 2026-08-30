@@ -4847,6 +4847,88 @@ amounts still come from the result echo. Same backward-compat fallback as
   sheets.** It's additive; existing tests assert sheets by name. Keep
   Configuration / Comparison (wide|long) / SB_* / Errors exactly as they are.
 
+## Two independent dimensions need a test on the CROSS, not only the margins
+
+**Where a feature has two independent dimensions, at least one test must
+exercise the CROSS, not only each margin.**
+
+The paired Monte Carlo `_cf` cache bug needed **2 items AND 2 methods** to
+fire. The suite covered both margins — multi-item runs with one method, and
+multi-method runs with one item — and every one of them passed while the
+feature crashed on the first real 2x2 a user tried. Margin coverage reads as
+thorough and is blind to exactly the interaction the second dimension exists
+to create.
+
+The cache was reset inside the per-method loop, so after item 0 it retained
+only the LAST method's draw and item 2 raised `KeyError(<first method
+tuple>)`. One test at 2 items x 2 methods would have caught it on the day it
+shipped.
+
+Dimensions already in this codebase that pair this way: (items x methods),
+(scenarios x indicators), (years x scopes), (axis fan-out x parameter cases).
+
+### What NOT to do
+
+- **Don't count two margin tests as covering their cross.** N=1 on either axis
+  collapses the interaction. If a loop is nested, a test must enter it at
+  depth >= 2 on both levels.
+- **Don't reach for the cross only after a bug.** When adding a second
+  dimension to an existing feature, the 2x2 is part of shipping it — the
+  paired work shipped margins only, and the cross came from a user's crash.
+
+## A route taking externally-keyed identifiers needs one test per identifier-space
+
+**A route accepting a list of externally-keyed identifiers needs one test per
+identifier-space, not one repeated across the happy path — concretely, at least
+two distinct method families on any method-taking route.**
+
+Every Monte Carlo test used `EF v3.1` and only `EF v3.1`. A family-dependent
+assumption was therefore structurally invisible: the suite was green while the
+feature crashed on the second family a user tried. Repeating the same
+identifier across twenty assertions adds confidence in the *route* and none in
+the *identifier space*.
+
+`methods: list[list[str]]` is externally keyed — the tuples are `bw2data`
+registry keys, project-scoped, and installable/uninstallable at runtime. The
+same shape applies to activity `(database, code)` pairs, premise database
+names, and LCIA method tuples generally.
+
+**Up-front validation is the guard.** `mapper/api/method_validation.py`
+`validate_methods_registered()` is the single implementation; every route
+taking `methods` calls it before launching any work:
+`/lca/monte-carlo`, `/lca/monte-carlo/multi`, `/lca/calculate-archetype`,
+`/lca/calculate-multi-product`, `/impact/calculate`.
+
+Without it the failure is a bare `KeyError((...))` raised from inside
+`PersistentLCARunner` → `lca.switch_method(mt)` (bw2calc's `load_lcia_data`
+does `methods[self.method]`) — deep in a worker, often minutes into a run,
+naming nothing.
+
+### What NOT to do
+
+- **Don't validate by skipping with a warning.** Silently dropping an
+  indicator returns a result the user believes covers N indicators when it
+  covers fewer. Fail loudly and name the tuple.
+- **Don't write a route test that uses one identifier N times and call the
+  space covered.** Two distinct families, minimum. `test_worker_launch_coverage`
+  measures *that* a worker launches, not *what* it launches with — it cannot
+  close this gap, and a payload-shape guard could not either, because validity
+  is environment-dependent (CI has no registered methods at all). This stays
+  per-route test discipline.
+- **Don't let a test fixture POST an unregistered tuple.** After validation
+  landed, two worker-launch fixtures 400'd before their launch and silently
+  stopped measuring what they existed to measure. A fixture must declare the
+  registry it POSTs against (`monkeypatch.setattr(bw2data, "methods", {...})`),
+  not rely on the route accepting unvalidated input.
+- **Don't assume a KeyError naming a method tuple means the method is
+  missing.** It can equally be an internal cache keyed by method tuple. The
+  reported `KeyError(('EF v3.1', 'acidification', 'accumulated exceedance
+  (AE)'))` was NOT a registry miss — that tuple is installed in every project —
+  it was the paired multi-item CF cache being reset *inside* the per-method
+  loop, so only the last method survived and item 2 raised on the first.
+  Check the registry before theorising: a tuple that is installed everywhere
+  cannot be a project-scoping problem.
+
 ## Variation in MApper
 
 DSM Scaling Rules are temporarily hidden from the UI as of 2026-05-01. Backend

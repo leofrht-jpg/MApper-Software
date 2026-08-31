@@ -7902,8 +7902,14 @@ conflation was expensive.
 
 **A stock-scoped stage is not necessarily per-year.** Every Battery Circularity
 Use Phase carries `scope="stock"` while its quantities are already per kWh of
-service (each stage divided by `bess_ac_energy_delivered_kwh = 88 358`). The
-old `is_annual = (scope == "stock")` derivation therefore multiplied its use
+AC service. The Use Phase reaches that basis *by construction, not by
+division*: its rows carry a literal `1.0` (plus the round-trip-loss term
+`1 / bess_round_trip_efficiency - 1`), because one kWh of service is one kWh of
+service. **Only Manufacturing and End of Life carry a divisor** — they hold
+whole-life amounts and are divided by the archetype's own AC-energy normaliser
+(§ *Two AC-energy normalisers* below; B0 divides by
+`b0_cumulative_ac_energy_delivered_kwh`, B by `bess_ac_energy_delivered_kwh`).
+The old `is_annual = (scope == "stock")` derivation therefore multiplied its use
 phase by the lifetime and left manufacturing at 1 — the functional unit becomes
 15 kWh for one stage and 1 kWh for another. Incoherent, not a rescale: ×8.76 on
 B0's total.
@@ -7966,6 +7972,69 @@ duplicate that can drift from the BOM's own expressions.
   all).
 - **Don't collapse `basis` to a boolean.** The third state is load-bearing.
 
+### Two AC-energy normalisers — B0 and B are DIFFERENT, on purpose
+
+Battery Circularity holds **two** cumulative-AC-energy parameters. They look
+like a duplicate and are not; an external audit read them as "a confirmed
+discrepancy" and it was a false positive.
+
+| Parameter | Base value | Used by | Occurrences |
+|---|---|---|---|
+| `b0_cumulative_ac_energy_delivered_kwh` | **89 514.008 08** | `B0 - Reference BESS` | 3 quantity expressions |
+| `bess_ac_energy_delivered_kwh` | **88 358.095 88** | `B - Circular BESS`, `BESS-II life`, `BESS-Inverter` | 4 + 1 + 1 |
+
+**B0 is the NEW-battery reference BESS (100 % initial SoH); B is the
+second-life one** (arrives at ~84 % SoH, ends at 75.2 %). A healthier battery
+delivers more energy over the same 15 years, so B0 **must** exceed B — it does,
+by **1.3082 %**. Two values, two archetypes, no overlap: verified by walking
+every `quantity_expression` in all eight archetype JSONs. **Do not "harmonise"
+them.**
+
+Corroborating checks that pass: `bess_annual_ac_energy_delivered_kwh × 15`
+reproduces B exactly (rel diff 0.000e+00); the round-trip closure against
+`bess_cumulative_ac_charge_kwh` implies an effective RTE of 0.900 237 vs a
+nominal 0.9 (+0.026 %); both parameters rise per-year under
+`sa_bess_lifetime_10y` (+0.341 % B0, +0.279 % B), the correct sign for
+degradation; and both sit near 38 % of community demand, so the system is
+demand/PV-limited rather than capacity-limited — which is why a much healthier
+battery buys only 1.3 %.
+
+**The scenario-override asymmetry is correct, not a gap.** B0 carries an
+override only in `sa_bess_lifetime_10y`; B carries all six. The other five
+cases perturb **EV-side** parameters only (charging power/mode, target SoC, EV
+cell temperature, service distance), which change how degraded the battery is
+*when it arrives at second life*. That moves B and cannot touch a new reference
+battery. Only the lifetime case changes B0's own operation.
+
+**Changing the divisor is NOT a clean multiplier on the total**, because the
+Use Phase carries no divisor. Forcing B0 onto B's value scales Manufacturing
+and End of Life by exactly 1.013 082 13 and leaves the Use Phase at 1.000 000,
+so the total moves **+0.585 % on GWP100 but +0.875 % on acidification** — the
+multiplier is indicator-dependent, tracking each indicator's
+Manufacturing : Use split (44.6/55.3 for GWP100, 66.8/33.1 for acidification).
+`A`/`A0` are untouched by either value: the EVs normalise on
+`ev_service_distance_km` (160 000 km), and their scores are bit-identical
+across both.
+
+#### Two open caveats for the paper — NOT defects, and NOT fixable here
+
+Both need the source dispatch/degradation model, which does not live in this
+repo. Record them; do not attempt to close them from the parameter table.
+
+- **B0's normaliser has no corroborating sibling.** B can be cross-checked
+  three ways (`bess_annual_…`, `bess_cumulative_ac_charge_kwh`,
+  `bess_cumulative_fec`). B0 has none of these — no `b0_annual_…`, no
+  `b0_cumulative_ac_charge_kwh`, no `b0_cumulative_fec`, no `b0_end_soh_pct`.
+  Its 89 514.008 can only be checked by ratio against B and by physical
+  plausibility. If the reference dispatch is re-run, **have it emit the
+  siblings too.**
+- **B's FEC closure is 0.68 % off and does not resolve.**
+  `bess_cumulative_fec × 60 kWh × discharge_eff` = 87 756.729 kWh against a
+  stored 88 358.096 (implied FEC 1552.294 vs stored 1541.729). Every
+  redefinition constructible from the table — charge-side, discharge-side,
+  their mean — lands at ~1552, never 1541.73. It is small and it is not the
+  normaliser, but it is unexplained.
+
 ## A parameter scenario says WHICH values, never WHETHER to resolve
 
 A BOM row whose Quantity cell is a parameter expression is imported with
@@ -7988,18 +8057,33 @@ table (`setdefault`), so it always resolved. That asymmetry is what made the
 defect invisible: WP5's fleet numbers were right the whole time and only the
 single-product panels were wrong.
 
-Measured on the real projects before the fix:
+Measured on the real projects before the fix, **on 2026-08-28 at 06:46**:
 
 | | before | after | |
 |---|---|---|---|
 | WP5 ICEV-Petrol, Use Phase (1 yr) | 0.78 | 567.7 kg CO₂e | 727× |
-| Battery Circularity B0, total | 239.2 | 0.1499 kg CO₂e | ÷1596 |
-| B0 Manufacturing / Use split | 99.86 / 0.06 | 44.4 / 55.4 | |
+| Battery Circularity B0, total | 239.2 | 0.1499 kg CO₂e † | ÷1596 |
+| B0 Manufacturing / Use split | 99.86 / 0.06 | 44.4 / 55.4 † | |
+
+† **These two B0 rows no longer reproduce — they are a dated measurement, not a
+current expectation.** B0's live GWP100 is **0.16292 kg CO₂e** (EF v3.1,
+ecoinvent-3.10-cutoff, `scope="all"`, default preset), split
+44.6 % Manufacturing / 55.3 % Use Phase. The figures moved for reasons outside
+this patch and after it: `stage_basis` landed the same day at 08:27, and the
+project's parameter table was last written at 22:18. The ratio the row exists
+to demonstrate (÷1596, i.e. the divisor going from never-applied to applied) is
+unaffected — **keep the dated numbers and this note rather than silently
+restating them**, because a re-measured figure would no longer be evidence of
+what this patch fixed.
 
 The Battery Circularity case is the clearer failure: its functional unit is
-1 kWh of AC service, produced by dividing every stage by
-`bess_ac_energy_delivered_kwh` (88 358). Unresolved, that divisor never
-applies, so a whole battery pack is charged against 1 kWh.
+1 kWh of AC service, produced by dividing Manufacturing and End of Life by the
+archetype's AC-energy normaliser — for B0 that is
+**`b0_cumulative_ac_energy_delivered_kwh` (89 514.008)**, not
+`bess_ac_energy_delivered_kwh` (88 358.096), which is B's (see *Two AC-energy
+normalisers* under the stage-basis section). The Use Phase is divided by
+nothing: it carries a literal `1.0`, being per-kWh by construction. Unresolved,
+the divisor never applies, so a whole battery pack is charged against 1 kWh.
 
 **Resolution now always runs.** For an expression-free BOM,
 `resolve_archetype_with_engine` is a deep copy with no substitutions, so

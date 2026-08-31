@@ -336,7 +336,8 @@ def test_the_workbook_export_REJECTS_a_composed_archetype():
 
 # ── Acceptance: reproduce a real hand-duplicated archetype ──────────────────
 
-def test_a_composed_twin_reproduces_the_copy_paste_original_exactly():
+@pytest.mark.parametrize("DIV", [1.0, 3.0, 89514.00808104257, 88358.09587762543, 1e-4])
+def test_a_composed_twin_reproduces_the_copy_paste_original_exactly(DIV):
     """The acceptance shape, run against synthetic stand-ins for the real case.
 
     Battery Circularity hand-duplicates `Battery Pack` inside
@@ -348,8 +349,25 @@ def test_a_composed_twin_reproduces_the_copy_paste_original_exactly():
 
     Note what this exercises: the child spans Manufacturing AND End of Life,
     and each lands in the parent's stage of the same scope.
+
+    `DIV` IS PARAMETRIZED BECAUSE ITS VALUE IS NOT WHAT THIS TEST CHECKS, and
+    an earlier revision hid that. It was a lone
+    ``DIV = 89514.00808104257  # b0_cumulative_ac_energy_delivered_kwh``, which
+    reads like a pinned project value but appears on BOTH sides of the equality
+    -- so it cancels, and substituting 12345.6789 left all 20 tests green. A
+    constant that verifies nothing is worse than no constant: an audit read it
+    against a doc that named the OTHER normaliser and reported a discrepancy in
+    project data that did not exist (see *Two AC-energy normalisers* in
+    CLAUDE.md -- B0 and B legitimately differ).
+
+    What IS load-bearing here is that the include quantity is APPLIED and
+    applied UNIFORMLY: were `splice_includes` to ignore it, the spliced rows
+    would come back at PACK/EOL against the original's PACK/DIV and EOL/DIV and
+    every case but DIV=1.0 would fail. The list spans five orders of magnitude
+    for that reason, and includes both real Battery Circularity normalisers as
+    data points -- neither is pinned, and **the live values are project data
+    that must not be duplicated into this repo as an expectation.**
     """
-    DIV = 89514.00808104257          # b0_cumulative_ac_energy_delivered_kwh
     PACK, EOL = 428.57142857, 85.714285714
 
     pack = Archetype(id="pack", name="Battery Pack", bom=[

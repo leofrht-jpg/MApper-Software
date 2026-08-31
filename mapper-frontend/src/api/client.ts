@@ -435,6 +435,9 @@ export interface BOMNode {
    *  variance. Never set on a row with a quantity_expression: that row inherits
    *  its uncertainty from the parameters in the expression. */
   uncertainty?: RowUncertainty | null
+  /** Free-text provenance for this row. Never computed from; round-trips
+   *  through the BOM workbook's `Description` column. */
+  description?: string | null
   validation_status?: 'ok' | 'warning' | 'error'
   validation_message?: string | null
 }
@@ -2484,7 +2487,7 @@ export async function moveArchetype(
 export async function updateBOMNode(
   arcId: string,
   nodeId: string,
-  patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; basis?: 'per_unit' | 'per_year' | 'unset'; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null; uncertainty?: RowUncertainty | 'unset' | null },
+  patch: { name?: string; quantity?: number; quantity_expression?: string | null; unit?: string; is_annual?: boolean; basis?: 'per_unit' | 'per_year' | 'unset'; scope?: 'inflows' | 'stock' | 'outflows' | null; ecoinvent_activity?: EcoinventLink | null; evolution?: MaterialEvolution | null; uncertainty?: RowUncertainty | 'unset' | null; description?: string | 'unset' | null },
 ): Promise<BOMNode> {
   return request<BOMNode>(`/bom/archetypes/${arcId}/nodes/${nodeId}`, {
     method: 'PUT',

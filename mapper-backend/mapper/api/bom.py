@@ -507,6 +507,10 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
             )
         else:
             node.uncertainty = body.uncertainty
+    # Provenance for the row. Nothing computes from it; it is here so a
+    # modelling assumption travels with the row it justifies.
+    if body.description is not None:
+        node.description = None if body.description == "unset" else body.description
     if body.ecoinvent_activity is not None:
         node.ecoinvent_activity = body.ecoinvent_activity
         # Linking an activity makes a node a material.
@@ -2553,6 +2557,9 @@ _BOM_COLUMNS = [
     "Ecoinvent Code",
     "Ecoinvent Name",
     "Ecoinvent Location",
+    # Free-text provenance for the row. Round-trips so a modelling assumption
+    # survives an export/re-import cycle -- the note is the whole point.
+    "Description",
     "Evolution Method",
     "Learning Rate",
     "Rebound Rate",
@@ -2663,6 +2670,7 @@ def _walk_for_export(
         link.code if link else "",
         link.name if link else "",
         link.location if link else "",
+        node.description or "",
         ev_method,
         ev_lr,
         ev_rb,
@@ -3219,6 +3227,10 @@ def _parse_bom_workbook(
                         )
                 uncertainty = RowUncertainty(**kwargs)
 
+        # Optional and free-text: a blank cell (or an older workbook with no
+        # Description column at all) imports as no description, unchanged.
+        row_description = str(col(row, "Description") or "").strip() or None
+
         node = BOMNode(
             name=name,
             node_type=node_type,
@@ -3229,6 +3241,7 @@ def _parse_bom_workbook(
             ecoinvent_activity=link,
             evolution=evolution,
             uncertainty=uncertainty,
+            description=row_description,
         )
 
         if not parent_name:

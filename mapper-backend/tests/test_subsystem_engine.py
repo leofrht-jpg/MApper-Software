@@ -16,6 +16,7 @@ import pytest
 
 from mapper.core.parameter_engine import ParameterEngine, ParameterError
 from mapper.core.subsystem_engine import (
+    StaleDriverFilterError,
     compute_dependent_subsystem,
     filter_primary_stock,
     stock_to_flows,
@@ -38,7 +39,11 @@ from mapper.models.subsystem_schemas import DependencyRule, Subsystem
 
 def _primary_dims() -> list[DimensionDef]:
     return [
-        DimensionDef(name="fuel_type", display_name="Fuel", labels=["bev", "ice"]),
+        # "phev" is DECLARED but carries no stock in the fixture below. That is
+        # what lets the empty-match test reference something real -- expressing
+        # "matches nothing" with an UNDECLARED label conflates it with a stale
+        # reference, which is the distinction `StaleDriverFilterError` draws.
+        DimensionDef(name="fuel_type", display_name="Fuel", labels=["bev", "ice", "phev"]),
         DimensionDef(name="size", display_name="Size", labels=["small", "large"]),
         DimensionDef(name="age", display_name="Age", labels=[], is_age=True),
     ]
@@ -95,7 +100,14 @@ def test_filter_primary_stock_empty_filter_returns_total():
 
 
 def test_filter_primary_stock_empty_values_returns_total():
-    # Filter with empty value lists is treated as no filter.
+    """Retained as the RECORD of the over-counting shape, not as an endorsement.
+
+    An empty value list is dropped, so the filter means "no filter" and the
+    rule gets the whole primary stock instead of a subset. That is now refused
+    at the write boundary by `validate_dependency_rule`, so this branch is
+    reachable only for rules stored before that check existed -- and the
+    behaviour has to stay defined for them.
+    """
     yr = _primary_result().years[0]
     total = filter_primary_stock(yr, {"fuel_type": []}, _primary_dims())
     assert total == 100.0
@@ -122,9 +134,23 @@ def test_filter_primary_stock_multi_value_in_one_dim():
 
 
 def test_filter_primary_stock_no_matches():
+    """A DECLARED label that carries no stock is an ordinary empty match.
+
+    It must return 0.0 in silence: a fuel type with no vehicles yet is normal,
+    and raising on it would make a sparse fleet unrunnable.
+    """
     yr = _primary_result().years[0]
-    total = filter_primary_stock(yr, {"fuel_type": ["hydrogen"]}, _primary_dims())
+    total = filter_primary_stock(yr, {"fuel_type": ["phev"]}, _primary_dims())
     assert total == 0.0
+
+
+def test_filter_primary_stock_undeclared_label_is_STALE_not_an_empty_match():
+    """The other side of the same coin. 'hydrogen' is not a label of
+    fuel_type, so it cannot match in ANY year -- reporting 0.0 would read as
+    "this subsystem has no stock" when the reference is simply broken."""
+    yr = _primary_result().years[0]
+    with pytest.raises(StaleDriverFilterError):
+        filter_primary_stock(yr, {"fuel_type": ["hydrogen"]}, _primary_dims())
 
 
 # ── stock_to_flows ──────────────────────────────────────────────────────────

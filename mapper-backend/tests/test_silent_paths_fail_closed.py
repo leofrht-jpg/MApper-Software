@@ -39,6 +39,7 @@ from __future__ import annotations
 
 import ast
 import re
+import textwrap
 from pathlib import Path
 
 import pytest
@@ -334,6 +335,219 @@ def test_the_class_guard_would_catch_a_REINTRODUCED_continue(tmp_path):
         encoding="utf-8",
     )
     assert not _skip_sites(good)
+
+
+# ── The SECOND shape: a lookup miss returning a default ──────────────────────
+#
+# The `continue` sweep above is necessary and NOT sufficient. It reported zero
+# for `subsystem_engine`, which had two real defects — because neither was a
+# skipped iteration. Both were a silent VALUE:
+#
+#   allowed = {d: set(v) for d, v in driver_filter.items() if v}
+#   if not allowed:
+#       return float(sum(year_result.stock.values()))   # the WHOLE stock
+#
+#   if all(cohort_dict.get(dim) in vals for dim, vals in allowed.items()):
+#                        # ^ .get() -> None for a dimension that is gone
+#
+# and path 1's original was a third:
+#
+#   linked = [m for m in all_materials if m.ecoinvent_activity is not None]
+#
+# All three answer a failed lookup with a plausible default instead of raising.
+
+#: The vocabulary these lookups actually use. `cohort` and `dim` are in it
+#: because the defect that motivated this shape reads `cohort_dict.get(dim)` --
+#: neither word is "mapping" or "dimension", and leaving them out made the
+#: sweep miss the very line it was written for.
+_WATCHED_CONCEPT = re.compile(
+    r"ecoinvent_activity|mappings?|archetypes?|lever|driver_filter"
+    r"|dimension|cohort|\bdim\b|\blink\b",
+    re.IGNORECASE,
+)
+
+
+def _mentions_watched(node: ast.AST) -> bool:
+    return bool(_WATCHED_CONCEPT.search(ast.unparse(node)))
+
+
+def _keeps_the_present_ones(test: ast.AST) -> bool:
+    """Does this comprehension ``if`` KEEP the valid rows, thereby dropping the
+    invalid ones?
+
+    That sign is the whole distinction, and it is checkable:
+
+    * ``if m.ecoinvent_activity is not None`` / ``if vals`` -- keeps what
+      resolved, DROPS what did not. This is the defect shape.
+    * ``if m.ecoinvent_activity is None`` / ``if aid not in mapping`` --
+      COLLECTS the offenders, which is what a guard does before raising on
+      them. Never a defect, and flagging it would make the sweep fire on its
+      own fixes.
+    """
+    if isinstance(test, ast.Compare) and len(test.ops) == 1:
+        op = test.ops[0]
+        if isinstance(op, ast.IsNot):                 # `is not None`
+            return True
+        if isinstance(op, (ast.Is, ast.NotIn)):       # `is None`, `not in`
+            return False
+        return False
+    if isinstance(test, ast.UnaryOp) and isinstance(test.op, ast.Not):
+        return False                                  # `if not x` -- a domain
+                                                      # filter, not a lookup
+    return isinstance(test, (ast.Name, ast.Attribute))  # bare truthy keep
+
+
+def _default_sites(path: Path) -> list[tuple[int, str]]:
+    """Lines answering a failed lookup with a default instead of raising.
+
+    AST, not regex, because the distinctions are STRUCTURAL. Two shapes:
+
+    * a ``.get()`` with NO default whose result is consumed inline -- inside a
+      comparison, a boolean, another call -- so a miss silently becomes
+      ``None`` and flows on. ``x = d.get(k)`` on its own is not flagged: the
+      caller still holds the miss, and whether they check it is the `continue`
+      sweep's job. ``d.get(k, 0.0)`` is not flagged either: an explicit numeric
+      default inside a running total means "nothing yet", which is correct.
+    * a comprehension whose ``if`` KEEPS the resolved rows, thereby dropping
+      the unresolved ones -- see ``_keeps_the_present_ones``. Covers list, set,
+      dict and generator forms, which is why this is AST: the first version of
+      this sweep was a regex over ``[...]`` and missed
+      ``allowed = {dim: set(vals) ... if vals}`` entirely.
+    """
+    src = path.read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    lines = src.splitlines()
+    hits: set[int] = set()
+
+    assigned_gets: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)) and isinstance(
+            getattr(node, "value", None), ast.Call
+        ):
+            assigned_gets.add(id(node.value))
+
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "get"
+            and len(node.args) < 2                    # no explicit default
+            and id(node) not in assigned_gets         # not held by the caller
+            and _WATCHED_CONCEPT.search(ast.unparse(node))
+        ):
+            hits.add(node.lineno)
+
+        if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+            if not _WATCHED_CONCEPT.search(ast.unparse(node)):
+                continue
+            for gen in node.generators:
+                if any(_keeps_the_present_ones(t) for t in gen.ifs):
+                    hits.add(node.lineno)
+
+    return [(n, lines[n - 1].strip()) for n in sorted(hits) if n <= len(lines)]
+
+
+def test_the_second_shape_would_have_caught_all_THREE_historical_defects():
+    """If it would not have caught these, it is the wrong shape.
+
+    Verified against the exact lines that shipped, not paraphrases.
+    """
+    shipped = [
+        # subsystem finding A -- empty filter -> the whole primary stock
+        "    allowed = {dim: set(vals) for dim, vals in driver_filter.items() if vals}",
+        # subsystem finding B -- .get() -> None for a dimension that is gone.
+        # Carries its body: it is an `if`, and a lone `if` does not parse.
+        "        if all(cohort_dict.get(dim) in vals for dim, vals in allowed.items()):\n"
+        "            total += count",
+        # path 1 -- the filtered comprehension that dropped unlinked rows
+        "    linked = [m for m in all_materials if m.ecoinvent_activity is not None]",
+    ]
+    import tempfile
+
+    for line in shipped:
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "x.py"
+            # dedent: these are verbatim source lines, and `ast.parse` refuses
+            # a lone indented statement
+            f.write_text(textwrap.dedent(line) + "\n", encoding="utf-8")
+            assert _default_sites(f), f"the second shape missed: {line.strip()}"
+
+
+def test_the_second_shape_does_not_fire_on_the_corrected_forms():
+    import tempfile
+
+    clean = [
+        "    total = sum(year_result.stock.values())",
+        "        raise StaleDriverFilterError(f'gone: {dim_name}')",
+        "    _refuse_on_unlinked(arc.name, all_materials, scope)",
+        "    q = counts.get(year, 0.0)          # a COUNT, not a lookup of a link",
+    ]
+    for line in clean:
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "x.py"
+            f.write_text(textwrap.dedent(line) + "\n", encoding="utf-8")
+            assert not _default_sites(f), f"false positive on: {line.strip()}"
+
+
+#: Declared, with a reason, exactly like `_ALLOWED` above. Four entries, and
+#: each one has to say why the miss is not a dropped input.
+_ALLOWED_DEFAULTS: dict[tuple[str, str], str] = {
+    ("api/lca.py",
+     "linked = [m for m in all_materials if m.ecoinvent_activity is not None]"):
+        "reached only AFTER _refuse_on_unlinked has raised on any unlinked "
+        "row, so nothing can be dropped here",
+    ("core/subsystem_engine.py",
+     "allowed = {dim: set(vals) for dim, vals in driver_filter.items() if vals}"):
+        "an empty value list is refused at the WRITE boundary by "
+        "validate_dependency_rule; the branch stays defined only for rules "
+        "stored before that check existed",
+    ("core/subsystem_engine.py",
+     "if all(cohort_dict.get(dim) in vals for dim, vals in allowed.items()):"):
+        "every key and label is validated against the primary dimensions "
+        "ABOVE this line, so a .get miss here is a legitimate empty match "
+        "(a declared label with no stock this year), not a stale reference",
+    ("core/dsm_lca_engine.py",
+     "r.dependent_archetype_id for r in subsystem.dependency_rules if r.dependent_archetype_id"):
+        "builds the KNOWN-to-carry-stock set for the unmapped warning; a rule "
+        "with no target cannot be unmapped, and a blank target is refused at "
+        "save by validate_dependency_rule",
+}
+
+
+def _stmt_text(path: Path, lineno: int, span: int = 4) -> str:
+    """The few lines from `lineno` — a comprehension can wrap, and the sweep
+    reports the line it starts on."""
+    lines = path.read_text(encoding="utf-8").splitlines()
+    return " ".join(l.strip() for l in lines[lineno - 1: lineno - 1 + span])
+
+
+def test_no_undeclared_lookup_default_in_a_calculation_path():
+    watched = [
+        "api/lca.py", "core/dsm_lca_engine.py", "core/bom_engine.py",
+        "core/material_flow_engine.py", "core/subsystem_engine.py",
+        "core/aesa_engine.py",
+    ]
+    findings = []
+    for rel in watched:
+        for lineno, line in _default_sites(BACKEND / rel):
+            if (rel, line) in _ALLOWED_DEFAULTS:
+                continue
+            # a multi-line comprehension reports its first line; match the
+            # declared body text anywhere in the statement instead
+            if any(rel == r and body in _stmt_text(BACKEND / rel, lineno)
+                   for (r, body) in _ALLOWED_DEFAULTS):
+                continue
+            findings.append(f"{rel}:{lineno}: {line}")
+    assert not findings, (
+        "a failed lookup answers with a default instead of raising:\n"
+        + "\n".join(findings)
+    )
+
+
+def test_every_allowed_default_entry_still_exists():
+    for (rel, line) in _ALLOWED_DEFAULTS:
+        src = (BACKEND / rel).read_text(encoding="utf-8")
+        assert line in src, f"{rel} no longer contains {line!r} — drop the entry"
 
 
 def test_every_allowed_entry_still_exists():

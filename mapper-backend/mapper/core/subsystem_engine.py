@@ -41,6 +41,25 @@ from mapper.models.subsystem_schemas import DependencyRule, Subsystem
 # ── Primary stock filter ────────────────────────────────────────────────────
 
 
+class StaleDriverFilterError(ValueError):
+    """A ``driver_filter`` names a dimension or label that no longer exists.
+
+    THE DISTINCTION THIS TYPE EXISTS TO DRAW: a filter that references
+    something real and happens to match no stock is ORDINARY (a fuel type with
+    no vehicles yet in 2025) and must return 0.0 in silence, or a sparse fleet
+    becomes unrunnable. A filter that references something that is NOT THERE
+    can never match anything in any year, and returning 0.0 for it is a lie
+    that reads as "this subsystem has no stock".
+
+    Reachable without any invalid save. ``validate_dependency_rule`` rejects
+    both at the write boundary, but a rule goes stale AFTERWARDS when the
+    primary system's dimensions are edited: ``update_system`` migrates stock
+    rows, inflows, stock targets, manual outflows, mode configs and survival
+    configs, and until this patch said nothing about subsystem rules, which
+    live in a separate store its migration never reached.
+    """
+
+
 def filter_primary_stock(
     year_result: YearResult,
     driver_filter: dict[str, list[str]],
@@ -48,11 +67,48 @@ def filter_primary_stock(
 ) -> float:
     """Sum primary stock for cohorts satisfying every (dim, allowed-values)
     constraint in ``driver_filter``. Empty filter → total primary stock.
+
+    Raises :class:`StaleDriverFilterError` when the filter references a
+    dimension or a label the primary system does not have -- see that class for
+    why a stale reference and an empty match are not the same thing.
     """
     if not driver_filter:
         return float(sum(year_result.stock.values()))
 
-    # Normalize allowed values to sets for O(1) lookup.
+    # ── Stale-reference check, BEFORE any matching ──────────────────────
+    # A dimension or label that is not there cannot match in any year, so
+    # summing to 0.0 would report "no stock" for what is actually a broken
+    # reference. A *declared* label with no stock this year is a different
+    # thing entirely and falls through to the loop below, silently.
+    dims_by_name = {d.name: d for d in primary_dimensions if not d.is_age}
+    for dim_name, vals in driver_filter.items():
+        dim = dims_by_name.get(dim_name)
+        if dim is None:
+            raise StaleDriverFilterError(
+                f"driver_filter references dimension {dim_name!r}, which the "
+                f"primary system does not have (its dimensions are "
+                f"{', '.join(sorted(dims_by_name)) or '(none)'}). It cannot "
+                f"match any cohort in any year, so this subsystem would report "
+                f"zero stock rather than an error. A dimension was probably "
+                f"renamed or removed after the rule was saved -- re-open the "
+                f"dependency rule and re-pick the dimension."
+            )
+        unknown = [v for v in (vals or []) if v not in set(dim.labels)]
+        if unknown:
+            raise StaleDriverFilterError(
+                f"driver_filter[{dim_name!r}] references label(s) "
+                f"{', '.join(repr(u) for u in unknown)}, which dimension "
+                f"{dim_name!r} does not declare (its labels are "
+                f"{', '.join(dim.labels) or '(none)'}). Those cannot match any "
+                f"cohort in any year. A label was probably renamed or removed "
+                f"after the rule was saved -- re-open the dependency rule."
+            )
+
+    # Normalize allowed values to sets for O(1) lookup. An empty value list is
+    # dropped here and, if nothing survives, the filter means "no filter" and
+    # returns the WHOLE primary stock -- an over-count of everything the filter
+    # was meant to exclude. `validate_dependency_rule` refuses to save one, so
+    # this branch is reachable only for rules stored before that check existed.
     allowed = {dim: set(vals) for dim, vals in driver_filter.items() if vals}
     if not allowed:
         return float(sum(year_result.stock.values()))
@@ -62,6 +118,8 @@ def filter_primary_stock(
         cohort_dict = cohort_key_to_dict(cohort_key, primary_dimensions)
         if all(cohort_dict.get(dim) in vals for dim, vals in allowed.items()):
             total += count
+    # 0.0 here is the LEGITIMATE empty match: every reference resolved, no
+    # cohort carries that combination this year. Silent by design.
     return float(total)
 
 
@@ -320,6 +378,19 @@ def validate_dependency_rule(
         dim = dim_by_name.get(dim_name)
         if dim is None:
             errors.append(f"driver_filter references unknown primary dimension '{dim_name}'")
+            continue
+        # An empty value list is silently "no filter": `filter_primary_stock`
+        # drops it, and if nothing survives the rule gets the WHOLE primary
+        # stock instead of a subset -- an over-count, the opposite direction
+        # from every other failure in this family and correspondingly harder
+        # to notice. Refused at SAVE so nothing already stored breaks.
+        if not (values or []):
+            errors.append(
+                f"driver_filter['{dim_name}'] has no values, which silently "
+                f"means 'no filter' and would use the whole primary stock. "
+                f"Pick at least one value, or remove the key to filter on "
+                f"nothing deliberately."
+            )
             continue
         label_set = set(dim.labels)
         for v in values or []:

@@ -550,7 +550,97 @@ def _migrate_state(
     if orphaned_survival:
         warnings.append(f"Dropped {orphaned_survival} survival config(s) that referenced removed labels/dimensions.")
 
-    return state, warnings
+    return state, warnings, label_trans
+
+
+def _dim_names(defn: SystemDefinition) -> list[str]:
+    return [d.name for d in non_age_dimensions(defn.dimensions)]
+
+
+def _migrate_subsystem_filters(
+    project: str,
+    system_id: str,
+    label_trans: dict[str, dict[str, str | None]],
+    removed_dims: list[str],
+) -> list[str]:
+    """Carry subsystem ``driver_filter`` keys and labels through a dimension edit.
+
+    The other six slots (stock rows, inflows, stock targets, manual outflows,
+    mode configs, survival configs) have always been reconciled here. Subsystem
+    rules were not, because they live in ``subsystems._subsystems`` rather than
+    in the system's own state -- so renaming a dimension silently orphaned every
+    rule that filtered on it, and the subsystem then contributed zero stock with
+    nothing said.
+
+    Renamed labels are TRANSLATED; labels and dimensions that are gone are
+    DROPPED from the filter and counted. Dropping is the right move rather than
+    leaving a dangling name: a filter that lost one of several values still
+    means something, and `filter_primary_stock` would refuse outright on a name
+    that no longer exists.
+    """
+    from mapper.api import subsystems as _subs
+
+    warnings: list[str] = []
+    renamed = dropped_labels = dropped_dims = 0
+    touched: set[str] = set()
+
+    for sub in _subs.get_subsystems_for_system(system_id, project).values():
+        changed = False
+        for rule in sub.dependency_rules:
+            df = rule.driver_filter or {}
+            if not df:
+                continue
+            new_df: dict[str, list[str]] = {}
+            for dim_name, vals in df.items():
+                if dim_name in removed_dims:
+                    dropped_dims += 1
+                    changed = True
+                    continue
+                tmap = label_trans.get(dim_name, {})
+                kept: list[str] = []
+                for v in vals or []:
+                    if v not in tmap:          # untouched label
+                        kept.append(v)
+                        continue
+                    new_v = tmap[v]
+                    if new_v is None:
+                        dropped_labels += 1
+                        changed = True
+                        continue
+                    if new_v != v:
+                        renamed += 1
+                        changed = True
+                    kept.append(new_v)
+                if kept != list(vals or []):
+                    changed = True
+                new_df[dim_name] = kept
+            if changed:
+                rule.driver_filter = new_df
+                touched.add(sub.name)
+
+    # The subsystems are mutated in place in the registry, so one persist of
+    # the whole map is enough -- and mirrors how `subsystems.py` itself saves.
+    if touched:
+        dsm_storage.save_subsystems(
+            project, system_id, _subs.get_subsystems_for_system(system_id, project),
+        )
+
+    if renamed:
+        warnings.append(
+            f"Translated {renamed} renamed label(s) in subsystem dependency-rule "
+            f"filters ({', '.join(sorted(touched))})."
+        )
+    if dropped_labels:
+        warnings.append(
+            f"Dropped {dropped_labels} subsystem dependency-rule filter value(s) "
+            f"that referenced removed labels ({', '.join(sorted(touched))})."
+        )
+    if dropped_dims:
+        warnings.append(
+            f"Dropped {dropped_dims} subsystem dependency-rule filter(s) that "
+            f"referenced removed dimensions ({', '.join(sorted(touched))})."
+        )
+    return warnings
 
 
 @router.put("/systems/{system_id}", response_model=SystemUpdateResponse)
@@ -562,12 +652,23 @@ async def update_system(system_id: str, body: SystemDefinition) -> SystemUpdateR
         body.id = system_id
         body.created_at = existing.created_at
         state = _get_or_create_state(system_id)
-        migrated_state, warnings = _migrate_state(existing, body, state)
+        migrated_state, warnings, label_trans = _migrate_state(existing, body, state)
         _proj_systems(project)[system_id] = body
         _proj_states(project)[system_id] = migrated_state
         # Dimension/label/horizon changes invalidate prior simulation results.
         _proj_results(project).pop(system_id, None)
         _proj_multi_results(project).pop(system_id, None)
+    # Subsystem dependency rules reference primary dimensions and labels by
+    # name, and they live in a SEPARATE store this migration never reached --
+    # so a rename left them pointing at something gone. `filter_primary_stock`
+    # now raises on that, which is detection; this is the fix, and it is the
+    # only one of the three that stops the break happening. Same translation
+    # maps as the six slots above, same warnings.
+    warnings.extend(_migrate_subsystem_filters(
+        project, system_id, label_trans,
+        removed_dims=[n for n in _dim_names(existing) if n not in _dim_names(body)],
+    ))
+
     dsm_storage.save_system(project, body)
     dsm_storage.save_state(project, system_id, migrated_state)
     dsm_storage.clear_results(project, system_id)

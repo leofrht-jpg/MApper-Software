@@ -2786,6 +2786,88 @@ engine — survives untouched, because it runs with levers not in play.
   stage root. Under warn-only they would not have failed, which is exactly why
   leaving them would have meant the next person read them as canonical.
 
+### A stale reference and an empty match are not the same thing
+
+`filter_primary_stock` summed to 0.0 for both, and only one of them is
+ordinary. The distinction is the design:
+
+- **legitimate empty match** — every key and label resolves, no cohort carries
+  that combination this year (a fuel type with no vehicles yet). **Returns 0.0
+  in silence.** Raising would make a sparse fleet unrunnable.
+- **stale reference** — the filter names a dimension or label the primary
+  system does not have. It cannot match in ANY year, so 0.0 reads as "this
+  subsystem has no stock" when the reference is simply broken. **Raises
+  `StaleDriverFilterError`.**
+
+Pinned from both sides: a declared-but-unstocked label must NOT raise, an
+undeclared one must. The `test_subsystem_engine` fixture used to express
+"matches nothing" with an undeclared label — the exact conflation — and now
+declares a third label carrying no stock instead.
+
+**An empty value list is refused at the WRITE boundary.** `{"Fuel": []}` was
+dropped by the normaliser, so the filter meant "no filter" and the rule got the
+WHOLE primary stock: measured **350.0 against an intended 150.0**. It
+**over-counts**, the opposite direction from every other defect in this family
+and correspondingly harder to notice as "suspiciously small". Refused in
+`validate_dependency_rule` so nothing already stored breaks; the branch stays
+defined for rules saved before the check existed.
+
+**The migration is the fix; the other two detect the symptom.**
+`update_system` reconciles stock rows, inflows, stock targets, manual outflows,
+mode configs and survival configs through its label-translation maps — and used
+to say nothing about subsystem dependency rules, which live in a separate store
+its migration never reached. So renaming a dimension silently orphaned every
+rule that filtered on it. `_migrate_subsystem_filters` now carries them through
+the SAME maps: renamed labels translated, removed labels and dimensions dropped
+and counted, warned like the other six.
+
+#### The class guard needed a SECOND shape
+
+The `continue` sweep reported **zero** for `subsystem_engine`, which had two
+real defects — because neither was a skipped iteration. Both were a silent
+VALUE, and so was path 1's original:
+
+```
+allowed = {dim: set(vals) for dim, vals in driver_filter.items() if vals}
+if all(cohort_dict.get(dim) in vals for dim, vals in allowed.items()):
+linked = [m for m in all_materials if m.ecoinvent_activity is not None]
+```
+
+`_default_sites` is AST, not regex, because both distinctions are structural:
+
+- **`.get()` with no default, consumed inline** (in a comparison, a boolean,
+  another call) so a miss becomes `None` and flows on. `x = d.get(k)` alone is
+  NOT flagged — the caller still holds the miss, and whether they check it is
+  the `continue` sweep's job. `d.get(k, 0.0)` is not flagged either: an
+  explicit numeric default in a running total means "nothing yet".
+- **a comprehension whose `if` KEEPS the resolved rows**, thereby dropping the
+  unresolved ones. The SIGN is the whole test: `is not None` / bare truthy
+  keeps the valid and drops the invalid; `is None` / `not in` **collects** the
+  offenders, which is what a guard does before raising on them. Flagging the
+  second would make the sweep fire on its own fixes.
+
+The first attempt was a regex over `[...]` and missed
+`allowed = {dim: ... if vals}` entirely — a dict comprehension. That is why it
+is AST.
+
+**Verified against all three historical defects**, on the exact lines that
+shipped rather than paraphrases, plus the corrected forms as negatives. It
+reports four live sites, all four declared in `_ALLOWED_DEFAULTS` with reasons,
+and a separate test fails if a declared exemption no longer exists.
+
+#### What NOT to do
+
+- **Don't raise on an empty match.** A filter that resolves and matches nothing
+  is ordinary. Only a reference to something absent is an error.
+- **Don't answer a failed lookup with a plausible default in a calculation
+  path.** Both sweeps in `tests/test_silent_paths_fail_closed.py` cover the two
+  shapes; an exemption needs a reason, not just an entry.
+- **Don't flag a comprehension that collects offenders.** `[m for m in mats if
+  m.ecoinvent_activity is None]` is a guard building its own error message.
+- **Don't extend `update_system`'s migration without the subsystems.** They are
+  the one slot that lives outside the system's state, which is exactly why they
+  were missed for as long as they were.
+
 ### `unit_mismatch` — the BOM unit is a different QUANTITY
 
 Quantities reach the demand vector with **no dimensional check**:

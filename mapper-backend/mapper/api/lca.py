@@ -328,6 +328,57 @@ class _ArchetypeDemand(NamedTuple):
     total_demand: dict[tuple[str, str], float]
 
 
+def _refuse_on_unlinked(arc_name: str, materials: list, scope: str) -> None:
+    """Refuse to compute when any in-scope row has no ecoinvent link.
+
+    The rows were filtered out and the run proceeded on whatever survived, so
+    the result came back SMALLER and entirely plausible -- the same shape that
+    hid the WP5 orphaning for weeks. There is no reading under which dropping a
+    row the user put in the BOM gives the right answer.
+
+    It also ends an inconsistency: the fleet path has always refused
+    (``bom.py`` validates every mapped archetype before building the pipeline),
+    so the same archetype used to compute fine single-product and 400 fleet-wide.
+
+    The message names the ROWS, not a count. "has 3 unlinked material(s)" is
+    precisely the guard that costs a debugging session; the upload validator
+    already reports stage + row and this mirrors it.
+    """
+    unlinked = [m for m in materials if m.ecoinvent_activity is None]
+    if not unlinked:
+        return
+    shown, extra = unlinked[:10], max(0, len(unlinked) - 10)
+    rows = "; ".join(
+        f"{(m.path[0] if getattr(m, 'path', None) else scope)} › {m.name}"
+        for m in shown
+    )
+    raise HTTPException(
+        status_code=422,
+        detail={
+            "error": "unlinked_materials",
+            "message": (
+                f"'{arc_name}' has {len(unlinked)} material(s) with no ecoinvent "
+                f"activity linked, in scope '{scope}': {rows}"
+                + (f"; and {extra} more" if extra else "")
+                + ". Computing would silently drop them and report a smaller "
+                "number. Link them in LCA Architect → Database Explorer, or "
+                "remove the rows."
+            ),
+            "archetype": arc_name,
+            "scope": scope,
+            "unlinked_count": len(unlinked),
+            "rows": [
+                {
+                    "name": m.name,
+                    "stage": (m.path[0] if getattr(m, "path", None) else None),
+                    "node_id": getattr(m, "node_id", "") or None,
+                }
+                for m in shown
+            ],
+        },
+    )
+
+
 def _build_archetype_source_demand(
     *,
     archetype_id: str,
@@ -443,7 +494,8 @@ def _build_archetype_source_demand(
             m._stage_amount = amt  # type: ignore[attr-defined]
             all_materials.append(m)
 
-    # Collect linked materials
+    # Refuse on ANY unlinked row, not just on all of them being unlinked.
+    _refuse_on_unlinked(arc.name, all_materials, scope)
     linked = [m for m in all_materials if m.ecoinvent_activity is not None]
     if not linked:
         raise HTTPException(
@@ -1008,6 +1060,12 @@ def _build_archetype_demand(
 
     demand: dict[tuple[str, str], float] = {}
     per_stage: dict[str, dict[tuple[str, str], float]] = {}
+    # Same refusal as the single-product builder. Contribution analysis is a
+    # SEPARATE demand builder; leaving it filtering would keep one silent-drop
+    # path open behind a guard that looks closed.
+    _refuse_on_unlinked(
+        arc.name, [m for root in scope_roots for m in flatten_bom(root)], scope,
+    )
     for root in scope_roots:
         flat = flatten_bom(root)
         mult = eff.get(root.name, 1.0)

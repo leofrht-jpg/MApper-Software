@@ -2702,6 +2702,90 @@ change one materially.
 - **Don't export `None` into the cell.** It imports back as the literal string
   `"None"`. Write `""`.
 
+### Silent paths fail closed — four answers, not one
+
+Four lookups used to step over a missing input and carry on, and all four
+produced a **smaller, entirely plausible** number with nothing said. That is
+worse than a crash: a fleet total 8 % low still looks like a fleet total. They
+do NOT get the same treatment, because the right behaviour differs per path.
+
+| Path | Behaviour | Why |
+|---|---|---|
+| unlinked BOM row (`api/lca.py`, BOTH builders) | **refuse, 422** | the row is in the BOM because the user wants it counted |
+| cohort carrying stock, no mapping (`dsm_lca_engine`, `material_flow_engine`) | **refuse**, `UnmappedCohortError` | same defect as a dangling mapping, one step earlier in the same lookup |
+| stage name matching no keyword (`stage_to_scope`) | **warn + default** | the keyword table is an automotive vocabulary; MApper is general-purpose |
+| node naming an undefined lever (`_apply_global_levers`) | **refuse**, `UndefinedLeverError`, ONLY when levers are in play | the 1.0 identity when they are not is a designed guarantee |
+
+**Both single-product builders refuse, not just one.** `_build_archetype_source_demand`
+(single-product LCA, trajectory, all three Monte Carlo entry points) and
+`_build_archetype_demand` (contribution analysis) are separate demand builders.
+Guarding one leaves a silent-drop path open behind a guard that looks shut.
+This also ends an inconsistency: the fleet path has always refused, so the same
+archetype used to compute fine single-product and 400 fleet-wide.
+
+**Messages name the offending thing, never a count.** `"has 3 unlinked
+material(s)"` is precisely the guard that costs a debugging session, so
+`_refuse_on_unlinked` reports stage › row for each (capped at 10 + "and N
+more"), the node_ids, and the fix. `UnmappedCohortError` names the cohort, its
+count and year, and says explicitly what it is NOT — a dangling mapping — since
+the fixes differ: add a mapping vs re-link an existing one. They are separate
+exception types for the same reason.
+
+**`count > 0` is checked BEFORE the mapping lookup.** A declared-but-empty
+cartesian cohort contributes nothing and must never raise, or a sparse fleet
+becomes unrunnable.
+
+#### The stage fall-through warns because refusing would be wrong
+
+`Decommissioning`, `Installation`, `Construction`, `Retirement`, `Replacement`,
+`Commissioning`, `Transport`, `Distribution`, `Logistics` and `Raw materials`
+all match no keyword and default to `inflows`. `Decommissioning` is the sharp
+one: an obvious end-of-life stage counted at production. But refusing would
+block a legitimate wind-farm or building project over a naming convention, so
+`validate_bom` emits a `stage_scope_defaulted` **warning** beside
+`unit_mismatch`, **once per stage** (a 250-row stage would otherwise raise 250
+identical warnings), and an explicit `scope` on the stage root always wins,
+which makes the fix one click. `stage_name_matches_a_keyword` exists so callers
+can detect the fall-through without a second copy of the matching rule.
+
+#### The lever flag is stated, never inferred
+
+`_apply_global_levers` takes an explicit `levers_in_play: bool`, threaded
+through `resolve_quantity` → `flatten_bom_for_year` →
+`flatten_roots_for_year_and_scope`, and set by the engine from
+`self._param_table is not None`. **Do not infer it from `lever_values` being
+non-empty.** An empty dict cannot distinguish "no table threaded through" from
+"a table with no entries", and inferring a semantic distinction from an empty
+container is how a false positive arrives later — it would work on today's data
+and break on the first project with an empty parameter table. The distinction
+is a property of the CALL, so the caller states it.
+
+The three-way identity — `p_bp=1.0` == absent == untagged == the pre-lever
+engine — survives untouched, because it runs with levers not in play.
+
+#### What NOT to do
+
+- **Don't reintroduce a bare `continue` past a missing link, mapping, stage
+  match or lever.** `tests/test_silent_paths_fail_closed.py` sweeps
+  `api/lca.py`, `core/dsm_lca_engine.py`, `core/bom_engine.py` and
+  `core/material_flow_engine.py` for `if <falsy check>: continue` on those
+  lookups. It matches the CHECK rather than any one variable name, so it
+  catches the next instance in a new file. Verified load-bearing: putting one
+  `continue` back fails two of its cases. `_ALLOWED` carries the two
+  legitimate skips WITH reasons, and a separate test fails if a declared
+  exemption no longer exists.
+- **Don't guard only the path named in the brief.** The sweep found a fifth
+  and sixth: `material_flow_engine` carried both the unmapped-cohort skip AND
+  the dangling-archetype skip — the latter being the original WP5 shape, still
+  open there after `dsm_lca_engine` closed it. One engine raised while its
+  sibling stepped over the same condition on the same data.
+- **Don't build a test archetype whose ROOT is a material.** Three fixture
+  helpers did (`bom=[node]` with a material named `cells` / `pack` / `steel`),
+  leaning on the stage fall-through to be classified as inflows — a shape
+  production never produces. They now wrap the material in a `Manufacturing`
+  stage root. Under warn-only they would not have failed, which is exactly why
+  leaving them would have meant the next person read them as canonical.
+
 ### `unit_mismatch` — the BOM unit is a different QUANTITY
 
 Quantities reach the demand vector with **no dimensional check**:

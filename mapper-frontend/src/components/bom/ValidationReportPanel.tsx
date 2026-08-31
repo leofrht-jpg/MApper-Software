@@ -32,6 +32,7 @@ const ERROR_TYPE_LABELS: Record<ValidationErrorType, string> = {
   name_mismatch: 'Name mismatch',
   location_mismatch: 'Location mismatch',
   unit_mismatch: 'Unit mismatch',
+  stage_scope_defaulted: 'Stage scope defaulted to inflows',
 }
 
 export function ValidationReportPanel({ report, archetypeName, onAccept, onReupload }: Props) {

@@ -219,6 +219,9 @@ ValidationErrorType = Literal[
     "unit_mismatch",       # warning: BOM unit is a different QUANTITY KIND from
                            # the activity's reference unit (kg vs unit), after
                            # spelling variants (kg/kilogram) are normalised away
+    "stage_scope_defaulted",  # warning: the stage name matched no keyword and
+                              # no explicit scope was set, so it was counted as
+                              # inflows (production) by default
 ]
 
 

@@ -428,12 +428,37 @@ def flatten_root_with_amounts(
     return out
 
 
+def stage_name_matches_a_keyword(stage_name: str) -> bool:
+    """Whether the name resolves by the keyword table at all.
+
+    Split out so callers can DETECT the fall-through without re-implementing
+    the match. ``stage_to_scope`` cannot report it in its return value -- it
+    returns a scope -- and a second copy of the matching rule would drift.
+    """
+    name = (stage_name or "").lower().strip()
+    return any(any(kw in name for kw in kws) for kws, _ in _STAGE_KEYWORDS)
+
+
 def stage_to_scope(stage_name: str, explicit_scope: str | None = None) -> str:
     """Classify a stage into ``"inflows" | "stock" | "outflows"``.
 
     When ``explicit_scope`` is set on the stage node, it takes priority and the
     name is ignored. Otherwise the stage name is matched against a keyword
-    table; unknown stages default to ``"inflows"`` (manufacturing assumption).
+    table; an unmatched name defaults to ``"inflows"``.
+
+    THE DEFAULT IS DELIBERATE, and this is the one silent path of the four that
+    should not raise. The keyword table encodes an automotive vocabulary, and
+    MApper is a general-purpose tool: ``Decommissioning``, ``Installation``,
+    ``Construction``, ``Retirement``, ``Replacement``, ``Commissioning``,
+    ``Transport``, ``Distribution``, ``Logistics`` and ``Raw materials`` all
+    match nothing today. Refusing would block a legitimate wind-farm or
+    building project at import over a naming convention.
+
+    What was wrong was that the fall-through was SILENT -- ``Decommissioning``
+    is an obvious end-of-life stage counted at production, and nothing said so.
+    So it now WARNS: ``validate_bom`` emits a ``stage_scope_defaulted`` warning
+    beside ``unit_mismatch``, and the fix is one click, because an explicit
+    ``scope`` on the stage root always wins over the name.
     """
     if explicit_scope and explicit_scope in _VALID_SCOPES:
         return explicit_scope
@@ -481,12 +506,15 @@ def flatten_roots_for_scope(
 def flatten_roots_for_year_and_scope(
     roots: list[BOMNode], year: int, scope: str,
     lever_values: dict[str, float] | None = None,
+    levers_in_play: bool = False,
 ) -> list[FlattenedMaterial]:
     """Year-aware + stage-filtered flatten. ``lever_values`` threads global-lever
-    multipliers (e.g. ``p_bp``) down to ``resolve_quantity``; ``None`` → identity."""
+    multipliers (e.g. ``p_bp``) down to ``resolve_quantity``; ``levers_in_play``
+    states whether a resolved parameter table was supplied at all."""
     out: list[FlattenedMaterial] = []
     for r in filter_roots_by_scope(roots, scope):
-        out.extend(flatten_bom_for_year(r, year, lever_values=lever_values))
+        out.extend(flatten_bom_for_year(
+            r, year, lever_values=lever_values, levers_in_play=levers_in_play))
     return out
 
 
@@ -502,29 +530,72 @@ def total_mass_kg(materials: list[FlattenedMaterial]) -> float:
 # through the multiplicative cascade the same way ``flatten_bom`` does.
 
 
+class UndefinedLeverError(ValueError):
+    """A node names a global lever that the resolved parameter table lacks.
+
+    Raised only when levers are IN PLAY -- see ``levers_in_play`` below. A
+    lever that does not exist multiplied silently by 1.0, which is the
+    "works until it doesn't, then lies" shape: a typo'd or deleted parameter
+    produces a plausible smaller number and nothing says so.
+    """
+
+
 def _apply_global_levers(
-    node: BOMNode, quantity: float, lever_values: dict[str, float] | None
+    node: BOMNode,
+    quantity: float,
+    lever_values: dict[str, float] | None,
+    levers_in_play: bool = False,
 ) -> float:
     """Multiply ``quantity`` by each of ``node.global_levers`` resolved value.
 
-    A node with no ``global_levers`` returns ``quantity`` unchanged (identity —
-    non-tagged nodes are provably unaffected). A listed lever absent from
-    ``lever_values`` (or ``lever_values`` itself ``None``) resolves to 1.0, so
-    tagging a node with a lever the user hasn't defined is safe (no KeyError)
-    and neutral. This is the ``× p_bp(year)`` term of the composition, applied
-    AFTER the MaterialEvolution factor already baked into ``quantity``."""
+    A node with no ``global_levers`` returns ``quantity`` unchanged (identity --
+    non-tagged nodes are provably unaffected). This is the ``x p_bp(year)`` term
+    of the composition, applied AFTER the MaterialEvolution factor already baked
+    into ``quantity``.
+
+    ``levers_in_play`` is an EXPLICIT flag, deliberately not inferred from
+    ``lever_values``. There are two different situations and an empty dict
+    cannot tell them apart:
+
+    * **not in play** (the default): no parameter table is threaded through
+      this call at all, so a lever cannot be looked up and resolves to 1.0.
+      This is the documented three-way identity -- ``p_bp=1.0`` == absent ==
+      untagged == the pre-lever engine -- and it is what makes lever tagging
+      provably inert. Untouched.
+    * **in play**: a resolved parameter table WAS threaded through, so every
+      lever the project defines is present. A named lever missing from it names
+      a parameter that does not exist, and that raises.
+
+    Inferring the flag from ``lever_values`` being non-empty would work on
+    today's data and become a false positive the first time a project has a
+    parameter table with no entries. The distinction is a property of the CALL,
+    not of the container's contents, so the caller states it.
+    """
     levers = node.global_levers
     if not levers:
         return quantity
+    values = lever_values or {}
     factor = 1.0
     for name in levers:
-        v = lever_values.get(name, 1.0) if lever_values else 1.0
-        factor *= float(v)
+        if name in values:
+            factor *= float(values[name])
+            continue
+        if levers_in_play:
+            raise UndefinedLeverError(
+                f"Node {node.name!r} is tagged with global lever {name!r}, which "
+                f"is not a parameter in this project's table. Defined parameters: "
+                f"{', '.join(sorted(values)) or '(none)'}. Remove the tag or add "
+                f"the parameter -- an undefined lever used to multiply by 1.0 "
+                f"silently, which is indistinguishable from a lever that is "
+                f"genuinely neutral."
+            )
+        # Levers not in play: identity, as designed.
     return quantity * factor
 
 
 def resolve_quantity(
-    node: BOMNode, year: int, lever_values: dict[str, float] | None = None
+    node: BOMNode, year: int, lever_values: dict[str, float] | None = None,
+    levers_in_play: bool = False,
 ) -> float:
     """Return the effective per-unit quantity for ``node`` in ``year``.
 
@@ -540,15 +611,15 @@ def resolve_quantity(
     base = float(node.quantity or 0.0)
     ev = node.evolution
     if ev is None or ev.method == "fixed":
-        return _apply_global_levers(node, base, lever_values)
+        return _apply_global_levers(node, base, lever_values, levers_in_play)
     if ev.method == "learning_rate" and ev.learning_rate is not None:
         q = base * (1.0 + float(ev.learning_rate)) ** (int(year) - int(ev.base_year))
-        return _apply_global_levers(node, q, lever_values)
+        return _apply_global_levers(node, q, lever_values, levers_in_play)
     if ev.method == "rebound_effect" and ev.rebound_rate is not None:
         # Same compounding math as learning_rate — the semantic difference is
         # only in labelling (rebound typically positive, LR typically negative).
         q = base * (1.0 + float(ev.rebound_rate)) ** (int(year) - int(ev.base_year))
-        return _apply_global_levers(node, q, lever_values)
+        return _apply_global_levers(node, q, lever_values, levers_in_play)
     if ev.method == "milestones" and ev.milestones:
         # `interpolate_anchors` is the single implementation of MApper's
         # year-anchor rule — linear between anchors, clamped at both ends,
@@ -564,8 +635,8 @@ def resolve_quantity(
         q = interpolate_anchors(
             [(m.year, m.quantity) for m in ev.milestones], year,
         )
-        return _apply_global_levers(node, q, lever_values)
-    return _apply_global_levers(node, base, lever_values)
+        return _apply_global_levers(node, q, lever_values, levers_in_play)
+    return _apply_global_levers(node, base, lever_values, levers_in_play)
 
 
 def flatten_bom_for_year(
@@ -574,14 +645,18 @@ def flatten_bom_for_year(
     parent_quantity: float = 1.0,
     path: list[str] | None = None,
     lever_values: dict[str, float] | None = None,
+    levers_in_play: bool = False,
 ) -> list[FlattenedMaterial]:
     """Year-aware variant of :func:`flatten_bom`. Uses ``resolve_quantity``.
 
     ``lever_values`` is threaded to ``resolve_quantity`` so global levers (e.g.
-    ``p_bp``) multiply per-node quantities in the cascade. ``None`` → identity.
+    ``p_bp``) multiply per-node quantities in the cascade. ``levers_in_play``
+    travels with it and states whether a resolved parameter table was supplied
+    at all -- see ``_apply_global_levers`` for why that cannot be inferred from
+    the dict.
     """
     path = path or []
-    effective = parent_quantity * resolve_quantity(node, year, lever_values)
+    effective = parent_quantity * resolve_quantity(node, year, lever_values, levers_in_play)
 
     if node.node_type == "material":
         return [
@@ -600,7 +675,8 @@ def flatten_bom_for_year(
     out: list[FlattenedMaterial] = []
     if node.children:
         for child in node.children:
-            out.extend(flatten_bom_for_year(child, year, effective, path + [node.name], lever_values))
+            out.extend(flatten_bom_for_year(
+                child, year, effective, path + [node.name], lever_values, levers_in_play))
     return out
 
 

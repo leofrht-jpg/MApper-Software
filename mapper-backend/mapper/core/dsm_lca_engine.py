@@ -75,6 +75,20 @@ class DanglingArchetypeError(ValueError):
     """
 
 
+class UnmappedCohortError(ValueError):
+    """A cohort carrying stock has no cohort-mapping entry at all.
+
+    The same defect as :class:`DanglingArchetypeError`, one step earlier in the
+    same lookup -- ``mappings.get(key)`` returning ``None`` rather than an id
+    that no longer resolves -- and it shrinks a fleet total just as quietly.
+    That the second raised while the first did not was an accident of which was
+    found first.
+
+    Kept a SEPARATE type because the fixes differ: a dangling id means re-link
+    an existing row, a missing mapping means add one.
+    """
+
+
 class DSMLCAPipeline:
     def __init__(
         self,
@@ -207,8 +221,12 @@ class DSMLCAPipeline:
         if key not in self._flat_cache:
             if year is not None and levers:
                 # Lever-aware year flatten (also honours any MaterialEvolution).
+                # `levers_in_play` is True exactly when a parameter table was
+                # threaded in, which is what makes an undefined lever an error
+                # rather than an identity. Stated, never inferred from the dict.
                 flat = flatten_roots_for_year_and_scope(
-                    arc.bom, int(year), scope, self._lever_values(year)
+                    arc.bom, int(year), scope, self._lever_values(year),
+                    levers_in_play=self._param_table is not None,
                 )
             else:
                 flat = flatten_roots_for_scope(arc.bom, scope)
@@ -330,7 +348,20 @@ class DSMLCAPipeline:
                 continue
             mapping = self.mappings.get(cohort_key)
             if not mapping:
-                continue
+                # LOUD, like the dangling case below. Reached only when
+                # `count > 0` -- the guard above skips empty cohorts, so a
+                # declared-but-empty cartesian cohort never raises. A cohort
+                # that carries stock and maps to nothing is a hole in the
+                # result, and the number comes back smaller with no warning.
+                raise UnmappedCohortError(
+                    f"Cohort {cohort_key!r} carries stock ({count:g} unit(s) in "
+                    f"{yr.year}) but has NO cohort-mapping entry, so its impact "
+                    f"would be dropped and the fleet total would come back "
+                    f"smaller with no warning. Add a mapping for it in the "
+                    f"Cohort mapping editor. (Distinct from a DANGLING mapping, "
+                    f"which points at an archetype id that no longer exists and "
+                    f"needs re-linking instead.)"
+                )
             archetype_id, scaling_factor = mapping
             if archetype_id not in self.archetypes:
                 # LOUD, not `continue`. A cohort mapping pointing at an
@@ -666,7 +697,10 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         # non-year-varying returns the resolve-once archetype (year ignored).
         arc = self._resolved_archetype(archetype_id, year)
         flat = (
-            flatten_roots_for_year_and_scope(arc.bom, y, scope, self._lever_values(year))
+            flatten_roots_for_year_and_scope(
+                arc.bom, y, scope, self._lever_values(year),
+                levers_in_play=self._param_table is not None,
+            )
             if year is not None and (has_evolution(arc.bom) or has_global_levers(arc.bom))
             else flatten_roots_for_scope(arc.bom, scope)
         )

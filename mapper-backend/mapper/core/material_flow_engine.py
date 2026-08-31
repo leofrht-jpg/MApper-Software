@@ -24,6 +24,7 @@ from mapper.models.bom_schemas import (
 )
 from mapper.models.dsm_schemas import SimulationResult, YearResult
 
+from mapper.core.dsm_lca_engine import DanglingArchetypeError, UnmappedCohortError
 from mapper.core.bom_engine import (
     find_node_in_roots,
     flatten_roots_for_scope,
@@ -121,13 +122,34 @@ def _compute_single_scope(
         for cohort_key, count in counts.items():
             if count <= 0:
                 continue
+            # Both of these used to `continue`. Material Flows is a
+            # calculation whose numbers users read and export, so the same
+            # argument applies here as in `dsm_lca_engine`: a cohort that
+            # carries stock and resolves to nothing makes the flow totals
+            # smaller with no warning, which is indistinguishable from a
+            # genuinely smaller fleet. The dangling-archetype case is the
+            # original WP5 shape, still open here after the LCA engine closed
+            # it -- one engine raised while its sibling stepped over the same
+            # condition on the same data.
             mapping = cohort_mappings.get(cohort_key)
             if not mapping:
-                continue
+                raise UnmappedCohortError(
+                    f"Cohort {cohort_key!r} carries stock ({count:g} unit(s) in "
+                    f"{yr.year}) but has NO cohort-mapping entry, so its material "
+                    f"flows would be dropped and the totals would come back "
+                    f"smaller with no warning. Add a mapping for it in the "
+                    f"Cohort mapping editor."
+                )
             archetype_id, scaling_factor = mapping
             arc = archetypes.get(archetype_id)
             if arc is None:
-                continue
+                raise DanglingArchetypeError(
+                    f"Cohort {cohort_key!r} maps to archetype id "
+                    f"{archetype_id!r}, which does not exist in this project. "
+                    f"Re-open the cohort mapping and re-link it; a re-import in "
+                    f"Replace mode mints new archetype ids and orphans the "
+                    f"mapping."
+                )
 
             # Flatten BOM (with cache).
             use_year = yr.year if has_evolution(arc.bom) else None

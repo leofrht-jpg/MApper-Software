@@ -29,6 +29,7 @@ import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
 
+from mapper.core.bom_engine import stage_name_matches_a_keyword
 from mapper.models.bom_schemas import (
     ValidationGroup,
     ValidationGroupAffected,
@@ -57,6 +58,9 @@ class BOMValidationRow:
     unit: str = ""                      # BOM unit, compared to the activity's
                                         # reference unit. Empty = check skipped,
                                         # so pre-existing callers are unaffected.
+    stage_scope: str | None = None      # explicit scope on this row's STAGE
+                                        # root, if the sheet declared one. None
+                                        # means the stage name decides.
 
 
 @dataclass
@@ -241,6 +245,35 @@ def validate_bom(
             warning_row_keys.add(key)
         else:
             valid_row_keys.add(key)
+
+    # ── Stage scope defaulted (warning, once per stage) ─────────────────
+    # `stage_to_scope` falls back to "inflows" for a name the keyword table
+    # does not know, and the fall-through used to be silent -- so a stage
+    # called "Decommissioning" was counted at production and nothing said so.
+    # NOT an error: the table encodes an automotive vocabulary and MApper is
+    # general-purpose, so refusing would block a legitimate wind-farm or
+    # building project over a naming convention. An explicit `scope` on the
+    # stage root always wins, which makes the fix one click.
+    #
+    # Emitted once per STAGE, not per row: it is a property of the stage, and
+    # a 250-row stage would otherwise raise 250 identical warnings.
+    seen_stages: set[tuple[str, str]] = set()
+    for row in rows:
+        key_st = (row.archetype, row.stage)
+        if key_st in seen_stages:
+            continue
+        seen_stages.add(key_st)
+        if row.stage_scope:
+            continue                        # declared; the name is not consulted
+        if stage_name_matches_a_keyword(row.stage):
+            continue
+        ctx.issues.append(_issue(
+            row, "warning", "stage_scope_defaulted", row.stage,
+            f"Stage '{row.stage}' in '{row.archetype}' matches no lifecycle "
+            f"keyword, so it was counted as 'inflows' (production) by default. "
+            f"If it is an end-of-life or use-phase stage that is the wrong "
+            f"point in the fleet. Set an explicit Scope on the stage row to fix.",
+        ))
 
     groups = _group_issues(ctx.issues)
 

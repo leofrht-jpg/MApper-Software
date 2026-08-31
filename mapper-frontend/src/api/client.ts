@@ -2320,6 +2320,7 @@ export type ValidationErrorType =
   | 'name_mismatch'
   | 'location_mismatch'
   | 'unit_mismatch'
+  | 'stage_scope_defaulted'
 
 export interface ValidationIssue {
   severity: ValidationSeverity

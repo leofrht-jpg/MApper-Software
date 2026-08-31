@@ -3118,6 +3118,9 @@ def _parse_bom_workbook(
                     ecoinvent_name=ec_name,
                     ecoinvent_location=ec_loc,
                     unit=unit,
+                    # Stage roots are processed first (the sort above), so the
+                    # root exists by the time any of its material rows is read.
+                    stage_scope=(stages[stage].scope if stage in stages else None),
                 ))
 
             ev_method = str(col(row, "Evolution Method") or "").strip().lower()

@@ -40,7 +40,15 @@ def _archetype(expr: str, fallback: float = 0.0) -> Archetype:
         quantity_expression=expr,
         ecoinvent_activity=EcoinventLink(database="base", code="c1", name="cell act"),
     )
-    return Archetype(id="arc1", name="Battery", bom=[node])
+    stage = BOMNode(
+        id="s1", name="Manufacturing", node_type="component", quantity=1.0,
+        unit="piece", scope="inflows", children=[node],
+    )
+    # Wrapped in a Manufacturing stage root. A real archetype's roots are
+    # lifecycle stages; a bare material root leaned on `stage_to_scope`'s
+    # unmatched-name fall-through to be classified as inflows, which is a
+    # shape production never produces and now warns.
+    return Archetype(id="arc1", name="Battery", bom=[stage])
 
 
 def _sim(years: list[int]) -> SimulationResult:

@@ -52,6 +52,17 @@ def _node(quantity=100.0, levers=None, evolution=None) -> BOMNode:
     )
 
 
+def _stage(node: BOMNode) -> BOMNode:
+    # Wrapped in a Manufacturing stage root. A real archetype's roots are
+    # lifecycle stages; a bare material root leaned on `stage_to_scope`'s
+    # unmatched-name fall-through to be classified as inflows, which is a
+    # shape production never produces and now warns.
+    return BOMNode(
+        id="s1", name="Manufacturing", node_type="component", quantity=1.0,
+        unit="piece", scope="inflows", children=[node],
+    )
+
+
 def _lr(rate=-0.02, base_year=2025) -> MaterialEvolution:
     return MaterialEvolution(method="learning_rate", learning_rate=rate, base_year=base_year)
 
@@ -199,7 +210,7 @@ def test_fleet_pipeline_applies_time_varying_p_bp_on_tagged_node():
                           keyframes=[ParameterKeyframe(year=2025, value=1.0),
                                      ParameterKeyframe(year=2040, value=0.5)]),
     })
-    tagged = Archetype(id="arc1", name="Battery", bom=[_node(quantity=100.0, levers=["p_bp"])])
+    tagged = Archetype(id="arc1", name="Battery", bom=[_stage(_node(quantity=100.0, levers=["p_bp"]))])
     sc = _fleet_scores(tagged, table)
     assert sc[2025] == pytest.approx(100.0)   # count 1 × 100 × p_bp(1.0)
     assert sc[2040] == pytest.approx(50.0)    # count 1 × 100 × p_bp(0.5)
@@ -212,7 +223,7 @@ def test_fleet_pipeline_untagged_node_unaffected_by_p_bp():
                           keyframes=[ParameterKeyframe(year=2025, value=1.0),
                                      ParameterKeyframe(year=2040, value=0.5)]),
     })
-    untagged = Archetype(id="arc1", name="Battery", bom=[_node(quantity=100.0, levers=None)])
+    untagged = Archetype(id="arc1", name="Battery", bom=[_stage(_node(quantity=100.0, levers=None))])
     sc = _fleet_scores(untagged, table)
     assert sc[2025] == pytest.approx(100.0)
     assert sc[2040] == pytest.approx(100.0)   # p_bp never applied

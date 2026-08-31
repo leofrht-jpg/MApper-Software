@@ -60,7 +60,8 @@ class ParamUncertainty(BaseModel):
     parameter. That is the whole point: ``d_annual`` appears in many WP5
     expressions, and drawing those rows independently averages the shared
     driver away. Measured on PHEV-NMC811 at the same marginal spread --
-    35 independent row draws gave GSD^2 1.273, one shared driver gave 1.415.
+    35 independent row draws gave GSD^2 1.2793, one shared driver gave 1.4251
+    (originally 1.273 / 1.415 under the pre-2026-08-31 exp(1.96*sigma)).
     Independent sampling UNDER-reports the spread, which is the one direction
     that cannot be defended.
     """

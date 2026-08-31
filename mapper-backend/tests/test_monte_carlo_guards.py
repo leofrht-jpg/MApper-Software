@@ -149,8 +149,10 @@ def test_independent_row_draws_understate_a_shared_driver():
     total. That is the direction of the error: UNDER-reported uncertainty,
     the one direction that cannot be defended in a paper.
 
-    Measured on PHEV-NMC811 at the same marginal spread: GSD^2 1.273 for 35
-    independent row draws against 1.415 for one shared driver.
+    Measured on PHEV-NMC811 at the same marginal spread: GSD^2 1.2793 for 35
+    independent row draws against 1.4251 for one shared driver. (Those are the
+    original 1.273 / 1.415 restated under the corrected GSD^2 = exp(2*sigma);
+    the ratio the test asserts is unaffected.)
     """
     rng = np.random.default_rng(0)
     sigma = 0.25
@@ -162,7 +164,11 @@ def test_independent_row_draws_understate_a_shared_driver():
         shared.append(n_rows * z)
         independent.append(sum(lognormal_factor(rng, sigma) for _ in range(n_rows)))
 
-    gsd2 = lambda xs: float(np.exp(1.96 * np.std(np.log(np.asarray(xs)))))
+    # Through the shared helper, not a local copy. The copy here WAS the
+    # second constant -- it re-implemented exp(1.96*sigma) beside an engine
+    # that meant exp(2*sigma), and being a relative comparison it would have
+    # gone on passing under either. One definition, one implementation.
+    gsd2 = lambda xs: summarize(xs)["gsd2"]
     g_shared, g_indep = gsd2(shared), gsd2(independent)
 
     assert g_indep < g_shared, (

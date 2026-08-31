@@ -425,15 +425,33 @@ function LowerBoundNote({ result }: { result: { rows_with_uncertainty: number; r
   )
 }
 
-function DistributionTable({ distributions }: { distributions: Array<{ method_label: string; unit: string; deterministic: number; median: number; p2_5: number; p97_5: number; gsd2: number }> }) {
+// Both dispersion columns state their formula on hover. A bare "GSD²" is what
+// let two different statistics travel under one name -- exp(2σ) on the input
+// side, exp(1.96σ̂) on the output -- so the definition travels with the number.
+const GSD2_TITLE =
+  'GSD² = exp(2σ), the squared geometric standard deviation. ecoinvent\u2019s convention, '
+  + 'and the same definition used for scored inputs. The 95% interval spans approximately '
+  + 'median ÷ and × this (2 standing in for 1.96).'
+const DISPERSION_TITLE =
+  '95% dispersion factor = p97.5 / median, read straight off the percentiles. Assumes nothing '
+  + 'about the distribution\u2019s shape, which matters because a sum of lognormals is not '
+  + 'lognormal. GSD² is the lognormal approximation to this.'
+
+function DistributionTable({ distributions }: { distributions: Array<{ method_label: string; unit: string; deterministic: number; median: number; p2_5: number; p97_5: number; gsd2: number; dispersion_95?: number }> }) {
   const num = (v: number) => (Math.abs(v) >= 1e4 || (v !== 0 && Math.abs(v) < 1e-3) ? v.toExponential(3) : v.toFixed(3))
   return (
     <div style={{ overflowX: 'auto' }}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
         <thead>
           <tr>
-            {['Indicator', 'Deterministic', 'MC median', 'Median / det.', '2.5th', '97.5th', 'GSD²', 'Unit'].map((h) => (
-              <th key={h} style={thStyle}>{h}</th>
+            {[
+              { h: 'Indicator' }, { h: 'Deterministic' }, { h: 'MC median' },
+              { h: 'Median / det.' }, { h: '2.5th' }, { h: '97.5th' },
+              { h: 'GSD²', title: GSD2_TITLE },
+              { h: '95% dispersion', title: DISPERSION_TITLE },
+              { h: 'Unit' },
+            ].map(({ h, title }) => (
+              <th key={h} style={thStyle} title={title}>{h}</th>
             ))}
           </tr>
         </thead>
@@ -451,7 +469,8 @@ function DistributionTable({ distributions }: { distributions: Array<{ method_la
                 </td>
                 <td style={tdNum}>{num(d.p2_5)}</td>
                 <td style={tdNum}>{num(d.p97_5)}</td>
-                <td style={tdNum}>{d.gsd2 ? d.gsd2.toFixed(3) : '—'}</td>
+                <td style={tdNum} title={GSD2_TITLE}>{d.gsd2 ? d.gsd2.toFixed(3) : '—'}</td>
+                <td style={tdNum} title={DISPERSION_TITLE}>{d.dispersion_95 ? d.dispersion_95.toFixed(3) : '—'}</td>
                 <td style={{ ...tdStyle, color: 'var(--text-secondary)' }}>{d.unit}</td>
               </tr>
             )

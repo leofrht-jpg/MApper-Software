@@ -148,7 +148,9 @@ def test_summary_says_when_coverage_was_not_recorded():
 def test_distributions_carry_the_deterministic_score_and_the_ratio():
     wb = _build_monte_carlo_workbook(_result(), _coverage())
     hdr = [c.value for c in wb["Distributions"][1]]
-    for col in ("Deterministic", "Median", "Median / deterministic", "GSD2", "Seed"):
+    for col in ("Deterministic", "Median", "Median / deterministic",
+                "GSD2 = exp(2*sigma)", "95% dispersion factor = p97.5 / median",
+                "Seed"):
         assert col in hdr, col
     row = [c.value for c in wb["Distributions"][2]]
     assert row[hdr.index("Deterministic")] == 12597.0
@@ -174,13 +176,13 @@ def test_pedigree_sheet_records_the_six_values_and_the_gsd():
     wb = _build_monte_carlo_workbook(_result(), _coverage())
     hdr = [c.value for c in wb["Pedigree scores"][1]]
     for col in ("Reliability", "Completeness", "Temporal", "Geographical",
-                "Technological", "Basic variance", "GSD2", "Source"):
+                "Technological", "Basic variance", "GSD2 = exp(2*sigma)", "Source"):
         assert col in hdr, col
     row = [c.value for c in wb["Pedigree scores"][2]]
     assert row[hdr.index("Reliability")] == 4
     assert row[hdr.index("Completeness")] == 3
     assert row[hdr.index("Temporal")] == ""       # unset stays blank, not 1
-    assert row[hdr.index("GSD2")] == pytest.approx(1.215)
+    assert row[hdr.index("GSD2 = exp(2*sigma)")] == pytest.approx(1.215)
     assert row[hdr.index("Source")] == "material library"
 
 

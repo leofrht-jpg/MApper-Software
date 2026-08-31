@@ -700,6 +700,31 @@ def _scope_label(scope: str) -> str:
     return _SCOPE_LABELS.get(scope, "Full Lifecycle" if scope == "all" else scope)
 
 
+# ── Dispersion labels, stated wherever a number appears ──────────────────────
+# This workbook is a reproducibility record, and a bare "GSD2" header is
+# exactly what let two different statistics travel under one name: the input
+# side used exp(2*sigma) while the Monte Carlo output used exp(1.96*sigma_hat).
+# Both now mean exp(2*sigma), and every sheet that prints one says so.
+_GSD2_NOTE = (
+    "GSD2 = exp(2*sigma), the squared geometric standard deviation. This is "
+    "ecoinvent's convention and the same definition used for scored inputs, so "
+    "an input GSD2 and an output GSD2 are the same statistic. The 95% interval "
+    "spans APPROXIMATELY median / and x this (2 standing in for 1.96)."
+)
+_DISPERSION_NOTE = (
+    "95% dispersion factor = p97.5 / median, read straight off the percentiles. "
+    "It assumes nothing about the distribution's shape, which matters because a "
+    "sum of lognormals is not lognormal; it is the exact figure where GSD2 is "
+    "the lognormal approximation."
+)
+_MIGRATION_NOTE = (
+    "MIGRATION: workbooks exported before 2026-08-31 reported exp(1.96*sigma) "
+    "in a column headed GSD2. To convert such a figure without re-running, "
+    "raise it to the power 2/1.96: GSD2 = reported ** 1.020408. The correction "
+    "is +0.2% at 1.10, +0.6% at 1.37, +1.4% at 2.00, and is always upward."
+)
+
+
 def _build_monte_carlo_workbook(
     result: MonteCarloResult,
     coverage: PedigreeCoverage | None,
@@ -768,7 +793,9 @@ def _build_monte_carlo_workbook(
     ws = wb.create_sheet("Distributions")
     ws.append([
         "Indicator", "Unit", "Deterministic", "Median", "Median / deterministic",
-        "Mean", "p2.5", "p25", "p75", "p97.5", "GSD2", "Iterations", "Seed",
+        "Mean", "p2.5", "p25", "p75", "p97.5",
+        "GSD2 = exp(2*sigma)", "95% dispersion factor = p97.5 / median",
+        "Iterations", "Seed",
     ])
     style_header(ws)
     for d in result.distributions:
@@ -778,18 +805,23 @@ def _build_monte_carlo_workbook(
             round(ratio, 4) if ratio is not None else "n/a",
             d.mean, d.p2_5, d.p25, d.p75, d.p97_5,
             round(d.gsd2, 4) if d.gsd2 else "n/a",
+            round(d.dispersion_95, 4) if d.dispersion_95 else "n/a",
             d.n_iterations, d.seed,
         ])
     if result.distributions:
-        # Scores span orders of magnitude across indicators; the ratio and GSD2
-        # columns are small and stay readable as plain numbers.
+        # Scores span orders of magnitude across indicators; the ratio and the
+        # two dispersion columns are small and stay readable as plain numbers.
         apply_sci(ws, min_row=2, min_col=3, max_col=4)
         apply_sci(ws, min_row=2, min_col=6, max_col=10)
+    ws.append([])
+    ws.append([_GSD2_NOTE])
+    ws.append([_DISPERSION_NOTE])
+    ws.append([_MIGRATION_NOTE])
     autosize(ws)
 
     # ── Variance contribution ─────────────────────────────────────────────────
     ws = wb.create_sheet("Variance contribution")
-    ws.append(["Input", "Kind", "Share of spread", "GSD2"])
+    ws.append(["Input", "Kind", "Share of spread", "GSD2 = exp(2*sigma)"])
     style_header(ws)
     for c in result.contributors:
         ws.append([c.name, c.kind, round(c.share, 6), round(c.gsd2, 4)])
@@ -804,6 +836,8 @@ def _build_monte_carlo_workbook(
             "Shares are an approximate attribution (squared rank correlation, "
             "normalised) — the inputs are not orthogonal.", "", "", "",
         ])
+    ws.append([])
+    ws.append([_GSD2_NOTE])
     autosize(ws)
 
     # ── Pedigree scores ───────────────────────────────────────────────────────
@@ -811,7 +845,7 @@ def _build_monte_carlo_workbook(
     ws.append([
         "Input", "Kind", "Source",
         "Reliability", "Completeness", "Temporal", "Geographical",
-        "Technological", "Basic variance", "GSD2",
+        "Technological", "Basic variance", "GSD2 = exp(2*sigma)",
     ])
     style_header(ws)
     for si in result.scored_inputs:
@@ -839,6 +873,8 @@ def _build_monte_carlo_workbook(
             "so a foreground score and a background exchange share one matrix.",
             "", "", "", "", "", "", "", "", "",
         ])
+    ws.append([])
+    ws.append([_GSD2_NOTE])
     autosize(ws)
 
     # ── Samples ───────────────────────────────────────────────────────────────
@@ -926,7 +962,8 @@ def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workboo
     ws = wb.create_sheet("Distributions")
     ws.append([
         "Item", "Sensitivity case", "Indicator", "Unit", "Deterministic", "Median",
-        "Median / deterministic", "Mean", "p2.5", "p25", "p75", "p97.5", "GSD2",
+        "Median / deterministic", "Mean", "p2.5", "p25", "p75", "p97.5",
+        "GSD2 = exp(2*sigma)", "95% dispersion factor = p97.5 / median",
         "Iterations", "Seed",
     ])
     style_header(ws)
@@ -940,11 +977,16 @@ def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workboo
                 round(ratio, 4) if ratio is not None else "n/a",
                 d.mean, d.p2_5, d.p25, d.p75, d.p97_5,
                 round(d.gsd2, 4) if d.gsd2 else "n/a",
+                round(d.dispersion_95, 4) if d.dispersion_95 else "n/a",
                 d.n_iterations, d.seed,
             ])
     if result.items:
         apply_sci(ws, min_row=2, min_col=5, max_col=6)
         apply_sci(ws, min_row=2, min_col=8, max_col=12)
+    ws.append([])
+    ws.append([_GSD2_NOTE])
+    ws.append([_DISPERSION_NOTE])
+    ws.append([_MIGRATION_NOTE])
     autosize(ws)
 
     ws = wb.create_sheet("Pairwise differences")

@@ -144,9 +144,21 @@ def total_sigma(
 
 
 def gsd2_from_sigma(sigma: float) -> float:
-    """Squared geometric standard deviation -- the 95% range multiplier.
+    """Squared geometric standard deviation: ``exp(2 * sigma)``.
 
-    The number an LCA practitioner actually reads: a GSD^2 of 1.5 means the
-    95% interval spans roughly the median divided by and multiplied by 1.5.
+    That is the DEFINITION, and the 2 is not a rounding of 1.96 -- it is what
+    makes ``gsd2_from_sigma(ln(f) / 2) == f`` for a published pedigree factor
+    ``f``, and it is what ecoinvent's stored variances imply (see the module
+    docstring's recovery pass). Every site in MApper that reports a GSD^2 uses
+    this constant, input and output alike.
+
+    SEPARATELY, and approximately: the 95% interval of a lognormal spans
+    median / exp(1.96 sigma) to median x exp(1.96 sigma), so a GSD^2 of 1.5 is
+    ROUGHLY that multiplier -- 2 standing in for 1.96. Do not restate the
+    approximation as the definition; conflating them is what let a second
+    constant into the codebase, where ``exp(1.96 * sigma_hat)`` shipped under
+    this same name on the Monte Carlo output side. For an exact and
+    shape-agnostic dispersion figure use ``summarize``'s ``dispersion_95``
+    (``p97.5 / median``), not this.
     """
     return math.exp(2.0 * sigma)

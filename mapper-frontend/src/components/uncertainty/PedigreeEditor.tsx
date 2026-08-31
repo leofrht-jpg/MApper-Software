@@ -178,7 +178,10 @@ export function PedigreeEditor({
           style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}
         >
           GSD² <strong>{gsd2 ? gsd2.toFixed(3) : '—'}</strong>
-          <span style={{ color: 'var(--text-secondary)' }}> (95% range ≈ ÷/× {gsd2 ? gsd2.toFixed(2) : '—'})</span>
+          {/* The parenthetical is the APPROXIMATION, not the definition -- 2
+              standing in for 1.96. Stating them as one sentence is what let a
+              second constant into the codebase. */}
+          <span style={{ color: 'var(--text-secondary)' }}> = exp(2σ) · 95% range ≈ ÷/× {gsd2 ? gsd2.toFixed(2) : '—'}</span>
         </span>
         {scored && (
           <button

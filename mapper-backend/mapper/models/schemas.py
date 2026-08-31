@@ -387,9 +387,18 @@ class ArchetypeLCAMethodDistribution(BaseModel):
     p25: float
     p75: float
     p97_5: float
-    #: Squared geometric standard deviation -- the 95% range multiplier an LCA
-    #: practitioner reads directly (1.5 == roughly median x/ 1.5).
+    #: Squared geometric standard deviation, ``exp(2*sigma)`` -- ecoinvent's
+    #: convention and the same definition the pedigree input side uses, so an
+    #: output GSD2 and a scored input GSD2 are the same statistic. The 95%
+    #: interval spans APPROXIMATELY median / and x this, the approximation
+    #: being 2 for 1.96; for the exact figure read ``dispersion_95``.
     gsd2: float
+    #: Empirical upper 95% multiplier, ``p97.5 / median``, straight off the
+    #: percentiles. Assumes nothing about the shape -- which matters, because
+    #: a sum of lognormals is not lognormal and the two do diverge (measured
+    #: on B0: gsd2 1.42748 against dispersion_95 1.51082). Defaults to 0.0 so
+    #: a stored result from before the field existed deserialises.
+    dispersion_95: float = 0.0
     n_iterations: int
     seed: int
     #: Retained draws, in iteration order. Optional because 1000 floats per
@@ -410,6 +419,8 @@ class VarianceContributor(BaseModel):
     name: str
     kind: Literal["row", "parameter"]
     share: float
+    #: ``exp(2*sigma)`` of THIS input, the same definition as the output-side
+    #: ``ArchetypeLCAMethodDistribution.gsd2``.
     gsd2: float
 
 
@@ -443,7 +454,8 @@ class ScoredInput(BaseModel):
     #: indicator -> 1..5. Empty when the uncertainty came from a direct gsd2.
     pedigree: dict[str, int] = {}
     basic_variance: float = 0.0
-    #: The resulting 95% range multiplier, exp(2 sigma).
+    #: The resulting squared geometric standard deviation, ``exp(2*sigma)``
+    #: -- the same definition used on the output side.
     gsd2: float = 1.0
     #: True when a row inherited its score from the material-name library
     #: rather than carrying its own. Display only; the draw is identical.

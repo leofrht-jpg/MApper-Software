@@ -8707,8 +8707,9 @@ foreground enters by resampling the demand per iteration
 Step 1 before 2 keeps a shared driver correlated. `d_annual` appears in many WP5
 expressions; drawing those rows independently averages the driver away and
 NARROWS the reported spread. Measured on real data with the same sigma:
-**GSD² 1.2170 with uncertainty on the parameters vs 1.0185 with it on the
-expression rows** — the spread nearly vanishes. Under-reporting uncertainty is
+**GSD² 1.2219 with uncertainty on the parameters vs 1.0189 with it on the
+expression rows** — the spread nearly vanishes. (Originally measured as
+1.2170 vs 1.0185 under the pre-2026-08-31 `exp(1.96σ)`; see *One GSD²* below.) Under-reporting uncertainty is
 the one direction that cannot be defended in a paper.
 
 Step 3's "literal rows only" is the same rule from the other side, and it is
@@ -8772,6 +8773,78 @@ non-production exchanges carry undefined uncertainty and are sampled as fixed
 LOWER BOUND. `mc-lower-bound-note` says so on every result, and also says when
 no foreground input is scored at all.
 
+### One GSD², and a second number that is not one
+
+**GSD² means `exp(2σ)` everywhere.** Input and output, backend and frontend,
+UI and workbook. It is not a preference and not a rounding of 1.96:
+
+- it is what makes `gsd2_from_sigma(ln(f)/2) == f` exact for a published
+  pedigree factor `f`, which is the whole reason `pedigree.py` carries the `/2`;
+- it is **ecoinvent's own convention**, recoverable from the shipped data. On an
+  exchange with one non-default pedigree score,
+  `scale² − scale_without_pedigree²` implies a σ for which `exp(2σ)` reproduces
+  the published factor and `exp(1.96σ)` does not (completeness=2: variance
+  0.000100 → σ 0.01000 → `exp(2σ)` **1.0202** vs published **1.02**;
+  `exp(1.96σ)` gives 1.0198). ecoinvent stores no GSD² field at all — only
+  `loc` and `scale` — so the convention has to be matched, not read.
+
+A MApper GSD² that meant something else from ecoinvent's would be the trap,
+whichever constant is mathematically defensible.
+
+**`dispersion_95 = p97.5 / median` is the separate, exact figure.** Read
+straight off the percentiles, assuming nothing about the shape. GSD² is the
+lognormal approximation to it, and they genuinely differ: on a true lognormal
+`dispersion_95` lands on `exp(1.96σ̂)` (−0.4 %), but on a **sum** of lognormals —
+which every real run is — it departs by +2.9 % at three terms and +8.5 % at six,
+and by **+6.6 %** on the real B0 run.
+
+**What was wrong, and it was wrong twice over.** `summarize` reported
+`exp(1.96σ̂)` under the name `gsd2` while seven other sites used `exp(2σ)`. That
+number was **neither statistic**: not GSD² (its label), and not the dispersion
+either, because the samples are not lognormal — and the figure it approximated
+was already two fields away in the same dict. The two agree to ~1 % at ordinary
+spreads, which is why nothing surfaced it.
+
+#### MIGRATION — exports made before 2026-08-31
+
+Any workbook or screenshot produced before this change reports `exp(1.96σ̂)` in a
+column headed `GSD2`. **Convert rather than re-run:**
+
+> **GSD² = reported ^ (2 / 1.96) = reported ^ 1.020408**
+
+Always upward: +0.20 % at 1.10, +0.37 % at 1.20, +0.64 % at 1.37, +0.83 % at
+1.50, +1.43 % at 2.00, +2.27 % at 3.00. At MApper's usual range (GSD² ≈ 1.2–1.5)
+the correction is **0.4–0.8 %**, inside Monte Carlo noise at 1000 iterations — so
+no conclusion drawn from a pre-change export changes, and the workbook itself now
+carries this formula on its Distributions sheet.
+
+The six figures quoted in this file and the three in schema docstrings are
+restated at `exp(2σ)` **with the originals kept visible**, for the same reason
+the `0.1499` B0 note keeps its original: a re-measured figure stops being
+evidence of what the patch that produced it fixed.
+
+#### What NOT to do
+
+- **Don't introduce a second constant.** `tests/test_gsd2_one_definition.py`
+  sweeps both source trees — AST for Python (so a docstring may NAME `exp(1.96σ)`
+  while arithmetic may not), a string-stripped regex for TS — and asserts
+  `summarize` on exactly-lognormal draws returns `exp(2σ)`. Reverting the
+  constant fails four of its cases. It also asserts it would have caught the
+  line that shipped, so it cannot go vacuous.
+- **Don't rename `exp(1.96σ̂)` instead of replacing it.** "95 % dispersion
+  factor" is the right name for `p97.5 / median` and the wrong name for a
+  lognormal-fit estimate that misses it by 6.6 %. Renaming would have preserved
+  a number that is neither thing.
+- **Don't print a bare `GSD2` header again.** Every surface states the formula:
+  `GSD2 = exp(2*sigma)` and `95% dispersion factor = p97.5 / median` in the
+  workbook headers, `title` tooltips on the UI table, and the definition beside
+  the number in `PedigreeEditor`. The bare label is what let the two travel
+  under one name.
+- **Don't restate the approximation as the definition.** `exp(2σ)` IS the GSD²;
+  "the 95 % range is roughly ÷/× this" is a consequence with 2 standing in for
+  1.96. `pedigree.gsd2_from_sigma`'s docstring said both as one sentence, and
+  that sentence is the shape of the original mistake.
+
 **Both new fields are additive optionals** — `BOMNode.uncertainty` and
 `Parameter.uncertainty`, `None` by default, legacy data deserialising as `None`,
 untagged rows provably unaffected (`sigma_of(None) == 0.0`). Same precedent as
@@ -8828,8 +8901,9 @@ being scored have very different cardinality: **44 parameters** (in-app) and
 in the parameter table editor shows the keyframe editor AND a pedigree editor.
 A scored parameter carries a `σ` badge on the collapsed row, next to the
 time-varying clock, so it is visible without expanding. This is the
-high-value surface: measured, uncertainty on the parameters gives GSD² 1.2170
-where the same sigma on the expression rows gives 1.0185.
+high-value surface: measured, uncertainty on the parameters gives GSD² 1.2219
+where the same sigma on the expression rows gives 1.0189 (originally 1.2170 /
+1.0185 under `exp(1.96σ)`).
 
 **BOM rows — six Excel columns, read at import.** `Pedigree Reliability`,
 `… Completeness`, `… Temporal`, `… Geographical`, `… Technological`, plus
@@ -8910,7 +8984,8 @@ the expression-row finding the opposite assumption is reasonable.** Inheriting
 a score is exactly equivalent to typing the same scores onto the row.
 `collect_row_draws` keys every draw by `node_id`, never by name, so two rows
 sharing a name get two INDEPENDENT draws. A shared PARAMETER genuinely is a
-shared driver (drawing per-row instead collapsed GSD² 1.2170 → 1.0185); a
+shared driver (drawing per-row instead collapsed GSD² 1.2219 → 1.0189,
+originally 1.2170 → 1.0185); a
 shared NAME is two separate quantities that happen to be equally well known.
 In practice the distinction barely arises inside one archetype — measured
 **1.007 rows per name** across WP5, with only `Fuel Station` repeating a name
@@ -8964,7 +9039,8 @@ pre-Monte-Carlo baseline, re-verified after the library landed.
   the count is context.
 - **Don't ship a blanket project-level default pedigree.** It was measured and
   rejected: applying one to every row moved BEV-LFP's total GSD² by only
-  0.4–8.3% (1.2181 → 1.2224–1.3192), because independent per-row draws average
+  0.4–8.3% (1.2230 → 1.2274–1.3267, originally 1.2181 → 1.2224–1.3192 under
+  `exp(1.96σ)`; the percentage is unchanged), because independent per-row draws average
   away. It manufactures a number without adding information, and a reader
   cannot tell an assessed 1.24 from a ticked-checkbox 1.24. Scoring 148 names
   is the real answer.

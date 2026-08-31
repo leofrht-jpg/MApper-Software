@@ -84,7 +84,8 @@ class MaterialPedigreeLibrary(BaseModel):
     That distinction is worth stating because the expression-row rule makes the
     opposite assumption reasonable: there, a shared PARAMETER genuinely does
     mean a shared draw, and drawing per-row instead collapses the spread
-    (measured GSD^2 1.2170 -> 1.0185). A shared NAME is not a shared driver --
+    (measured GSD^2 1.2219 -> 1.0189, originally reported as 1.2170 -> 1.0185
+    under the pre-2026-08-31 exp(1.96*sigma)). A shared NAME is not a shared driver --
     it is two separate quantities that happen to be equally well known. In
     practice the distinction barely arises inside one archetype (1.007 rows per
     name across WP5; only Fuel Station repeats a name at all), but the

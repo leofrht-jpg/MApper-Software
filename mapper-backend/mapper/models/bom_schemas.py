@@ -181,6 +181,16 @@ class BOMNode(BaseModel):
     # ``evolution`` and ``global_levers`` above. Valid only on a LITERAL row;
     # see RowUncertainty.
     uncertainty: RowUncertainty | None = None
+    # Free-text provenance for THIS row: the assumption behind its quantity or
+    # its link. Nothing computes from it -- it exists so a modelling choice
+    # travels with the row instead of living in someone's memory (e.g.
+    # "recovered per EU F-gas Regulation", "proxy: no CFRP waste route exists
+    # in ecoinvent 3.10"). Round-trips through the BOM workbook's
+    # ``Description`` column, because a provenance note that dies on the next
+    # re-import is worse than none. Additive optional -- legacy BOMs
+    # deserialise as ``None``, same precedent as ``evolution`` and
+    # ``uncertainty``.
+    description: str | None = None
     # Upload-time validation status (Patch 2). "ok" | "warning" | "error".
     # Errors block LCA computation; warnings are surfaced but allowed.
     # Default "ok" so legacy persisted archetypes (no field) deserialise fine.
@@ -375,6 +385,10 @@ class BOMNodeUpdate(BaseModel):
     # "unset" clears back to unscored; None means "leave as-is" (PATCH
     # semantics), matching how `basis` above distinguishes the two.
     uncertainty: RowUncertainty | Literal["unset"] | None = None
+    # "unset" clears back to no description; None means "leave as-is" (PATCH
+    # semantics), matching how `basis` and `uncertainty` above distinguish the
+    # two.
+    description: str | Literal["unset"] | None = None
 
 
 # ── Flatten / standalone LCA ─────────────────────────────────────────────────

@@ -2667,6 +2667,41 @@ fast).
   `unit_mismatch`. The `(db, code)` tuple still resolves to a real activity —
   the user-supplied annotation simply doesn't match. We trust the code.
 
+### `BOMNode.description` — provenance that survives a re-import
+
+Free-text on a row, for the assumption behind its quantity or its link.
+**Nothing computes from it** (asserted by a test that mutates every
+description and requires every quantity unmoved). It exists because a
+modelling choice that lives only in someone's memory is not a modelling
+choice a reviewer can check.
+
+It **round-trips through the workbook's `Description` column**, and that is the
+load-bearing half: re-import is the routine path for these projects, and a note
+that dies there is worse than no note because it reads as documented when it is
+not. A blank cell — or an older workbook with no such column — imports as
+`None`, so nothing legacy changes. `BOMNodeUpdate.description` takes `"unset"`
+to clear and `None` to leave alone, the same PATCH convention as `basis` and
+`uncertainty`.
+
+Two live examples, both in MAp-test's Hydrogen Station: the 8 kg of R134a
+records that end of life is assumed **zero on full recovery** per EU
+Regulation (EU) 2024/573, with real-world recovery at 50–90 % named as the
+gap; the 400 kg carbon fibre wrap records that inert waste is a **proxy**
+because ecoinvent 3.10 has exactly one CFRP activity, the production market,
+and no waste route at all. Neither assumption is visible in a number and both
+change one materially.
+
+#### What NOT to do
+
+- **Don't add a field carrying provenance without a workbook column.** The
+  field alone survives until the next export/re-import, which is precisely
+  when someone is most likely to believe it is still there.
+- **Don't let anything read it at compute time.** It is a comment. If it ever
+  gains meaning, the test that mutates every description to garbage and
+  asserts byte-identical quantities will fail, and that is the intended alarm.
+- **Don't export `None` into the cell.** It imports back as the literal string
+  `"None"`. Write `""`.
+
 ### `unit_mismatch` — the BOM unit is a different QUANTITY
 
 Quantities reach the demand vector with **no dimensional check**:

@@ -169,12 +169,33 @@ def _run_monte_carlo(
     cf_samplers = _method_cf_samplers(mc, method_tuples, seed)
 
     samples: dict[tuple, list[float]] = {m: [] for m in method_tuples}
+    # Keyed by node_id for rows -- the SAME key the draws use -- because two
+    # rows can share a NAME. Keyed by name it collided: one list was created
+    # for the pair, both rows appended to it every iteration, it reached 2n
+    # entries, and the `len(v) == n` filter below dropped it. `variance_shares`
+    # then renormalised, so the table still summed to 100 % with a contributor
+    # silently missing. MAp-test's `Fuel Station` repeats six names.
+    #
+    # Parameters stay keyed by name: `table.parameters` is a dict, so a
+    # parameter name is unique by construction.
     input_draws: dict[str, list[float]] = {}
+    display_by_key: dict[str, tuple[str, str]] = {}   # key -> (kind, display name)
+    sigma_by_key: dict[str, float] = {}
     if body.variance_contributions:
+        # `setdefault` de-duplicates while preserving first-seen order. A
+        # duplicate node_id is degenerate (`factors` below is a dict, so the
+        # two rows would share one factor anyway) but must not produce two
+        # appends per iteration -- that overflow is what this patch removes.
         for r in row_draws:
-            input_draws[f"row::{r.name}"] = []
+            k = f"row::{r.node_id}"
+            input_draws.setdefault(k, [])
+            display_by_key.setdefault(k, ("row", r.name))
+            sigma_by_key.setdefault(k, r.sigma)
         for p in param_draws:
-            input_draws[f"param::{p.name}"] = []
+            k = f"param::{p.name}"
+            input_draws.setdefault(k, [])
+            display_by_key.setdefault(k, ("parameter", p.name))
+            sigma_by_key.setdefault(k, p.sigma)
 
     base_materials = _linked_with_amounts(
         bundle.arc, body.scope, bundle.effective_amounts, body.basis_amounts
@@ -227,8 +248,13 @@ def _run_monte_carlo(
         for r in row_draws:
             f = lognormal_factor(rng, r.sigma)
             factors[r.node_id] = f
-            if body.variance_contributions:
-                input_draws[f"row::{r.name}"].append(f)
+        if body.variance_contributions:
+            # Recorded FROM `factors`, so the accumulator cannot disagree with
+            # the sampling: exactly one append per key per iteration, whatever
+            # `factors` ended up holding. The draw order above is untouched, so
+            # the RNG stream -- and every score -- is unchanged.
+            for nid, f in factors.items():
+                input_draws[f"row::{nid}"].append(f)
 
         demand_i = static_demand if static_demand is not None else _aggregate(
             materials_i, factors, key_map
@@ -272,17 +298,18 @@ def _run_monte_carlo(
     contributors: list[VarianceContributor] = []
     if body.variance_contributions and input_draws:
         primary = samples[method_tuples[0]]
+        # Every key now carries exactly n entries by construction, so this
+        # filter is a belt-and-braces guard rather than the load-bearing thing
+        # it accidentally became when names collided.
         arrays = {k: np.asarray(v) for k, v in input_draws.items() if len(v) == n}
-        sigma_by_name = {f"row::{r.name}": r.sigma for r in row_draws}
-        sigma_by_name.update({f"param::{p.name}": p.sigma for p in param_draws})
         for key, share in variance_shares(arrays, primary):
-            kind, _, name = key.partition("::")
+            kind, name = display_by_key.get(key, ("row", key.partition("::")[2]))
             contributors.append(
                 VarianceContributor(
                     name=name,
-                    kind="row" if kind == "row" else "parameter",
+                    kind=kind,
                     share=share,
-                    gsd2=mce.gsd2_from_sigma(sigma_by_name.get(key, 0.0)),
+                    gsd2=mce.gsd2_from_sigma(sigma_by_key.get(key, 0.0)),
                 )
             )
 

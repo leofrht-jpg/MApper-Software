@@ -2952,6 +2952,72 @@ and a separate test fails if a declared exemption no longer exists.
   the one slot that lives outside the system's state, which is exactly why they
   were missed for as long as they were.
 
+### The compute path refuses on a unit mismatch. Upload warns. Both are right.
+
+`unit_mismatch` at upload is where a NEW project gets caught. What the audit
+actually named is that quantities enter demand vectors with **no dimensional
+check at all**, so a project already carrying a mismatch computes in silence —
+MAp-test's three charger rows asked for 7, 18.5 and 180 whole-vehicle
+dismantlings, and were found by hand rather than by the code.
+
+**The apparent contradiction dissolves once you separate *when* from *what*.**
+Upload warns because the rows have not had a chance to be fixed and refusing an
+import would strand a project at the door with nothing computable; its job is
+to say the file has a problem. Compute refuses because the row is about to
+become a number. That is exactly the shape `_refuse_on_unlinked` already
+ships **in the same function** — unlinked rows warn at upload and 422 at
+compute — and nobody found that contradictory, because it is one rule applied
+at two moments.
+
+**Three sites, one definition.** `_canonical_unit` is shared with the upload
+check, so a row cannot warn at import and compute anyway:
+
+| Site | Covers |
+|---|---|
+| `_build_archetype_source_demand` | single-product LCA, trajectory, **all three Monte Carlo entry points** |
+| `_build_archetype_demand` | contribution analysis |
+| **`compute_demand_vector`'s caller in `DSMLCAPipeline`** | **the fleet** |
+
+**The fleet site is the one the other two miss**, and it is the path with the
+most at stake: a fleet run reaches the demand vector through neither builder.
+`monte_carlo.py` is covered transitively — it calls the first builder before
+its loop, so its per-iteration `_aggregate` sees rows already checked.
+`standalone_lca` is covered differently, refusing via `validate_roots` before
+it builds. `calculate_activity_lca` is N/A: no BOM row, so no second unit.
+
+**The fleet cache is per-run and never module-level.** `DSMLCAPipeline
+._unit_cache` maps `(db, code) → (unit, name)`; the check runs per cohort per
+year, far too hot for a bw2 lookup per row. It cannot be module-level because
+bw2's project state is mutable — a database import or a premise generation
+changes what a key resolves to — the same rule the row validator's `code_cache`
+follows. Pinned: same refusal with and without the cache, on the same data.
+
+#### NO CONVERSION, EVER
+
+Nothing needs converting. Every unit pair in either live project folds to
+identity — `kg`/`kilogram`, `kWh`/`kilowatt hour`, `tkm`/`ton kilometer`,
+`m3`/`cubic meter` — which is spelling, not dimension.
+
+And a genuine mismatch must **never** be converted. A silent kg→tonne would be
+the same class of defect this refusal closes: a plausible number resting on an
+assumption nobody stated. Worse here than elsewhere, because the two readings
+are indistinguishable from inside the code — `kg` against a `unit` activity
+might mean "convert by mass per unit" (a mass we do not have) or "this link is
+wrong" (all three real cases were the second). Converting would have to guess.
+`test_nothing_anywhere_converts_a_unit` checks no site does.
+
+#### What NOT to do
+
+- **Don't add a demand builder without the check.** Three sites today; the
+  fleet one was missing from the first two and is the one that computes WP5.
+- **Don't soften compute to a warning for consistency with upload.** They
+  answer different questions at different moments, and `_refuse_on_unlinked`
+  already sets the precedent in the same function.
+- **Don't lift `_unit_cache` to module scope.** bw2 project state is mutable;
+  a cache that outlives the run answers from a different project.
+- **Don't convert.** Re-link the row or fix its unit. The alternative is a
+  number nobody can audit.
+
 ### `unit_mismatch` — the BOM unit is a different QUANTITY
 
 Quantities reach the demand vector with **no dimensional check**:

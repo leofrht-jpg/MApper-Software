@@ -39,6 +39,7 @@ from mapper.models.bom_schemas import (
 from mapper.models.dsm_schemas import SimulationResult, YearResult
 from mapper.models.subsystem_schemas import Subsystem
 
+from mapper.core.bom_validator import refuse_on_unit_mismatch
 from mapper.core.bom_engine import (
     compute_demand_vector,
     flatten_roots_for_scope,
@@ -175,6 +176,14 @@ class DSMLCAPipeline:
         # for the base class unless the parameter table is year-varying — the
         # projected subclass adds a separate year-aware cache.
         self._flat_cache: dict[tuple[str, str, int | None], list] = {}
+        # (db, code) -> (activity unit, activity name), for the compute-path
+        # unit check. PER-RUN and never module-level: bw2's project state is
+        # mutable -- a database import or a premise generation changes what a
+        # key resolves to -- so a cache that outlived the run would answer from
+        # a different project. Same rule the row validator's `code_cache`
+        # follows. It is a cache because the fleet flattens per cohort per
+        # year, which is far too hot for a bw2 lookup per row.
+        self._unit_cache: dict[tuple[str, str], tuple[str, str] | None] = {}
 
     def _resolved_archetype(self, archetype_id: str, year: int | None) -> Archetype:
         """Return the archetype with ``quantity_expression``s resolved for ``year``.
@@ -380,6 +389,15 @@ class DSMLCAPipeline:
                     f"mapping."
                 )
             flat = self._flatten(archetype_id, yr.year, scope, db=db)
+            # THE FLEET SITE. The two single-product builders guard their own
+            # paths, and neither is on this one -- a fleet run reaches
+            # `compute_demand_vector` without passing either, which is the path
+            # with the most at stake. Cached per (db, code) for the run.
+            refuse_on_unit_mismatch(
+                f"Cohort {cohort_key!r} (archetype "
+                f"{self.archetypes[archetype_id].name!r}, year {yr.year})",
+                flat, self._unit_cache,
+            )
             demand = compute_demand_vector(flat, count, scaling_factor)
             if not demand:
                 continue

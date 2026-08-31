@@ -297,7 +297,15 @@ def test_calculate_scenarios_param_axis_unchanged_when_no_dsm_ids():
         captured.append(req)
         return {"task_id": f"task-{req.parameter_set_id}"}
 
-    with patch.object(impact_api, "post_calculate", _fake_post_calculate):
+    # The case must EXIST -- the orchestrator now refuses an unknown one up
+    # front. This fixture used to pass only because another test left a table
+    # carrying "Optimistic" in the module-level registry.
+    from mapper.api import parameters as params_api
+    from mapper.models.parameter_schemas import ParameterTable
+
+    table = ParameterTable(scenarios=["Optimistic"])
+    with patch.object(params_api, "_table_for", lambda project=None: table), \
+            patch.object(impact_api, "post_calculate", _fake_post_calculate):
         out = asyncio.run(impact_api.post_calculate_scenarios(body))
 
     assert set(out["scenarios"].keys()) == {"Base", "Optimistic"}

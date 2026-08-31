@@ -8101,10 +8101,19 @@ coordinate, not a fan-out, and must not conflict with a parameter sweep.
 - **Don't move the check into `resolve` / `resolve_all`.** The fallthrough there
   is correct per parameter; raising inside it would refuse every parameter the
   case legitimately does not override.
-- **A fixture naming a case no table carries is a fixture to correct.** Two did
+- **A full-suite green does not prove a fixture registers what it names.** The
+  parameter table lives in a module-level registry that no test clears, so one
+  test's table satisfies the next test's case name. Three fixtures named cases
+  they never registered; the full suite passed on all three locally and CI —
+  a clean environment, different skips, different ordering — failed on one.
+  **Verify a boundary guard by running each candidate test FILE in isolation**
+  (`for f in ...; do pytest $f; done`), which removes the leakage. That sweep
+  found the third; the full suite never would have.
+- **A fixture naming a case no table carries is a fixture to correct.** Three did
   (`test_calculate_scenarios_static_mode_preserves_mode_per_task`,
-  `test_parameter_axis_fans_out_one_call_per_scenario_name`); both now register
-  the cases they name.
+  `test_parameter_axis_fans_out_one_call_per_scenario_name`,
+  `test_calculate_scenarios_param_axis_unchanged_when_no_dsm_ids`); all three
+  now register the cases they name.
 - **Don't restore the claim that `post_calculate` rejects multi-LCI beside a
   fan-out parent.** A comment describing a protection nobody implemented is
   worse than no comment — it is why the omission survived review. Pinned by

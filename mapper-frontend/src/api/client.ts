@@ -2316,6 +2316,7 @@ export type ValidationErrorType =
   | 'database_no_code'
   | 'name_mismatch'
   | 'location_mismatch'
+  | 'unit_mismatch'
 
 export interface ValidationIssue {
   severity: ValidationSeverity

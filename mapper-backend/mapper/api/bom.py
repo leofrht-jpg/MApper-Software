@@ -3109,6 +3109,7 @@ def _parse_bom_workbook(
                     code=code or None,
                     ecoinvent_name=ec_name,
                     ecoinvent_location=ec_loc,
+                    unit=unit,
                 ))
 
             ev_method = str(col(row, "Evolution Method") or "").strip().lower()

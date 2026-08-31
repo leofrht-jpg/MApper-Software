@@ -205,6 +205,9 @@ ValidationErrorType = Literal[
     "database_no_code",    # error: database set but code empty
     "name_mismatch",       # warning: BOM name != ecoinvent activity name
     "location_mismatch",   # warning: BOM location != ecoinvent activity location
+    "unit_mismatch",       # warning: BOM unit is a different QUANTITY KIND from
+                           # the activity's reference unit (kg vs unit), after
+                           # spelling variants (kg/kilogram) are normalised away
 ]
 
 

@@ -1263,6 +1263,9 @@ def _validate_methods_registered(methods: list[list[str]]) -> None:
 
 @router.post("/lca/monte-carlo", response_model=MonteCarloStartResponse)
 async def post_monte_carlo(body: MonteCarloRequest) -> MonteCarloStartResponse:
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(body.parameter_scenario)
     if not body.methods:
         raise HTTPException(status_code=400, detail="At least one method is required")
     if body.iterations < 1 or body.iterations > MAX_ITERATIONS:
@@ -1311,6 +1314,9 @@ async def post_monte_carlo(body: MonteCarloRequest) -> MonteCarloStartResponse:
 
 @router.post("/lca/monte-carlo/multi", response_model=MonteCarloStartResponse)
 async def post_monte_carlo_multi(body: MonteCarloMultiRequest) -> MonteCarloStartResponse:
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(body.parameter_scenario)
     if not body.archetype_ids:
         raise HTTPException(status_code=400, detail="At least one item is required")
     if not body.methods:

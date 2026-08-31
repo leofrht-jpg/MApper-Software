@@ -1960,16 +1960,10 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
     from mapper.core.bom_engine import resolve_archetype_with_engine
     from mapper.core.parameter_engine import ParameterEngine, ParameterError
 
+    from mapper.api.parameters import validate_parameter_scenarios
+
     table = _table_for(project)
-    if body.parameter_scenario not in (None, "Base") and (
-        body.parameter_scenario not in table.list_scenarios()
-    ):
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Parameter scenario '{body.parameter_scenario}' not found in active table"
-            ),
-        )
+    validate_parameter_scenarios(body.parameter_scenario, project)
     # Resolve ALWAYS. The scenario selects which values to substitute, never
     # whether to substitute. This used to skip resolution for None and "Base"
     # under the comment "None / 'Base' keeps base values" -- which is false: a
@@ -2167,6 +2161,12 @@ async def material_flows_multi(
                 "must be non-empty."
             ),
         )
+
+    # Validate every case before running any -- a typo in position 3 must not
+    # leave two runs' worth of output already assembled under wrong labels.
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(param_ids)
 
     axis = "dsm" if dsm_ids else "parameter"
     runs: list[MaterialFlowScenarioRun] = []

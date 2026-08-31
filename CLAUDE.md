@@ -8026,6 +8026,99 @@ name is not the same as *gating* on it. The one conditional that legitimately
 wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
 resolve-once vs resolve-per-year — is pinned unflagged by its own test.
 
+## A sensitivity case name is CHECKED, once, at every boundary
+
+`ParameterTable.resolve` falls through to `base_value` when the requested
+scenario carries no override. That is correct for a parameter the case does not
+touch, and silent for a case that does not exist at all:
+
+    scenario='Optimistic'    -> 150.0
+    scenario='Optimsitic'    -> 100.0   <- Base, no warning
+    scenario='does-not-exist' -> 100.0
+
+So a sensitivity run against a typo reported "no sensitivity" and read as a
+finding. Battery Circularity's cases are `sa_early_repurpose_120kkm`,
+`sa_high_soc_100`, `sa_dc50_25c` — a typo in one of those is not hypothetical.
+
+`dsm.py`'s `simulate_scenarios` had this check for ONE route. Every other
+boundary taking a case name accepted anything. `validate_parameter_scenarios`
+(`mapper/api/parameters.py`) is now the one implementation, called at nine
+sites across six modules: `/lca/calculate-archetype`,
+`/lca/calculate-archetype-trajectory`, `/impact/calculate`,
+`/impact/calculate-scenarios`, `/lca/monte-carlo`, `/lca/monte-carlo/multi`,
+`/dsm/.../simulate-scenarios`, `.../material-flows`, `.../material-flows-multi`,
+plus the two parameter-editor preview routes (`/parameters/resolve`,
+`/parameters/validate`) — a typo there previewed Base values, which reads as
+confirmation that the name is fine.
+
+**`None` and `"Base"` are always valid.** Absence of a selection means Base,
+which is the documented default; only a NAMED case absent from a PRESENT table
+raises. Same rule the global-lever guard settled on.
+
+**Validity is membership, never whether the case moves a number.** MAp-test's
+two cases carry ZERO overrides across 43 parameters — they resolve identically
+to Base. They exist, so naming one is not an error.
+
+**Fan-out validates the WHOLE list before spawning anything.** A bad name in
+position 3 must not leave two fleet runs already in flight, or two material-flow
+runs already assembled under wrong labels.
+
+**The engine's fallthrough is deliberately unchanged.** The check is at the
+boundary, so `resolve` keeps its simple rule and the name is validated once.
+
+### `lci_scenarios` is an axis and counts toward axisConflict
+
+`post_calculate_scenarios` computed `multi_axes` over three axes and omitted
+multi-LCI, under a comment (and a docstring) saying `post_calculate` rejected it
+alongside a fan-out parent. **It does not, and never did** — the only
+`lci_scenarios` reference in `post_calculate` is
+`multi_lci_mode = mode == "projected" and len(lci_scenarios_list) > 1`. So 3
+sensitivity cases × 3 LCI scenarios launched **nine** fleet runs while the
+validator counted one axis, and there is no numeric cap anywhere downstream to
+catch it. Multi-LCI runs sequentially inside a single task, which is why it read
+as "in-task" rather than "fan-out" — but sequential is not free, and the rule
+exists to stop the multiplication, not the parallelism.
+
+The count fires on `len(...) > 1`, never on presence: one LCI scenario is a
+coordinate, not a fan-out, and must not conflict with a parameter sweep.
+
+#### What NOT to do
+
+- **Don't add a boundary taking a case name without calling the helper.**
+  `test_every_route_taking_a_case_name_checks_it` sweeps every route whose
+  request schema carries `parameter_scenario` / `parameter_scenarios` /
+  `parameter_set_id` / `cases` and fails naming it. `_ALLOWED` is empty on
+  purpose; an entry must say why not checking is correct.
+- **`get_parameter_set` counts as a check, and is not a near-miss.** It returns
+  `None` for any name outside `table.list_scenarios()` — the SAME namespace and
+  rule — and its callers raise on `None`. `run_dsm_lca` and both
+  `compute_subsystem` routes are guarded that way and were false positives of a
+  name-based sweep.
+- **Match ACCEPTED as CALLS, not substrings.** The first version of the guard
+  matched bare names, so a `from ... import validate_parameter_scenarios` line
+  inside a route body satisfied it on its own — deleting the actual call left
+  the guard green. Caught by re-running the revert.
+- **Don't move the check into `resolve` / `resolve_all`.** The fallthrough there
+  is correct per parameter; raising inside it would refuse every parameter the
+  case legitimately does not override.
+- **A full-suite green does not prove a fixture registers what it names.** The
+  parameter table lives in a module-level registry that no test clears, so one
+  test's table satisfies the next test's case name. Three fixtures named cases
+  they never registered; the full suite passed on all three locally and CI —
+  a clean environment, different skips, different ordering — failed on one.
+  **Verify a boundary guard by running each candidate test FILE in isolation**
+  (`for f in ...; do pytest $f; done`), which removes the leakage. That sweep
+  found the third; the full suite never would have.
+- **A fixture naming a case no table carries is a fixture to correct.** Three did
+  (`test_calculate_scenarios_static_mode_preserves_mode_per_task`,
+  `test_parameter_axis_fans_out_one_call_per_scenario_name`,
+  `test_calculate_scenarios_param_axis_unchanged_when_no_dsm_ids`); all three
+  now register the cases they name.
+- **Don't restore the claim that `post_calculate` rejects multi-LCI beside a
+  fan-out parent.** A comment describing a protection nobody implemented is
+  worse than no comment — it is why the omission survived review. Pinned by
+  `test_the_false_claim_is_gone_from_the_source`.
+
 ## A negative quantity is a credit, not a reason to drop the row
 
 `calculate_archetype_lca` shares an activity's score among the materials using

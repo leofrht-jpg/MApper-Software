@@ -545,7 +545,10 @@ def _build_archetype_source_demand(
 
 @router.post("/lca/calculate-archetype", response_model=ArchetypeLCACalculateResult)
 async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> ArchetypeLCACalculateResult:
+    from mapper.api.parameters import validate_parameter_scenarios
     from mapper.core.bom_engine import material_key
+
+    validate_parameter_scenarios(body.parameter_scenario)
 
     t0 = time.perf_counter()
 
@@ -775,6 +778,9 @@ async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> Ar
     ``/lca/calculate-archetype`` with that year's ``compute_database``. Reuses
     the 6A/6B primitives (``resolve_bracket`` / ``blend_method_scores``) and one
     ``MultiDBPersistentRunner`` per trajectory so each anchor DB factorizes once."""
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(body.parameter_scenario)
     from mapper.core import plca_storage
 
     t0 = time.perf_counter()

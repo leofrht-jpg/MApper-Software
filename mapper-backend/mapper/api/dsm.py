@@ -1626,15 +1626,9 @@ async def simulate_scenarios(
             f"Available: {sorted(existing_ids)}.",
         )
 
-    table = _params._table_for()
-    valid_cases = set(table.list_scenarios())
-    unknown_cases = [c for c in cases if c not in valid_cases]
-    if unknown_cases:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown case(s): {', '.join(unknown_cases)}. "
-            f"Available: {sorted(valid_cases)}.",
-        )
+    # This check used to live here, and ONLY here, while every other boundary
+    # taking a case name accepted anything and silently resolved it to Base.
+    _params.validate_parameter_scenarios(cases)
 
     meter = measure_compute()
     results: dict[str, SimulationResult] = {}

@@ -219,7 +219,14 @@ def test_parameter_axis_fans_out_one_call_per_scenario_name():
         captured.append(sub_body)
         return _empty_result()
 
-    with patch.object(bom_api, "material_flows", AsyncMock(side_effect=_fake_compute)):
+    # The case names must EXIST -- the fan-out now validates the whole list up
+    # front so a typo in position 2 cannot leave run 1 already assembled.
+    from mapper.api import parameters as params_api
+    from mapper.models.parameter_schemas import ParameterTable
+
+    table = ParameterTable(scenarios=["Optimistic", "Pessimistic"])
+    with patch.object(params_api, "_table_for", lambda project=None: table), \
+            patch.object(bom_api, "material_flows", AsyncMock(side_effect=_fake_compute)):
         env = asyncio.run(bom_api.material_flows_multi("sys-1", body))
 
     assert env.axis == "parameter"

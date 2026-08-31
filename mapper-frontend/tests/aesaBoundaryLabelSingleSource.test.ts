@@ -9,7 +9,11 @@
 
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+
+import { relPosix } from './helpers/relPosix'
+
+
 
 // Boundary naming has ONE source: the `PlanetaryBoundary` record in
 // boundary_sets.json, served through /aesa/defaults and stamped onto each SR
@@ -92,7 +96,7 @@ describe('boundary naming has one source', () => {
   it('no component hardcodes a category acronym', () => {
     const offenders: string[] = []
     for (const f of files) {
-      const rel = relative(SRC, f)
+      const rel = relPosix(SRC, f)
       if (rel in ACRONYM_LITERAL_ALLOWED) continue
       const src = stripComments(readFileSync(f, 'utf-8'))
       for (const a of ACRONYMS) {
@@ -116,7 +120,7 @@ describe('boundary naming has one source', () => {
       'Particulate matter', 'Land use', 'Water use']
     const offenders: string[] = []
     for (const f of files) {
-      const rel = relative(SRC, f)
+      const rel = relPosix(SRC, f)
       const src = stripComments(readFileSync(f, 'utf-8'))
       for (const n of names) {
         if (new RegExp(`(['"\`])${n}\\1\\s*:`).test(src)) offenders.push(`${rel} keys a map on "${n}"`)
@@ -129,7 +133,7 @@ describe('boundary naming has one source', () => {
   it('shortPbName is gone and has not come back', () => {
     const offenders = files
       .filter((f) => /\bshortPbName\b/.test(stripComments(readFileSync(f, 'utf-8'))))
-      .map((f) => relative(SRC, f))
+      .map((f) => relPosix(SRC, f))
     expect(offenders, 'still reference shortPbName. It truncated mid-word; use '
       + 'boundaryLabel from utils/aesaBoundaryLabels instead.').toEqual([])
   })

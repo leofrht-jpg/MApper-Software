@@ -10,7 +10,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { readFileSync, readdirSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+
+import { relPosix } from './helpers/relPosix'
 
 // Section (2)'s Template / Export settings / Import settings trio. Import
 // replaces the ACTIVE configuration, so it is destructive and must go through
@@ -222,7 +224,7 @@ describe('nothing references the removed template endpoint', () => {
     for (const f of walk(SRC)) {
       const src = readFileSync(f, 'utf-8')
       if (/downloadAESAConfigTemplate|aesa\/config\/template/.test(src)) {
-        offenders.push(relative(SRC, f))
+        offenders.push(relPosix(SRC, f))
       }
     }
     expect(offenders, 'still reference GET /aesa/config/template, which no '

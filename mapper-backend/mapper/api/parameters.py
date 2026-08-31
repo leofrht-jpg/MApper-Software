@@ -70,6 +70,46 @@ router = APIRouter(prefix="/parameters", tags=["parameters"])
 _tables: dict[str, ParameterTable] = {}
 
 
+def validate_parameter_scenarios(
+    names: "str | list[str] | None", project: str | None = None
+) -> None:
+    """Refuse a case name that is not in the project's parameter table.
+
+    ``None`` -- and the implicit ``"Base"`` -- are always valid: absence of a
+    selection means Base, which is the documented default. What raises is a
+    NAMED case absent from a PRESENT table, which is the same rule the global
+    lever guard settled on. A typo used to resolve silently to Base:
+
+        scenario='Optimistic'   -> 150.0
+        scenario='Optimsitic'   -> 100.0   <- Base, no warning
+
+    so a sensitivity run reported "no sensitivity" and looked like a finding.
+    The names in play are of the shape ``sa_early_repurpose_120kkm``; a typo
+    in one of those is not a hypothetical.
+
+    Lifted from ``dsm.py``'s ``simulate_scenarios``, which had this check for
+    one route while every other boundary taking ``parameter_scenario``
+    accepted anything. Same message shape, one implementation.
+    """
+    if names is None:
+        return
+    wanted = [names] if isinstance(names, str) else list(names)
+    wanted = [n for n in wanted if n is not None]
+    if not wanted:
+        return
+    table = _table_for(project)
+    valid = set(table.list_scenarios())
+    unknown = [n for n in wanted if n not in valid]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown sensitivity case(s): {', '.join(sorted(set(unknown)))}. "
+                f"Available: {sorted(valid)}."
+            ),
+        )
+
+
 def install_parameters(data: dict[str, ParameterTable]) -> None:
     """Replace the in-memory table registry (called from main startup)."""
     _tables.clear()
@@ -308,6 +348,9 @@ def _engine_for_scenario(scenario: str | None) -> ParameterEngine:
 @router.post("/resolve", response_model=ResolveResult)
 async def resolve(body: ResolveRequest) -> ResolveResult:
     scen = body.scenario or body.parameter_set_id  # accept legacy field
+    # A typo here previews BASE values, which reads as confirmation that
+    # the case name is fine. Same class as the compute boundaries.
+    validate_parameter_scenarios(scen)
     engine = _engine_for_scenario(scen)
     refs = sorted(ParameterEngine.find_references(body.expression))
     try:
@@ -320,6 +363,9 @@ async def resolve(body: ResolveRequest) -> ResolveResult:
 @router.post("/validate", response_model=ValidateResult)
 async def validate(body: ValidateRequest) -> ValidateResult:
     scen = body.scenario or body.parameter_set_id
+    # A typo here previews BASE values, which reads as confirmation that
+    # the case name is fine. Same class as the compute boundaries.
+    validate_parameter_scenarios(scen)
     engine = _engine_for_scenario(scen)
     out: list[ResolveResult] = []
     for expr in body.expressions:

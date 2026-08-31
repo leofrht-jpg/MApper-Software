@@ -182,7 +182,15 @@ def test_calculate_scenarios_static_mode_preserves_mode_per_task():
         captured.append(req)
         return {"task_id": f"task-{req.parameter_set_id}"}
 
-    with patch.object(impact_api, "post_calculate", _fake_post_calculate):
+    # The case names must EXIST -- the orchestrator now refuses an unknown one
+    # up front rather than fanning out three tasks that all silently compute
+    # Base. This fixture used to name cases no table carried.
+    from mapper.api import parameters as params_api
+    from mapper.models.parameter_schemas import ParameterTable
+
+    table = ParameterTable(scenarios=["Optimistic", "Conservative"])
+    with patch.object(params_api, "_table_for", lambda project=None: table), \
+            patch.object(impact_api, "post_calculate", _fake_post_calculate):
         out = asyncio.run(impact_api.post_calculate_scenarios(body))
 
     assert set(out["scenarios"].keys()) == {"Base", "Optimistic", "Conservative"}

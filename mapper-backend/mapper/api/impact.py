@@ -270,6 +270,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
     param_engine: ParameterEngine | None = None
     param_table: ParameterTable | None = None
     param_scenario: str | None = None
+    _parameters.validate_parameter_scenarios(body.parameter_set_id, project)
     if body.parameter_set_id:
         pset = _parameters.get_parameter_set(body.parameter_set_id, project)
         if pset is None:
@@ -771,25 +772,29 @@ async def post_calculate_scenarios(body: ImpactAssessmentRequest) -> dict[str, d
     Falls back to single-scenario behaviour (one task on ``"Base"``) when
     neither field is set — callers get a uniform shape.
 
-    The 3-way axisConflict rule (LCI × DSM × Parameter, at most one >1) is
-    mirrored here: 400 if both ``scenarios`` and ``dsm_scenario_ids`` are
-    non-empty. Multi-LCI on top of either is rejected by ``post_calculate``
-    when it sees ``len(lci_scenarios) > 1`` plus a multi-axis fan-out parent.
+    The axisConflict rule (LCI × DSM × Parameter × paired, at most one >1) is
+    enforced here over all four axes: 400 if more than one is fanned out.
+    Multi-LCI is counted even though it runs sequentially inside a single
+    task -- it is still an axis, and it multiplies the work.
     """
     fan_param = bool(body.scenarios)
     fan_dsm = bool(body.dsm_scenario_ids)
     fan_paired = bool(body.paired_scenarios)
-    # Multi-LCI is "in-task" (single task, sequential per scenario) and is
-    # already rejected by post_calculate when paired with a multi-axis parent.
-    # Here we only check the parallel-fan-out axes.
-    multi_axes = sum([fan_param, fan_dsm, fan_paired])
+    # Multi-LCI is "in-task" -- one task, scenarios run sequentially inside it --
+    # but it is still an AXIS, so it counts here. It used to be omitted on the
+    # stated grounds that ``post_calculate`` rejected it alongside a fan-out
+    # parent; it does not, and never did. The omission let 3 cases x 3 LCI
+    # scenarios launch 9 fleet runs while the validator counted one axis, which
+    # is exactly the combinatorial blow-up the rule exists to stop.
+    fan_lci = len(body.lci_scenarios or []) > 1
+    multi_axes = sum([fan_param, fan_dsm, fan_paired, fan_lci])
     if multi_axes > 1:
         raise HTTPException(
             status_code=400,
             detail=(
                 "Cannot fan out multiple axes simultaneously "
-                "(parameter, DSM, paired DSM×LCI). Pick one at a time "
-                "(axisConflict rule)."
+                "(parameter, DSM, LCI, paired DSM×LCI). Pick one axis at a "
+                "time (axisConflict rule)."
             ),
         )
 
@@ -855,6 +860,12 @@ async def post_calculate_scenarios(body: ImpactAssessmentRequest) -> dict[str, d
     scenarios = body.scenarios or [body.parameter_set_id or "Base"]
     if not scenarios:
         raise HTTPException(status_code=400, detail="scenarios must be non-empty")
+    # Validate the WHOLE list before spawning any task -- same ordering rule as
+    # the paired pre-validation below. A bad name in position 3 must not leave
+    # two fleet runs already in flight.
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(scenarios)
 
     out_param: dict[str, str] = {}
     for scen in scenarios:

@@ -328,6 +328,31 @@ class _ArchetypeDemand(NamedTuple):
     total_demand: dict[tuple[str, str], float]
 
 
+def _refuse_on_unit_mismatch(arc_name: str, materials: list, scope: str) -> None:
+    """Compute-path unit check. Warns at upload (#64), refuses here.
+
+    The audit's actual finding was that quantities enter demand vectors with no
+    dimensional check at all -- so a project already carrying a mismatch
+    computed silently. MAp-test did, for three charger rows, until they were
+    found by hand.
+
+    Translated to a 422 so it matches ``_refuse_on_unlinked``'s shape at the
+    same boundary; the fleet path raises the engine-level ``UnitMismatchError``
+    instead, which the API layer already turns into a 400 the way it does for
+    ``DanglingArchetypeError``.
+    """
+    from mapper.core.bom_validator import UnitMismatchError, refuse_on_unit_mismatch
+
+    try:
+        refuse_on_unit_mismatch(f"'{arc_name}' (scope '{scope}')", materials)
+    except UnitMismatchError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "unit_mismatch", "message": str(e),
+                    "archetype": arc_name, "scope": scope},
+        ) from e
+
+
 def _refuse_on_unlinked(arc_name: str, materials: list, scope: str) -> None:
     """Refuse to compute when any in-scope row has no ecoinvent link.
 
@@ -496,6 +521,7 @@ def _build_archetype_source_demand(
 
     # Refuse on ANY unlinked row, not just on all of them being unlinked.
     _refuse_on_unlinked(arc.name, all_materials, scope)
+    _refuse_on_unit_mismatch(arc.name, all_materials, scope)
     linked = [m for m in all_materials if m.ecoinvent_activity is not None]
     if not linked:
         raise HTTPException(
@@ -1063,9 +1089,9 @@ def _build_archetype_demand(
     # Same refusal as the single-product builder. Contribution analysis is a
     # SEPARATE demand builder; leaving it filtering would keep one silent-drop
     # path open behind a guard that looks closed.
-    _refuse_on_unlinked(
-        arc.name, [m for root in scope_roots for m in flatten_bom(root)], scope,
-    )
+    _all_flat = [m for root in scope_roots for m in flatten_bom(root)]
+    _refuse_on_unlinked(arc.name, _all_flat, scope)
+    _refuse_on_unit_mismatch(arc.name, _all_flat, scope)
     for root in scope_roots:
         flat = flatten_bom(root)
         mult = eff.get(root.name, 1.0)

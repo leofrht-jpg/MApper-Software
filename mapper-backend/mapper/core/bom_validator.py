@@ -25,6 +25,9 @@ Key invariants:
 """
 from __future__ import annotations
 
+from collections.abc import Iterable
+from typing import Any
+
 import logging
 from collections import defaultdict
 from dataclasses import dataclass, field
@@ -111,6 +114,110 @@ def _canonical_unit(u: str) -> str:
     """Fold a unit onto its quantity kind. Unknown units fold to themselves."""
     k = (u or "").strip().lower()
     return _UNIT_ALIASES.get(k, k)
+
+
+class UnitMismatchError(ValueError):
+    """A BOM row's unit is a different QUANTITY from its activity's.
+
+    Raised at COMPUTE, where the upload check only warns. The two are not in
+    tension: they answer different questions at different moments.
+
+    * At upload the rows have not had a chance to be fixed yet, and refusing an
+      import would strand a whole project at the door with nothing computable.
+      The warning's job is to say the file has a problem.
+    * At compute the row is about to become a number. A kg amount against a
+      per-unit activity is charged verbatim -- MAp-test's three charger rows
+      asked for 7, 18.5 and 180 whole-vehicle dismantlings -- and there is no
+      reading under which that result is right.
+
+    Exactly the shape ``_refuse_on_unlinked`` already ships in the same
+    function: unlinked rows warn at upload and 422 at compute. Nobody found
+    that contradictory, because it is one rule applied at two moments.
+
+    NO CONVERSION IS EVER APPLIED. A silent kg->tonne would be the same class
+    of defect this refusal exists to close: a plausible number resting on an
+    assumption nobody stated. And the two readings are indistinguishable from
+    inside the code -- `kg` against a `unit` activity might mean "convert by
+    mass per unit" (a mass we do not have) or "this link is wrong" (all three
+    real cases). Converting would have to guess which.
+    """
+
+
+def find_unit_mismatches(
+    materials: Iterable[Any],
+    unit_cache: dict[tuple[str, str], str | None] | None = None,
+) -> list[tuple[str, str, str, str]]:
+    """``(row_name, bom_unit, activity_unit, activity_name)`` per mismatch.
+
+    ``unit_cache`` is CALLER-OWNED and per-run, never module-level. The fleet
+    path calls this per cohort per year, so the ``(db, code)`` lookups have to
+    be memoised -- but bw2's project state is mutable (database imports,
+    premise generation), so a cache that outlived a run would serve answers
+    from a different project. Same rule the row validator's ``code_cache``
+    follows, and for the same reason.
+
+    A row whose unit or whose activity's unit is blank is SKIPPED, not
+    reported: unknown is not the same as different.
+    """
+    cache = unit_cache if unit_cache is not None else {}
+    out: list[tuple[str, str, str, str]] = []
+    for m in materials:
+        link = getattr(m, "ecoinvent_activity", None)
+        if link is None:
+            continue
+        bom_unit = (getattr(m, "unit", "") or "").strip()
+        if not bom_unit:
+            continue
+        key = (link.database, link.code)
+        if key not in cache:
+            try:
+                import bw2data
+
+                act = bw2data.get_activity(key)
+                cache[key] = ((act.get("unit") or "").strip(),
+                              (act.get("name") or "").strip())  # type: ignore[assignment]
+            except Exception:
+                cache[key] = None
+        entry = cache[key]
+        if not entry:
+            continue                      # unresolvable: not this guard's job
+        act_unit, act_name = entry        # type: ignore[misc]
+        if not act_unit:
+            continue
+        if _canonical_unit(bom_unit) != _canonical_unit(act_unit):
+            out.append((getattr(m, "name", "?"), bom_unit, act_unit, act_name))
+    return out
+
+
+def refuse_on_unit_mismatch(
+    context: str,
+    materials: Iterable[Any],
+    unit_cache: dict[tuple[str, str], str | None] | None = None,
+) -> None:
+    """Raise :class:`UnitMismatchError` if any row's unit is a different
+    quantity from its activity's. ``context`` names the archetype or cohort.
+
+    The message names the ROW, BOTH UNITS and the ACTIVITY -- the same shape as
+    ``_refuse_on_unlinked``, because "3 rows have a unit mismatch" is precisely
+    the guard that costs a debugging session.
+    """
+    bad = find_unit_mismatches(materials, unit_cache)
+    if not bad:
+        return
+    shown, extra = bad[:10], max(0, len(bad) - 10)
+    rows = "; ".join(
+        f"{name!r} is {bu} but {act!r} is per {au}" for name, bu, au, act in shown
+    )
+    raise UnitMismatchError(
+        f"{context}: {len(bad)} row(s) carry a unit that is a different "
+        f"quantity from the linked activity's reference unit -- {rows}"
+        + (f"; and {extra} more" if extra else "")
+        + ". The amount would be used verbatim with NO conversion, so the "
+        "result would charge the wrong quantity. Re-link the row to an "
+        "activity in the same unit, or correct the row's unit. MApper does "
+        "not convert: a silent kg-to-tonne would be a plausible number resting "
+        "on an assumption nobody stated."
+    )
 
 
 # ── Public API ───────────────────────────────────────────────────────────────

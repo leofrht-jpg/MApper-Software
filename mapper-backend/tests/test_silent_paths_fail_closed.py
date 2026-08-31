@@ -256,6 +256,13 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("api/lca.py", "if m.ecoinvent_activity is None:"):
         "reached only AFTER _refuse_on_unlinked has already raised on any "
         "unlinked row; kept as a type-narrowing no-op",
+    ("core/bom_validator.py", "if link is None:"):
+        "the UNIT check has nothing to compare for an unlinked row. Unlinked "
+        "rows are refused upstream on every path that reaches here: "
+        "_refuse_on_unlinked on the two single-product builders, and the "
+        "mapped-archetype validation in bom.py before the fleet pipeline is "
+        "built. (Found by the class guard on this patch's own new code, which "
+        "is the guard working.)",
     ("api/bom.py", "if not sub_mapping:"):
         "the line ABOVE it is `if unmapped: setup_warnings.append(...)`, which "
         "names every excluded archetype -- a subsystem with a wholly empty "

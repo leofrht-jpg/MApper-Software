@@ -256,6 +256,12 @@ _ALLOWED: dict[tuple[str, str], str] = {
     ("api/lca.py", "if m.ecoinvent_activity is None:"):
         "reached only AFTER _refuse_on_unlinked has already raised on any "
         "unlinked row; kept as a type-narrowing no-op",
+    ("api/bom.py", "if not sub_mapping:"):
+        "the line ABOVE it is `if unmapped: setup_warnings.append(...)`, which "
+        "names every excluded archetype -- a subsystem with a wholly empty "
+        "mapping contributes nothing and the user is told which. Two sites "
+        "(the impact and material-flows setups) share this text; both warn "
+        "first. This is the shape done right.",
 }
 
 
@@ -272,16 +278,44 @@ def _skip_sites(path: Path) -> list[tuple[int, str, str]]:
     return out
 
 
+def test_module_keys_are_posix_on_every_platform():
+    """The package walk introduced a platform dependency the watchlist did not.
+
+    `str(Path.relative_to(...))` gives `api\\bom.py` on Windows, so every
+    `_ALLOWED` / `_ALLOWED_DEFAULTS` key stopped matching and CI turned the
+    fifteen declared exemptions into fifteen failures. Keys are posix; the
+    walk must produce posix.
+    """
+    for f in _package_modules()[:20]:
+        rel = f.relative_to(BACKEND).as_posix()
+        assert "\\" not in rel, rel
+    # and the declared keys are posix too
+    for (rel, _c) in list(_ALLOWED) + list(_ALLOWED_DEFAULTS):
+        assert "\\" not in rel, rel
+
+
+def _package_modules() -> list[Path]:
+    """Every module in the package. THERE IS NO WATCHLIST.
+
+    Both sweeps used to name six files. The base rate stayed non-zero across
+    two widenings -- the second found `material_flow_engine`'s two, the third
+    found the scaling-rules migration -- so scope stopped being a judgement
+    call and became the whole package. A new module is swept the day it lands,
+    with nobody having to remember to add it.
+    """
+    return sorted(p for p in BACKEND.rglob("*.py") if "__pycache__" not in str(p))
+
+
 def test_no_calculation_path_silently_continues_past_a_missing_input():
     """The class guard: a missing LINK, MAPPING, STAGE MATCH or LEVER must
     raise or warn -- never be stepped over."""
-    watched = [
-        "api/lca.py", "core/dsm_lca_engine.py", "core/bom_engine.py",
-        "core/material_flow_engine.py",
-    ]
     findings = []
-    for rel in watched:
-        f = BACKEND / rel
+    for f in _package_modules():
+        # `.as_posix()`, not `str()`: on Windows the latter yields
+        # `api\\bom.py` and every `_ALLOWED` key silently stops matching.
+        # The old hardcoded watchlist never converted a path, so the
+        # package walk is what introduced the platform dependency.
+        rel = f.relative_to(BACKEND).as_posix()
         for lineno, check, _ in _skip_sites(f):
             if (rel, check) in _ALLOWED:
                 continue
@@ -426,6 +460,18 @@ def _default_sites(path: Path) -> list[tuple[int, str]]:
         ):
             assigned_gets.add(id(node.value))
 
+    # `@router.get("/bom/archetypes")` is an HTTP verb, not a dict lookup, and
+    # its path string mentions the very words this sweep watches for. Eleven of
+    # the first package-wide run's hits were route decorators. Excluding them by
+    # DECORATOR POSITION rather than by receiver name keeps it from depending
+    # on what the router variable happens to be called.
+    decorator_calls: set[int] = set()
+    for node in ast.walk(tree):
+        for dec in getattr(node, "decorator_list", []) or []:
+            for sub in ast.walk(dec):
+                if isinstance(sub, ast.Call):
+                    decorator_calls.add(id(sub))
+
     for node in ast.walk(tree):
         if (
             isinstance(node, ast.Call)
@@ -433,6 +479,7 @@ def _default_sites(path: Path) -> list[tuple[int, str]]:
             and node.func.attr == "get"
             and len(node.args) < 2                    # no explicit default
             and id(node) not in assigned_gets         # not held by the caller
+            and id(node) not in decorator_calls       # not @router.get(...)
             and _WATCHED_CONCEPT.search(ast.unparse(node))
         ):
             hits.add(node.lineno)
@@ -473,6 +520,46 @@ def test_the_second_shape_would_have_caught_all_THREE_historical_defects():
             assert _default_sites(f), f"the second shape missed: {line.strip()}"
 
 
+def test_a_route_decorator_is_not_a_lookup():
+    """`@router.get("/bom/archetypes")` is an HTTP verb, not a dict lookup.
+
+    Eleven of the first package-wide run's twenty-six hits were route
+    decorators, matched because their PATH STRINGS mention the words this
+    sweep watches for. That is a detector bug, not an exemption backlog --
+    exempting them would have buried the real finding under boilerplate.
+
+    Excluded by DECORATOR POSITION, not by receiver name, so it does not
+    depend on the router variable being called `router`.
+    """
+    import tempfile
+
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "routes.py"
+        f.write_text(
+            '@router.get("/bom/archetypes/{arc_id}/mappings")\n'
+            "async def read_archetype(arc_id: str):\n"
+            "    return 1\n"
+            "\n"
+            '@api.get("/dsm/systems/{sid}/cohort-mappings")\n'
+            "async def read_mappings(sid: str):\n"
+            "    return 2\n",
+            encoding="utf-8",
+        )
+        assert not _default_sites(f), "a route decorator was read as a lookup"
+
+    # ...while a real inline lookup in the same file still fires
+    with tempfile.TemporaryDirectory() as d:
+        f = Path(d) / "routes.py"
+        f.write_text(
+            '@router.get("/bom/archetypes")\n'
+            "async def read(arc_id: str):\n"
+            "    if cohort_dict.get(dim) in vals:\n"
+            "        return 1\n",
+            encoding="utf-8",
+        )
+        assert _default_sites(f), "the decorator exclusion swallowed a real hit"
+
+
 def test_the_second_shape_does_not_fire_on_the_corrected_forms():
     import tempfile
 
@@ -489,29 +576,105 @@ def test_the_second_shape_does_not_fire_on_the_corrected_forms():
             assert not _default_sites(f), f"false positive on: {line.strip()}"
 
 
-#: Declared, with a reason, exactly like `_ALLOWED` above. Four entries, and
-#: each one has to say why the miss is not a dropped input.
-_ALLOWED_DEFAULTS: dict[tuple[str, str], str] = {
+#: Every exemption carries a CATEGORY as well as a reason. The category is not
+#: decoration: `display_only` is checked (see below), which turns "it doesn't
+#: compute" from a stated assumption into a testable one.
+#:
+#:   guarded      -- a raise or warn covers this line before it is reached
+#:   validated    -- the input is checked at the write boundary instead
+#:   filter       -- a miss is the intended semantics (the row is out of scope)
+#:   display_only -- export/label resolution; derives no number
+_ALLOWED_DEFAULTS: dict[tuple[str, str], tuple[str, str]] = {
     ("api/lca.py",
      "linked = [m for m in all_materials if m.ecoinvent_activity is not None]"):
-        "reached only AFTER _refuse_on_unlinked has raised on any unlinked "
-        "row, so nothing can be dropped here",
+        ("guarded",
+         "reached only AFTER _refuse_on_unlinked has raised on any unlinked row"),
     ("core/subsystem_engine.py",
      "allowed = {dim: set(vals) for dim, vals in driver_filter.items() if vals}"):
-        "an empty value list is refused at the WRITE boundary by "
-        "validate_dependency_rule; the branch stays defined only for rules "
-        "stored before that check existed",
+        ("validated",
+         "an empty value list is refused at the WRITE boundary by "
+         "validate_dependency_rule; the branch stays defined only for rules "
+         "stored before that check existed"),
     ("core/subsystem_engine.py",
      "if all(cohort_dict.get(dim) in vals for dim, vals in allowed.items()):"):
-        "every key and label is validated against the primary dimensions "
-        "ABOVE this line, so a .get miss here is a legitimate empty match "
-        "(a declared label with no stock this year), not a stale reference",
+        ("guarded",
+         "every key and label is validated against the primary dimensions ABOVE "
+         "this line, so a .get miss here is a legitimate empty match"),
     ("core/dsm_lca_engine.py",
      "r.dependent_archetype_id for r in subsystem.dependency_rules if r.dependent_archetype_id"):
-        "builds the KNOWN-to-carry-stock set for the unmapped warning; a rule "
-        "with no target cannot be unmapped, and a blank target is refused at "
-        "save by validate_dependency_rule",
+        ("validated",
+         "builds the KNOWN-to-carry-stock set for the unmapped warning; a blank "
+         "target is refused at save by validate_dependency_rule"),
+    ("api/bom.py",
+     'arc_label = (row.get("archetype") or "").strip()'):
+        ("validated",
+         "a blank archetype cell is the documented way to leave a cohort "
+         "unmapped in the template; since the unmapped-cohort guard, one that "
+         "carries stock raises at compute anyway"),
+    ("api/bom.py",
+     "arc_names_set = sorted({n for n in cohort_arc_name.values() if n})"):
+        ("display_only", "unique archetype names for an export Summary sheet"),
+    ("api/bom.py",
+     "if cohort_arc_name.get(ck) != an:"):
+        ("display_only",
+         "groups cohorts under an archetype name in an export sheet; a miss "
+         "means this cohort is not in this group"),
+    ("api/bom.py",
+     'for cohort, (arc_id, scale) in (s.get("mappings") or {}).items():'):
+        ("display_only",
+         "iterates the locally-built subsystem export dicts for a sheet"),
+    ("api/dsm.py",
+     'dims: list[DimensionDef] = meta.get("__dimensions__") or []'):
+        ("guarded", "the very next line raises a 400 when the result is empty"),
+    ("api/subsystems.py",
+     "arc = archetypes.get(m.archetype_id) if m else None"):
+        ("display_only",
+         "resolves a display name for an export; returns '' when unresolvable"),
+    ("core/dsm_engine.py",
+     "return all(cohort_dict.get(k) == v for k, v in cfg.dimension_filters.items())"):
+        ("filter",
+         "survival_configs ARE reconciled by _migrate_state, so a miss means "
+         "the filter does not apply to this cohort"),
+    ("core/dsm_engine.py",
+     "if all(cohort_dict.get(k) == v for k, v in c.dimension_filters.items())"):
+        ("filter", "mode_configs are reconciled by _migrate_state, same reason"),
+    ("core/dsm_engine.py",
+     "and all(cohort_dict.get(k) == v for k, v in r.dimension_filters.items())"):
+        ("filter",
+         "scaling_rules are reconciled by _migrate_state as of this patch -- "
+         "before it they were NOT, and a rename silently made every rule match "
+         "nothing, which `count if rule is None` turned into an unscaled count"),
+    ("core/dsm_engine.py",
+     'if cohort_modes.get(ck) == "manual":'):
+        ("filter", "a miss means 'not manual', which is the survival default"),
 }
+
+#: Compute entry points. A `display_only` exemption whose enclosing function
+#: calls one of these is not display-only any more.
+_COMPUTE_CALLS = {
+    "DSMLCAPipeline", "ProjectedDSMLCAPipeline", "compute_material_flows",
+    "PersistentLCARunner", "AESAEngine", "compute_dependent_subsystem",
+    "calculate_archetype_lca", "calculate_activity_lca", "MonteCarloLCA",
+    "DynamicStockModel",
+}
+
+
+def _enclosing_function(tree: ast.AST, lineno: int) -> ast.AST | None:
+    best = None
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if n.lineno <= lineno <= (n.end_lineno or n.lineno):
+                if best is None or n.lineno > best.lineno:
+                    best = n
+    return best
+
+
+def _calls_compute(fn: ast.AST) -> set[str]:
+    names = {
+        getattr(c.func, "id", None) or getattr(c.func, "attr", None)
+        for c in ast.walk(fn) if isinstance(c, ast.Call)
+    }
+    return {n for n in names if n in _COMPUTE_CALLS}
 
 
 def _stmt_text(path: Path, lineno: int, span: int = 4) -> str:
@@ -522,14 +685,14 @@ def _stmt_text(path: Path, lineno: int, span: int = 4) -> str:
 
 
 def test_no_undeclared_lookup_default_in_a_calculation_path():
-    watched = [
-        "api/lca.py", "core/dsm_lca_engine.py", "core/bom_engine.py",
-        "core/material_flow_engine.py", "core/subsystem_engine.py",
-        "core/aesa_engine.py",
-    ]
     findings = []
-    for rel in watched:
-        for lineno, line in _default_sites(BACKEND / rel):
+    for f in _package_modules():
+        # `.as_posix()`, not `str()`: on Windows the latter yields
+        # `api\\bom.py` and every `_ALLOWED` key silently stops matching.
+        # The old hardcoded watchlist never converted a path, so the
+        # package walk is what introduced the platform dependency.
+        rel = f.relative_to(BACKEND).as_posix()
+        for lineno, line in _default_sites(f):
             if (rel, line) in _ALLOWED_DEFAULTS:
                 continue
             # a multi-line comprehension reports its first line; match the
@@ -548,6 +711,53 @@ def test_every_allowed_default_entry_still_exists():
     for (rel, line) in _ALLOWED_DEFAULTS:
         src = (BACKEND / rel).read_text(encoding="utf-8")
         assert line in src, f"{rel} no longer contains {line!r} — drop the entry"
+
+
+def test_every_exemption_states_a_category_and_a_reason():
+    for key, val in _ALLOWED_DEFAULTS.items():
+        cat, why = val
+        assert cat in {"guarded", "validated", "filter", "display_only"}, key
+        assert len(why) > 30, f"{key}: a reason, not a label"
+
+
+def test_a_display_only_exemption_really_does_not_compute():
+    """Turns "it doesn't compute" from an assumption into a check.
+
+    A heuristic, not a proof: an export path that started deriving numbers
+    would have to pull in a compute call to do it, and this fails when it does.
+
+    Deliberately at FUNCTION granularity. Module granularity was tried first
+    and is useless here -- `api/bom.py` imports the compute layer six times AND
+    hosts four of the five display-only sites, because it is a 3000-line module
+    holding both the dsm-lca endpoint and the export builders. The enclosing
+    function is the honest unit.
+    """
+    for (rel, line), (cat, _why) in _ALLOWED_DEFAULTS.items():
+        if cat != "display_only":
+            continue
+        src = (BACKEND / rel).read_text(encoding="utf-8")
+        lineno = next(
+            i for i, l in enumerate(src.splitlines(), 1) if line in l
+        )
+        fn = _enclosing_function(ast.parse(src), lineno)
+        assert fn is not None, f"{rel}:{lineno} has no enclosing function"
+        calls = _calls_compute(fn)
+        assert not calls, (
+            f"{rel}:{lineno} is exempted as display_only but its function "
+            f"{fn.name!r} now calls {sorted(calls)} — it computes, so the "
+            f"exemption no longer holds"
+        )
+
+
+def test_the_display_only_check_would_notice_a_computing_function():
+    """Anti-vacuity: it must actually fire on a function that computes."""
+    tree = ast.parse((BACKEND / "api" / "bom.py").read_text(encoding="utf-8"))
+    fn = next(
+        n for n in ast.walk(tree)
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and n.name == "run_dsm_lca"
+    )
+    assert _calls_compute(fn), "the heuristic cannot see a real compute call"
 
 
 def test_every_allowed_entry_still_exists():

@@ -2786,6 +2786,90 @@ engine — survives untouched, because it runs with levers not in play.
   stage root. Under warn-only they would not have failed, which is exactly why
   leaving them would have meant the next person read them as canonical.
 
+### The sweep walks the package. There is no watchlist.
+
+Both shapes ran against a named list of six modules. The base rate stayed
+non-zero across two widenings — the second found `material_flow_engine`'s two,
+the third found the scaling-rules migration — so scope stopped being a
+judgement call. `_package_modules()` is `BACKEND.rglob("*.py")`, and a new
+module is swept the day it lands.
+
+**The first package-wide run was 26 hits, 11 of them `@router.get(...)`** —
+route decorators matched because their PATH STRINGS mention the words the sweep
+watches for. That is a detector bug, not an exemption backlog; exempting them
+would have buried the real finding under boilerplate. Excluded by DECORATOR
+POSITION rather than receiver name, so it does not depend on the router
+variable being called `router`. 26 → 14.
+
+Final: **16 hits, 15 exempted, 1 real** — `scaling_rules` were not migrated.
+
+#### Exemptions carry a CATEGORY, and one of them is checked
+
+`guarded` (a raise or warn covers it), `validated` (checked at the write
+boundary), `filter` (a miss is the intended semantics), `display_only`
+(export/label resolution, derives no number).
+
+`display_only` was the weak one: "it doesn't compute" was a stated assumption
+that nothing verified, and an export that started deriving numbers would have
+silently invalidated it. It is now checked —
+`test_a_display_only_exemption_really_does_not_compute` asserts the enclosing
+FUNCTION calls nothing in `_COMPUTE_CALLS`.
+
+**Function granularity, not module.** Module was tried first and is useless
+here: `api/bom.py` imports the compute layer six times AND hosts four of the
+five display-only sites, because it is a 3000-line module holding both the
+dsm-lca endpoint and the export builders. A companion test pins that the check
+does fire on `run_dsm_lca`, so it cannot go vacuous.
+
+It is a heuristic, not a proof — a function could derive a number without
+calling a named entry point. It turns an assumption into something that breaks
+loudly in the common case, which is the honest claim for it.
+
+### Scaling rules were the one thing UI-hidden code cost us
+
+`DSMScalingRule.dimension_filters` sits in the same `_INHERITABLE_SLOTS` tuple
+as `mode_configs`, is filtered the same way (`cohort_dict.get(k) == v`), and
+was the only one of the seven that `_migrate_state` did not reconcile. A
+dimension rename left every rule matching nothing, and the call site is
+
+```python
+out[year][ck] = count if rule is None else self._resolve_rule(rule, count, year)
+```
+
+so a 1.4× growth rule quietly became 1.0×. **No user data was affected** — 593
+JSON files scanned, zero with non-empty `scaling_rules`.
+
+**It survived because no clicking reaches it.** The scaling-rules UI was
+removed on 2026-05-01 while the backend stayed live, so every hand-driven check
+missed it and only a package walk found it.
+
+#### The other UI-unreachable surfaces, audited
+
+Of 220 backend routes, **12 have no frontend caller**: five AESA reference-data
+GETs (`/boundary-sets/{id}`, `/multi-d-defaults`, `/sharing-data`,
+`/ssp-trajectories`, `/carbon-budget-options`), six subsystem manual-flow
+routes (upload/template/clear × inflows/outflows), and
+`POST /lca/calculate-archetype-trajectory`. **None carries either shape** —
+checked function by function, including `compute_manual_subsystem` behind the
+manual-flow routes. So scaling rules were the only one, and the rest are
+unreachable-but-clean rather than unswept.
+
+That list is worth keeping current: an endpoint with no UI caller gets no
+hand-testing, so the automated sweep is the only thing that reaches it.
+
+#### What NOT to do
+
+- **Don't reintroduce a watchlist.** Both sweeps walk the package. Adding a
+  name list back — even a longer one — restores the failure mode where scope is
+  something a person has to remember.
+- **Don't exempt a detector bug.** Route decorators were 11 of 26 hits; the fix
+  was excluding them structurally, not declaring them.
+- **Don't mark an exemption `display_only` without checking the function.** The
+  category is verified, so a wrong one fails rather than sitting there.
+- **Don't add a scenario slot without adding it to `_migrate_state`.**
+  `scaling_rules` was in `_INHERITABLE_SLOTS` and not in the migration for
+  months, which is exactly how a slot goes stale in silence.
+
 ### A stale reference and an empty match are not the same thing
 
 `filter_primary_stock` summed to 0.0 for both, and only one of them is

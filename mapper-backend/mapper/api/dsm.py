@@ -550,6 +550,47 @@ def _migrate_state(
     if orphaned_survival:
         warnings.append(f"Dropped {orphaned_survival} survival config(s) that referenced removed labels/dimensions.")
 
+    # Migrate scaling_rules (dim filters). Same shape as mode_configs above,
+    # and it sits in the SAME `_INHERITABLE_SLOTS` tuple -- it was simply
+    # skipped. `best_rule_for_cohort` matches on `cohort_dict.get(k) == v`, so
+    # a stale key silently matches nothing, and the caller then does
+    # `count if rule is None else ...` -- an unscaled count. A 1.4x growth rule
+    # became 1.0x with no warning. Missed for as long as it was because the
+    # scaling-rules UI is hidden (2026-05-01) while the backend stays live, so
+    # no clicking reaches it.
+    orphaned_rules = 0
+    for scenario in state.scenarios:
+        rules = getattr(scenario, "scaling_rules", None)
+        if not rules:
+            continue
+        kept: list = []
+        for rule in rules:
+            new_filters: dict[str, str] = {}
+            keep = True
+            for dim_name, label in (rule.dimension_filters or {}).items():
+                if dim_name not in new_by_name:
+                    keep = False
+                    break
+                tmap = label_trans.get(dim_name, {})
+                new_label = tmap.get(
+                    label, label if label in new_by_name[dim_name].labels else None
+                )
+                if new_label is None:
+                    keep = False
+                    break
+                new_filters[dim_name] = new_label
+            if keep:
+                rule.dimension_filters = new_filters
+                kept.append(rule)
+            else:
+                orphaned_rules += 1
+        scenario.scaling_rules = kept
+    if orphaned_rules:
+        warnings.append(
+            f"Dropped {orphaned_rules} scaling rule(s) that referenced removed "
+            f"labels/dimensions."
+        )
+
     return state, warnings, label_trans
 
 

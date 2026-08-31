@@ -4628,7 +4628,15 @@ export interface ArchetypeLCAMethodDistribution {
   p25: number
   p75: number
   p97_5: number
+  /** Squared geometric standard deviation, exp(2σ) — ecoinvent's convention and
+   *  the same definition the pedigree input side uses, so an output GSD² and a
+   *  scored-input GSD² are the same statistic. The 95% interval spans
+   *  APPROXIMATELY median ÷ and × this; for the exact figure use
+   *  `dispersion_95`. */
   gsd2: number
+  /** Empirical upper 95% multiplier, p97.5 / median. Assumes nothing about the
+   *  shape. Optional so a result stored before the field existed still parses. */
+  dispersion_95?: number
   n_iterations: number
   seed: number
   samples?: number[] | null

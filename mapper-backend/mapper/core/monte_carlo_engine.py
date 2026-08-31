@@ -31,7 +31,10 @@ Step 1 before step 2 is what keeps a shared driver correlated. ``d_annual``
 appears in many WP5 expressions; if those rows were each drawn independently
 the shared driver averages away and the reported spread NARROWS. Measured on
 PHEV-NMC811 at the same marginal spread: 35 independent row draws gave
-GSD^2 1.273, one shared driver gave 1.415. Under-reporting uncertainty is the
+GSD^2 1.2793, one shared driver gave 1.4251 -- originally measured as 1.273
+and 1.415 under the pre-2026-08-31 exp(1.96*sigma), restated at exp(2*sigma).
+The originals stay visible because they are what that patch measured; the gap
+they demonstrate is unchanged either way. Under-reporting uncertainty is the
 one direction that cannot be defended in a paper.
 
 Step 3's "literal rows only" is the same rule from the other side. An
@@ -251,24 +254,48 @@ def collect_param_draws(table: Any, referenced: set[str]) -> list[_ParamDraw]:
 def summarize(samples: Sequence[float]) -> dict[str, float]:
     """Percentile summary of one indicator's draws.
 
-    ``gsd2`` is computed in log space and only when every draw is positive.
-    A non-positive draw is legitimate for an indicator with credits (an
-    avoided-burden row can push a score negative), and ``log`` of it is not;
-    reporting 0.0 there is honest, where a nan would propagate into the UI.
+    TWO dispersion figures, because they are two different statistics and one
+    name was being used for both:
+
+    ``gsd2`` is the squared geometric standard deviation, ``exp(2*sigma)``.
+    That constant is not a choice. It is ecoinvent's convention -- recoverable
+    from the data, since ``scale**2 - scale_without_pedigree**2`` on a
+    single-score exchange implies a sigma for which ``exp(2*sigma)`` reproduces
+    the published pedigree factor and ``exp(1.96*sigma)`` does not -- and it is
+    what ``pedigree.gsd2_from_sigma`` uses on the INPUT side. One definition
+    across both halves of a run is the whole point; ``tests/
+    test_gsd2_one_definition.py`` pins it.
+
+    ``dispersion_95`` is the EMPIRICAL upper 95% multiplier, ``p97.5 / median``,
+    read straight off the percentiles above. It assumes nothing about the
+    shape. This is what the old ``exp(1.96*sigma)`` was reaching for and got
+    wrong twice over: it was not GSD2 (its label), and it was not the
+    dispersion either, because a sum of lognormals is not lognormal. Measured
+    on B0 at 300 iterations it read 1.41736 against a true GSD2 of 1.42748 and
+    an actual p97.5/median of 1.51082 -- 6.6% below the thing it approximated,
+    which was already sitting two fields away.
+
+    Both are computed in log space / from positive draws only. A non-positive
+    draw is legitimate for an indicator with credits (an avoided-burden row can
+    push a score negative), and ``log`` of it is not; reporting 0.0 there is
+    honest, where a nan would propagate into the UI.
     """
     a = np.asarray(samples, dtype=float)
     q = np.percentile(a, [2.5, 25, 50, 75, 97.5])
     gsd2 = 0.0
     if a.size and np.all(a > 0):
-        gsd2 = float(np.exp(1.96 * np.std(np.log(a))))
+        gsd2 = float(np.exp(2.0 * np.std(np.log(a))))
+    median, p97_5 = float(q[2]), float(q[4])
+    dispersion_95 = (p97_5 / median) if median > 0 else 0.0
     return {
         "p2_5": float(q[0]),
         "p25": float(q[1]),
-        "median": float(q[2]),
+        "median": median,
         "p75": float(q[3]),
-        "p97_5": float(q[4]),
+        "p97_5": p97_5,
         "mean": float(a.mean()) if a.size else 0.0,
         "gsd2": gsd2,
+        "dispersion_95": dispersion_95,
     }
 
 

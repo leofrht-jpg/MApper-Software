@@ -61,20 +61,37 @@ def test_the_sheets():
     assert wb.sheetnames == ["Summary", "Distributions", "Pairwise differences", "Samples"]
 
 
+def _data_rows(ws) -> list[list]:
+    """Data rows only, stopping at the blank line before the trailing notes.
+
+    The Distributions sheet ends with a blank row and then the GSD2 /
+    dispersion / migration definitions, so that a reader of the workbook has
+    the formulas beside the numbers. Reading to the last populated row would
+    swallow them as data.
+    """
+    out = []
+    for r in ws.iter_rows(min_row=2):
+        vals = [c.value for c in r]
+        if all(v is None for v in vals):
+            break
+        out.append(vals)
+    return out
+
+
 def test_distributions_carry_an_Item_column_beside_Sensitivity_case():
     """Matching how every other multi-axis export carries its discriminator."""
     wb = _build_monte_carlo_multi_workbook(_result())
     hdr = [c.value for c in wb["Distributions"][1]]
     assert hdr[0] == "Item"
     assert hdr[1] == "Sensitivity case"
-    rows = [[c.value for c in r] for r in wb["Distributions"].iter_rows(min_row=2)]
+    rows = _data_rows(wb["Distributions"])
     assert [r[0] for r in rows] == ["A - Circular EV", "A0 - Reference EV"]
     assert all(r[1] == "Base" for r in rows)
 
 
 def test_items_keep_comparison_order():
     wb = _build_monte_carlo_multi_workbook(_result())
-    rows = [[c.value for c in r] for r in wb["Distributions"].iter_rows(min_row=2)]
+    rows = _data_rows(wb["Distributions"])
     assert rows[0][0] == "A - Circular EV"       # not sorted by value or name
 
 

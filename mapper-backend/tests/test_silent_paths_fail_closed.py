@@ -278,6 +278,22 @@ def _skip_sites(path: Path) -> list[tuple[int, str, str]]:
     return out
 
 
+def test_module_keys_are_posix_on_every_platform():
+    """The package walk introduced a platform dependency the watchlist did not.
+
+    `str(Path.relative_to(...))` gives `api\\bom.py` on Windows, so every
+    `_ALLOWED` / `_ALLOWED_DEFAULTS` key stopped matching and CI turned the
+    fifteen declared exemptions into fifteen failures. Keys are posix; the
+    walk must produce posix.
+    """
+    for f in _package_modules()[:20]:
+        rel = f.relative_to(BACKEND).as_posix()
+        assert "\\" not in rel, rel
+    # and the declared keys are posix too
+    for (rel, _c) in list(_ALLOWED) + list(_ALLOWED_DEFAULTS):
+        assert "\\" not in rel, rel
+
+
 def _package_modules() -> list[Path]:
     """Every module in the package. THERE IS NO WATCHLIST.
 
@@ -295,7 +311,11 @@ def test_no_calculation_path_silently_continues_past_a_missing_input():
     raise or warn -- never be stepped over."""
     findings = []
     for f in _package_modules():
-        rel = str(f.relative_to(BACKEND))
+        # `.as_posix()`, not `str()`: on Windows the latter yields
+        # `api\\bom.py` and every `_ALLOWED` key silently stops matching.
+        # The old hardcoded watchlist never converted a path, so the
+        # package walk is what introduced the platform dependency.
+        rel = f.relative_to(BACKEND).as_posix()
         for lineno, check, _ in _skip_sites(f):
             if (rel, check) in _ALLOWED:
                 continue
@@ -667,7 +687,11 @@ def _stmt_text(path: Path, lineno: int, span: int = 4) -> str:
 def test_no_undeclared_lookup_default_in_a_calculation_path():
     findings = []
     for f in _package_modules():
-        rel = str(f.relative_to(BACKEND))
+        # `.as_posix()`, not `str()`: on Windows the latter yields
+        # `api\\bom.py` and every `_ALLOWED` key silently stops matching.
+        # The old hardcoded watchlist never converted a path, so the
+        # package walk is what introduced the platform dependency.
+        rel = f.relative_to(BACKEND).as_posix()
         for lineno, line in _default_sites(f):
             if (rel, line) in _ALLOWED_DEFAULTS:
                 continue

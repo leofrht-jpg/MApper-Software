@@ -31,6 +31,7 @@ const ERROR_TYPE_LABELS: Record<ValidationErrorType, string> = {
   database_no_code: 'Database without code',
   name_mismatch: 'Name mismatch',
   location_mismatch: 'Location mismatch',
+  unit_mismatch: 'Unit mismatch',
 }
 
 export function ValidationReportPanel({ report, archetypeName, onAccept, onReupload }: Props) {

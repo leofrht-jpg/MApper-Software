@@ -54,6 +54,9 @@ class BOMValidationRow:
     code: str | None                    # raw value from "Ecoinvent Code"
     ecoinvent_name: str = ""            # raw "Ecoinvent Name", for warning compare
     ecoinvent_location: str = ""        # raw "Ecoinvent Location", ditto
+    unit: str = ""                      # BOM unit, compared to the activity's
+                                        # reference unit. Empty = check skipped,
+                                        # so pre-existing callers are unaffected.
 
 
 @dataclass
@@ -69,6 +72,41 @@ class _ValidationContext:
 
 
 _EXPECTED_CODE_LENGTH = 32  # ecoinvent activity codes are 32-char hex strings
+
+# Spelling variants for ONE quantity kind. A BOM writes `kg` where ecoinvent
+# writes `kilogram`; that is not a mismatch and firing on it would bury the
+# real ones -- MAp-test alone has 870 kg/kilogram pairs against the 3 genuine
+# errors this check was written for. Anything not listed is compared verbatim,
+# so an unknown unit pair is reported rather than silently accepted.
+_UNIT_ALIASES: dict[str, str] = {
+    "kg": "kilogram", "kilogram": "kilogram", "kilograms": "kilogram",
+    "g": "gram", "gram": "gram", "grams": "gram",
+    "t": "metric ton", "ton": "metric ton", "tonne": "metric ton",
+    "metric ton": "metric ton",
+    "kwh": "kilowatt hour", "kilowatt hour": "kilowatt hour",
+    "kilowatt-hour": "kilowatt hour", "kilowatt_hour": "kilowatt hour",
+    "mj": "megajoule", "megajoule": "megajoule",
+    "tkm": "ton kilometer", "ton kilometer": "ton kilometer",
+    "ton-kilometer": "ton kilometer", "tonne kilometer": "ton kilometer",
+    "km": "kilometer", "kilometer": "kilometer", "kilometre": "kilometer",
+    "m": "meter", "meter": "meter", "metre": "meter",
+    "m2": "square meter", "square meter": "square meter",
+    "square metre": "square meter",
+    "m2a": "square meter-year", "square meter-year": "square meter-year",
+    "m3": "cubic meter", "cubic meter": "cubic meter",
+    "cubic metre": "cubic meter",
+    "l": "litre", "litre": "litre", "liter": "litre",
+    "h": "hour", "hour": "hour", "hours": "hour",
+    "unit": "unit", "units": "unit", "p": "unit", "piece": "unit",
+    "item": "unit", "items": "unit",
+    "kbq": "kilo becquerel", "kilo becquerel": "kilo becquerel",
+}
+
+
+def _canonical_unit(u: str) -> str:
+    """Fold a unit onto its quantity kind. Unknown units fold to themselves."""
+    k = (u or "").strip().lower()
+    return _UNIT_ALIASES.get(k, k)
 
 
 # ── Public API ───────────────────────────────────────────────────────────────
@@ -176,6 +214,29 @@ def validate_bom(
             ))
             row_had_warning = True
 
+        # ── Unit compatibility (warning, not an error) ──────────────────
+        # A quantity goes into the demand vector with no dimensional check,
+        # so a kg amount against a per-unit activity is charged verbatim:
+        # MAp-test's three charger `Electronic waste treatment` rows asked
+        # for 7, 18.5 and 180 whole-vehicle dismantlings. Nothing raised.
+        #
+        # A WARNING and not an error, deliberately. The `(db, code)` pair
+        # still resolves, so the row is computable and refusing to compute
+        # would strand every project carrying one -- the same reasoning that
+        # keeps name_mismatch a warning. It is surfaced, not enforced.
+        actual_unit = (activity.get("unit") or "").strip()
+        bom_unit = (row.unit or "").strip()
+        if bom_unit and actual_unit and _canonical_unit(bom_unit) != _canonical_unit(actual_unit):
+            ctx.issues.append(_issue(
+                row, "warning", "unit_mismatch", bom_unit,
+                f"Row {row.row_idx} ({row.archetype}, {row.stage}, {row.name}): "
+                f"BOM unit '{bom_unit}' is a different quantity from the "
+                f"reference unit '{actual_unit}' of '{actual_name}'. The amount "
+                f"is used verbatim with no conversion, so this row may be "
+                f"charging the wrong quantity.",
+            ))
+            row_had_warning = True
+
         if row_had_warning:
             warning_row_keys.add(key)
         else:
@@ -259,6 +320,7 @@ def _resolve_code(
         result = {
             "name": act.get("name", "") or "",
             "location": act.get("location", "") or "",
+            "unit": act.get("unit", "") or "",
         }
     except Exception:
         result = None

@@ -2663,9 +2663,38 @@ fast).
 - **Error** (blocks compute): `code_truncated`, `code_not_found`,
   `database_missing`, `code_no_database`, `database_no_code`. Compute is
   refused because we cannot resolve the row to an ecoinvent activity.
-- **Warning** (allowed, surfaced): `name_mismatch`, `location_mismatch`.
-  The `(db, code)` tuple still resolves to a real activity — the
-  user-supplied name/location simply doesn't match. We trust the code.
+- **Warning** (allowed, surfaced): `name_mismatch`, `location_mismatch`,
+  `unit_mismatch`. The `(db, code)` tuple still resolves to a real activity —
+  the user-supplied annotation simply doesn't match. We trust the code.
+
+### `unit_mismatch` — the BOM unit is a different QUANTITY
+
+Quantities reach the demand vector with **no dimensional check**:
+`_build_archetype_source_demand` does `total_demand[key] += m.quantity *
+stage_amt` and nothing compares the BOM's unit to the activity's reference
+unit. So a kg amount against a per-unit activity is charged as that many
+units, silently. MAp-test's three charger `Electronic waste treatment` rows
+carried 7, 18.5 and 180 **kg** against `market for manual dismantling of used
+electric passenger car`, whose reference unit is **one vehicle** — 180 whole-EV
+dismantlings for one DC charger's end of life. Nothing raised, warned or
+logged, and a full audit of *stored* `validation_status` showed the project
+100 % clean.
+
+**The check must be quiet about SPELLING.** A BOM writes `kg` where ecoinvent
+writes `kilogram`. MAp-test has 870 such pairs against 3 genuine errors, so a
+verbatim string compare would bury the signal it exists to raise.
+`_canonical_unit` folds a unit onto its quantity kind through `_UNIT_ALIASES`;
+an unlisted unit folds to **itself**, so an unrecognised pair is reported
+rather than waved through.
+
+**A warning, not an error.** The `(db, code)` pair still resolves, so the row
+is computable — and making it an error would refuse to compute for every
+project already carrying one, including the project the check was written for.
+Same reasoning that keeps `name_mismatch` a warning.
+
+**It is upload-time, like the rest of the validator**, so it does not catch a
+row relinked in-app afterwards. That is the existing design (see *Don't re-run
+validation on every compute*), not a gap this check introduces.
 
 Validation order is structural → database existence → code resolution →
 name/location consistency. Cheapest checks first; later checks short-circuit
@@ -2706,9 +2735,19 @@ stale cache would silently serve wrong answers.
 - **Don't lift the per-call `(db, code)` cache to module scope.** It would
   serve stale data across project switches, premise database installs,
   and ecoinvent re-imports.
-- **Don't add `name_mismatch`/`location_mismatch` to the error set.** A
-  resolved code is the source of truth; a mismatched display name is a
-  data-quality signal, not a blocker.
+- **Don't add `name_mismatch`/`location_mismatch`/`unit_mismatch` to the error
+  set.** A resolved code is the source of truth; a mismatched display name is a
+  data-quality signal, not a blocker. `unit_mismatch` in particular would
+  refuse to compute for any project already carrying one — which is every
+  project this check was written to help.
+- **Don't compare units verbatim.** Fold through `_canonical_unit` first, or
+  the 870 legitimate `kg`/`kilogram` pairs in MAp-test drown the 3 real
+  findings. And don't make an unknown unit fold to a wildcard — unlisted folds
+  to itself so a genuinely different pair still reports.
+- **Don't reach for a unit CONVERSION.** The check reports; it never rescales a
+  quantity. A silent conversion would be a second invisible transformation on
+  top of the one being surfaced, and the right amount for a relinked row is a
+  modelling decision, not an arithmetic one.
 - **Don't validate against prospective databases at upload time.** The
   validator runs against the active bw2 project's installed databases.
   pLCA-generated databases are produced post-upload, on demand. Cross-DB

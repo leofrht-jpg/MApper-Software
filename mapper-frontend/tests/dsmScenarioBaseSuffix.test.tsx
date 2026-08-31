@@ -70,7 +70,7 @@ describe('source-level invariant: no "(base)" / "(Base)" suffix construction', (
     for (const f of files) {
       const text = await fs.readFile(f, 'utf-8')
       if (pattern.test(text)) {
-        const rel = path.relative(srcDir, f)
+        const rel = relPosix(srcDir, f)
         offenders.push(rel)
       }
     }

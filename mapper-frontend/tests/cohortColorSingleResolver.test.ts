@@ -9,7 +9,11 @@
 
 import { describe, it, expect } from 'vitest'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
-import { join, relative, resolve } from 'node:path'
+import { join, resolve } from 'node:path'
+
+import { relPosix } from './helpers/relPosix'
+
+
 
 // Cohort/dim colors must resolve through ONE place: `useDSMSystemColors` in
 // `utils/dsmCohortColors.ts`. Calling `useChartColors` directly bypasses the
@@ -89,10 +93,10 @@ describe('cohort and dim colors resolve in one place', () => {
 
   it('nothing outside the named exceptions calls useChartColors directly', () => {
     const offenders = files.filter((f) => {
-      const rel = relative(SRC, f)
+      const rel = relPosix(SRC, f)
       if (rel in ALLOWED) return false
       return /\buseChartColors\s*\(/.test(stripComments(readFileSync(f, 'utf-8')))
-    }).map((f) => relative(SRC, f))
+    }).map((f) => relPosix(SRC, f))
 
     expect(offenders, 'call useChartColors directly and are not in the ALLOWED '
       + 'list. Use useDSMSystemColors so per-cohort assignments apply — or add '

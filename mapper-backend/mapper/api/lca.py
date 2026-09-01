@@ -87,6 +87,11 @@ from mapper.models.schemas import (
 from mapper.ws.progress import stream_task_progress
 
 from mapper.api.cohort_export import excel_response
+from mapper.core.run_provenance import (
+    provenance_rows as _provenance_rows,
+    stamp as _run_stamp,
+    use_phase_basis as _use_phase_basis,
+)
 
 
 router = APIRouter()
@@ -311,7 +316,9 @@ async def calculate_activity_lca(body: ActivityLCARequest) -> ActivityLCAResult:
         ))
 
     elapsed = round(time.perf_counter() - t0, 2)
-    return ActivityLCAResult(results=results, elapsed_seconds=elapsed)
+    return ActivityLCAResult(
+        results=results, elapsed_seconds=elapsed, **_run_stamp()
+    )
 
 
 # ── Archetype LCA Calculator ────────────────────────────────────────────────
@@ -682,6 +689,9 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
     elapsed = round(time.perf_counter() - t0, 2)
 
     return ArchetypeLCACalculateResult(
+        **_run_stamp(),
+        basis_amounts=body.basis_amounts,
+        use_phase_basis=_use_phase_basis(),
         archetype_id=body.archetype_id,
         archetype_name=arc.name,
         scope=body.scope,
@@ -847,6 +857,10 @@ async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> Ar
 
     elapsed = round(time.perf_counter() - t0, 2)
     return ArchetypeTrajectoryResult(
+        **_run_stamp(),
+        stage_amounts=body.stage_amounts,
+        basis_amounts=body.basis_amounts,
+        use_phase_basis=_use_phase_basis(),
         archetype_id=body.archetype_id,
         archetype_name=bundle.arc.name,
         scope=body.scope,
@@ -898,7 +912,10 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
     ws = wb.active
     ws.title = "Summary"
     rows = [
-        ("Generated", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(
+            data[0].computed_at if data else None,
+            data[0].mapper_version if data else None,
+        ),
     ]
     for d in data:
         rows.append(("", ""))
@@ -1798,7 +1815,8 @@ def _build_contribution_workbook(result: ContributionAnalysisResult):
     ws.title = "Summary"
     ws.append(["Field", "Value"])
     _style_header(ws, 2)
-    ws.append(["Generated", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")])
+    for _lbl, _val in _provenance_rows(result.computed_at, result.mapper_version):
+        ws.append([_lbl, _val])
     ws.append(["Target type", result.target_type])
     ws.append(["Target", result.target_label])
     ws.append(["Scope", result.scope])
@@ -1940,7 +1958,8 @@ def _build_multi_year_workbook(result: MultiYearContributionResult):
     ws.title = "Summary"
     ws.append(["Field", "Value"])
     _style_header(ws, 2)
-    ws.append(["Generated", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")])
+    for _lbl, _val in _provenance_rows(result.computed_at, result.mapper_version):
+        ws.append([_lbl, _val])
     ws.append(["Target type", result.target_type])
     ws.append(["Target", result.target_label])
     ws.append(["Method", method_label])
@@ -2271,6 +2290,7 @@ async def calculate_multi_product_lca(body: MultiProductLCARequest) -> MultiProd
 
     elapsed = round(time.perf_counter() - t0, 2)
     return MultiProductLCAResult(
+        **_run_stamp(),
         items=results,
         elapsed_seconds=elapsed,
         success_count=success_count,

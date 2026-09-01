@@ -33,6 +33,7 @@ from mapper.core.bom_engine import (
     stages_in_scope,
     FlattenedMaterial,
 )
+from mapper.core.run_provenance import stamp as _run_stamp
 
 
 _ATOMIC_SCOPES = ("inflows", "stock", "outflows")
@@ -318,6 +319,7 @@ def compute_material_flows(
     actual_end = max(all_years) if all_years else (year_end or 0)
 
     return MaterialFlowResult(
+        **_run_stamp(),
         scope=scope,
         stages_included=stages,
         year_start=actual_start,

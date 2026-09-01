@@ -129,6 +129,10 @@ def _all_folder_paths(project: str | None = None) -> list[str]:
 
 
 from mapper.api.cohort_export import excel_response
+from mapper.core.run_provenance import (
+    provenance_rows as _provenance_rows,
+    stamp as _run_stamp,
+)
 
 
 router = APIRouter(tags=["bom"])
@@ -1425,6 +1429,12 @@ def _build_mfa_lca_workbook(
     sim_result=None,
     system_id: str | None = None,
     subsystems: list | None = None,
+    #: The RESULT's own compute stamp. ``results`` here are per-method
+    #: ``DSMLCAResult`` sub-results, which carry no stamp of their own --
+    #: duplicating one timestamp across N of them would be noise -- so the
+    #: caller, which holds the ``ImpactAssessmentResult``, threads it in.
+    computed_at: str | None = None,
+    mapper_version: str | None = None,
 ) -> Workbook:
     """Build a comprehensive XLSX workbook for Impact Assessment results.
     Designed for easy analysis in Excel (pivot tables, filtering).
@@ -1567,7 +1577,7 @@ def _build_mfa_lca_workbook(
         ("Cohorts", len(cohort_keys)),
         ("Archetypes", len(arc_names_set)),
         ("Subsystems included", ", ".join(contributing_sub_names) if contributing_sub_names else "None"),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(computed_at, mapper_version),
     ]
     if elapsed_seconds is not None:
         m, s = divmod(int(elapsed_seconds), 60)
@@ -1904,6 +1914,8 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
         sim_result=sim,
         system_id=system_id,
         subsystems=sub_export,
+        # This route computes and exports in one call, so the stamp is now.
+        **_run_stamp(),
     )
     scope = results[0].scope
     # Subsystems that actually contributed cohorts to the aggregated results —
@@ -2109,6 +2121,7 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
             bucket[yr.year] = bucket.get(yr.year, 0.0) + float(count)
 
     return MaterialFlowResult(
+        **_run_stamp(),
         scope=primary.scope,
         stages_included=stages_out,
         year_start=year_min,

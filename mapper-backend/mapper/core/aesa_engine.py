@@ -738,6 +738,13 @@ def single_product_to_impact_result(
         for m in result.results
     ]
     return ImpactAssessmentResult(
+        # CARRIED THROUGH, not re-stamped. This is an ADAPTER -- it reshapes a
+        # result that was already computed -- so stamping ``now()`` here would
+        # be the same defect as the exports stamping the export date: the
+        # adapted result would claim to have been computed at the moment it was
+        # reshaped for AESA, which can be days later.
+        computed_at=result.computed_at,
+        mapper_version=result.mapper_version,
         task_id="single-product",
         meta=ImpactAssessmentMeta(
             mode="static",
@@ -827,7 +834,15 @@ def prospective_single_product_to_impact_result(
         ))
 
     scope = dsm_results[0].scope if dsm_results else "all"
+    # CARRIED THROUGH, not re-stamped -- see the static adapter. A trajectory
+    # is N per-year results computed in ONE run, so the earliest stamp is the
+    # honest answer for when that run happened.
+    _stamps = sorted(r.computed_at for _, r in points if r.computed_at)
     return ImpactAssessmentResult(
+        computed_at=_stamps[0] if _stamps else None,
+        mapper_version=next(
+            (r.mapper_version for _, r in points if r.mapper_version), None
+        ),
         task_id="single-product",
         meta=ImpactAssessmentMeta(
             mode="projected",

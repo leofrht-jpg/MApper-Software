@@ -8249,6 +8249,78 @@ pick. 6/6 runs deterministic afterwards.
 - **Don't order a test fixture on database iteration order.** It varies between
   bw2 sessions. Sort explicitly.
 
+## A result records when it was computed. The export reads it.
+
+Ten workbook builders stamped `datetime.now()` on a row labelled "Calculation
+date" or "Generated". That is the **export** date — re-export last week's
+result and the workbook claimed it was calculated today. A wrong date in a file
+attached to a paper is worse than a missing one, and the builders had nothing
+better to write because no result carried a compute stamp.
+
+`computed_at` (ISO-8601 UTC) + `mapper_version` now ride on every
+backend-produced result, stamped at compute time via
+`mapper/core/run_provenance.py`. The two contribution results have carried them
+since they shipped (`to_persistable_dict` is the documented "archive this for
+reproducibility" shape) — this generalises that precedent rather than inventing
+a second convention.
+
+**An old stored result has `None`, and a builder writes "not recorded" — never
+`now()`.** The fallback IS the bug. A result computed before this shipped
+genuinely does not know when it ran; saying so is honest, and substituting
+today's date reintroduces the defect where it is hardest to notice.
+
+**Stamp the innermost backend-produced result; envelopes derive.**
+`MultiParamImpactResult`, `MultiDSMImpactResult` and `MultiPairedImpactResult`
+are assembled by the FRONTEND — constructed nowhere in the backend — so
+`_prov_from_envelope` reads the stamp off an inner `ImpactAssessmentResult`
+(earliest of the fan-out). Trusting a client to supply a compute timestamp
+would make the field unverifiable at exactly the point it is load-bearing.
+
+**Adapters carry through; they do not re-stamp.**
+`single_product_to_impact_result` and
+`prospective_single_product_to_impact_result` RESHAPE an already-computed
+result for AESA. Stamping `now()` there is the same defect one layer in — the
+adapted result would claim to have been computed at the moment it was reshaped,
+possibly days later. The prospective adapter takes N per-year results from one
+run and uses the earliest.
+
+### The multipliers, and the multi-MC
+
+`basis_amounts` was never echoed on any result, though it is load-bearing on
+the NUMBER — `flatten_root_with_amounts` uses it as the per-unit/per-year
+multiplier, so a lifetime-15 run and a 1-year run differ 15× on the annual
+stages. Its companion `stage_amounts` **was** echoed, so a result recorded half
+the multiplier. Both now ride, together with **`use_phase_basis`**: the
+multiplier alone is ambiguous, because under `life_cycle` the BOM already holds
+whole-life quantities and it does not apply at all.
+
+`MonteCarloMultiResult` gained `scored_inputs` + the scored counts + the
+multipliers, matching its single-item sibling. The paired path SAMPLES the
+foreground as of the foreground patch, so a run that does not record WHAT was
+scored is unreproducible in exactly the mode where the scoring decides the
+answer. Row draws are per item (name-prefixed with the item); the parameter
+draw is shared, so it is recorded once.
+
+#### What NOT to do
+
+- **Don't write `datetime.now()` into a row a reader will take as the
+  calculation date.** `test_no_builder_stamps_the_export_date_as_the_calculation_date`
+  sweeps the package for it. Read the result's `computed_at` and render it with
+  `provenance_rows`.
+- **Don't fall back to `now()` when `computed_at` is None.** "not recorded" is
+  the answer. The fallback is the original bug.
+- **Don't stamp in an adapter.** It reshapes; it does not compute.
+- **Don't let a frontend-assembled envelope supply its own timestamp.** Derive
+  it from an inner backend-produced result.
+- **Don't echo one half of a multiplier pair.** `stage_amounts` without
+  `basis_amounts` was exactly that, and `basis_amounts` without
+  `use_phase_basis` would be the same mistake again.
+- **The detector is AST-based, not a line grep.** The first version matched
+  `run_provenance.py`'s own docstring, which DESCRIBES the defect. Exempting
+  that module would have hidden the next real site in it — the fix was matching
+  `datetime.now()` as CODE, the same structural-not-declarative rule the route
+  decorators needed.
+
 ## A sensitivity case name is CHECKED, once, at every boundary
 
 `ParameterTable.resolve` falls through to `base_value` when the requested

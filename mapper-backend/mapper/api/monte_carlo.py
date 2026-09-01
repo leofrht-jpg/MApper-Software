@@ -59,6 +59,7 @@ from mapper.models.schemas import (
     VarianceContributor,
 )
 from mapper.core.content_hash import hashes_for_ids as _content_hashes
+from mapper.core.database_fingerprint import fingerprint as _fingerprint
 from mapper.core.run_provenance import (
     stamp as _run_stamp,
     use_phase_basis as _use_phase_basis,
@@ -338,6 +339,9 @@ def _run_monte_carlo(
 
     return MonteCarloResult(
         **_run_stamp(),
+        data_fingerprint=_fingerprint(
+            [body.compute_database], method_tuples
+        ),
         **_content_hashes([body.archetype_id]),
         stage_amounts=body.stage_amounts,
         basis_amounts=body.basis_amounts,
@@ -776,6 +780,9 @@ def _run_monte_carlo_multi(
 
     return MonteCarloMultiResult(
         **_run_stamp(),
+        data_fingerprint=_fingerprint(
+            [body.compute_database], method_tuples
+        ),
         **_content_hashes(body.archetype_ids),
         scored_inputs=scored,
         rows_with_uncertainty=rows_total,

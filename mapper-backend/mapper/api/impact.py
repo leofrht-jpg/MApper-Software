@@ -100,6 +100,11 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 from mapper.api.cohort_export import excel_response
 from mapper.core.content_hash import mismatch_rows_for_ids as _hash_mismatch_rows
+from mapper.core.database_fingerprint import (
+    LIMITS_NOTE as _FP_LIMITS,
+    fingerprint as _fingerprint,
+    mismatch_rows as _fp_mismatch_rows,
+)
 from mapper.core.run_provenance import (
     provenance_rows as _provenance_rows,
     stamp as _run_stamp,
@@ -2671,10 +2676,24 @@ def _build_single_product_static_workbook(
         getattr(primary, "bom_hashes", None),
         getattr(primary, "parameter_table_hash", None),
     )
+    # Same treatment for the databases and LCIA methods, which are named by
+    # MUTABLE strings: premise regenerates in place and the Method Library
+    # installs/uninstalls at runtime.
+    _mm = list(_mm) + _fp_mismatch_rows(
+        getattr(primary, "data_fingerprint", None),
+        _fingerprint(
+            [primary.compute_database],
+            [tuple(m.method) for m in (primary.results or []) if getattr(m, "method", None)],
+        ),
+    )
     if _mm:
         cfg_rows.append(("", ""))
         cfg_rows.append(("REPRODUCIBILITY WARNING", ""))
         cfg_rows.extend(_mm)
+        # The caveat travels WITH the warning. A fingerprint that overstates
+        # itself is worse than none, and a reader of the file cannot see the
+        # docstring.
+        cfg_rows.append(("", _FP_LIMITS))
 
     for label, value in cfg_rows:
         ws_cfg.append([label, value])

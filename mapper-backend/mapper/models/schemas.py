@@ -388,6 +388,10 @@ class ArchetypeLCACalculateResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 # ── Monte Carlo uncertainty propagation (single-product) ─────────────────────
@@ -522,6 +526,10 @@ class MonteCarloResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 class MonteCarloStartResponse(BaseModel):
@@ -701,6 +709,10 @@ class MonteCarloMultiResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 class MonteCarloMultiExportRequest(BaseModel):
@@ -777,6 +789,10 @@ class ArchetypeTrajectoryResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 # ── Multi-Product LCA Comparison (Patch 4AG.1) ─────────────────────────────────
@@ -897,6 +913,10 @@ class MultiProductLCAResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 class StageAmountsMeta(BaseModel):

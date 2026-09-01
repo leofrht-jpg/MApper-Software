@@ -8026,6 +8026,91 @@ name is not the same as *gating* on it. The one conditional that legitimately
 wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
 resolve-once vs resolve-per-year — is pinned unflagged by its own test.
 
+## Nothing cleared the parameter registry between tests
+
+`parameters._tables` is a module-level `dict[project -> ParameterTable]`, and
+until `tests/conftest.py` existed **there was no conftest at all** — no
+teardown, no autouse fixture, nothing. A table installed by test *n* was still
+there for test *n+40*, so a fixture could name a sensitivity case it never
+registered and another test's table would quietly satisfy it. Three did. The
+full suite passed on all three locally; CI failed on one.
+
+`tests/conftest.py` now clears that ONE registry on both setup and teardown.
+Measured before landing: **zero breakage** (1357 passed), and **load-bearing** —
+reverting one of the three fixture corrections is invisible without it (1357
+passed) and caught with it.
+
+**Twenty other module-level registries share the property** and are
+deliberately NOT cleared: `bom._archetypes / _cohort_mappings /
+_dsm_lca_results`, `dsm._systems / _states / _results / _multi_results`,
+`subsystems._subsystems / _subsystem_results`, `project_settings._settings`,
+`lca._lca_results / _contribution_cache`, the five task registries,
+`tasks._events / _started_at`, `core.tasks._tasks`, `bw2_wrapper._distinct_cache`.
+Clearing all twenty-one also breaks nothing but costs ~25 % suite time, and the
+standalone sweep proves none is leaned on. (`material_pedigree_storage` is
+disk-only and has no registry at all.)
+
+Merge-vs-replace is a **production** distinction — it is why `_prune_registries`
+exists — and NOT the one that matters here. `install_parameters` replaces,
+`dsm.hydrate_from_disk` merges; no test calls either as teardown, so all
+twenty-one leaked equally. The property is "nothing clears it".
+
+### The per-file CI loop IS the standalone sweep
+
+The Windows backend job already runs **one pytest process per test file** on
+every push and PR. It was added as a native-library workaround (premise's GDAL
+stack and openpyxl's libxml2 crash one interpreter), but it is structurally the
+isolation sweep: fresh interpreter per file, no leakage possible, names the
+failing file. It is what caught the third leaky fixture.
+
+So the sweep is not a procedure someone has to remember — it runs. The risk is
+that it gets collapsed into a single-process run as a tidy-up once the native
+issue is fixed, silently retiring the guarantee with no test failing. The
+comment now records BOTH reasons and `tests/test_ci_isolation_guard.py` asserts
+the loop still exists. **If it goes red, the failing file is named, and that is
+the signal to revisit clearing the other twenty.**
+
+Ground truth as of this patch: all 123 test files pass standalone.
+
+#### What NOT to do
+
+- **Don't collapse the Windows per-file loop into a single-process run**, even
+  if the native-library crash is fixed. The isolation reason stands on its own.
+  The guard test fails if the loop, its body, or the documented isolation
+  reason disappears.
+- **Don't extend the conftest to the other twenty registries** without a
+  measurement. It costs ~25 % suite time for no demonstrated benefit; the CI
+  sweep is the cheaper answer and it names the file when it fires.
+- **A full-suite green does not prove a fixture registers what it names.** Run
+  the candidate files in isolation, one process each.
+
+## A test that skips is a test that stopped asserting
+
+`test_supply_chain_truncation_keeps_high_value_paths` took `candidates[0]` off
+database iteration order and then `pytest.skip`-ped when the chosen activity
+happened to discover fewer nodes than the hard-coded cap of 10. Database
+iteration order varies between bw2 sessions, so the skip fired in **1–2 of 6
+runs** — a green line meaning the truncation assertions never ran, on a
+coin flip.
+
+Two changes, both needed. Candidates are **sorted** by (name, location, code)
+so the pick is reproducible. And the cap is **derived** from what the activity
+actually discovers (`min(10, discovered - 1)`) instead of hard-coded, so
+truncation is forced by construction — the algorithm under test is the same at
+any cap below the discovered count. The only remaining skip condition became an
+`assert`: fewer than 2 nodes discovered is a degenerate database, not a flaky
+pick. 6/6 runs deterministic afterwards.
+
+#### What NOT to do
+
+- **Don't `pytest.skip` when a fixture's random pick fails to reach the
+  condition under test.** Either pin the pick, or derive the condition's
+  threshold from what the pick produced. A conditional skip is only honest when
+  the thing missing is an environmental precondition (no ecoinvent installed),
+  never when it is luck.
+- **Don't order a test fixture on database iteration order.** It varies between
+  bw2 sessions. Sort explicitly.
+
 ## A sensitivity case name is CHECKED, once, at every boundary
 
 `ParameterTable.resolve` falls through to `base_value` when the requested

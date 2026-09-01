@@ -668,6 +668,11 @@ class ImpactAssessmentResult(BaseModel):
     #: shipped -- a builder writes "not recorded", NEVER today's date.
     computed_at: str | None = None          # ISO-8601 UTC
     mapper_version: str | None = None
+    #: Content hashes of what produced this result, at COMPUTE time.
+    #: ``{archetype_id: "bom:v1:<hex>"}`` and ``"param:v1:<hex>"``. Two, not
+    #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
+    bom_hashes: dict[str, str] = {}
+    parameter_table_hash: str | None = None
 
 
 class ScenarioImpactResult(BaseModel):

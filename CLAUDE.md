@@ -8249,6 +8249,93 @@ pick. 6/6 runs deterministic afterwards.
 - **Don't order a test fixture on database iteration order.** It varies between
   bw2 sessions. Sort explicitly.
 
+## Two content hashes: the authored BOM, and the parameter table
+
+**Two, not one.** They change for different reasons and at different rates, so
+separating them makes a change **attributable** rather than merely detectable —
+the export names *which* moved, and "someone edited a parameter" is a different
+investigation from "someone edited the BOM".
+
+**Hash the AUTHORED content, never the resolved.** A BOM whose quantities are
+expressions hashes the EXPRESSIONS. Hashing resolved values would move the BOM
+hash every time a parameter moved, double-counting the parameter hash and
+destroying exactly the attribution the split exists for.
+
+**WARN on mismatch, never refuse.** The result is a true record of what was
+computed; it just no longer reproduces from current state.
+
+### A hash that moves on a cosmetic round trip is worse than no hash
+
+It cries wolf until someone stops reading the warning. Everything below serves
+that one property, and the test that proves it is
+`test_export_then_merge_import_moves_NEITHER_hash` — export a project's
+archetypes, re-import under merge, require both hashes unchanged. **Measured:
+36 real archetypes across both projects, all 36 unchanged, none skipped.**
+Verified load-bearing: hashing the node id fails it on both projects.
+
+**Child DIGESTS are sorted, not children by a key.** A key-based sort leaves
+ties — two siblings can share a name, a link and an expression while differing
+in their SUBTREES — and Python's stable sort then falls back to authored order,
+so a reorder would move the hash. Reordering children changes no result
+(`flatten` sums), so it must not warn. A digest is a total order with no tie to
+break, and it SUBSUMES the obvious key: it derives from name + link +
+expression + quantity + subtree, so it is strictly more discriminating.
+
+*(For the record, the key that prompted this: MAp-test's six duplicated names
+in `Fuel Station` are all cross-parent — Diesel vs Petrol sub-assemblies — never
+siblings, so name alone would collide zero times today. That is a property of
+today's data, not a guarantee, and the failure mode is a nondeterministic sort
+order producing a hash that flips between runs on identical content.)*
+
+**Exclusions, each with a reason in `BOM_NODE_EXCLUDED`.** `id` is the critical
+one: `assign_node_ids` fills only MISSING ids and the workbook parser builds
+nodes without them, so a merge re-import mints a fresh uuid for every node.
+Also excluded: `description` (nothing computes from it), `is_annual` (a UI
+hint; only `basis` decides the multiplier), and `validation_status` /
+`validation_message` (derived from bw2 state at upload, not authored).
+
+**Canonicalisation, verified rather than assumed:** absent == null through
+`model_dump()`; raw JSON `1` stays an int while Pydantic coerces to float, so
+hashing the MODEL normalises it where hashing file bytes would not; `repr`
+round-trips floats stably; **`-0.0` is the trap** — it survives a JSON round
+trip, its `repr` differs from `0.0`, and `-0.0 == 0.0`, so it is normalised
+explicitly. `sort_keys=True` is mandatory because `model_dump()` follows
+field-DECLARATION order.
+
+**Whole-table for parameters, not scenario-scoped.** A result under
+`Optimistic` depends only on Base plus those overrides, so scoping would warn
+less — but a scoped hash cannot be compared across results computed under
+different cases, and the scenario is already recorded separately.
+
+### Schema evolution is the real cry-wolf risk
+
+`BOMNode` has gained fields repeatedly. With a wholesale `model_dump()`, the
+NEXT field added with a default would silently move every stored hash and every
+old result would start warning — discrediting the warning within one release.
+Two mitigations, both present: an explicit **allowlist** (adding a field is a
+no-op unless deliberately added), and a **version prefix** (`bom:v1:…`) so a
+scheme change reports "hash scheme changed in a newer MApper — cannot compare"
+rather than "content changed", which would be a lie.
+`test_every_bom_node_field_is_decided` fails on any field that is neither
+hashed nor excluded-with-a-reason, so a new field forces the decision when it
+is added.
+
+#### What NOT to do
+
+- **Don't hash resolved quantities.** Authored only, or the two hashes stop
+  being independent and the attribution is gone.
+- **Don't hash `id`.** It is re-minted on every import; the round-trip test
+  fails on both real projects if you do.
+- **Don't sort children by a key.** Sort their digests — a key leaves ties that
+  fall back to authored order.
+- **Don't use `model_dump()`.** The allowlist is what stops the next added
+  field from invalidating every stored hash.
+- **Don't refuse on a mismatch.** Warn, and name which of the two moved.
+- **Don't treat an absent hash as a mismatch.** Every result stored before this
+  shipped has none; absent is "nothing to say".
+- **Don't let hashing fail a compute.** Both entry points swallow and return
+  empty — provenance must never be the thing that breaks a run.
+
 ## A result records when it was computed. The export reads it.
 
 Ten workbook builders stamped `datetime.now()` on a row labelled "Calculation

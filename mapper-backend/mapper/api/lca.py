@@ -87,6 +87,7 @@ from mapper.models.schemas import (
 from mapper.ws.progress import stream_task_progress
 
 from mapper.api.cohort_export import excel_response
+from mapper.core.content_hash import hashes_for_ids as _content_hashes
 from mapper.core.run_provenance import (
     provenance_rows as _provenance_rows,
     stamp as _run_stamp,
@@ -690,6 +691,7 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
 
     return ArchetypeLCACalculateResult(
         **_run_stamp(),
+        **_content_hashes([body.archetype_id]),
         basis_amounts=body.basis_amounts,
         use_phase_basis=_use_phase_basis(),
         archetype_id=body.archetype_id,

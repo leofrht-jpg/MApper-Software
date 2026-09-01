@@ -99,6 +99,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 
 from mapper.api.cohort_export import excel_response
+from mapper.core.content_hash import mismatch_rows_for_ids as _hash_mismatch_rows
 from mapper.core.run_provenance import (
     provenance_rows as _provenance_rows,
     stamp as _run_stamp,
@@ -2662,6 +2663,18 @@ def _build_single_product_static_workbook(
         cfg_rows.append(("Parameter scenario (active)", primary.parameter_scenario))
     if primary.warnings:
         cfg_rows.append(("Warnings", f"{len(primary.warnings)} (see in-app log)"))
+
+    # WARN, never refuse: the result is a TRUE record of what was computed --
+    # it just no longer reproduces from current project state, and naming
+    # WHICH of the two moved is what the reader needs.
+    _mm = _hash_mismatch_rows(
+        getattr(primary, "bom_hashes", None),
+        getattr(primary, "parameter_table_hash", None),
+    )
+    if _mm:
+        cfg_rows.append(("", ""))
+        cfg_rows.append(("REPRODUCIBILITY WARNING", ""))
+        cfg_rows.extend(_mm)
 
     for label, value in cfg_rows:
         ws_cfg.append([label, value])

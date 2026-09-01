@@ -383,6 +383,11 @@ class ArchetypeLCACalculateResult(BaseModel):
     #: holds whole-life quantities), so the multipliers alone are ambiguous
     #: without it.
     use_phase_basis: str | None = None
+    #: Content hashes of what produced this result, at COMPUTE time.
+    #: ``{archetype_id: "bom:v1:<hex>"}`` and ``"param:v1:<hex>"``. Two, not
+    #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
+    bom_hashes: dict[str, str] = {}
+    parameter_table_hash: str | None = None
 
 
 # ── Monte Carlo uncertainty propagation (single-product) ─────────────────────
@@ -512,6 +517,11 @@ class MonteCarloResult(BaseModel):
     basis_amounts: dict[str, float] | None = None
     use_phase_basis: str | None = None
     stage_amounts: dict[str, float] = {}
+    #: Content hashes of what produced this result, at COMPUTE time.
+    #: ``{archetype_id: "bom:v1:<hex>"}`` and ``"param:v1:<hex>"``. Two, not
+    #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
+    bom_hashes: dict[str, str] = {}
+    parameter_table_hash: str | None = None
 
 
 class MonteCarloStartResponse(BaseModel):
@@ -686,6 +696,11 @@ class MonteCarloMultiResult(BaseModel):
     stage_amounts: dict[str, dict[str, float]] = {}
     basis_amounts: dict[str, float] | None = None
     use_phase_basis: str | None = None
+    #: Content hashes of what produced this result, at COMPUTE time.
+    #: ``{archetype_id: "bom:v1:<hex>"}`` and ``"param:v1:<hex>"``. Two, not
+    #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
+    bom_hashes: dict[str, str] = {}
+    parameter_table_hash: str | None = None
 
 
 class MonteCarloMultiExportRequest(BaseModel):
@@ -757,6 +772,11 @@ class ArchetypeTrajectoryResult(BaseModel):
     stage_amounts: dict[str, float] | None = None
     basis_amounts: dict[str, float] | None = None
     use_phase_basis: str | None = None
+    #: Content hashes of what produced this result, at COMPUTE time.
+    #: ``{archetype_id: "bom:v1:<hex>"}`` and ``"param:v1:<hex>"``. Two, not
+    #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
+    bom_hashes: dict[str, str] = {}
+    parameter_table_hash: str | None = None
 
 
 # ── Multi-Product LCA Comparison (Patch 4AG.1) ─────────────────────────────────
@@ -872,6 +892,11 @@ class MultiProductLCAResult(BaseModel):
     #: shipped -- a builder writes "not recorded", NEVER today's date.
     computed_at: str | None = None          # ISO-8601 UTC
     mapper_version: str | None = None
+    #: Content hashes of what produced this result, at COMPUTE time.
+    #: ``{archetype_id: "bom:v1:<hex>"}`` and ``"param:v1:<hex>"``. Two, not
+    #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
+    bom_hashes: dict[str, str] = {}
+    parameter_table_hash: str | None = None
 
 
 class StageAmountsMeta(BaseModel):

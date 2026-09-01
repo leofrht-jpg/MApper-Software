@@ -28,6 +28,7 @@ from __future__ import annotations
 
 from mapper.core.dsm_engine import cohort_key_to_dict, largest_remainder_round
 from mapper.core.parameter_engine import ParameterEngine, ParameterError
+from mapper.models.parameter_schemas import ParameterTable
 from mapper.models.dsm_schemas import (
     DimensionDef,
     SimulationResult,
@@ -164,9 +165,28 @@ def compute_dependent_subsystem(
     primary_def: SystemDefinition,
     primary_result: SimulationResult,
     parameter_engine: ParameterEngine | None = None,
+    *,
+    parameter_table: "ParameterTable | None" = None,
+    parameter_scenario: str | None = None,
 ) -> SimulationResult:
     """Simulate a dependent subsystem by evaluating its rules against the
     primary subsystem's year-by-year stock.
+
+    ``parameter_table`` + ``parameter_scenario`` supersede ``parameter_engine``
+    for KEYFRAMED tables -- the second channel from parameters into DSM output,
+    and the one the scaling-rules fix missed.
+
+    Keyframes used to collapse TWICE on the way here. ``get_parameter_set``
+    calls ``table.resolve_all(scenario)`` with no year, so a time-varying
+    parameter was already flattened to its ``base_value`` before the engine
+    existed; and ``ParameterEngine(pset.parameters)`` is the legacy
+    pre-resolved shape, which ignores ``year`` outright. Passing the raw table
+    closes both.
+
+    The year was never missing: the loop below is per-year and already injects
+    ``year`` as an EXPRESSION variable. That is a different thing from
+    resolving a parameter's VALUE for that year, and only the second was
+    broken -- which is part of why the path looked covered.
 
     Raises :class:`ValueError` if ``subsystem.type`` is not ``"dependent"``.
     Raises :class:`ParameterError` when an expression references an unknown
@@ -181,11 +201,35 @@ def compute_dependent_subsystem(
         )
 
     engine = parameter_engine or ParameterEngine()
+    # ONCE, up front. Parameter NAMES do not vary by year, so a per-year check
+    # would repeat the same work and -- worse -- name a year that has nothing
+    # to do with the collision.
     collisions = _RESERVED_EXTRA_VARS & set(engine.params)
     if collisions:
         raise ParameterError(
             f"Parameter name(s) {sorted(collisions)} collide with built-in subsystem variables"
         )
+
+    year_varying = parameter_table is not None and parameter_table.has_time_varying()
+    _year_engines: dict[int, ParameterEngine] = {}
+
+    def _engine_for(year: int) -> ParameterEngine:
+        """The engine for ``year``.
+
+        Falls back to the single pre-built engine unless a table was handed in
+        AND it actually carries keyframes -- so the legacy path and every
+        scalar-only table stay byte-identical. One ``resolve_all`` per year,
+        cached, not one per rule.
+        """
+        if not year_varying:
+            return engine
+        eng = _year_engines.get(year)
+        if eng is None:
+            eng = ParameterEngine(
+                parameter_table, scenario=parameter_scenario, year=year
+            )
+            _year_engines[year] = eng
+        return eng
 
     rules = subsystem.dependency_rules or []
     initial_stock = {k: float(v) for k, v in (subsystem.initial_stock or {}).items() if v}
@@ -198,7 +242,7 @@ def compute_dependent_subsystem(
         for rule in rules:
             filtered = filter_primary_stock(yr, rule.driver_filter, primary_def.dimensions)
             try:
-                value = engine.resolve(
+                value = _engine_for(yr.year).resolve(
                     rule.expression,
                     extra_vars={
                         "filtered_stock": filtered,
@@ -333,6 +377,9 @@ def compute_subsystem_result(
     primary_def: "SystemDefinition",
     primary_result: "SimulationResult",
     parameter_engine: ParameterEngine | None = None,
+    *,
+    parameter_table: "ParameterTable | None" = None,
+    parameter_scenario: str | None = None,
 ) -> "SimulationResult":
     """Mode-aware compute dispatcher for a dependent subsystem.
 
@@ -343,7 +390,10 @@ def compute_subsystem_result(
     """
     if getattr(subsystem, "mode", "rules") == "manual":
         return compute_manual_subsystem(subsystem, primary_def, parameter_engine)
-    return compute_dependent_subsystem(subsystem, primary_def, primary_result, parameter_engine)
+    return compute_dependent_subsystem(
+        subsystem, primary_def, primary_result, parameter_engine,
+        parameter_table=parameter_table, parameter_scenario=parameter_scenario,
+    )
 
 
 def subsystem_has_stock_source(subsystem: Subsystem) -> bool:

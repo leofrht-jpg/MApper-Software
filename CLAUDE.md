@@ -10043,6 +10043,45 @@ the paired run says A is lower in every iteration. An opposite conclusion, not
 a wider error bar. Same correlation error the expression-row rule prevents, one
 level up.
 
+**The foreground is sampled too, and its draw is SHARED.** For a whole patch
+cycle it was not: `_run_monte_carlo_multi` had no foreground RNG at all —
+demands were built once per item before the loop and `mc.demand` was only ever
+assigned a pre-built constant. `next(mc)` shared the technosphere, biosphere
+and characterisation factors correctly; the foreground simply was not drawn.
+Measured on Battery Circularity with one scored parameter, the paired run
+reported **GSD² 1.1099 against the single-item path's 1.2015** at the same seed
+— **67.7 % of the total log-variance missing**.
+
+It bit hardest exactly where paired mode is most useful. Battery Circularity's
+A and A0 are **42/42 and 43/43 EXPRESSION rows** — not one literal row between
+them — so their foreground uncertainty is entirely parametric and the paired
+A-vs-A0 comparison, the number that would be reported, had no foreground
+component at all. MAp-test is the mirror image (931 of 969 rows literal), so
+it is a poor place to notice this.
+
+**Parameters are drawn once per ITERATION, across the union of every item's
+referenced names, and applied to all items.** That is the foreground half of
+the pairing: A and A0 share 23 parameters, and drawing them per item would let
+one shared driver take two values in the same iteration — precisely the
+decorrelation paired mode exists to remove, reintroduced one layer down. Row
+draws stay PER ITEM (keyed by `node_id`) because a row belongs to one
+archetype; two archetypes sharing a material NAME are still two rows, exactly
+as in the single-item path.
+
+**`next(mc)` must fire exactly ONCE per iteration, with item 0's demand pushed
+in BEFORE it.** The chain solves for whatever demand is loaded when `next`
+runs, so item 0 is NOT special — pushing its demand after the advance leaves it
+with a deterministic foreground while every later item gets a sampled one, and
+calling `next` per item gives each a different world, which destroys the
+pairing. Both failure modes are pinned, and each is caught by a different set
+of tests.
+
+After the fix, paired item A's GSD² matches the single-item run to **0.000 %**
+(identical RNG stream), the A-vs-A0 correlation is **0.9966**, and `sd(A−A0)`
+is **20.7 %** of `sd(A)` — the shared parameter cancelling, which is the whole
+point of pairing. The 95 % interval widens honestly from `[−0.0154, −0.0112]`
+to `[−0.0180, −0.0099]` and stays entirely below zero.
+
 **Paired is also CHEAPER**, because sampling the matrices is the expensive part
 and it happens once per iteration rather than once per item: 59 s for one item
 per 1000 iterations, then ~39 s per additional item (4 items = 176 s, 1.34×
@@ -10095,6 +10134,19 @@ annotation, and one row per (pair × indicator) does not fit beside one row per
   so the reader's mental ordering carries across.
 - **Don't present correlation as a caveat.** It explains the width; it does not
   undermine it.
+- **Don't build the paired demands once, outside the iteration loop.** That is
+  what left the foreground unsampled for a whole patch cycle. If anything in
+  any item's foreground varies, every item's demand is rebuilt per iteration.
+- **Don't draw a parameter inside the item loop.** Once per iteration, shared —
+  or a shared driver takes two values in one iteration and the pairing is
+  undone in the foreground while looking intact in the background.
+- **Don't call `next(mc)` per item, and don't push item 0's demand after it.**
+  One advance per iteration; item 0's demand goes in first. Advancing twice
+  decorrelates the items; pushing late silently exempts item 0 from the
+  foreground.
+- **Don't verify a paired foreground with a correlation test alone.** It passes
+  on a foreground that is correlated but too small. Assert the MAGNITUDE too:
+  paired item i's GSD² must match a single-item run at the same seed.
 - **Don't claim paired marginals are bit-identical for every item.** Item 0 is;
   later items agree to solver tolerance because of the CGS warm start.
 

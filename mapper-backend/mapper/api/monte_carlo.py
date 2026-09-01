@@ -537,7 +537,11 @@ def _run_monte_carlo_multi(
     import bw2calc
 
     from mapper.api.lca import _build_archetype_source_demand, _translate_demand_to_database
+    from mapper.api.parameters import _table_for
+    from mapper.core.bom_engine import resolve_archetype_with_engine
     from mapper.core.bw2_wrapper import PersistentLCARunner
+    from mapper.core.material_pedigree_storage import load_library
+    from mapper.core.parameter_engine import ParameterEngine
 
     t_start = time.perf_counter()
     _emit(task, "preparing", 0.01)
@@ -551,6 +555,9 @@ def _run_monte_carlo_multi(
     warnings: list[str] = []
     items: list[dict] = []
     runner = PersistentLCARunner()
+    table = _table_for()
+    library = load_library(_current_project())
+    referenced: set[str] = set()
 
     for aid in body.archetype_ids:
         bundle = _build_archetype_source_demand(
@@ -566,14 +573,62 @@ def _run_monte_carlo_multi(
                 status_code=400,
                 detail=f"'{bundle.arc.name}' has no linked materials in this scope.",
             )
+        # Everything the per-iteration demand rebuild needs, gathered ONCE.
+        # ``key_map`` in particular: an activity LINK never changes across
+        # iterations (only its quantity does) and building it does bw2data
+        # lookups, so per-iteration would cost more than the solve it feeds.
+        base_materials = _linked_with_amounts(
+            bundle.arc, body.scope, bundle.effective_amounts, body.basis_amounts
+        )
+        try:
+            row_draws = collect_row_draws(bundle.linked, library.entries)
+        except UncertaintyConfigError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         items.append({
             "id": aid, "name": bundle.arc.name, "demand": demand,
             "det": runner(demand, method_tuples),
             "samples": {m: [] for m in method_tuples},
+            "arc": bundle.arc,
+            "effective_amounts": bundle.effective_amounts,
+            "base_materials": base_materials,
+            "row_draws": row_draws,
+            "key_map": _translation_map(
+                {
+                    (m.ecoinvent_activity.database, m.ecoinvent_activity.code)
+                    for m, _ in base_materials
+                },
+                body.compute_database,
+            ),
         })
+        referenced |= _referenced_parameters(bundle.arc)
+
+    # ── The shared foreground draw ──────────────────────────────────────────
+    #
+    # Parameters are collected across the UNION of every item's referenced
+    # names and drawn ONCE per iteration, then applied to every item. That is
+    # what makes the foreground half of the pairing work: A and A0 share 23
+    # parameters, and drawing them per item would let one shared driver take
+    # two values in the same iteration -- exactly the decorrelation the paired
+    # mode exists to remove, reintroduced one layer down.
+    #
+    # Row draws stay PER ITEM (keyed by node_id) because a row belongs to one
+    # archetype; two archetypes sharing a material NAME are still two rows, as
+    # in the single-item path.
+    try:
+        param_draws = collect_param_draws(table, referenced)
+    except UncertaintyConfigError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     seed = body.seed if body.seed is not None else int(uuid.uuid4().int % (2**31 - 1))
     n = body.iterations
+    rng = np.random.default_rng(seed)
+    base_values = table.resolve_all(body.parameter_scenario, 2025)
+
+    # Nothing in any foreground varies -> every demand is constant, so skip the
+    # rebuild entirely and let the run vary the background alone. Same
+    # short-circuit as the single-item path, and the default before anything is
+    # scored.
+    foreground_varies = bool(param_draws) or any(it["row_draws"] for it in items)
 
     mc = bw2calc.MonteCarloLCA(items[0]["demand"], method_tuples[0], seed=seed)
     next(mc)
@@ -586,11 +641,50 @@ def _run_monte_carlo_multi(
         if task_registry.is_cancelled(task_id):
             raise CancelledOperation(task_id)
 
+        # ── 1. draw each PARAMETER once, for the WHOLE iteration ────────
+        # Before any item is touched, so every item resolves against the same
+        # world. Drawing inside the item loop would give one shared driver two
+        # values per iteration.
+        demands_i: list[dict] | None = None
+        if foreground_varies:
+            drawn = dict(base_values)
+            for pdraw in param_draws:
+                f = lognormal_factor(rng, pdraw.sigma)
+                drawn[pdraw.name] = base_values.get(pdraw.name, pdraw.base_value) * f
+            engine_i = ParameterEngine(drawn) if param_draws else None
+
+            demands_i = []
+            for it in items:
+                # ── 2. re-resolve expressions against those draws ───────────
+                if engine_i is not None:
+                    arc_i = resolve_archetype_with_engine(it["arc"], engine_i)
+                    materials_i = _linked_with_amounts(
+                        arc_i, body.scope, it["effective_amounts"], body.basis_amounts
+                    )
+                else:
+                    materials_i = it["base_materials"]
+                # ── 3. per-row factors, LITERAL rows only, keyed by node_id ──
+                factors = {
+                    r.node_id: lognormal_factor(rng, r.sigma) for r in it["row_draws"]
+                }
+                demands_i.append(_aggregate(materials_i, factors, it["key_map"]))
+
+        # ── 4. advance the sampled world ONCE, then solve every item ────────
+        #
+        # ``next(mc)`` is what resamples A, B and C -- it must fire exactly
+        # once per iteration or the items stop sharing a world, which is the
+        # decorrelation this mode exists to remove. So item 0 is NOT special:
+        # its demand is pushed in BEFORE the advance (the chain solves for
+        # whatever demand is loaded when ``next`` runs), and every later item
+        # re-solves the same matrices via ``lci_calculation``.
+        if demands_i is not None:
+            mc.demand = demands_i[0]
+            mc.build_demand_array()
         next(mc)                       # ONE sampled world for this iteration
         for idx, it in enumerate(items):
             if idx > 0:
                 # Same sampled matrices, next demand.
-                mc.demand = it["demand"]
+                mc.demand = demands_i[idx] if demands_i is not None else it["demand"]
                 mc.build_demand_array()
                 mc.lci_calculation()
             flow_totals = mc.biosphere_matrix * mc.supply_array
@@ -611,6 +705,8 @@ def _run_monte_carlo_multi(
                     vals = items[0]["_cf"][m]
                 it["samples"][m].append(float(vals @ flow_totals[rows]))
         # Restore item 0's demand so the next iteration's warm start is stable.
+        # (Superseded at the top of the next iteration when the foreground
+        # varies -- kept so the constant-foreground path is unchanged.)
         if len(items) > 1:
             mc.demand = items[0]["demand"]
             mc.build_demand_array()

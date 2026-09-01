@@ -1,0 +1,53 @@
+# Dependabot version updates.
+#
+# SCOPED DELIBERATELY to npm and github-actions. The other manifests in this
+# repo are either unsupported or would be noise:
+#
+#   environment.yml            Conda is not a Dependabot ecosystem at all. This
+#                              is the reference environment -- the one CI solves
+#                              and release builds are frozen from -- and it is
+#                              version-pinned on purpose. Dependabot would never
+#                              read it even if asked.
+#
+#   mapper-backend/
+#     requirements.txt         EXCLUDED. Its own header says it is NOT the
+#                              reference environment: it omits premise, pytest,
+#                              pandas, openpyxl, platformdirs and cryptography,
+#                              so an env built from it cannot run the test suite
+#                              or a prospective analysis. Bumping pins in a file
+#                              nothing installs from is pure noise.
+#
+#     pyproject.toml           Marginal. The backend's real dependency set lives
+#                              in environment.yml; revisit if that changes.
+#
+# npm is where the value is: a clean clone currently reports 8 advisories, and
+# tracing each one showed exactly ONE reaches the shipped bundle (dompurify, via
+# jspdf, used by the chart PDF export). The rest are dev-server, build or test
+# toolchain. So this should be quiet-but-real rather than noisy.
+version: 2
+
+updates:
+  - package-ecosystem: npm
+    directory: /mapper-frontend
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # One PR per group keeps the weekly volume readable. Patch/minor bumps of
+      # the dev toolchain almost never need individual review.
+      dev-tooling:
+        dependency-type: development
+        update-types: [minor, patch]
+      runtime-minor:
+        dependency-type: production
+        update-types: [minor, patch]
+    commit-message:
+      prefix: "chore(deps)"
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(ci)"

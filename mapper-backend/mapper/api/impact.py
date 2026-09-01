@@ -361,7 +361,11 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                 )
         try:
             sub_sim = compute_subsystem_result(
-                sub, _get_system(body.mfa_system_id), sim, param_engine
+                sub, _get_system(body.mfa_system_id), sim, param_engine,
+                # The RAW table, so a keyframed parameter in a dependency
+                # rule resolves per year. ``param_engine`` above is the
+                # legacy pre-resolved shape and cannot.
+                parameter_table=param_table, parameter_scenario=param_scenario,
             )
         except (ParameterError, ValueError) as e:
             raise HTTPException(

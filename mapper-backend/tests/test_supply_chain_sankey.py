@@ -149,8 +149,14 @@ def test_supply_chain_truncation_keeps_high_value_paths():
 
     db_name = next(d for d in bw2data.databases if "biosphere" not in d.lower())
     db = bw2data.Database(db_name)
-    # Pick something with branching but not catastrophic depth=2.
-    candidates = [a for a in db if "market for" in a.get("name", "").lower()]
+    # Pick something with branching but not catastrophic depth=2. SORTED, not
+    # ``candidates[0]`` on database iteration order: that order varies between
+    # bw2 sessions, so the chosen activity varied run to run and with it whether
+    # truncation was exercised at all.
+    candidates = sorted(
+        (a for a in db if "market for" in a.get("name", "").lower()),
+        key=lambda a: (a.get("name", ""), a.get("location", ""), a.get("code", "")),
+    )
     act = candidates[0] if candidates else next(iter(db))
     method = tuple(next(iter(bw2data.methods)))
 
@@ -158,14 +164,30 @@ def test_supply_chain_truncation_keeps_high_value_paths():
     lca.lci()
     lca.lcia()
 
-    sc = get_supply_chain(lca, method=list(method), depth=2, max_nodes=10)
-    if not sc["truncated"]:
-        pytest.skip(
-            f"chosen activity discovered only {sc['total_nodes_discovered']} "
-            f"nodes; cap of 10 was not exceeded so truncation isn't exercised"
-        )
+    # DERIVE the cap from what this activity actually discovers, rather than
+    # hard-coding 10 and skipping when the activity happens to be smaller than
+    # that. A fixed cap made the skip a coin flip on database iteration order --
+    # it fired in 1-2 of 6 runs -- and a test that silently stops asserting is
+    # the vacuous-test class this suite exists to close. Truncation is now
+    # forced by construction: the algorithm under test (best-first pruning keeps
+    # root + reachable high-value paths) is the same at any cap below the
+    # discovered count.
+    probe = get_supply_chain(lca, method=list(method), depth=2, max_nodes=10_000)
+    discovered = probe["total_nodes_discovered"]
+    assert discovered >= 2, (
+        f"activity {act.get('name')!r} discovered {discovered} node(s) at "
+        "depth=2 -- nothing to truncate, so the database cannot exercise this "
+        "path at all. This is a degenerate database, not a flaky pick."
+    )
+    cap = max(2, min(10, discovered - 1))
 
-    assert len(sc["nodes"]) <= 10
+    sc = get_supply_chain(lca, method=list(method), depth=2, max_nodes=cap)
+    assert sc["truncated"], (
+        f"cap {cap} is below the {discovered} nodes discovered, so the result "
+        "must be truncated -- if it is not, the cap is not being applied"
+    )
+
+    assert len(sc["nodes"]) <= cap
     # Root must always be in the kept set.
     root_key = list(lca.demand.keys())[0]
     root_id = f"{root_key[0]}_{root_key[1]}"

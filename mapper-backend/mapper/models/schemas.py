@@ -292,6 +292,10 @@ class ActivityLCAMethodResult(BaseModel):
 class ActivityLCAResult(BaseModel):
     results: list[ActivityLCAMethodResult]
     elapsed_seconds: float = 0.0
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
 
 
 # ── Archetype LCA Calculator ────────────────────────────────────────────────
@@ -364,6 +368,21 @@ class ArchetypeLCACalculateResult(BaseModel):
     # Shape: {method_label: {stage_name: score}}. Per-method invariant:
     # sum of stage values equals method.score within float epsilon.
     stage_breakdown: dict[str, dict[str, float]] | None = None
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
+    #: The per-basis multiplier the quantities were flattened with
+    #: (``{"per_unit": 1.0, "per_year": <lifetime>}``). Load-bearing on the
+    #: NUMBER -- a lifetime-15 run and a 1-year run differ 15x on the annual
+    #: stages -- and its companion ``stage_amounts`` was already echoed while
+    #: this was not, so a result could not say which multiplier produced it.
+    basis_amounts: dict[str, float] | None = None
+    #: The project convention in force at compute time. It decides whether the
+    #: basis multiplier applies AT ALL (``life_cycle`` means the BOM already
+    #: holds whole-life quantities), so the multipliers alone are ambiguous
+    #: without it.
+    use_phase_basis: str | None = None
 
 
 # ── Monte Carlo uncertainty propagation (single-product) ─────────────────────
@@ -485,6 +504,14 @@ class MonteCarloResult(BaseModel):
     #: Exactly what carried uncertainty, so the workbook is self-contained.
     scored_inputs: list[ScoredInput] = []
     warnings: list[str] = []
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
+    #: See ``ArchetypeLCACalculateResult.basis_amounts``.
+    basis_amounts: dict[str, float] | None = None
+    use_phase_basis: str | None = None
+    stage_amounts: dict[str, float] = {}
 
 
 class MonteCarloStartResponse(BaseModel):
@@ -643,6 +670,22 @@ class MonteCarloMultiResult(BaseModel):
     #: Every ordered pair (i, j) with i before j in comparison order.
     differences: list[PairwiseDifference]
     warnings: list[str] = []
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
+    #: Brought up to its single-item sibling. The paired path SAMPLES the
+    #: foreground (it did not, until the foreground patch), so it must also
+    #: record WHAT was scored -- otherwise the run is unreproducible in
+    #: exactly the mode where the scoring matters most.
+    scored_inputs: list[ScoredInput] = []
+    rows_with_uncertainty: int = 0
+    rows_inherited: int = 0
+    parameters_with_uncertainty: int = 0
+    #: Per item, keyed by archetype id (the request takes them that way).
+    stage_amounts: dict[str, dict[str, float]] = {}
+    basis_amounts: dict[str, float] | None = None
+    use_phase_basis: str | None = None
 
 
 class MonteCarloMultiExportRequest(BaseModel):
@@ -707,6 +750,13 @@ class ArchetypeTrajectoryResult(BaseModel):
     years: list[ArchetypeTrajectoryYear]
     elapsed_seconds: float = 0.0
     warnings: list[str] = []
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
+    stage_amounts: dict[str, float] | None = None
+    basis_amounts: dict[str, float] | None = None
+    use_phase_basis: str | None = None
 
 
 # ── Multi-Product LCA Comparison (Patch 4AG.1) ─────────────────────────────────
@@ -818,6 +868,10 @@ class MultiProductLCAResult(BaseModel):
     # error_count == len(items)`.
     success_count: int = 0
     error_count: int = 0
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
 
 
 class StageAmountsMeta(BaseModel):

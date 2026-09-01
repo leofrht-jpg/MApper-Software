@@ -58,6 +58,10 @@ from mapper.models.schemas import (
     UnscoredMaterial,
     VarianceContributor,
 )
+from mapper.core.run_provenance import (
+    stamp as _run_stamp,
+    use_phase_basis as _use_phase_basis,
+)
 
 router = APIRouter()
 
@@ -332,6 +336,10 @@ def _run_monte_carlo(
         ))
 
     return MonteCarloResult(
+        **_run_stamp(),
+        stage_amounts=body.stage_amounts,
+        basis_amounts=body.basis_amounts,
+        use_phase_basis=_use_phase_basis(),
         archetype_id=body.archetype_id,
         archetype_name=bundle.arc.name,
         scope=body.scope,
@@ -589,6 +597,7 @@ def _run_monte_carlo_multi(
             "det": runner(demand, method_tuples),
             "samples": {m: [] for m in method_tuples},
             "arc": bundle.arc,
+            "linked": bundle.linked,
             "effective_amounts": bundle.effective_amounts,
             "base_materials": base_materials,
             "row_draws": row_draws,
@@ -734,7 +743,44 @@ def _run_monte_carlo_multi(
 
     diffs = _pairwise_differences(items, method_tuples)
 
+    # Scoring provenance, brought up to the single-item sibling. The paired
+    # path SAMPLES the foreground as of the foreground patch, so a run that
+    # does not record WHAT was scored is unreproducible in exactly the mode
+    # where the scoring decides the answer. Row draws are per item; the
+    # parameter draw is shared, so it is recorded ONCE.
+    scored: list[ScoredInput] = []
+    rows_total = rows_inherited = 0
+    for it in items:
+        for r in it["row_draws"]:
+            rows_total += 1
+            rows_inherited += 1 if r.inherited else 0
+            unc = _uncertainty_for_row(
+                it["linked"], r.node_id, library.entries
+            )
+            scored.append(ScoredInput(
+                name=f"{it['name']} · {r.name}", kind="row",
+                pedigree=dict((unc.pedigree or {}) if unc else {}),
+                basic_variance=(unc.basic_variance if unc else 0.0),
+                gsd2=mce.gsd2_from_sigma(r.sigma), inherited=r.inherited,
+            ))
+    for pd in param_draws:
+        pu = getattr(table.parameters.get(pd.name), "uncertainty", None)
+        scored.append(ScoredInput(
+            name=pd.name, kind="parameter",
+            pedigree=dict((pu.pedigree or {}) if pu else {}),
+            basic_variance=(pu.basic_variance if pu else 0.0),
+            gsd2=mce.gsd2_from_sigma(pd.sigma),
+        ))
+
     return MonteCarloMultiResult(
+        **_run_stamp(),
+        scored_inputs=scored,
+        rows_with_uncertainty=rows_total,
+        rows_inherited=rows_inherited,
+        parameters_with_uncertainty=len(param_draws),
+        stage_amounts=body.stage_amounts,
+        basis_amounts=body.basis_amounts,
+        use_phase_basis=_use_phase_basis(),
         scope=body.scope, n_iterations=n, seed=seed,
         elapsed_seconds=round(time.perf_counter() - t_start, 3),
         compute_database=body.compute_database,

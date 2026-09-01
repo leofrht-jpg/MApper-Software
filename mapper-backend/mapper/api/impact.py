@@ -99,6 +99,10 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 
 from mapper.api.cohort_export import excel_response
+from mapper.core.run_provenance import (
+    provenance_rows as _provenance_rows,
+    stamp as _run_stamp,
+)
 
 
 router = APIRouter(prefix="/impact", tags=["impact"])
@@ -579,6 +583,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                 sc_out = ImpactAssessmentResult(
                     task_id=task_id, meta=sc_meta, results=sc_results,
                     elapsed_seconds=None,  # filled in by caller for single mode
+                    **_run_stamp(),
                 )
                 return sc_out, yr_to_db
 
@@ -626,6 +631,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                     meta=wrapper_meta,
                     scenarios=scenario_results,
                     elapsed_seconds=elapsed,
+                    **_run_stamp(),
                 )
                 task.result = out_multi
                 task.stage = "done"
@@ -1089,6 +1095,36 @@ def _scenario_label(sc: ProspectiveScenarioRef) -> str:
     return f"{sc.iam.upper()}/{sc.ssp}"
 
 
+def _prov_from_envelope(envelope) -> tuple[str | None, str | None]:
+    """Compute provenance for an envelope, preferring its own stamp.
+
+    ``MultiParamImpactResult`` / ``MultiDSMImpactResult`` /
+    ``MultiPairedImpactResult`` are assembled by the FRONTEND from per-task
+    results -- they are constructed nowhere in the backend -- so they carry no
+    stamp of their own and must derive it from an inner
+    ``ImpactAssessmentResult``, which the backend did stamp. Trusting a client
+    to supply a compute timestamp would make the field unverifiable at exactly
+    the point it is load-bearing.
+
+    The inner results of one fan-out were computed within seconds of each
+    other; the EARLIEST is the honest answer for when the run happened.
+    """
+    own = getattr(envelope, "computed_at", None)
+    if own:
+        return own, getattr(envelope, "mapper_version", None)
+    inner = []
+    for attr in ("scenarios", "items", "runs"):
+        seq = getattr(envelope, attr, None)
+        if seq:
+            inner = [getattr(x, "result", x) for x in seq]
+            break
+    stamps = sorted(r.computed_at for r in inner if getattr(r, "computed_at", None))
+    version = next(
+        (r.mapper_version for r in inner if getattr(r, "mapper_version", None)), None
+    )
+    return (stamps[0] if stamps else None), version
+
+
 def _build_multi_scenario_workbook(
     system_name: str,
     multi_result: MultiScenarioProjectedImpactResult,
@@ -1183,7 +1219,7 @@ def _build_multi_scenario_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("LCI scenarios", len(scenarios)),
         ("Indicators", len(first_results)),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(*_prov_from_envelope(multi_result)),
     ]
     if multi_result.elapsed_seconds is not None:
         m, s = divmod(int(multi_result.elapsed_seconds), 60)
@@ -1474,7 +1510,7 @@ def _build_multi_param_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("Sensitivity cases", len(scenarios)),
         ("Indicators", len(first_results)),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(*_prov_from_envelope(multi_param_result)),
     ]
     if multi_param_result.elapsed_seconds is not None:
         m, s_sec = divmod(int(multi_param_result.elapsed_seconds), 60)
@@ -1780,7 +1816,7 @@ def _build_multi_dsm_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("DSM scenarios", len(scenarios)),
         ("Indicators", len(first_results)),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(*_prov_from_envelope(multi_dsm_result)),
     ]
     if multi_dsm_result.elapsed_seconds is not None:
         m, s_sec = divmod(int(multi_dsm_result.elapsed_seconds), 60)
@@ -2068,7 +2104,7 @@ def _build_multi_paired_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("Pairs", len(pairs)),
         ("Indicators", len(first_results)),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(*_prov_from_envelope(multi_paired_result)),
     ]
     if multi_paired_result.elapsed_seconds is not None:
         m, s_sec = divmod(int(multi_paired_result.elapsed_seconds), 60)
@@ -2454,6 +2490,8 @@ async def post_export(body: ImpactExportRequest) -> Response:
         dims=list(sys_def.dimensions),
         elapsed_seconds=result.elapsed_seconds,
         sim_result=sim,
+        computed_at=result.computed_at,
+        mapper_version=result.mapper_version,
     )
 
     # Decide pairing for the Static-vs-Projected sheet.
@@ -2617,7 +2655,7 @@ def _build_single_product_static_workbook(
         ("Stages included", ", ".join(primary.stages_included)),
         ("Indicators", len(method_list)),
         ("Sensitivity cases", sensitivity_label),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(*(primary.computed_at, primary.mapper_version)),
         ("Elapsed (s)", f"{primary.elapsed_seconds:.2f}"),
     ]
     if primary.parameter_scenario:
@@ -2807,7 +2845,7 @@ def _build_single_product_prospective_workbook(
         ("Year range", f"{years[0]}–{years[-1]}" if years else "—"),
         ("Indicators", len(method_list)),
         ("Databases", len(sorted_runs)),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(*(primary.computed_at, primary.mapper_version)),
     ]
     for label, value in cfg_rows:
         ws_cfg.append([label, value])
@@ -3033,7 +3071,7 @@ def _build_single_product_comparison_workbook(
         ("Indicators (Static)", len(static_result.results)),
         ("Prospective runs", len(sorted_runs)),
         ("Sign convention", "Δ = P − S (positive = worsening, negative = improvement)"),
-        ("Calculation date", datetime.datetime.now().strftime("%Y-%m-%d %H:%M")),
+        *_provenance_rows(*(static_result.computed_at, static_result.mapper_version)),
     ]
     for label, value in cfg_rows:
         ws_cfg.append([label, value])

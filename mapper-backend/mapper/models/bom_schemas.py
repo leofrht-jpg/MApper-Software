@@ -664,6 +664,10 @@ class ImpactAssessmentResult(BaseModel):
     meta: ImpactAssessmentMeta
     results: list[DSMLCAResult]
     elapsed_seconds: float | None = None
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
 
 
 class ScenarioImpactResult(BaseModel):
@@ -711,6 +715,10 @@ class MultiScenarioProjectedImpactResult(BaseModel):
     meta: ImpactAssessmentMeta
     scenarios: list[ScenarioProjectedResult]
     elapsed_seconds: float | None = None
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None
 
 
 class ImpactCompareRequest(BaseModel):
@@ -984,3 +992,7 @@ class MaterialFlowResult(BaseModel):
     unit_name: str = "units"
     system_units_by_year: dict[int, float] = Field(default_factory=dict)
     archetype_units_by_year: dict[str, dict[int, float]] = Field(default_factory=dict)
+    #: Compute-time provenance. ``None`` on results stored before this
+    #: shipped -- a builder writes "not recorded", NEVER today's date.
+    computed_at: str | None = None          # ISO-8601 UTC
+    mapper_version: str | None = None

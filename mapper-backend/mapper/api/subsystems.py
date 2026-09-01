@@ -35,7 +35,7 @@ from mapper.api.dsm import (
     _proj_systems,
     _sanitize_filename,
 )
-from mapper.api.parameters import get_parameter_set
+from mapper.api.parameters import _table_for, get_parameter_set
 from mapper.core import dsm_storage
 from mapper.core.dsm_engine import (
     dependent_stock_template_csv,
@@ -1040,6 +1040,27 @@ def _require_primary_result(system_id: str) -> SimulationResult:
     return result
 
 
+def _table_kwargs(parameter_set_id: str | None) -> dict:
+    """The RAW table + scenario for ``compute_subsystem_result``.
+
+    ``_build_engine`` below returns a PRE-RESOLVED engine: it goes through
+    ``get_parameter_set``, which calls ``table.resolve_all(scenario)`` with no
+    year, so a keyframed parameter is already flattened to its ``base_value``
+    before the engine exists. Handing the raw table alongside lets the
+    dependency-rule loop re-resolve per simulation year.
+
+    Never raises -- an unresolvable table simply means no year-varying
+    resolution, which is the pre-existing behaviour.
+    """
+    try:
+        return {
+            "parameter_table": _table_for(),
+            "parameter_scenario": parameter_set_id or None,
+        }
+    except Exception:
+        return {}
+
+
 def _build_engine(parameter_set_id: str | None) -> ParameterEngine:
     if not parameter_set_id:
         return ParameterEngine()
@@ -1072,7 +1093,10 @@ async def compute_subsystem(
     # Manual-mode subsystems simulate independently — no primary sim required.
     primary_result = None if sub.mode == "manual" else _require_primary_result(system_id)
     try:
-        result = compute_subsystem_result(sub, primary_def, primary_result, engine)
+        result = compute_subsystem_result(
+            sub, primary_def, primary_result, engine,
+            **_table_kwargs(body.parameter_set_id if body else None),
+        )
     except ParameterError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except ValueError as e:
@@ -1103,7 +1127,8 @@ async def compute_all_subsystems(
     for sub_id, sub in subs.items():
         try:
             results[sub_id] = compute_subsystem_result(
-                sub, primary_def, primary_result, engine
+                sub, primary_def, primary_result, engine,
+                **_table_kwargs(body.parameter_set_id if body else None),
             )
         except ParameterError as e:
             raise HTTPException(

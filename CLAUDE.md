@@ -8078,6 +8078,50 @@ only `scenario_id`, and the DSM Dashboard has no sensitivity-case selector.
 The query param exists so the boundary is complete and a direct API caller can
 express it; wiring the UI is a separate decision.
 
+### Two channels, not one: dependency rules resolve per year too
+
+Parameters reach DSM output through **two** channels, and the scaling-rules fix
+closed one. The second is **subsystem dependency-rule expressions**
+(`compute_dependent_subsystem`), and it is the more exposed of the two: unlike
+the scaling-rules editor (removed 2026-05-01), `DependencyRulesEditor.tsx` is
+live in the UI.
+
+Keyframes collapsed **twice** on the way in. `get_parameter_set` calls
+`table.resolve_all(scenario)` with **no year**, so a time-varying parameter was
+already flattened to its `base_value` before the engine existed; and
+`ParameterEngine(pset.parameters)` is the legacy pre-resolved shape, which
+ignores `year` outright. Passing the raw table closes both — `_table_kwargs`
+in `subsystems.py` supplies it alongside `_build_engine`'s pre-resolved engine,
+and `impact.py` / `bom.py` already held the table for their pipelines.
+
+Same year distinction as the scaling-rules fix: the loop is per-year and
+already injects `year` as an EXPRESSION variable, which is a different thing
+from resolving a parameter's VALUE for that year. Only the second was broken.
+
+**The reserved-name collision check runs ONCE, up front.** Parameter names do
+not vary by year, so a per-year check would repeat the work and — worse — name
+a year that has nothing to do with the collision. Pinned by a test asserting
+the message contains no year.
+
+**Live data shows the workaround.** MAp-test's `Fueling Infrastructure` rules
+hand-roll their year dependence inline —
+`filtered_stock * (0.60 - (year - 2025) * 0.006)` — which is exactly what a
+keyframed parameter is for. Those trends are now expressible as parameters;
+migrating them is optional and separate.
+
+#### What NOT to do
+
+- **Don't assume the scaling-rules fixture covers this.** It exercises
+  `DSMScalingRule` through `DynamicStockModel` and never touches the subsystem
+  path. Its LOOKING like it covered both is why this survived.
+  `test_the_scaling_rules_fixture_does_NOT_cover_this_channel` pins the
+  boundary and fails if that file grows a subsystem import — at which point
+  say so THERE and delete the pin, rather than leaving two files each assuming
+  the other covers it.
+- **Don't hand a subsystem only a pre-resolved `ParameterSet`.** It has already
+  lost the keyframes. The raw table is what carries them.
+- **Don't move the collision check inside the per-year loop.**
+
 ### Keyframed parameters resolve PER SIMULATION YEAR inside a scaling rule
 
 `ParameterEngine.__init__` resolves the whole table **eagerly** into

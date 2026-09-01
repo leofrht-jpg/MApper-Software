@@ -1271,7 +1271,10 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
                     detail=f"Archetype '{arc.name}' has {unlinked} unlinked material(s).",
                 )
         try:
-            sub_sim = compute_subsystem_result(sub, _get_system(system_id), sim, engine)
+            sub_sim = compute_subsystem_result(
+                sub, _get_system(system_id), sim, engine,
+                parameter_table=param_table, parameter_scenario=param_scenario,
+            )
         except (ParameterError, ValueError) as e:
             raise HTTPException(
                 status_code=400, detail=f"Dependent subsystem '{sub.name}': {e}"

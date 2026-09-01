@@ -8293,6 +8293,54 @@ pick. 6/6 runs deterministic afterwards.
 - **Don't order a test fixture on database iteration order.** It varies between
   bw2 sessions. Sort explicitly.
 
+## A weak, honest fingerprint of the databases and LCIA methods
+
+`compute_database` is a mutable string, premise regenerates databases **in
+place**, and the Method Library installs and uninstalls methods at runtime — so
+a result named things that could point at different content than they did at
+compute time, and nothing detected it.
+
+**A full checksum is not viable, and the number is why: the MAp-test project
+directory is 40.85 GB.** Even one database means materialising every exchange —
+the `Database.load()` cost the multi-year performance notes already warn about.
+
+**A weak fingerprint that detects the common case beats a strong one nobody can
+compute.** Brightway already tracks everything needed, and reading it is free —
+**0.02 ms for all 38 databases**, 0.010 ms for 16 EF methods. Both are dict
+reads on metadata bw2 holds anyway; nothing is loaded.
+
+| field | detects | misses |
+|---|---|---|
+| `modified` | **regeneration** — premise rewriting in place | **tampering**; it moves only when bw2 saves |
+| `number` | a database swapped for a different one | any count-preserving edit |
+| `num_cfs` | a method replaced by one with different coverage | a **count-preserving CF edit** |
+| `abbreviation` | uninstall + reinstall (the Method Library case) | in-place factor edits |
+
+**`abbreviation` is Brightway's persisted registration id, NOT a content
+hash.** The trailing hex was checked against `md5(str(name))` and
+`md5(" ".join(name))` — neither matches — and it is not documented as
+content-derived, so it identifies a **registration**, not content. A test fails
+if the module ever describes it otherwise.
+
+**The limits note travels with the warning.** `LIMITS_NOTE` is appended to the
+export's reproducibility block, because a reader of an exported file cannot see
+the docstring, and *absence of a warning is not evidence the data is
+unchanged*.
+
+#### What NOT to do
+
+- **Don't describe any of these as integrity or content verification.** They
+  detect the ordinary ways a database or method moves under a stored result and
+  nothing more. Overstating converts "we do not know" into a false assurance,
+  which is worse than having no fingerprint.
+- **Don't reach for a real checksum without measuring.** 40.85 GB.
+- **Don't report an uninstalled name as a mismatch.** Absent from *this*
+  project is not the same as changed — it is skipped at fingerprint time and
+  reported as "not installed any more" only when it was present at compute
+  time.
+- **Don't let fingerprinting fail a compute.** Every read is guarded; an
+  unreadable name is simply absent.
+
 ## Two content hashes: the authored BOM, and the parameter table
 
 **Two, not one.** They change for different reasons and at different rates, so

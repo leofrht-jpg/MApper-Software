@@ -1522,9 +1522,19 @@ def _engine_for_scenario(scenario: str | None):
     return ParameterEngine(table, scenario=scenario)
 
 
-def simulate_for_scenario(system_id: str, scenario_id: str | None) -> SimulationResult:
+def simulate_for_scenario(
+    system_id: str, scenario_id: str | None, case: str | None = None
+) -> SimulationResult:
     """Simulate a DSM scenario fresh and return the result *without*
     polluting the cached active-scenario sim or persisted storage.
+
+    ``case`` is the PARAMETER sensitivity case (a different axis from
+    ``scenario_id``, which is the DSM scenario). It reaches the scaling rules,
+    which are the only channel from parameters into DSM output. It used to be
+    hard-coded ``None`` here while BOTH callers knew the user's selection and
+    dropped it -- so a run under "Optimistic" computed the LCA under Optimistic
+    and the fleet under Base. ``None`` means Base, which is the documented
+    default and what every pre-existing caller gets.
 
     Used by the Impact Assessment multi-DSM fan-out (Patch 2E.1) so each
     impact run can compute against an arbitrary scenario without changing
@@ -1546,7 +1556,7 @@ def simulate_for_scenario(system_id: str, scenario_id: str | None) -> Simulation
             )
     view = _materialized(state, scenario_id)
     try:
-        engine = _engine_for_scenario(None) if view.scaling_rules else None
+        engine = _engine_for_scenario(case) if view.scaling_rules else None
         model = DynamicStockModel(sys_def, view, parameter_engine=engine)
         return model.simulate()
     except Exception as e:
@@ -1559,14 +1569,24 @@ def simulate_for_scenario(system_id: str, scenario_id: str | None) -> Simulation
 async def simulate(
     system_id: str,
     scenario_id: str | None = Query(None),
+    case: str | None = Query(
+        None,
+        description=(
+            "Parameter sensitivity case. A DIFFERENT axis from scenario_id "
+            "(the DSM scenario). Reaches the scaling rules. None means Base."
+        ),
+    ),
 ) -> SimulationResult:
     from mapper.core.compute_metrics import measure_compute
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(case)
     meter = measure_compute()
     sys_def = _get_system(system_id)
     state = _get_or_create_state(system_id)
     view = _materialized(state, scenario_id)
     try:
-        engine = _engine_for_scenario(None) if view.scaling_rules else None
+        engine = _engine_for_scenario(case) if view.scaling_rules else None
         model = DynamicStockModel(sys_def, view, parameter_engine=engine)
         result = model.simulate()
     except Exception as e:

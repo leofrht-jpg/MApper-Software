@@ -8026,6 +8026,59 @@ name is not the same as *gating* on it. The one conditional that legitimately
 wraps a resolve call — `DSMLCAPipeline`'s year-varying branch, which chooses
 resolve-once vs resolve-per-year — is pinned unflagged by its own test.
 
+## The DSM sim binds the sensitivity case; the LCA half always did
+
+`scenario_id` (a DSM scenario) and `case` (a parameter sensitivity case) are
+**different axes**. `simulate_for_scenario` hard-coded
+`_engine_for_scenario(None)`, so the DSM sim always ran under Base — while
+BOTH of its callers had the user's selection in hand and dropped it:
+
+| caller | knew | forwarded |
+|---|---|---|
+| `impact.post_calculate` | `body.parameter_set_id` | nothing |
+| `bom.material_flows` | `body.parameter_scenario` | nothing |
+
+Each applies the case to the archetypes and then simulated the fleet under
+Base, so one run mixed two cases. `case` is now threaded through
+`simulate_for_scenario(system_id, scenario_id, case=None)`, both callers
+forward it, and `/simulate` takes an optional `case` query param (validated by
+the shared helper). `None` means Base — every pre-existing caller is
+byte-identical.
+
+**Scaling rules are the only channel from parameters into DSM output**
+(`_resolve_rule`, reached only from `_scale_year_cohort` / `_scale_outflows`,
+both short-circuiting when there are none). Neither live project has a single
+scaling rule — 0 across both — which is why this was latent. The binding is
+wrong regardless of whether today's data exercises it.
+
+**The frontend does not send `case` on `/simulate` yet** — `simulateMFA` sends
+only `scenario_id`, and the DSM Dashboard has no sensitivity-case selector.
+The query param exists so the boundary is complete and a direct API caller can
+express it; wiring the UI is a separate decision.
+
+### Why this survived: the engine was tested, the invocation was not
+
+`test_dsm_scaling.py::test_multi_scenario_produces_distinct_results` constructs
+`ParameterEngine(table, scenario=...)` **directly** and asserts the three
+trajectories differ. It never goes through a route. So it proved the mechanism
+honours a case while the wiring one level up passed `None` — the same shape as
+the worker-launch coverage gap, where a test measures *that* something runs and
+never *what it is invoked with*.
+
+`tests/test_dsm_simulate_case_binding.py` goes through the routes, and carries
+a test asserting `test_dsm_scaling.py` still does NOT, so the note cannot go
+stale silently.
+
+#### What NOT to do
+
+- **Don't conflate `scenario_id` with `case`.** DSM scenario and parameter
+  sensitivity case are separate axes that both reach `simulate`. The names are
+  close and the bug was exactly this conflation being invisible.
+- **Don't test a parameter binding by constructing the engine yourself.** That
+  is what left this open. Drive the route.
+- **Don't read "no live data exercises it" as "not a bug".** Zero scaling rules
+  today is a property of today's projects, not a guarantee.
+
 ## A sensitivity case name is CHECKED, once, at every boundary
 
 `ParameterTable.resolve` falls through to `base_value` when the requested

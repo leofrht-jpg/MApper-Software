@@ -205,7 +205,12 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                 ),
             )
         resolved_dsm_scenario_id = scen_obj.id
-        sim = simulate_for_scenario(body.mfa_system_id, body.dsm_scenario_id)
+        # Bind the sensitivity case to the DSM sim too. It used to be dropped
+        # here, so a multi-DSM run under a non-Base case computed the LCA
+        # under that case and the fleet under Base.
+        sim = simulate_for_scenario(
+            body.mfa_system_id, body.dsm_scenario_id, body.parameter_set_id
+        )
     else:
         resolved_dsm_scenario_id = state.active_scenario_id or BASE_SCENARIO_ID
         sim = _proj_results(project).get(body.mfa_system_id)

@@ -117,10 +117,10 @@ jobs:
 
       # ── macOS: one pytest process for the whole suite ───────────────────────
       #
-      # `python -m pytest`, not bare `pytest`: there is no conftest.py and the
-      # package is not installed, so `import mapper` only resolves because
-      # `python -m` puts the working directory on sys.path. Bare `pytest` fails
-      # at collection.
+      # `python -m pytest`, not bare `pytest`: the package is not installed and
+      # tests/conftest.py sits below the rootdir, so `import mapper` only
+      # resolves because `python -m` puts the working directory on sys.path.
+      # Bare `pytest` fails at collection.
       #
       # BRIGHTWAY2_DIR points at an empty scratch directory so the run is
       # hermetic and the ecoinvent-dependent tests take their documented skip
@@ -136,13 +136,28 @@ jobs:
 
       # ── Windows: one pytest process PER FILE ────────────────────────────────
       #
-      # A single-process run of the whole suite dies part-way through with a
-      # native access violation — premise's GDAL/geo stack and openpyxl's
-      # lxml/libxml2 load conflicting native libraries into one interpreter. The
-      # suite only completes with a fresh process per file.
+      # THIS LOOP IS LOAD-BEARING FOR TWO INDEPENDENT REASONS. Do not collapse
+      # it into a single-process run even if the first one is ever fixed.
       #
-      # pytest-forked is not an option here: it relies on os.fork(), which does
-      # not exist on Windows. Hence the explicit loop.
+      # 1. Native libraries. A single-process run of the whole suite dies
+      #    part-way through with a native access violation — premise's GDAL/geo
+      #    stack and openpyxl's lxml/libxml2 load conflicting native libraries
+      #    into one interpreter. The suite only completes with a fresh process
+      #    per file. pytest-forked is not an option: it relies on os.fork(),
+      #    which does not exist on Windows. Hence the explicit loop.
+      #
+      # 2. TEST ISOLATION. A fresh process per file is also the only thing that
+      #    proves no test depends on another's leftover module-level state.
+      #    Twenty-one module-level registries persist across tests and nothing
+      #    clears them (tests/conftest.py clears exactly one — the parameter
+      #    table — after three fixtures were found passing on a predecessor's
+      #    leftovers). This loop is what caught the third of those: it failed
+      #    here while a full-suite run passed locally.
+      #
+      #    That makes it a standing isolation guard, not a Windows workaround.
+      #    Removing it would silently retire the guarantee with no test failing,
+      #    which is why tests/test_ci_isolation_guard.py asserts this loop still
+      #    exists.
       #
       # No test files are excluded. The 19 tests that need a real ecoinvent
       # database are already guarded by a skipif that checks for a non-biosphere

@@ -1,0 +1,63 @@
+# Machine-readable citation metadata.
+#
+# This is the counterpart to the BibTeX block in README.md, not a replacement:
+# GitHub renders its "Cite this repository" button from THIS file only, and
+# JOSS reviewers look for it. The prose version stays in the README.
+#
+# ── TWO THINGS ARE PLACEHOLDERS AND MUST BE FILLED IN BY A HUMAN ────────────
+#
+#   1. `doi` under `identifiers` — commented out below. Add the Zenodo or
+#      JOSS-issued DOI once it exists, and update the README's `note` field in
+#      the same commit so the two cannot disagree.
+#   2. `authors` — a single entry, deliberately. The author list, affiliations
+#      and ORCIDs are a scholarly decision, not a mechanical one. Add
+#      co-authors here and in paper.md together.
+#
+# `preferred-citation` is intentionally ABSENT until the JOSS paper exists.
+# Adding it early would make every citation point at a paper nobody can read;
+# until then the software itself is the correct thing to cite.
+cff-version: 1.2.0
+message: "If you use MApper in your research, please cite it as below."
+title: >-
+  MApper: A unified platform for Life Cycle Assessment, Dynamic Stock
+  Modelling, prospective LCA, and Absolute Environmental Sustainability
+  Assessment
+abstract: >-
+  MApper unifies four environmental-assessment methods behind one model:
+  Life Cycle Assessment, Dynamic Stock Modelling, prospective LCA via
+  IAM-derived background databases, and Absolute Environmental
+  Sustainability Assessment against planetary boundaries. A product's
+  identity is carried through the whole pipeline, so a cohort defined in
+  the stock model is traceable into its characterised impact and into its
+  share of a downscaled safe operating space. The ecoinvent database and
+  IAM scenario data are separately licensed and are not distributed with
+  MApper.
+type: software
+version: 0.2.0
+license: MPL-2.0
+repository-code: "https://github.com/leofrht-jpg/MApper-Software"
+url: "https://mapper.leonardoferhati.com"
+
+authors:
+  # PLACEHOLDER — one entry. Add co-authors, affiliations and ORCIDs here and
+  # in paper.md together, so the two lists cannot drift apart.
+  - family-names: Ferhati
+    given-names: Leonardo
+    affiliation: Technical University of Denmark
+    # orcid: "https://orcid.org/0000-0000-0000-0000"   # TODO: add
+
+keywords:
+  - life cycle assessment
+  - dynamic stock modelling
+  - prospective LCA
+  - absolute environmental sustainability assessment
+  - planetary boundaries
+  - industrial ecology
+  - brightway2
+
+# identifiers:
+#   # TODO: uncomment and fill once the DOI is issued. Update the README's
+#   # BibTeX `note` field in the SAME commit.
+#   - type: doi
+#     value: 10.5281/zenodo.XXXXXXX
+#     description: Archived software release

@@ -63,6 +63,19 @@ class ProspectiveDB(BaseModel):
     mode: Literal["separate", "superstructure"] = "separate"
     sdf_path: str | None = None
     created_at: str
+    #: True when these per-year databases came from the SUPERSTRUCTURE
+    #: FALLBACK rather than a separate-mode request.
+    #:
+    #: Not a quality signal -- the content is identical either way, because the
+    #: fallback fires only in the WRITE step, after ``ndb.update()`` has
+    #: already produced the transformed databases. It is a durable record: the
+    #: warning reaches the task and the WS ``done`` frame, but a dismissed
+    #: toast left nothing behind, and the registry is what someone reads
+    #: months later.
+    #:
+    #: Defaults False, so every entry written before this loads unchanged --
+    #: including the 36 in MAp-test.
+    fallback: bool = False
 
 
 class GenerateRequest(BaseModel):
@@ -292,6 +305,12 @@ async def post_generate(body: GenerateRequest) -> GenerateResponse:
                             "year": int(name.rsplit("_", 1)[-1]),
                             "years": [int(name.rsplit("_", 1)[-1])],
                             "created_at": now,
+                            # Durable record that this came from the
+                            # superstructure fallback. ``fallback_warning``
+                            # reaches the task and the WS ``done`` frame, but
+                            # a dismissed toast left nothing behind -- and the
+                            # registry is what someone reads months later.
+                            "fallback": bool(result.fallback_warning),
                         },
                     )
             task.written = list(result.names)

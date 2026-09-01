@@ -2910,6 +2910,15 @@ export interface ProspectiveDB {
   mode: PLCAMode
   sdf_path?: string | null
   created_at: string
+  /**
+   * True when these per-year databases came from the superstructure FALLBACK.
+   *
+   * Not a quality signal — the content is identical either way, because the
+   * fallback fires only in the write step, after premise has already produced
+   * the transformed databases. It is a durable record, because the generation
+   * warning is transient and the registry is what someone reads months later.
+   */
+  fallback?: boolean
 }
 
 export interface PLCAGenerateRequest {

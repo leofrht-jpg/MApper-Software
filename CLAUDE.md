@@ -8249,6 +8249,57 @@ pick. 6/6 runs deterministic afterwards.
 - **Don't order a test fixture on database iteration order.** It varies between
   bw2 sessions. Sort explicitly.
 
+## The premise superstructure fallback is recorded, not gated
+
+The audit asked for the fallback to be **opt-in** rather than merely visible,
+on the principle that *"a run that silently computes against a different
+database than requested is a different result"*. The principle is sound. This
+instance does not match it, and the reasoning is written as a chain someone can
+re-check rather than a conclusion to take on trust:
+
+1. **The fallback fires only in the WRITE step.** `ndb.update()` — the
+   expensive, methodologically load-bearing transformation — has already run
+   and produced the per-year databases. Superstructure writes them as one DB
+   plus an SDF; the fallback writes *the same content* as N per-year DBs.
+2. **The result is honestly labelled.** It returns `mode="separate"` with the
+   separate names. Nothing downstream is told it got a superstructure.
+3. **`resolve_prospective_dbs` does `int(entry.get("year"))`.** Superstructure
+   entries carry `year=None`, so they are rejected — **superstructure
+   databases are not computable in MApper at all**. The vintage picker lists
+   them disabled for the same reason.
+4. **Therefore** the fallback yields the only format the compute pipeline can
+   use, and an opt-in flag would ask the user to opt in to a *usable* result
+   instead of an unusable one.
+
+**Step 3 is the load-bearing link, and it is tested directly.** If
+`resolve_prospective_dbs` ever learns to read a superstructure database with a
+year slice — an SDF year-slice activation engine, say — then step 4 no longer
+follows and the opt-in question is live again.
+`test_the_reasoning_still_holds` and `test_a_superstructure_entry_is_actually_rejected`
+both fail at that moment, so the trigger fires on its own rather than waiting
+for someone to reconstruct the argument.
+
+**What did change.** `fallback_warning` reached the task and the WS `done`
+frame but nothing durable, so a dismissed toast left no trace. The registry
+entry now carries `fallback: true`, and the pLCA database list shows a
+`From superstructure fallback` sub-label in the slot that already renders
+`Superstructure · N scenarios`.
+
+**The badge is not a quality signal**, and its tooltip says so: the content is
+identical, the fallback only changes how it was written, and per-year is the
+form Impact Assessment can actually compute against.
+
+#### What NOT to do
+
+- **Don't add an opt-in flag without re-checking step 3.** If it still holds,
+  the flag gates the only usable output.
+- **Don't read the badge as "these databases are worse".** They are the same
+  databases, written differently.
+- **Don't set `fallback` on the superstructure branch.** A superstructure that
+  SUCCEEDED is not a fallback; a test pins that the branch never sets it.
+- **Don't default it to anything but `False`.** Every entry written before this
+  — all 36 in MAp-test — has no key and must load unchanged.
+
 ## Two content hashes: the authored BOM, and the parameter table
 
 **Two, not one.** They change for different reasons and at different rates, so

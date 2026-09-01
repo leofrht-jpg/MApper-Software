@@ -1522,6 +1522,21 @@ def _engine_for_scenario(scenario: str | None):
     return ParameterEngine(table, scenario=scenario)
 
 
+def _scaling_params(scenario: str | None):
+    """``(engine, table, scenario)`` for a scaling-rule simulate.
+
+    The TABLE travels alongside the engine so ``DynamicStockModel`` can
+    re-resolve keyframed parameters per simulation year. The engine alone is
+    pinned to one year (``ParameterEngine`` resolves eagerly at construction),
+    which silently collapsed every time-varying parameter to its base value.
+    """
+    from mapper.api import parameters as _params
+    engine = _engine_for_scenario(scenario)
+    if engine is None:
+        return None, None, None
+    return engine, _params._table_for(), scenario
+
+
 def simulate_for_scenario(
     system_id: str, scenario_id: str | None, case: str | None = None
 ) -> SimulationResult:
@@ -1556,8 +1571,13 @@ def simulate_for_scenario(
             )
     view = _materialized(state, scenario_id)
     try:
-        engine = _engine_for_scenario(case) if view.scaling_rules else None
-        model = DynamicStockModel(sys_def, view, parameter_engine=engine)
+        engine, table, scen = (
+            _scaling_params(case) if view.scaling_rules else (None, None, None)
+        )
+        model = DynamicStockModel(
+            sys_def, view, parameter_engine=engine,
+            parameter_table=table, parameter_scenario=scen,
+        )
         return model.simulate()
     except Exception as e:
         raise HTTPException(
@@ -1586,8 +1606,13 @@ async def simulate(
     state = _get_or_create_state(system_id)
     view = _materialized(state, scenario_id)
     try:
-        engine = _engine_for_scenario(case) if view.scaling_rules else None
-        model = DynamicStockModel(sys_def, view, parameter_engine=engine)
+        engine, table, scen = (
+            _scaling_params(case) if view.scaling_rules else (None, None, None)
+        )
+        model = DynamicStockModel(
+            sys_def, view, parameter_engine=engine,
+            parameter_table=table, parameter_scenario=scen,
+        )
         result = model.simulate()
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Simulation failed: {e}")
@@ -1687,7 +1712,10 @@ async def simulate_scenarios(
         for case in cases:
             try:
                 engine = ParameterEngine(table, scenario=case)
-                model = DynamicStockModel(sys_def, view, parameter_engine=engine)
+                model = DynamicStockModel(
+                    sys_def, view, parameter_engine=engine,
+                    parameter_table=table, parameter_scenario=case,
+                )
                 results[_key(sid, case)] = model.simulate()
             except Exception as e:
                 raise HTTPException(

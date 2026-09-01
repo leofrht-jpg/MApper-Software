@@ -2854,8 +2854,30 @@ checked function by function, including `compute_manual_subsystem` behind the
 manual-flow routes. So scaling rules were the only one, and the rest are
 unreachable-but-clean rather than unswept.
 
+**A PARAMETER with no UI control is the same shape as a route with no UI
+caller.** `POST /dsm/systems/{id}/simulate` takes an optional `case` (parameter
+sensitivity case) that the frontend never sends — `simulateMFA` in `client.ts`
+puts only `scenario_id` on the query string, and the DSM Dashboard has no
+sensitivity-case selector. So the boundary is complete and correct, and
+**unreachable by clicking**. Added deliberately in the Patch B path-1 binding
+so the API is expressible and the other two call paths (`/impact/calculate`,
+`.../material-flows`, which DO forward their case) go through one function —
+but recorded here because this is exactly how the `scaling_rules` migration gap
+survived: backend live, UI removed, every hand-driven check missing it.
+
+Also on this list for the same reason: **scaling rules themselves**. The editor
+was removed from the DSM config bar on 2026-05-01 while the backend stayed
+live, so `DSMScalingRule` — the only channel from parameters into DSM output —
+cannot be authored in-app at all. Both live projects have zero rules, which is
+why every parameter-binding defect in that path has been latent rather than
+live. Reinstating the editor makes them live; re-read the scaling-rule sections
+before doing it.
+
 That list is worth keeping current: an endpoint with no UI caller gets no
-hand-testing, so the automated sweep is the only thing that reaches it.
+hand-testing, so the automated sweep is the only thing that reaches it. The
+same applies to a REQUEST FIELD no UI populates — the sweeps walk routes, not
+query parameters, so a field like `case` is only covered by the tests written
+for it.
 
 #### What NOT to do
 
@@ -8055,6 +8077,70 @@ wrong regardless of whether today's data exercises it.
 only `scenario_id`, and the DSM Dashboard has no sensitivity-case selector.
 The query param exists so the boundary is complete and a direct API caller can
 express it; wiring the UI is a separate decision.
+
+### Keyframed parameters resolve PER SIMULATION YEAR inside a scaling rule
+
+`ParameterEngine.__init__` resolves the whole table **eagerly** into
+`self.params` for ONE year, and `resolve()` then evaluates against that frozen
+map. Every DSM caller built it with `year=None`, under which keyframes are
+ignored and a time-varying parameter silently collapses to its `base_value` —
+so `base * adoption` applied the SAME adoption to 2026 and 2050.
+
+**The year was never missing.** `_resolve_rule` already receives it — it
+injects it as an expression variable — and both callers
+(`_scale_year_cohort`, `_scale_outflows`) are per-year loops. It was available
+and unused for parameter RESOLUTION. Those are two different things and only
+the second was broken: injecting `year` into the *expression* always worked,
+which is part of why the path looked covered.
+
+`DynamicStockModel` now takes keyword-only `parameter_table` +
+`parameter_scenario` alongside the legacy `parameter_engine`, and
+`_engine_for_year(year)` returns a per-year engine cached in `_year_engines`.
+This is the shape `DSMLCAPipeline` has always used — passing the raw table so
+keyframes resolve per year — applied to the half that never got it.
+
+**Byte-identical everywhere except keyframes × scaling rules**:
+`_engine_for_year` falls back to the single pre-built engine when no table was
+handed in (every legacy caller) AND when the table carries no keyframes (both
+live projects). One `resolve_all` per year per simulate, not per cohort.
+
+**`subsystem_engine` is deliberately not threaded.** Its
+`compute_subsystem_result` builds a synthetic `MaterializedDSMState` with **no
+`scaling_rules` field set at all**, so per-year resolution is unreachable there
+by construction, and its engine comes from a pre-resolved `ParameterSet` rather
+than a table. Threading it would mean changing `_build_engine`'s return shape
+for a path that cannot use it.
+
+#### The fixture asserts ABSOLUTE values, not difference
+
+`tests/test_dsm_scaling_year_varying.py` computes each expected count in the
+test file from the keyframe anchors — a **second implementation** of the
+clamp-and-interpolate rule, deliberately not a call to
+`_interpolate_keyframes`, because asserting the engine against the very
+function the engine uses verifies nothing.
+
+A test that only checked "the years differ" would pass on any
+wrong-but-varying resolution — an off-by-one year, anchors read in reverse.
+The anchors are chosen so one run covers a clamp before the first anchor, the
+anchors exactly, an interior interpolated year, and a clamp after the last:
+`[100, 100, 150, 200, 250, 250]`.
+
+`base_value` is set to an absurd `99.0` so that ignoring keyframes produces
+`9900.0` — unmissable rather than plausible. Verified load-bearing: reverting
+`_engine_for_year` to the single engine fails 9 of 12 with exactly that
+uniform 9900.0, and leaves the three no-drift cases passing.
+
+#### What NOT to do
+
+- **Don't build one `ParameterEngine` per simulate and expect keyframes to
+  work.** It resolves eagerly at construction and is pinned to whatever `year`
+  it was given. Pass the table.
+- **Don't confuse the injected `year` variable with year-resolved parameter
+  VALUES.** `extra_vars={"year": ...}` always worked and is not the fix.
+- **Don't assert a resolver against the function it uses.** Recompute the
+  expected value independently in the test, or the assertion is circular.
+- **Don't test year-varying behaviour by asserting only that years differ.**
+  Absolute expected values per year, or a wrong-but-varying resolution passes.
 
 ### Why this survived: the engine was tested, the invocation was not
 

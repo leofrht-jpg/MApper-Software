@@ -1932,7 +1932,11 @@ async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialF
     # behavior every existing single-scenario caller relies on.
     if body.dsm_scenario_id is not None:
         from mapper.api.dsm import simulate_for_scenario
-        sim = simulate_for_scenario(system_id, body.dsm_scenario_id)
+        # Same binding as /impact/calculate: the case reaches the DSM sim,
+        # not just the archetype resolution below.
+        sim = simulate_for_scenario(
+            system_id, body.dsm_scenario_id, body.parameter_scenario
+        )
     else:
         sim = _proj_results(project).get(system_id)
     if sim is None:

@@ -32,6 +32,7 @@ from itertools import product
 from openpyxl import Workbook, load_workbook
 
 from mapper.core.parameter_engine import ParameterEngine
+from mapper.models.parameter_schemas import ParameterTable
 from mapper.models.dsm_schemas import (
     DimensionDef,
     DSMMode,
@@ -1131,7 +1132,31 @@ class DynamicStockModel:
         system: SystemDefinition,
         state: MaterializedDSMState | DSMSystemState,
         parameter_engine: ParameterEngine | None = None,
+        *,
+        parameter_table: ParameterTable | None = None,
+        parameter_scenario: str | None = None,
     ) -> None:
+        """``parameter_table`` + ``parameter_scenario`` supersede
+        ``parameter_engine`` for KEYFRAMED tables.
+
+        ``ParameterEngine.__init__`` resolves the whole table EAGERLY into
+        ``self.params`` for ONE year, and ``resolve()`` then evaluates against
+        that frozen map. So an engine built once per simulate is pinned to one
+        year, and every caller built it with ``year=None`` -- under which
+        keyframes are ignored and every time-varying parameter silently
+        collapses to its ``base_value``.
+
+        The year was never missing: ``_resolve_rule`` already receives it (it
+        injects it as an expression variable) and both of its callers are
+        per-year loops. It was available and unused for parameter resolution.
+
+        Passing the raw table + scenario instead of a pre-built engine is the
+        same shape ``DSMLCAPipeline`` already uses, and for the same reason --
+        this was the half that never got it. Legacy callers pass neither and
+        are byte-identical; a table with no keyframes also resolves through the
+        single engine, so the only behaviour that changes is keyframes x
+        scaling rules, which is precisely the combination that was wrong.
+        """
         self.system = system
         # Accept either the persisted multi-scenario state (auto-materialize the
         # active or Base scenario) or a pre-resolved view handed in by the API.
@@ -1139,6 +1164,9 @@ class DynamicStockModel:
             state = materialize_scenario(state)
         self.state = state
         self.parameter_engine = parameter_engine
+        self._param_table = parameter_table
+        self._param_scenario = parameter_scenario
+        self._year_engines: dict[int, ParameterEngine] = {}
         self.years: list[int] = system.time_horizon.years
         self.cohort_keys: list[str] = all_cohort_keys(system.dimensions)
         self.max_age: int = system.time_horizon.length  # safe upper bound
@@ -1155,13 +1183,37 @@ class DynamicStockModel:
 
     # — Scaling —
 
+    def _engine_for_year(self, year: int) -> ParameterEngine | None:
+        """The engine to resolve a scaling rule for ``year``.
+
+        Falls back to the single pre-built engine unless a table was handed in
+        AND it actually carries keyframes -- so both the legacy path and every
+        scalar-only table stay byte-identical. Cached per year: one
+        ``resolve_all`` per year per simulate, not one per cohort.
+        """
+        if self._param_table is None or not self._param_table.has_time_varying():
+            return self.parameter_engine
+        eng = self._year_engines.get(year)
+        if eng is None:
+            eng = ParameterEngine(
+                self._param_table, scenario=self._param_scenario, year=year
+            )
+            self._year_engines[year] = eng
+        return eng
+
     def _resolve_rule(self, rule: DSMScalingRule, base: float, year: int) -> float:
-        """Evaluate ``rule.expression`` with ``base`` / ``year`` injected."""
-        if self.parameter_engine is None:
+        """Evaluate ``rule.expression`` with ``base`` / ``year`` injected.
+
+        Parameter VALUES resolve for ``year`` too -- not just the injected
+        ``year`` variable. Those are different things, and only the second one
+        used to work.
+        """
+        engine = self._engine_for_year(year)
+        if engine is None:
             # Unreachable in practice — ``_scale_year_cohort`` / ``_scale_outflows``
             # short-circuit when no engine is set. Kept defensive.
             return base
-        return self.parameter_engine.resolve(
+        return engine.resolve(
             rule.expression, extra_vars={"base": base, "year": float(year)}
         )
 

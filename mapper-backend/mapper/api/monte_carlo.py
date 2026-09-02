@@ -64,6 +64,7 @@ from mapper.core.run_provenance import (
     stamp as _run_stamp,
     use_phase_basis as _use_phase_basis,
 )
+from mapper.core.run_provenance import provenance_rows as _provenance_rows
 
 router = APIRouter()
 
@@ -903,6 +904,12 @@ def _build_monte_carlo_workbook(
         # research output, and the seed is the whole of the reproduction.
         ("Seed", result.seed),
         ("Elapsed (s)", round(result.elapsed_seconds, 2)),
+        # WHEN it was computed, read off the result -- never now(). The MC
+        # export was not among the ten builders the run-provenance patch
+        # fixed, so it carried a seed (reproducible) but no date (not
+        # placeable in time). A reproducibility record that cannot say when
+        # it was produced is half a record.
+        *_provenance_rows(result.computed_at, result.mapper_version),
         ("", ""),
         ("SCORING PROVENANCE", ""),
         ("Rows scored", result.rows_with_uncertainty),
@@ -1100,6 +1107,12 @@ def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workboo
         ("Iterations", result.n_iterations),
         ("Seed", result.seed),
         ("Elapsed (s)", round(result.elapsed_seconds, 2)),
+        # WHEN it was computed, read off the result -- never now(). The MC
+        # export was not among the ten builders the run-provenance patch
+        # fixed, so it carried a seed (reproducible) but no date (not
+        # placeable in time). A reproducibility record that cannot say when
+        # it was produced is half a record.
+        *_provenance_rows(result.computed_at, result.mapper_version),
         ("", ""),
         ("Sampling", "PAIRED. One draw set per iteration, applied to every "
                      "item, so the pairwise differences are meaningful. "

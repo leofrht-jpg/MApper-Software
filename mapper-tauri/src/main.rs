@@ -49,7 +49,7 @@ const HEALTH_TIMEOUT: Duration = Duration::from_secs(300);
 // A self-contained loading page shown immediately while the sidecar boots, so
 // the user gets feedback during the ~2 min cold start instead of a blank/hidden
 // window. Inline base64 data URL (no bundled file, works in dev + release).
-const LOADING_DATA_URL: &str = "data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWw+PGhlYWQ+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxzdHlsZT4KaHRtbCxib2R5e21hcmdpbjowO2hlaWdodDoxMDAlO2JhY2tncm91bmQ6IzBiMGYxNDtjb2xvcjojZTZlZGYzO2ZvbnQtZmFtaWx5Oi1hcHBsZS1zeXN0ZW0sQmxpbmtNYWNTeXN0ZW1Gb250LCJTZWdvZSBVSSIsc2Fucy1zZXJpZn0KLndyYXB7aGVpZ2h0OjEwMCU7ZGlzcGxheTpmbGV4O2ZsZXgtZGlyZWN0aW9uOmNvbHVtbjthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OmNlbnRlcjtnYXA6MThweH0KLnNwaW5uZXJ7d2lkdGg6MzRweDtoZWlnaHQ6MzRweDtib3JkZXI6M3B4IHNvbGlkICMxZjI5Mzc7Ym9yZGVyLXRvcC1jb2xvcjojMTRiOGE2O2JvcmRlci1yYWRpdXM6NTAlO2FuaW1hdGlvbjpzcGluIC45cyBsaW5lYXIgaW5maW5pdGV9CkBrZXlmcmFtZXMgc3Bpbnt0b3t0cmFuc2Zvcm06cm90YXRlKDM2MGRlZyl9fQoudGl0bGV7Zm9udC1zaXplOjE3cHg7Zm9udC13ZWlnaHQ6NjAwO2xldHRlci1zcGFjaW5nOi4wMmVtfQouc3Vie2ZvbnQtc2l6ZToxM3B4O2NvbG9yOiM4Yjk3YTU7bWF4LXdpZHRoOjM0MHB4O3RleHQtYWxpZ246Y2VudGVyO2xpbmUtaGVpZ2h0OjEuNX0KPC9zdHlsZT48L2hlYWQ+PGJvZHk+PGRpdiBjbGFzcz0id3JhcCI+PGRpdiBjbGFzcz0ic3Bpbm5lciI+PC9kaXY+PGRpdiBjbGFzcz0idGl0bGUiPlN0YXJ0aW5nIE1BcHBlcuKApjwvZGl2PjxkaXYgY2xhc3M9InN1YiI+UHJlcGFyaW5nIHRoZSBiYWNrZW5kIOKAlCB0aGlzIGNhbiB0YWtlIHVwIHRvIDIgbWludXRlcyBvbiBmaXJzdCBsYXVuY2guIFRoZSB3aW5kb3cgb3BlbnMgYXV0b21hdGljYWxseSB3aGVuIGl0J3MgcmVhZHkuPC9kaXY+PC9kaXY+PC9ib2R5PjwvaHRtbD4K";
+const LOADING_DATA_URL: &str = "data:text/html;base64,PCFkb2N0eXBlIGh0bWw+PGh0bWw+PGhlYWQ+PG1ldGEgY2hhcnNldD0idXRmLTgiPjxzdHlsZT4KaHRtbCxib2R5e21hcmdpbjowO2hlaWdodDoxMDAlO2JhY2tncm91bmQ6IzBiMGYxNDtjb2xvcjojZTZlZGYzO2ZvbnQtZmFtaWx5Oi1hcHBsZS1zeXN0ZW0sQmxpbmtNYWNTeXN0ZW1Gb250LCJTZWdvZSBVSSIsc2Fucy1zZXJpZn0KLndyYXB7aGVpZ2h0OjEwMCU7ZGlzcGxheTpmbGV4O2ZsZXgtZGlyZWN0aW9uOmNvbHVtbjthbGlnbi1pdGVtczpjZW50ZXI7anVzdGlmeS1jb250ZW50OmNlbnRlcjtnYXA6MThweH0KLnNwaW5uZXJ7d2lkdGg6MzRweDtoZWlnaHQ6MzRweDtib3JkZXI6M3B4IHNvbGlkICMxZjI5Mzc7Ym9yZGVyLXRvcC1jb2xvcjojMTRiOGE2O2JvcmRlci1yYWRpdXM6NTAlO2FuaW1hdGlvbjpzcGluIC45cyBsaW5lYXIgaW5maW5pdGV9CkBrZXlmcmFtZXMgc3Bpbnt0b3t0cmFuc2Zvcm06cm90YXRlKDM2MGRlZyl9fQoudGl0bGV7Zm9udC1zaXplOjE3cHg7Zm9udC13ZWlnaHQ6NjAwO2xldHRlci1zcGFjaW5nOi4wMmVtfQouc3Vie2ZvbnQtc2l6ZToxM3B4O2NvbG9yOiM4Yjk3YTU7bWF4LXdpZHRoOjM0MHB4O3RleHQtYWxpZ246Y2VudGVyO2xpbmUtaGVpZ2h0OjEuNX0KPC9zdHlsZT48L2hlYWQ+PGJvZHk+PGRpdiBjbGFzcz0id3JhcCI+PGRpdiBjbGFzcz0ic3Bpbm5lciI+PC9kaXY+PGRpdiBjbGFzcz0idGl0bGUiPlN0YXJ0aW5nIE1BcHBlcuKApjwvZGl2PjxkaXYgY2xhc3M9InN1YiI+UHJlcGFyaW5nIHRoZSBiYWNrZW5kOiB0aGlzIGNhbiB0YWtlIHVwIHRvIDIgbWludXRlcyBvbiBmaXJzdCBsYXVuY2guIFRoZSB3aW5kb3cgb3BlbnMgYXV0b21hdGljYWxseSB3aGVuIGl0J3MgcmVhZHkuPC9kaXY+PC9kaXY+PC9ib2R5PjwvaHRtbD4K";
 
 /// Holds the spawned backend child so it can be killed on exit.
 struct SidecarHandle(Mutex<Option<Child>>);
@@ -257,7 +257,7 @@ fn main() {
                     // Genuine failure only: 300 s elapsed with no health. The
                     // window stays on the loading page behind this dialog.
                     eprintln!(
-                        "[shell] backend did NOT respond within {}s — showing failure dialog",
+                        "[shell] backend did NOT respond within {}s: showing failure dialog",
                         HEALTH_TIMEOUT.as_secs()
                     );
                     use tauri_plugin_dialog::{DialogExt, MessageDialogKind};
@@ -269,7 +269,7 @@ fn main() {
                              see SHARING.md for setup and troubleshooting.",
                         )
                         .kind(MessageDialogKind::Error)
-                        .title("MApper — backend not responding")
+                        .title("MApper: backend not responding")
                         .blocking_show();
                 }
             });

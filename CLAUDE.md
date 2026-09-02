@@ -8293,6 +8293,96 @@ pick. 6/6 runs deterministic afterwards.
 - **Don't order a test fixture on database iteration order.** It varies between
   bw2 sessions. Sort explicitly.
 
+## Prospective Monte Carlo is UNREACHABLE, and premise carries no uncertainty
+
+Two facts that only matter together, so they are written together.
+
+### No button hands a prospective result to Monte Carlo
+
+`MonteCarloRequest.archetype_id` and `MonteCarloMultiRequest.archetype_ids` —
+Monte Carlo is **archetype-scoped**. Tracing every entry point:
+
+- **Single-product Static** → "Run uncertainty" passes `computeDatabase: null`,
+  and that is CORRECT: Static is base-ecoinvent by definition.
+- **Single-product Prospective** → has no "Run uncertainty" button at all.
+- **Multi-item Archetypes** → `handleCompute` calls
+  `compute({ scope, methods, cases })` and never passes `computeDatabase`, so
+  the comparison itself runs against base ecoinvent (archetypes resolve through
+  their BOM's ecoinvent links). The handoff's `computeDatabase: null` therefore
+  MATCHES what was compared.
+- **Multi-item Activities** → carries the premise vintages, and Monte Carlo
+  cannot run there at all: an activities comparison has no archetype. The
+  button is hidden for that reason (not a banner — see below).
+
+**So the only route to a prospective Monte Carlo today is a direct API call**
+with `compute_database` set. Nothing in the UI reaches it.
+
+### When it becomes reachable, settle this FIRST
+
+Measured on the frozen build, same archetype, 25 iterations, seed 9:
+
+| background | GSD² |
+|---|---|
+| base ecoinvent | **1.1202** |
+| premise remind/SSP2-PkBudg1150 2030 | **1.0004** |
+
+A near-total collapse. Checking the exchanges directly (400 activities each):
+
+| | base ecoinvent | premise 2030 |
+|---|---|---|
+| `uncertainty type` | 84.5 % lognormal (2) | **99.9 % undefined (0)** |
+| `scale` usable (>0, not NaN) | **84.5 %** | **0 %** |
+| `scale` = NaN | 0 % | **78.2 %** |
+
+**The distributions are genuinely absent, not merely flagged off.** `scale` is
+present as a KEY on 78 % of premise exchanges but its value is `NaN` — a
+destroyed parameter, not a preserved one. (Watch for this: `nan is not None` is
+True, so an `is not None` check reports these as present. It did, and the first
+reading of this survey was wrong because of it.)
+
+And the loss is **not confined to exchanges premise rewrote**. `clay brick
+production` — which an IAM scenario has no reason to touch — is `ut=2,
+scale=0.051` in base ecoinvent and `ut=0, scale=nan` in the premise copy. So
+this is a property of how premise WRITES the database, not of which exchanges
+it modifies. It is upstream behaviour; MApper only reads what premise wrote.
+
+**Why this is worse than the ~12 % undefined-exchange caveat already
+surfaced:** that caveat makes a reported spread a LOWER BOUND, and the UI says
+so. Here the background contributes essentially NOTHING, so a prospective run
+returns a near-zero spread that reads as *confidence* rather than as *missing
+data*. A tight interval is the most persuasive possible presentation of an
+absence.
+
+**TRIGGER — this is testable, not asserted.** If a background selector is ever
+added to multi-item Archetypes, or a "Run uncertainty" button to the
+single-product Prospective panel, then a prospective Monte Carlo becomes
+reachable from the UI and **this question must be settled before that ships**.
+The check is the table above: re-run the exchange survey against the premise
+database of the day. If `scale` is still 0 % usable, either the run must refuse,
+or every prospective MC result must say in the UI that its background spread is
+absent rather than small. Do not ship the selector and the caveat separately.
+
+### `compute()`'s `computeDatabase` parameter is DEAD, deliberately kept
+
+`useMultiProductLCAStore.compute` declares `computeDatabase?: string | null`
+and threads it to `compute_database`, and **no caller passes it**. It is dead.
+
+It stays. Deleting it removes the only trace in the code that this path was
+expected to carry a background, and that expectation is exactly what the
+trigger above is about. A future background selector wires into this parameter;
+finding it already present, with this note, is the difference between
+implementing a feature and rediscovering a design.
+
+#### What NOT to do
+
+- **Don't add a background selector to multi-item Archetypes without settling
+  the premise-uncertainty question.** The selector is the trigger.
+- **Don't read `computeDatabase: null` on a Monte Carlo handoff as a bug.** It
+  matches what the comparison computed against on every path that has one.
+- **Don't delete the dead parameter** to satisfy a linter.
+- **Don't test for a NaN scale with `is not None`.** `nan is not None` is True,
+  and it turned "0 % usable" into "78 % present" on the first pass here.
+
 ## The premise superstructure fallback is recorded, not gated
 
 The audit asked for the fallback to be **opt-in** rather than merely visible,

@@ -708,6 +708,15 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
             </span>
           ) : undefined}
           actions={
+            // Archetypes ONLY. Monte Carlo takes archetype ids
+            // (`MonteCarloRequest.archetype_id`, `MonteCarloMultiRequest
+            // .archetype_ids`) and an activities comparison has none, so the
+            // action cannot work here BY CONSTRUCTION -- not for want of
+            // wiring. It used to render unconditionally and return silently on
+            // the empty archetype filter: visible, clickable, and doing
+            // nothing at all. A banner would be worse than absence; an action
+            // that can never succeed should not be offered.
+            compareMode === 'archetype' ? (
             <button
               type="button"
               data-testid="multi-product-run-uncertainty"
@@ -725,6 +734,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
             >
               Run uncertainty
             </button>
+            ) : undefined
           }
         >
           <ResultsSection result={multiResult} scope={scope} stageAmountsMeta={stageAmountsMeta} activityVintageMeta={activityVintageMeta} byCase={multiByCase} caseOrder={multiCaseOrder} />

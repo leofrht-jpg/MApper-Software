@@ -78,6 +78,19 @@ interface MultiProductLCAState {
   compute: (params: {
     scope: 'inflows' | 'stock' | 'outflows' | 'all'
     methods: string[][]
+    /**
+     * DEAD — declared, threaded to `compute_database`, never passed by any
+     * caller. `handleCompute` sends only `{scope, methods, cases}`.
+     *
+     * KEPT DELIBERATELY. It is the only trace in the code that this path was
+     * expected to carry a background, and that expectation is load-bearing:
+     * a background selector here would make prospective Monte Carlo reachable
+     * from the UI, and premise databases carry NO exchange uncertainty
+     * (0% usable `scale`, 78% NaN) — so a prospective MC would report a
+     * near-zero spread that reads as confidence rather than missing data.
+     * See CLAUDE.md, "Prospective Monte Carlo is UNREACHABLE". Settle that
+     * before wiring this.
+     */
     computeDatabase?: string | null
     /** Sensitivity cases to run. Absent/empty = Base only. */
     cases?: string[]

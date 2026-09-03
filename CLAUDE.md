@@ -10542,6 +10542,122 @@ annotation, and one row per (pair × indicator) does not fit beside one row per
   later items agree to solver tolerance because of the CGS warm start.
 
 
+## `mapper-tailpipe` — the tank-to-wheel half ecoinvent does not isolate
+
+A fleet whose ICEV use-phase rows link only `market for petrol, low-sulfur`
+carries **well-to-tank supply and no combustion at all**. The single largest
+CO2 term in an ICEV lifecycle is simply absent, and nothing warns: the row
+resolves, validates and computes, it just describes refining rather than
+driving. On WP5 the missing term is ~2,275 kg CO2 per vehicle-year.
+
+**ecoinvent 3.10 cannot be linked to fix this.** Searched and confirmed:
+`operation, passenger car` / `van` / `lorry` all return **0**, and of the
+**151** non-market `EURO`-labelled datasets, **zero** lack a vehicle or road
+technosphere input. The tailpipe flows exist only inside
+`transport, passenger car, ...` leaves, which bundle the fuel, the vehicle
+(`market for passenger car`), `market for road` and road maintenance. A BOM
+that already models the vehicle and the fuel separately cannot link one
+without double-counting two of the three. (Note the naming: it is `EURO 5`
+with a SPACE — searching `euro-` returns 0 and reads as "none exist".)
+
+So `scripts/build_tailpipe_db.py` derives the missing half from those same
+datasets and writes two activities into a **`mapper-tailpipe`** database:
+
+| | per kg fuel | GWP100 | WTT sibling | TTW share |
+|---|---|---|---|---|
+| `petrol combustion, EURO 5` | 3.18 kg CO2 | **3.2236** | 1.0928 | 74.7 % |
+| `diesel combustion, EURO 5` | 3.14 kg CO2 | **3.1549** | 1.0408 | 75.2 % |
+
+Each holds ONLY the eight tailpipe biosphere exchanges plus the mandatory
+`type='production'` self-exchange — **no fuel input**, so it sits ALONGSIDE the
+existing supply row and double-counts nothing.
+
+**The factors are DERIVED at build time, never pasted.** The script reads
+`transport, passenger car, small size, {petrol,diesel}, EURO 5 [RER]` and
+divides each biosphere amount by that dataset's own fuel input, so the
+derivation is reproducible and re-runnable against a future ecoinvent. The
+source activity keys and the ecoinvent database name are written into each
+activity's `comment`, which is what a reader of a result — who has no access to
+the script — actually sees. **Round-trip closure: the derived activity times
+the fuel input reproduces the source leaf's own direct biosphere GWP to
+0.0003 %** (0.162296 vs 0.162297 kg CO2-eq/km), the residual being the 35
+flows not carried, which are negligible for GWP100.
+
+**Codes are deterministic md5, and that is load-bearing.** A BOM row links by
+`(database, code)`. `uuid4()` would dangle every link on rebuild — the exact
+failure that orphaned WP5's cohort mapping on 2026-08-04. A recipient who runs
+the script gets byte-identical codes and existing links keep resolving.
+
+**Uncertainty is inherited, not invented.** All 16 exchanges carry ecoinvent's
+own lognormal `scale` and `pedigree` from the source exchange, so Monte Carlo
+does not treat the model's dominant CO2 term as fixed. Inheriting rather than
+flattening preserves real signal: diesel NOx and PM2.5 come through at
+**GSD² 1.2127** where the other fourteen are **1.5015**. The scale is carried
+across the renormalisation unchanged, which is CONSERVATIVE rather than exact —
+the source dispersion covers both fuel-per-km and emissions-per-fuel, and
+dividing the fuel out arguably removes the first — and overstating a spread is
+the defensible direction. A `FALLBACK_PEDIGREE` exists for a future ecoinvent
+that ships an exchange without uncertainty; it is currently unreached, and the
+build records per exchange which path it took.
+
+**Why the three biosphere blockers do not bite.** Linking `biosphere3` directly
+fails three ways; a custom activity fails none:
+
+- **32-char code rule** (`bom_validator._EXPECTED_CODE_LENGTH`) rejects
+  biosphere3's 36-char hyphenated UUIDs. Our code is ours to mint.
+- **The four biosphere refusals** (`lca.py:169`, `:248`, `:1188`, and
+  `technosphere_only` in `bw2_wrapper.py:387`) all test the literal substring
+  `"biosphere"` in the DATABASE NAME. `mapper-tailpipe` trips none — which is
+  also why the name must never contain that substring.
+- **Demand-vector key**: a raw flow raises `OutsideTechnosphere: Can't find key
+  ... in product dictionary`. A `type='process'` activity with a production
+  exchange is in the product dictionary by construction. (ecoinvent itself
+  contains 400+ activities with zero technosphere inputs and only biosphere
+  exchanges — the identical shape.)
+
+Verified end-to-end: a BOM row linking `mapper-tailpipe` validates with
+**0 errors, 0 warnings** beside its ecoinvent supply row.
+
+**Portability.** `project_storage._GENERATED_DATABASES` maps the database to
+its build script, and `database_inventory` reports `installed_generated` +
+`regenerate_with` separately from `installed_premise`. The distinction is the
+one a recipient cares about: a premise database must be regenerated by running
+premise against an IAM scenario, whereas this ships with a script, so "you are
+missing this" arrives with the command that fixes it. The pointer is emitted
+whenever the project **links** to the database, even if it is not installed on
+the exporting machine — that is precisely the case that matters.
+
+### What NOT to do
+
+- **Don't link a `transport, passenger car, ... EURO n` dataset to add
+  combustion.** It bundles the vehicle and the road; a BOM that models those
+  separately would count them twice. That bundling is the whole reason this
+  database exists.
+- **Don't paste the factors as a table.** They are derived from ecoinvent at
+  build time so they track the installed version. A transcribed table is the
+  `remaining_gt_from_2025` mistake in a new place.
+- **Don't mint codes with `uuid4()`, and don't change `stable_code`'s input
+  string.** Either dangles every BOM link into the database on the next
+  rebuild.
+- **Don't rename the database to anything containing `biosphere`.** Four
+  separate refusals filter on that substring; the activity would become
+  unlinkable and invisible in the picker at once.
+- **Don't drop the `type='production'` self-exchange.** Without it the activity
+  never enters the product dictionary and every demand raises
+  `OutsideTechnosphere`.
+- **Don't leave the exchanges unscored, and don't flatten them to one stated
+  pedigree.** Inheriting preserves ecoinvent's per-flow distinctions (diesel
+  NOx and PM2.5 are genuinely tighter); a single blanket score would erase
+  them, and an unscored dominant CO2 term is the failure this database was
+  built to avoid.
+- **Don't add a generated database without adding it to
+  `_GENERATED_DATABASES`.** It would be reported under `installed_base`,
+  telling a recipient they need an ecoinvent licence for something they could
+  rebuild in one command.
+- **Relinking WP5's use-phase rows is a separate data decision.** This database
+  is reference data; no BOM is touched by building it.
+
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

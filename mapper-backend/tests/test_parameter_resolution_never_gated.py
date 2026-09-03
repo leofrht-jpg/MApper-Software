@@ -293,18 +293,23 @@ def _discover_builders(root: pathlib.Path = PKG) -> set[tuple[str, str]]:
     found: set[tuple[str, str]] = set()
     for path in sorted(root.rglob("*.py")):
         try:
-            tree = ast.parse(path.read_text())
+            tree = ast.parse(path.read_text(encoding="utf-8"))
         except SyntaxError:
             continue
         for fn in _functions(tree):
             calls = _called_names(fn)
             if (calls & _LOAD_CALLS) and (calls & _FLATTEN_CALLS):
-                found.add((str(path.relative_to(root)), fn.name))
+                # as_posix(), not str(): on Windows str() yields backslashes and
+                # nothing would ever match DEMAND_BUILDERS, so the whole rule
+                # would pass by finding nothing on half the CI matrix.
+                found.add((path.relative_to(root).as_posix(), fn.name))
     return found
 
 
 def _resolves(rel: str, name: str, root: pathlib.Path = PKG) -> bool:
-    tree = ast.parse((root / rel).read_text())
+    # encoding is explicit: the default is cp1252 on Windows and these sources
+    # carry non-ASCII, so an implicit read fails there and nowhere else.
+    tree = ast.parse((root / rel).read_text(encoding="utf-8"))
     for fn in _functions(tree):
         if fn.name == name:
             return bool(_called_names(fn) & _RESOLVE_CALLS)

@@ -1,0 +1,186 @@
+# Windows release build.
+#
+# WHY THIS EXISTS: v0.2.0 shipped macOS-only because nothing here could produce
+# a Windows artifact. PyInstaller does not cross-compile and Tauri's NSIS
+# bundling requires Windows, so a macOS host cannot build one at all. The
+# website's `lib/release.ts` derives BOTH platform download URLs from a single
+# tag, so a macOS-only release leaves a broken Windows link.
+#
+# The rest of the repo was already Windows-ready before this file existed:
+# `mapper-desktop.spec` has win32 branches (drops uvloop, adds the asyncio
+# Windows event-loop backends), `main.rs` resolves `mapper-backend.exe` and
+# tears down with `taskkill`, and `tauri.conf.json` already lists `nsis`.
+name: Release (Windows)
+
+on:
+  push:
+    tags: ["v*"]
+  # Manual re-run for a tag that already exists, so a failed bundle can be
+  # retried without moving the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build and upload to (e.g. v0.2.1)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    name: windows installer
+    runs-on: windows-latest
+    timeout-minutes: 90
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Resolve tag
+        id: tag
+        shell: pwsh
+        run: |
+          $t = if ($env:INPUT_TAG) { $env:INPUT_TAG } else { "${{ github.ref_name }}" }
+          "tag=$t" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          Write-Host "building for tag: $t"
+        env:
+          INPUT_TAG: ${{ github.event.inputs.tag }}
+
+      # Same cache shape as ci.yml: a cold Brightway2 + premise solve is by far
+      # the slowest step, and the key is environment.yml so any dependency
+      # change invalidates it.
+      - name: Cache conda packages
+        uses: actions/cache@v5
+        with:
+          path: ${{ runner.temp }}/conda_pkgs
+          key: conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}
+          restore-keys: conda-${{ runner.os }}-
+
+      - uses: conda-incubator/setup-miniconda@v4
+        env:
+          CONDA_PKGS_DIRS: ${{ runner.temp }}/conda_pkgs
+        with:
+          miniforge-version: latest
+          activate-environment: map
+          environment-file: environment.yml
+          auto-activate-base: false
+
+      # A release artefact must be built against the pinned stack, and an
+      # import check does NOT detect drift -- a drifted env imports everything
+      # perfectly well. So compare the INSTALLED versions against the pins
+      # parsed out of environment.yml, and fail the build on any mismatch.
+      # Parsed rather than hard-coded so this cannot go stale when a pin moves.
+      # A release artefact must be built against the pinned stack, and an
+      # IMPORT CHECK DOES NOT DETECT DRIFT -- a drifted env imports everything
+      # perfectly well. verify_pins.py parses the pins out of environment.yml
+      # (rather than hard-coding them, so it cannot go stale) and fails the
+      # build on any mismatch. It is a committed script rather than an inline
+      # heredoc because PowerShell has no heredoc, and because a script can be
+      # run locally before trusting it in CI.
+      - name: Verify pinned versions match environment.yml
+        shell: pwsh
+        run: python scripts/verify_pins.py
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: mapper-frontend/package-lock.json
+
+      # STEP 1 -- frontend, with the same-origin :8765 base baked in. Must run
+      # BEFORE the freeze: the spec bundles dist/ into the sidecar.
+      - name: Build frontend (desktop origin)
+        shell: pwsh
+        run: |
+          cd mapper-frontend
+          npm ci
+          npm run build:desktop
+          if (-not (Select-String -Path dist/assets/*.js -Pattern "localhost:8765" -Quiet)) {
+            throw "SPA bundle does not contain localhost:8765"
+          }
+          Write-Host "port check: :8765 present in the SPA bundle"
+
+      # STEP 2 -- clear stale bytecode, then freeze. Not paranoia: Python treats
+      # a .pyc as fresh when the source's (mtime, size) match, and a version
+      # bump like 0.2.0 -> 0.2.1 leaves the size IDENTICAL. A freeze that picks
+      # up stale bytecode reports a version nothing in the tree contains.
+      - name: Freeze backend (onedir)
+        shell: pwsh
+        run: |
+          Get-ChildItem -Path mapper-backend -Filter __pycache__ -Recurse -Directory |
+            Remove-Item -Recurse -Force
+          cd mapper-backend
+          pip install --quiet pyinstaller
+          pyinstaller mapper-desktop.spec --noconfirm --clean
+          if (-not (Test-Path dist/mapper-backend/mapper-backend.exe)) {
+            throw "frozen sidecar mapper-backend.exe not produced"
+          }
+          Write-Host "sidecar built"
+
+      # STEP 3 -- stage the onedir where tauri.conf.json's bundle.resources
+      # expects it. No symlink dereferencing needed here: that is a macOS
+      # problem (conda ships ~53 versioned-dylib symlinks); Windows has none.
+      - name: Stage sidecar as a Tauri resource
+        shell: pwsh
+        run: |
+          Remove-Item -Recurse -Force mapper-tauri/resources/mapper-backend -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path mapper-tauri/resources | Out-Null
+          Copy-Item -Recurse mapper-backend/dist/mapper-backend mapper-tauri/resources/mapper-backend
+
+      # The repo uses the standalone `tauri` CLI. The npm package ships
+      # prebuilt platform binaries, so this is seconds rather than the several
+      # minutes `cargo install tauri-cli` would spend compiling.
+      - name: Install Tauri CLI
+        shell: pwsh
+        run: npm install -g "@tauri-apps/cli@^2"
+
+      # STEP 4 -- bundle. Targets come from tauri.conf.json; only `nsis` is
+      # produced on Windows (`app`/`dmg` are macOS-only and are skipped).
+      - name: Build NSIS installer
+        shell: pwsh
+        run: |
+          cd mapper-tauri
+          tauri build --bundles nsis
+
+      - name: Locate installer
+        id: art
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path mapper-tauri/target -Recurse -Filter "*-setup.exe" |
+                 Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $exe) { throw "no NSIS installer found under mapper-tauri/target" }
+          $sha = (Get-FileHash $exe.FullName -Algorithm SHA256).Hash.ToLower()
+          Write-Host "installer : $($exe.FullName)"
+          Write-Host "bytes     : $($exe.Length)"
+          Write-Host "sha256    : $sha"
+          "path=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "name=$($exe.Name)"     | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # The tag push and the release creation are separate events, so the
+      # release may not exist yet when this job reaches here. Wait rather than
+      # fail: the alternative is a green build with no uploaded asset.
+      - name: Upload to the release for this tag
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.tag.outputs.tag }}"
+          for ($i = 0; $i -lt 30; $i++) {
+            gh release view $tag *> $null
+            if ($LASTEXITCODE -eq 0) { break }
+            Write-Host "release $tag not published yet; waiting (attempt $($i+1)/30)"
+            Start-Sleep -Seconds 20
+          }
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) { throw "release $tag never appeared" }
+          gh release upload $tag "${{ steps.art.outputs.path }}" --clobber
+          Write-Host "uploaded ${{ steps.art.outputs.name }} to $tag"
+
+      # Kept regardless of the upload, so a failed run still yields the binary.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mapper-windows-installer
+          path: mapper-tauri/target/**/*-setup.exe
+          if-no-files-found: warn

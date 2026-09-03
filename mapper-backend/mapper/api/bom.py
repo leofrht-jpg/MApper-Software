@@ -557,8 +557,18 @@ async def delete_bom_node(arc_id: str, node_id: str) -> Archetype:
 
 
 @router.get("/bom/archetypes/{arc_id}/flatten", response_model=FlattenedBOM)
-async def flatten_archetype(arc_id: str, year: int | None = None) -> FlattenedBOM:
-    arc = _get_archetype(arc_id)
+async def flatten_archetype(
+    arc_id: str, year: int | None = None, scenario: str | None = None
+) -> FlattenedBOM:
+    # Resolve first: a BOM row holding an expression carries quantity = 1.0 as
+    # a placeholder, so an unresolved flatten reports 1 kg of petrol and a
+    # total_mass_kg to match. `year` is honoured as the keyframe resolution
+    # year, which is what it already meant to the year-aware flattener.
+    from mapper.api.lca import _load_and_splice_archetype, _resolve_archetype_parameters
+
+    arc = _resolve_archetype_parameters(
+        _load_and_splice_archetype(arc_id), scenario, year if year is not None else 2025
+    )
     materials = (
         flatten_roots_for_year(arc.bom, year) if year is not None else flatten_roots(arc.bom)
     )
@@ -774,7 +784,17 @@ async def apply_milestones(arc_id: str, body: ApplyMilestonesRequest) -> BOMNode
 
 @router.post("/bom/archetypes/{arc_id}/lca", response_model=ArchetypeLCAResult)
 async def standalone_lca(arc_id: str, body: ArchetypeLCARequest) -> ArchetypeLCAResult:
-    arc = _get_archetype(arc_id)
+    # Same preparation as every other demand builder. This route has no
+    # frontend caller, which is exactly why it went unnoticed: nothing
+    # hand-tested it, so it computed every expression row at its 1.0
+    # placeholder.
+    from mapper.api.lca import _load_and_splice_archetype, _resolve_archetype_parameters
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(body.parameter_scenario)
+    arc = _resolve_archetype_parameters(
+        _load_and_splice_archetype(arc_id), body.parameter_scenario
+    )
     err_count = validation_error_count(arc.bom)
     if err_count:
         raise HTTPException(

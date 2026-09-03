@@ -440,6 +440,9 @@ class ArchetypeTimeline(BaseModel):
 class ArchetypeLCARequest(BaseModel):
     method: list[str]
     amount: float = 1.0
+    # Which parameter sensitivity case to resolve the BOM against. None and
+    # "Base" both mean Base.
+    parameter_scenario: str | None = None
 
 
 class ArchetypeLCAResult(BaseModel):

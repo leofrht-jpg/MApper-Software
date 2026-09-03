@@ -8330,6 +8330,93 @@ Ground truth as of this patch: all 123 test files pass standalone.
 - **A full-suite green does not prove a fixture registers what it names.** Run
   the candidate files in isolation, one process each.
 
+## Tests wrote into the user's real projects for at least three days
+
+Every storage module holds a module-level
+`STORAGE_DIR = Path(platformdirs.user_data_dir("mapper")) / <name>`, and a test
+that does not redirect it writes into **live user data**. Three test files did.
+
+Found by accident, while dating files for an unrelated investigation. Nothing
+was looking, and the damage was already visible in the app: **Battery
+Circularity had 30 DSM systems, every one of them named `GuardlessProbe`** —
+one per run of `test_project_guard_e2e.py`, accumulating since 2026-08-31 —
+plus three orphaned `sys_promote_*` states from `test_dsm_scenarios.py`. That
+project has **no real DSM system at all** (it is archetype-based), so 100% of
+what its dropdown listed was test leakage.
+
+**Measured, not guessed.** A temporary pytest plugin wrapped `Path.mkdir` and
+`Path.write_text` (the only two write idioms the storage layer uses) and
+attributed every write under `user_data_dir("mapper")` to the running test:
+**3 files, 5 nodes**. Worse than "writes to a fixture project" — the target is
+whatever bw2 project happens to be CURRENT, so which real project gets polluted
+depends on run order and on what the developer last opened.
+
+**The fix is redirection by DEFAULT**, in the conftest that already existed for
+the parameter-registry clear. `_isolate_storage_roots` is autouse and points
+all seven roots at a per-test temp dir. The eight files that already
+monkeypatched a root by hand keep working — their `setattr` overrides an
+already-redirected value, and monkeypatch unwinds in reverse. And
+`project_storage.storage_roots()` reads these module attributes live, so the
+copy/rename/export helpers are redirected with them.
+
+Two things that are easy to get wrong here:
+
+- **`aesa_storage` and `aesa_session_storage` share one directory** — sessions
+  live at `aesa/{project}/sessions/` — so they must redirect to the SAME temp
+  path or that relationship breaks.
+- **`dsm_storage._LEGACY_STORAGE_DIR` (mfa) must be redirected too.**
+  `hydrate_from_disk` migrates from it on first use, so leaving it live lets a
+  test read real data.
+
+### Six tests read live data ON PURPOSE, and blanket redirection broke them
+
+The first cut turned 1495 passed into **1489 passed + 6 skipped**. The six
+assert against the developer's real projects: the content-hash round-trip walks
+the real archetypes, and the paired Monte Carlo foreground tests need Battery
+Circularity's A / A0, whose rows are 100% expressions and are the only place
+that foreground carries any uncertainty at all — which is how the missing
+paired foreground was found in the first place.
+
+They already skip when the project is absent, so they contribute nothing in CI
+and never have; the value is entirely local. Silently converting them to skips
+would have removed the only coverage that catches that class.
+
+So there is an explicit opt-out: a test that requests the **`live_storage`**
+fixture keeps the real roots. Reading is what it permits; **writing is still
+caught**, because the guard does not exempt it.
+
+### The guard fires at the WRITE, not at session end
+
+`_forbid_live_store_writes` (session-scoped, autouse) patches `Path.mkdir` and
+`Path.write_text` to raise `LiveStoreWriteError` naming the offending test and
+path. Failing at the moment of the write means the failure is attributable and
+does not depend on a reporting test running last.
+
+Scoped to the **seven project-data roots**, resolved from platformdirs directly
+rather than from the (redirected) module attributes. Deliberately NOT the whole
+`user_data_dir`: a premise import creates a `workspace` scratch dir there, which
+is not project data and not ours to police.
+
+Verified load-bearing by pointing `test_dsm_scenarios.py` back at the live
+store — the guard fires immediately on both offending tests, naming each.
+
+#### What NOT to do
+
+- **Don't add a storage module without adding its root to `_STORAGE_ROOTS`.**
+  The guard will catch the write, but it will read as a mysterious failure
+  rather than as the one-line registration it is.
+- **Don't make the redirect opt-IN.** It would only ever cover the tests
+  somebody remembered, and the offenders are precisely the ones nobody did.
+- **Don't exempt `live_storage` tests from the write guard.** Reading a real
+  project is the point of them; writing to one never is.
+- **Don't scope the guard to the whole `user_data_dir`.** A third-party import
+  creates `workspace` there and the guard would fight it for no benefit.
+- **Don't "fix" a live-data test by redirecting it.** Six of them exist because
+  real data catches things synthetic fixtures do not. Give them `live_storage`.
+- **A full-suite green does not prove tests are isolated.** These wrote into
+  real projects for days while every run passed. The guard is what makes it
+  observable; before it, only a manual `ls` of the store would have shown it.
+
 ## A test that skips is a test that stopped asserting
 
 `test_supply_chain_truncation_keeps_high_value_paths` took `candidates[0]` off

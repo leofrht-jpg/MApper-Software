@@ -8016,6 +8016,70 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+### The fifth was an ABSENCE, not a gate
+
+The four above were all gates: a call to `resolve_archetype_with_engine`
+wrapped in a condition. The fifth had no call at all.
+
+`_build_archetype_demand` (contribution analysis, `api/lca.py`) held its OWN
+copy of the flatten loop and never resolved. Same defect, sibling builder,
+invisible to a sweep that asks "is this call conditioned?" — you cannot gate a
+call that does not exist. On WP5's ICEV-Petrol it reported **61.51 kg CO2-eq
+against a true 3,195.16**, and because only the EXPRESSION rows collapsed to
+their 1.0 placeholder while the literal maintenance rows kept full size, it did
+not merely scale the total — **it inverted the ranking**. Synthetic rubber (13 kg
+of tyres, a literal) showed as **70%** of the use phase; it is 1.4%. Petrol
+combustion showed as **5.2%**; it is **73.3%**.
+
+The sweep found two more of the same shape once it was looking for absence:
+`api/bom.py:standalone_lca` (computes an LCA; **no frontend caller**, so nothing
+hand-tested it) and `api/bom.py:flatten_archetype` (reports `total_mass_kg`,
+which was 1 kg of petrol on a parameterised BOM).
+
+**The fix is one shared implementation, not a fifth copy.** `api/lca.py` now
+carries two helpers that every demand builder goes through:
+
+- `_load_and_splice_archetype(id)` — load + composition splice.
+- `_resolve_archetype_parameters(arc, scenario, year)` — validate the scenario
+  name and resolve every expression.
+
+They are split in two rather than fused so `_build_archetype_source_demand`'s
+HTTPException ORDER is preserved byte-for-byte (it validates methods and scope
+between loading and resolving). `ContributionAnalysisRequest` and
+`ArchetypeLCARequest` gained `parameter_scenario`, and for contribution analysis
+**the scenario is part of the cache key** — it changes the resolved quantities,
+so omitting it would serve one scenario's result for another.
+
+**The guard now asserts presence, enumerated.**
+`test_parameter_resolution_never_gated.py` gained an absence rule beside the
+gate rule: it discovers every function that **loads an archetype by id AND
+flattens it**, requires each to be listed in `DEMAND_BUILDERS`, and requires
+each listed one to reach a resolver. Load-then-flatten is the criterion because
+it is the real distinction — a function that loads owns the raw tree and is the
+only place that can resolve it, while one that RECEIVES an `Archetype` is
+downstream of whoever did. That is why `dsm_lca_engine._flatten` and
+`material_flow_engine._compute_single_scope` are correctly NOT on the list:
+their callers resolve first.
+
+Verified load-bearing by removing the resolve call from each builder in turn —
+each removal fails naming that function.
+
+#### What NOT to do
+
+- **Don't write a third copy of the resolution logic.** A second copy is how
+  this survived four fixes; call `_resolve_archetype_parameters`.
+- **Don't add a demand builder without adding it to `DEMAND_BUILDERS`.** The
+  discovery test fails on an undeclared load-then-flatten function, and a
+  companion test fails on a stale entry that no longer matches — a stale entry
+  passes vacuously, which is as bad as a missing one.
+- **Don't extend the GATE sweep and think it covers absence.** "Is this call
+  conditioned?" cannot fire when there is no call. The two rules are
+  complements; both are needed.
+- **Don't omit the parameter scenario from a result's cache key.** Two
+  scenarios resolve the same BOM to different quantities. On MAp-test they
+  happen to coincide (both cases carry zero overrides across 43 parameters),
+  which is exactly the kind of coincidence that hides a key bug.
+
 ### The class, and the guard that closes it
 
 The same false premise shipped **four** times:

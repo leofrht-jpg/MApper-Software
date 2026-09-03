@@ -413,6 +413,84 @@ def _refuse_on_unlinked(arc_name: str, materials: list, scope: str) -> None:
     )
 
 
+# ── Shared archetype preparation for demand builders ─────────────────────────
+#
+# THE two steps every demand builder must take before it can read a quantity as
+# a number. They live here, once, because this codebase has already learned the
+# cost of the alternative: `_build_archetype_source_demand` was fixed to always
+# resolve, and the identical defect survived untouched in
+# `_build_archetype_demand` (contribution analysis) because that builder held a
+# SEPARATE copy of the flatten loop and simply never resolved at all. A third
+# copy is how the second one survived, so there are no copies now.
+#
+# Split in two rather than fused into one call so the source builder's
+# HTTPException ORDER is preserved byte-for-byte: it validates methods and scope
+# between loading and resolving, and a caller that sends both an empty method
+# list and a bad scenario must still see the same error it saw before.
+
+
+def _load_and_splice_archetype(archetype_id: str):
+    """Load an archetype by id and splice in its composed children.
+
+    Splicing is EAGER -- before parameter resolution and upstream of every
+    flatten cache -- so the child's expressions resolve in the CALLER's
+    parameter context (the only context there is: one table per project) and
+    the child's content is baked in before any cache key is computed.
+    """
+    from mapper.api.bom import _get_archetype, _proj_archetypes
+    from mapper.core.bom_engine import ArchetypeCompositionError, splice_includes
+
+    arc = _get_archetype(archetype_id)  # raises 404 if not found
+    try:
+        return splice_includes(arc, _proj_archetypes())
+    except ArchetypeCompositionError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+def _resolve_archetype_parameters(
+    arc,
+    parameter_scenario: str | None,
+    resolve_year: int = 2025,
+):
+    """Resolve every quantity expression in the BOM. ALWAYS.
+
+    The scenario says WHICH values to substitute, never WHETHER to substitute.
+    A BOM that stores a quantity as an expression carries ``quantity = 1.0`` as
+    a pre-resolution PLACEHOLDER with the real formula in
+    ``quantity_expression``, so skipping resolution does not fall back to base
+    values -- it silently computes against 1.0. That is what made a WP5 use
+    phase come out 727x low and cost a Battery Circularity archetype its
+    per-kWh functional-unit divisor entirely.
+
+    ``resolve_year`` (default 2025) is the year at which keyframed parameters
+    resolve. Scalar parameters ignore it, so a scalar-only table is unaffected.
+
+    For a BOM with no expressions this is a deep copy with no substitutions, so
+    results are unchanged -- verified across every archetype in the demo, Wind
+    Farm and `default` projects, none of which carries an expression.
+    """
+    from mapper.api.parameters import _table_for
+    from mapper.core.bom_engine import resolve_archetype_with_engine
+    from mapper.core.parameter_engine import ParameterEngine, ParameterError
+
+    table = _table_for()
+    if (parameter_scenario not in (None, "Base")
+            and parameter_scenario not in table.list_scenarios()):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Parameter scenario '{parameter_scenario}' not found in active table",
+        )
+    try:
+        engine = ParameterEngine(table, scenario=parameter_scenario, year=resolve_year)
+        return resolve_archetype_with_engine(arc, engine)
+    except ParameterError as e:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Parameter resolution failed: {e}",
+        )
+
+
+
 def _build_archetype_source_demand(
     *,
     archetype_id: str,
@@ -436,25 +514,9 @@ def _build_archetype_source_demand(
     ``resolve_year`` (default 2025 = reference year) is the year at which
     time-varying (keyframe) parameters resolve. Scalar parameters ignore it, so
     scalar-only tables stay byte-identical regardless of ``resolve_year``."""
-    from mapper.api.bom import _get_archetype
-    from mapper.api.parameters import _table_for
-    from mapper.core.bom_engine import flatten_bom, resolve_archetype_with_engine
-    from mapper.core.parameter_engine import ParameterEngine, ParameterError
+    from mapper.core.bom_engine import flatten_bom
 
-    arc = _get_archetype(archetype_id)  # raises 404 if not found
-
-    # Archetype composition. Spliced EAGERLY here, before parameter resolution
-    # and upstream of every flatten cache, so (a) the child's expressions
-    # resolve in the CALLER's parameter context -- the only context there is,
-    # one table per project -- and (b) the child's content is baked into the
-    # tree before any cache key is computed.
-    from mapper.api.bom import _proj_archetypes
-    from mapper.core.bom_engine import ArchetypeCompositionError, splice_includes
-
-    try:
-        arc = splice_includes(arc, _proj_archetypes())
-    except ArchetypeCompositionError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    arc = _load_and_splice_archetype(archetype_id)
 
     if not methods or len(methods) == 0:
         raise HTTPException(status_code=400, detail="At least one method is required")
@@ -462,45 +524,10 @@ def _build_archetype_source_demand(
     if scope not in ("inflows", "stock", "outflows", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid scope: {scope}")
 
-    # Resolve parameter expressions in the BOM. ALWAYS -- the scenario is what
-    # is being resolved, not whether to resolve at all.
-    #
-    # This used to be gated on ``parameter_scenario is not None or
-    # table.has_time_varying()``, on the stated grounds that "a scalar-only
-    # table resolves identically anyway". That premise is false whenever a BOM
-    # stores a quantity as an EXPRESSION: the import writes ``quantity = 1.0``
-    # as a pre-resolution placeholder and puts the real formula in
-    # ``quantity_expression``, so skipping resolution does not reproduce the
-    # base values -- it silently computes against 1.0. Both single-product
-    # panels send ``None`` for Base (``sc === BASE_SCENARIO ? null : sc``), so
-    # the gate never opened and every expression row computed as a placeholder:
-    # a WP5 use phase came out 727x low, and a Battery Circularity archetype
-    # lost its per-kWh functional-unit divisor entirely (~1600x on the total).
-    #
-    # The system-level path never had this bug -- ``DSMLCAPipeline`` gates on
-    # ``parameter_table is not None`` and ``_table_for`` always returns a table,
-    # so it always resolved. This aligns the two, and the alignment is checked:
-    # ``test_single_product_matches_system_path`` pins a single-product Use
-    # Phase against the quantity the DSM pipeline flattens for one vehicle-year.
-    #
-    # Cost of always resolving: for a BOM with no expressions,
-    # ``resolve_archetype_with_engine`` is a deep copy with no substitutions, so
-    # results are unchanged (verified across every archetype in the demo, Wind
-    # Farm and `default` projects -- none carries an expression).
-    table = _table_for()
-    if parameter_scenario not in (None, "Base") and parameter_scenario not in table.list_scenarios():
-        raise HTTPException(
-            status_code=400,
-            detail=f"Parameter scenario '{parameter_scenario}' not found in active table",
-        )
-    try:
-        engine = ParameterEngine(table, scenario=parameter_scenario, year=resolve_year)
-        arc = resolve_archetype_with_engine(arc, engine)
-    except ParameterError as e:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Parameter resolution failed: {e}",
-        )
+    # Resolve parameter expressions. ALWAYS -- see
+    # ``_resolve_archetype_parameters``, which is shared with the contribution
+    # builder precisely so this cannot be fixed in one and missed in the other.
+    arc = _resolve_archetype_parameters(arc, parameter_scenario, resolve_year)
 
     # Filter roots by scope
     scope_roots = filter_roots_by_scope(arc.bom, scope)
@@ -1022,6 +1049,8 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
 # ── Contribution Analysis (Single-Product LCA) ─────────────────────────────
 
 # Cache key = (target_descriptor, method_tuple, scope, year, compute_database).
+# For archetype targets the descriptor also carries the parameter scenario --
+# it changes the resolved quantities, so it changes the result.
 # Cutoff/depth are presentation-layer filters applied to the cached deepest
 # tree. compute_database is part of the key because translating activity keys
 # to a prospective DB produces a genuinely different LCI — the score, top
@@ -1080,6 +1109,8 @@ def _build_archetype_demand(
     archetype_id: str,
     scope: str,
     stage_amounts: dict[str, float] | None,
+    parameter_scenario: str | None = None,
+    resolve_year: int = 2025,
 ) -> tuple[
     dict[tuple[str, str], float],
     str,
@@ -1096,12 +1127,19 @@ def _build_archetype_demand(
     The aggregated ``combined_demand`` equals the union of these stage
     demands and is what the main LCA solves against.
     """
-    from mapper.api.bom import _get_archetype
     from mapper.core.bom_engine import flatten_bom
 
-    arc = _get_archetype(archetype_id)
+    # Same preparation as the single-product builder, through the SAME two
+    # helpers. This builder previously did neither: it never spliced composed
+    # children, and it never resolved parameter expressions -- so every
+    # expression row was charged at its 1.0 placeholder while literal rows kept
+    # their true size. On a parameterised BOM that does not merely scale the
+    # total, it INVERTS the ranking, which is the one thing a contribution
+    # analysis exists to get right.
+    arc = _load_and_splice_archetype(archetype_id)
     if scope not in ("inflows", "stock", "outflows", "all"):
         raise HTTPException(status_code=400, detail=f"Invalid scope: {scope}")
+    arc = _resolve_archetype_parameters(arc, parameter_scenario, resolve_year)
 
     scope_roots = filter_roots_by_scope(arc.bom, scope)
     stages = [r.name for r in scope_roots]
@@ -1203,10 +1241,15 @@ def _compute_contribution_analysis(
         if not body.archetype_id:
             raise HTTPException(status_code=400, detail="archetype_id is required for archetype target")
         demand, target_label, _stages, per_stage_demand = _build_archetype_demand(
-            body.archetype_id, body.scope, body.stage_amounts
+            body.archetype_id, body.scope, body.stage_amounts,
+            body.parameter_scenario,
         )
         sa_tag = tuple(sorted((body.stage_amounts or {}).items()))
-        target_descriptor = ("archetype", body.archetype_id, body.scope, sa_tag)
+        # The scenario is part of the target's IDENTITY, not a display tag:
+        # two scenarios resolve the same BOM to different quantities, so
+        # omitting it here would serve one scenario's result for another.
+        target_descriptor = ("archetype", body.archetype_id, body.scope, sa_tag,
+                             body.parameter_scenario)
         scope = body.scope
 
     # Apply prospective-database translation before computing or hitting the
@@ -1406,6 +1449,7 @@ def _compute_contribution_analysis(
         scope=scope,
         year=body.year,
         compute_database=body.compute_database,
+        parameter_scenario=body.parameter_scenario,
         top_technosphere=ContributionsResponse(**cached["techno"]),
         top_biosphere=[BiosphereContributionItem(**i) for i in cached["bio"]["items"]],
         biosphere_rest_amount=cached["bio"]["rest_amount"],
@@ -1426,6 +1470,13 @@ def _compute_contribution_analysis(
 async def calculate_contribution_analysis(
     body: ContributionAnalysisRequest,
 ) -> ContributionAnalysisResult:
+    # At the boundary, before any work: a typo'd case name must be named, not
+    # resolved silently to Base. `_resolve_archetype_parameters` checks it too,
+    # but only after loading and splicing -- the convention is to refuse up
+    # front, and it is what makes the route's contract legible.
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(body.parameter_scenario)
     return _compute_contribution_analysis(body)
 
 

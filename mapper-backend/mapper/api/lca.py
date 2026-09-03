@@ -1085,23 +1085,40 @@ def _translate_demand_to_database(
             "computing against source databases instead."
         ]
 
+    # The decision is SHARED with the fleet path -- see core/prospective_links.
+    # This function already probed and fell back; what it lacked was the
+    # base_db rule, so a link into a generated database (mapper-tailpipe)
+    # produced a warning on every row for behaviour that is CORRECT rather
+    # than degraded. The base is read from the pLCA registry, the same
+    # registry resolve_prospective_dbs uses.
+    from mapper.core.prospective_links import base_db_for, resolve_link_db
+
+    base_db = base_db_for(_current_project(), compute_database)
+
+    _exists_cache: dict[tuple[str, str], bool] = {}
+
+    def _exists(db: str, code: str) -> bool:
+        key = (db, code)
+        hit = _exists_cache.get(key)
+        if hit is None:
+            try:
+                bw2data.get_activity(key)
+                hit = True
+            except Exception:
+                hit = False
+            _exists_cache[key] = hit
+        return hit
+
     translated: dict[tuple[str, str], float] = {}
     warnings: list[str] = []
     for (src_db, code), amount in demand.items():
-        if src_db == compute_database:
-            translated[(src_db, code)] = translated.get((src_db, code), 0.0) + amount
-            continue
-        candidate = (compute_database, code)
-        try:
-            bw2data.get_activity(candidate)
-        except Exception:
-            translated[(src_db, code)] = translated.get((src_db, code), 0.0) + amount
-            warnings.append(
-                f"Activity {src_db}/{code} not found in {compute_database}; "
-                "fell back to source database for this key."
-            )
-            continue
-        translated[candidate] = translated.get(candidate, 0.0) + amount
+        use_db, warning = resolve_link_db(
+            src_db, code, compute_database, base_db, _exists
+        )
+        if warning and warning not in warnings:
+            warnings.append(warning)
+        key = (use_db, code)
+        translated[key] = translated.get(key, 0.0) + amount
     return translated, warnings
 
 

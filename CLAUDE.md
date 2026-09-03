@@ -8330,6 +8330,76 @@ Ground truth as of this patch: all 123 test files pass standalone.
 - **A full-suite green does not prove a fixture registers what it names.** Run
   the candidate files in isolation, one process each.
 
+## Prospective link translation: only the BASE database translates
+
+Two functions translate a BOM link to a prospective database, and they had
+drifted apart:
+
+| | probe target? | fall back? |
+|---|---|---|
+| `api/lca.py:_translate_demand_to_database` (single product) | yes | yes, + warning |
+| `core/dsm_lca_engine.py:_rewrite_db` (fleet) | **no** | **no** |
+
+The fleet version rewrote EVERY link's database to the premise anchor
+unconditionally. It worked only because every BOM row pointed at base
+ecoinvent and premise preserves codes. The first row linking a GENERATED
+database took the whole prospective run down with
+`ActivityDataset ... does not exist` — measured on MAp-test: **61 of 61
+ecoinvent codes carry into the premise DB, 0 of 2 `mapper-tailpipe` codes do**.
+
+**The decision now lives once**, in `core/prospective_links.resolve_link_db`,
+called by both. They differ in SHAPE — one walks a demand dict, the other a
+flattened material list — not in intent, so the iteration stayed separate and
+only the rule moved. The third sibling-divergence in as many weeks; a third
+copy is how the second one survived.
+
+```
+if not target_db or src_db == target_db:       keep
+if base_db is not None and src_db != base_db:  keep, SILENTLY
+if exists(target_db, code) is False:           keep, + WARNING
+otherwise:                                     translate
+```
+
+**Pinning a non-base database is the correct model, not a fallback**, which is
+why it does not warn. `mapper-tailpipe` holds only biosphere exchanges and no
+technosphere inputs, so premise never generated a variant and there is nothing
+in it premise could have changed — tailpipe CO2 per kg of fuel is combustion
+stoichiometry, invariant to the electricity mix. A warning would fire on every
+such row in every year and train people to ignore warnings.
+
+**`exists()` returns `True | False | None`, and only a known `False` falls
+back.** "Cannot tell" is not "absent": absence of the target DATABASE says
+nothing about the CODE. The first implementation conflated them and broke 8
+interpolation tests whose fixtures use synthetic database names — it pinned
+every row instead of translating. Treating an unverifiable probe as absence
+CHANGES NUMBERS rather than crashing, which is the worse failure.
+
+`base_db` comes from the caller's declared base, falling back to the pLCA
+registry (`base_db_for`) — the same registry `resolve_prospective_dbs` reads,
+so the two cannot disagree about what a database's base is. `base_db=None`
+deliberately degrades to the probe, so a caller that cannot say which base it
+targets still gets the guarded behaviour rather than the crash.
+
+**The fleet result has nowhere to put a warning.** `ImpactAssessmentResult` has
+no `warnings` field (the single-product result does), so a fleet translation
+warning is logged at WARNING level — reaching `mapper.log` and Settings → Logs
+— and collected on the pipeline. Adding a field is a schema change with
+frontend implications; it was left, deliberately.
+
+#### What NOT to do
+
+- **Don't rewrite a link's database without checking its SOURCE.** A BOM may
+  link a generated or custom database that no premise run ever touched.
+  `tests/test_parameter_resolution_never_gated.py` asserts both translators
+  route through `resolve_link_db`; reverting either fails by name.
+- **Don't treat "cannot probe" as "absent".** Only a positive `False` may fall
+  back. The `None` branch is what keeps a run whose target database is merely
+  unloaded computing the same numbers as before.
+- **Don't warn when pinning a non-base database.** It is correct behaviour, and
+  a warning that fires on every row of every year is a warning nobody reads.
+- **Don't add a third copy of the rule.** Both callers keep their own
+  iteration; the decision is shared.
+
 ## Tests wrote into the user's real projects for at least three days
 
 Every storage module holds a module-level

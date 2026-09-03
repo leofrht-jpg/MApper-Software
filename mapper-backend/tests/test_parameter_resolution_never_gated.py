@@ -408,3 +408,122 @@ def test_a_receiving_function_is_not_treated_as_a_builder(tmp_path):
         "    return [m for m in flatten_bom(arc.bom) if m.ecoinvent_activity]\n"
     )
     assert _discover_builders(pkg) == set()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Prospective link translation: a non-base source database must survive
+# ══════════════════════════════════════════════════════════════════════════
+#
+# The third sibling-divergence in as many weeks, and the same shape as the
+# demand-builder one above: two functions doing one job, one guarded, one not.
+#
+#   api/lca.py:_translate_demand_to_database   probed the target and fell back
+#   core/dsm_lca_engine.py:_rewrite_db         rewrote every link unconditionally
+#
+# The fleet version worked only because every BOM row pointed at base
+# ecoinvent, and premise preserves codes. The first row linking a generated
+# database (mapper-tailpipe) took the whole prospective run down with
+# `ActivityDataset ... does not exist`. Measured on MAp-test: 61/61 ecoinvent
+# codes carry into the premise DB, 0/2 mapper-tailpipe codes do.
+#
+# So this asserts the RULE, not either implementation: a link whose source is
+# not the base must keep its own database.
+
+PROSPECTIVE_TRANSLATORS = {
+    ("api/lca.py", "_translate_demand_to_database"),
+    ("core/dsm_lca_engine.py", "_rewrite_db"),
+}
+
+
+def test_every_prospective_translator_shares_the_one_decision():
+    """Both must route through ``resolve_link_db``.
+
+    Asserting the shared CALL rather than re-checking each implementation is
+    the point: a third copy of the rule is how the second one survived.
+    """
+    missing = [
+        f"{rel}:{name}"
+        for rel, name in sorted(PROSPECTIVE_TRANSLATORS)
+        if "resolve_link_db" not in _called_names(
+            next(fn for fn in _functions(ast.parse((PKG / rel).read_text(encoding="utf-8")))
+                 if fn.name == name)
+        )
+    ]
+    assert not missing, (
+        "these translate links to a prospective database without going through "
+        f"core/prospective_links.resolve_link_db: {missing}"
+    )
+
+
+def test_a_non_base_source_database_is_pinned_not_translated():
+    """The rule itself, on the exact shape that crashed.
+
+    mapper-tailpipe holds only biosphere exchanges -- premise never generated a
+    variant, so there is nothing to translate to and nothing it could have
+    changed. Pinning is the correct model, not a fallback, so it must not warn.
+    """
+    from mapper.core.prospective_links import resolve_link_db
+
+    def never(_db, _code):
+        raise AssertionError("must not probe a non-base database")
+
+    db, warning = resolve_link_db(
+        "mapper-tailpipe", "6475855161f625ab7df55cdeb918d9d1",
+        "ecoinvent-3.10-cutoff_premise_remind_ssp2-pkbudg1150_2025",
+        "ecoinvent-3.10-cutoff", never,
+    )
+    assert db == "mapper-tailpipe"
+    assert warning is None
+
+
+def test_a_base_code_that_carries_over_is_translated():
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "ecoinvent-3.10-cutoff", "abc", "premise_db",
+        "ecoinvent-3.10-cutoff", lambda _d, _c: True,
+    )
+    assert db == "premise_db"
+    assert warning is None
+
+
+def test_a_base_code_that_does_NOT_carry_over_falls_back_AND_warns():
+    """A genuine premise gap is a real finding: the result is only partially
+    translated and the reader has to be told."""
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "ecoinvent-3.10-cutoff", "abc", "premise_db",
+        "ecoinvent-3.10-cutoff", lambda _d, _c: False,
+    )
+    assert db == "ecoinvent-3.10-cutoff"
+    assert warning and "not found in premise_db" in warning
+
+
+def test_cannot_tell_translates_rather_than_pinning():
+    """``None`` is not ``False``.
+
+    Absence of the target DATABASE says nothing about the CODE. Treating it as
+    a known absence would pin every row of a run whose target merely is not
+    loaded -- and would silently rewrite the meaning of every synthetic
+    prospective fixture.
+    """
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "base", "c1", "anchor_2030", "base", lambda _d, _c: None,
+    )
+    assert db == "anchor_2030"
+    assert warning is None
+
+
+def test_an_unknown_base_still_gets_the_guarded_probe():
+    """A caller that cannot say which base it targets must degrade to the
+    probe, never to the unconditional rewrite that crashed."""
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "mapper-tailpipe", "x", "premise_db", None, lambda _d, _c: False,
+    )
+    assert db == "mapper-tailpipe"
+    assert warning is not None

@@ -3091,6 +3091,27 @@ def _parse_bom_workbook(
         if basis_cell:
             if basis_cell in ("per_unit", "per_year"):
                 explicit_basis = basis_cell
+                # ACCEPTED, APPLIED, FLAGGED. The reader is deliberately
+                # tolerant -- `_ensure_stage_root` takes the first Basis cell
+                # found anywhere in the stage -- because tightening it would
+                # break workbooks already in the wild. Tolerant reader, strict
+                # writer.
+                #
+                # But a generator that writes Basis on child rows contradicts
+                # this file's own Instructions sheet ("Set ONLY on the stage
+                # root row"), and it works only by accident: the moment two
+                # children of one stage disagree, first-read silently wins and
+                # the loser is invisible. Warn so the author can fix the
+                # WRITER, without refusing a file that already exists.
+                if parent_name:
+                    warnings.append(
+                        f"Row {r_idx}: Basis '{basis_cell}' is on a child row "
+                        f"(parent '{parent_name}'), not the '{stage}' stage "
+                        "root. Accepted and applied to the stage, but the first "
+                        "Basis cell in a stage wins -- if two child rows "
+                        "disagree, one is silently ignored. Set Basis on the "
+                        "stage root row."
+                    )
             else:
                 warnings.append(
                     f"Row {r_idx}: invalid Basis '{basis_cell}'; must be "
@@ -3292,6 +3313,13 @@ def _parse_bom_workbook(
             # otherwise make a stage root and attach as top-level child.
             if name == stage and stage not in stages:
                 node.scope = explicit_scope or None
+                # `basis` must be assigned HERE too. This row BECOMES the stage
+                # root, so `_ensure_stage_root` -- the only other place that
+                # carries basis onto a root -- is never reached for it. Without
+                # this line the Basis column was inert on every real workbook:
+                # scope landed, basis was silently dropped, and a declared
+                # `per year` computed at x1 exactly like an undeclared stage.
+                node.basis = explicit_basis
                 node.is_annual = stage_to_scope(stage, explicit_scope) == "stock"
                 stages[stage] = node
                 node_by_name[(stage, stage)] = node
@@ -3308,6 +3336,15 @@ def _parse_bom_workbook(
             warnings.append(
                 f"Row {r_idx}: stage '{stage}' was not defined explicitly; created a default stage root."
             )
+        elif explicit_basis and stages[stage].basis is None:
+            # The stage root already exists (an explicit root row created it),
+            # so `_ensure_stage_root` -- which carries basis and documents
+            # "first one wins" -- is never reached. Without this the tolerance
+            # was real only for IMPLICITLY created roots, and a workbook that
+            # puts Basis on child rows under an explicit root silently lost it.
+            # `is None` keeps first-read-wins: an explicit root row's value,
+            # and the first child's among children.
+            stages[stage].basis = explicit_basis
 
         parent = node_by_name.get((stage, parent_name))
         if parent is None:

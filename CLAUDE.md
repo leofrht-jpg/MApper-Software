@@ -8016,6 +8016,70 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+### The fifth was an ABSENCE, not a gate
+
+The four above were all gates: a call to `resolve_archetype_with_engine`
+wrapped in a condition. The fifth had no call at all.
+
+`_build_archetype_demand` (contribution analysis, `api/lca.py`) held its OWN
+copy of the flatten loop and never resolved. Same defect, sibling builder,
+invisible to a sweep that asks "is this call conditioned?" — you cannot gate a
+call that does not exist. On WP5's ICEV-Petrol it reported **61.51 kg CO2-eq
+against a true 3,195.16**, and because only the EXPRESSION rows collapsed to
+their 1.0 placeholder while the literal maintenance rows kept full size, it did
+not merely scale the total — **it inverted the ranking**. Synthetic rubber (13 kg
+of tyres, a literal) showed as **70%** of the use phase; it is 1.4%. Petrol
+combustion showed as **5.2%**; it is **73.3%**.
+
+The sweep found two more of the same shape once it was looking for absence:
+`api/bom.py:standalone_lca` (computes an LCA; **no frontend caller**, so nothing
+hand-tested it) and `api/bom.py:flatten_archetype` (reports `total_mass_kg`,
+which was 1 kg of petrol on a parameterised BOM).
+
+**The fix is one shared implementation, not a fifth copy.** `api/lca.py` now
+carries two helpers that every demand builder goes through:
+
+- `_load_and_splice_archetype(id)` — load + composition splice.
+- `_resolve_archetype_parameters(arc, scenario, year)` — validate the scenario
+  name and resolve every expression.
+
+They are split in two rather than fused so `_build_archetype_source_demand`'s
+HTTPException ORDER is preserved byte-for-byte (it validates methods and scope
+between loading and resolving). `ContributionAnalysisRequest` and
+`ArchetypeLCARequest` gained `parameter_scenario`, and for contribution analysis
+**the scenario is part of the cache key** — it changes the resolved quantities,
+so omitting it would serve one scenario's result for another.
+
+**The guard now asserts presence, enumerated.**
+`test_parameter_resolution_never_gated.py` gained an absence rule beside the
+gate rule: it discovers every function that **loads an archetype by id AND
+flattens it**, requires each to be listed in `DEMAND_BUILDERS`, and requires
+each listed one to reach a resolver. Load-then-flatten is the criterion because
+it is the real distinction — a function that loads owns the raw tree and is the
+only place that can resolve it, while one that RECEIVES an `Archetype` is
+downstream of whoever did. That is why `dsm_lca_engine._flatten` and
+`material_flow_engine._compute_single_scope` are correctly NOT on the list:
+their callers resolve first.
+
+Verified load-bearing by removing the resolve call from each builder in turn —
+each removal fails naming that function.
+
+#### What NOT to do
+
+- **Don't write a third copy of the resolution logic.** A second copy is how
+  this survived four fixes; call `_resolve_archetype_parameters`.
+- **Don't add a demand builder without adding it to `DEMAND_BUILDERS`.** The
+  discovery test fails on an undeclared load-then-flatten function, and a
+  companion test fails on a stale entry that no longer matches — a stale entry
+  passes vacuously, which is as bad as a missing one.
+- **Don't extend the GATE sweep and think it covers absence.** "Is this call
+  conditioned?" cannot fire when there is no call. The two rules are
+  complements; both are needed.
+- **Don't omit the parameter scenario from a result's cache key.** Two
+  scenarios resolve the same BOM to different quantities. On MAp-test they
+  happen to coincide (both cases carry zero overrides across 43 parameters),
+  which is exactly the kind of coincidence that hides a key bug.
+
 ### The class, and the guard that closes it
 
 The same false premise shipped **four** times:
@@ -8265,6 +8329,93 @@ Ground truth as of this patch: all 123 test files pass standalone.
   sweep is the cheaper answer and it names the file when it fires.
 - **A full-suite green does not prove a fixture registers what it names.** Run
   the candidate files in isolation, one process each.
+
+## Tests wrote into the user's real projects for at least three days
+
+Every storage module holds a module-level
+`STORAGE_DIR = Path(platformdirs.user_data_dir("mapper")) / <name>`, and a test
+that does not redirect it writes into **live user data**. Three test files did.
+
+Found by accident, while dating files for an unrelated investigation. Nothing
+was looking, and the damage was already visible in the app: **Battery
+Circularity had 30 DSM systems, every one of them named `GuardlessProbe`** —
+one per run of `test_project_guard_e2e.py`, accumulating since 2026-08-31 —
+plus three orphaned `sys_promote_*` states from `test_dsm_scenarios.py`. That
+project has **no real DSM system at all** (it is archetype-based), so 100% of
+what its dropdown listed was test leakage.
+
+**Measured, not guessed.** A temporary pytest plugin wrapped `Path.mkdir` and
+`Path.write_text` (the only two write idioms the storage layer uses) and
+attributed every write under `user_data_dir("mapper")` to the running test:
+**3 files, 5 nodes**. Worse than "writes to a fixture project" — the target is
+whatever bw2 project happens to be CURRENT, so which real project gets polluted
+depends on run order and on what the developer last opened.
+
+**The fix is redirection by DEFAULT**, in the conftest that already existed for
+the parameter-registry clear. `_isolate_storage_roots` is autouse and points
+all seven roots at a per-test temp dir. The eight files that already
+monkeypatched a root by hand keep working — their `setattr` overrides an
+already-redirected value, and monkeypatch unwinds in reverse. And
+`project_storage.storage_roots()` reads these module attributes live, so the
+copy/rename/export helpers are redirected with them.
+
+Two things that are easy to get wrong here:
+
+- **`aesa_storage` and `aesa_session_storage` share one directory** — sessions
+  live at `aesa/{project}/sessions/` — so they must redirect to the SAME temp
+  path or that relationship breaks.
+- **`dsm_storage._LEGACY_STORAGE_DIR` (mfa) must be redirected too.**
+  `hydrate_from_disk` migrates from it on first use, so leaving it live lets a
+  test read real data.
+
+### Six tests read live data ON PURPOSE, and blanket redirection broke them
+
+The first cut turned 1495 passed into **1489 passed + 6 skipped**. The six
+assert against the developer's real projects: the content-hash round-trip walks
+the real archetypes, and the paired Monte Carlo foreground tests need Battery
+Circularity's A / A0, whose rows are 100% expressions and are the only place
+that foreground carries any uncertainty at all — which is how the missing
+paired foreground was found in the first place.
+
+They already skip when the project is absent, so they contribute nothing in CI
+and never have; the value is entirely local. Silently converting them to skips
+would have removed the only coverage that catches that class.
+
+So there is an explicit opt-out: a test that requests the **`live_storage`**
+fixture keeps the real roots. Reading is what it permits; **writing is still
+caught**, because the guard does not exempt it.
+
+### The guard fires at the WRITE, not at session end
+
+`_forbid_live_store_writes` (session-scoped, autouse) patches `Path.mkdir` and
+`Path.write_text` to raise `LiveStoreWriteError` naming the offending test and
+path. Failing at the moment of the write means the failure is attributable and
+does not depend on a reporting test running last.
+
+Scoped to the **seven project-data roots**, resolved from platformdirs directly
+rather than from the (redirected) module attributes. Deliberately NOT the whole
+`user_data_dir`: a premise import creates a `workspace` scratch dir there, which
+is not project data and not ours to police.
+
+Verified load-bearing by pointing `test_dsm_scenarios.py` back at the live
+store — the guard fires immediately on both offending tests, naming each.
+
+#### What NOT to do
+
+- **Don't add a storage module without adding its root to `_STORAGE_ROOTS`.**
+  The guard will catch the write, but it will read as a mysterious failure
+  rather than as the one-line registration it is.
+- **Don't make the redirect opt-IN.** It would only ever cover the tests
+  somebody remembered, and the offenders are precisely the ones nobody did.
+- **Don't exempt `live_storage` tests from the write guard.** Reading a real
+  project is the point of them; writing to one never is.
+- **Don't scope the guard to the whole `user_data_dir`.** A third-party import
+  creates `workspace` there and the guard would fight it for no benefit.
+- **Don't "fix" a live-data test by redirecting it.** Six of them exist because
+  real data catches things synthetic fixtures do not. Give them `live_storage`.
+- **A full-suite green does not prove tests are isolated.** These wrote into
+  real projects for days while every run passed. The guard is what makes it
+  observable; before it, only a manual `ls` of the store would have shown it.
 
 ## A test that skips is a test that stopped asserting
 
@@ -10540,6 +10691,122 @@ annotation, and one row per (pair × indicator) does not fit beside one row per
   paired item i's GSD² must match a single-item run at the same seed.
 - **Don't claim paired marginals are bit-identical for every item.** Item 0 is;
   later items agree to solver tolerance because of the CGS warm start.
+
+
+## `mapper-tailpipe` — the tank-to-wheel half ecoinvent does not isolate
+
+A fleet whose ICEV use-phase rows link only `market for petrol, low-sulfur`
+carries **well-to-tank supply and no combustion at all**. The single largest
+CO2 term in an ICEV lifecycle is simply absent, and nothing warns: the row
+resolves, validates and computes, it just describes refining rather than
+driving. On WP5 the missing term is ~2,275 kg CO2 per vehicle-year.
+
+**ecoinvent 3.10 cannot be linked to fix this.** Searched and confirmed:
+`operation, passenger car` / `van` / `lorry` all return **0**, and of the
+**151** non-market `EURO`-labelled datasets, **zero** lack a vehicle or road
+technosphere input. The tailpipe flows exist only inside
+`transport, passenger car, ...` leaves, which bundle the fuel, the vehicle
+(`market for passenger car`), `market for road` and road maintenance. A BOM
+that already models the vehicle and the fuel separately cannot link one
+without double-counting two of the three. (Note the naming: it is `EURO 5`
+with a SPACE — searching `euro-` returns 0 and reads as "none exist".)
+
+So `scripts/build_tailpipe_db.py` derives the missing half from those same
+datasets and writes two activities into a **`mapper-tailpipe`** database:
+
+| | per kg fuel | GWP100 | WTT sibling | TTW share |
+|---|---|---|---|---|
+| `petrol combustion, EURO 5` | 3.18 kg CO2 | **3.2236** | 1.0928 | 74.7 % |
+| `diesel combustion, EURO 5` | 3.14 kg CO2 | **3.1549** | 1.0408 | 75.2 % |
+
+Each holds ONLY the eight tailpipe biosphere exchanges plus the mandatory
+`type='production'` self-exchange — **no fuel input**, so it sits ALONGSIDE the
+existing supply row and double-counts nothing.
+
+**The factors are DERIVED at build time, never pasted.** The script reads
+`transport, passenger car, small size, {petrol,diesel}, EURO 5 [RER]` and
+divides each biosphere amount by that dataset's own fuel input, so the
+derivation is reproducible and re-runnable against a future ecoinvent. The
+source activity keys and the ecoinvent database name are written into each
+activity's `comment`, which is what a reader of a result — who has no access to
+the script — actually sees. **Round-trip closure: the derived activity times
+the fuel input reproduces the source leaf's own direct biosphere GWP to
+0.0003 %** (0.162296 vs 0.162297 kg CO2-eq/km), the residual being the 35
+flows not carried, which are negligible for GWP100.
+
+**Codes are deterministic md5, and that is load-bearing.** A BOM row links by
+`(database, code)`. `uuid4()` would dangle every link on rebuild — the exact
+failure that orphaned WP5's cohort mapping on 2026-08-04. A recipient who runs
+the script gets byte-identical codes and existing links keep resolving.
+
+**Uncertainty is inherited, not invented.** All 16 exchanges carry ecoinvent's
+own lognormal `scale` and `pedigree` from the source exchange, so Monte Carlo
+does not treat the model's dominant CO2 term as fixed. Inheriting rather than
+flattening preserves real signal: diesel NOx and PM2.5 come through at
+**GSD² 1.2127** where the other fourteen are **1.5015**. The scale is carried
+across the renormalisation unchanged, which is CONSERVATIVE rather than exact —
+the source dispersion covers both fuel-per-km and emissions-per-fuel, and
+dividing the fuel out arguably removes the first — and overstating a spread is
+the defensible direction. A `FALLBACK_PEDIGREE` exists for a future ecoinvent
+that ships an exchange without uncertainty; it is currently unreached, and the
+build records per exchange which path it took.
+
+**Why the three biosphere blockers do not bite.** Linking `biosphere3` directly
+fails three ways; a custom activity fails none:
+
+- **32-char code rule** (`bom_validator._EXPECTED_CODE_LENGTH`) rejects
+  biosphere3's 36-char hyphenated UUIDs. Our code is ours to mint.
+- **The four biosphere refusals** (`lca.py:169`, `:248`, `:1188`, and
+  `technosphere_only` in `bw2_wrapper.py:387`) all test the literal substring
+  `"biosphere"` in the DATABASE NAME. `mapper-tailpipe` trips none — which is
+  also why the name must never contain that substring.
+- **Demand-vector key**: a raw flow raises `OutsideTechnosphere: Can't find key
+  ... in product dictionary`. A `type='process'` activity with a production
+  exchange is in the product dictionary by construction. (ecoinvent itself
+  contains 400+ activities with zero technosphere inputs and only biosphere
+  exchanges — the identical shape.)
+
+Verified end-to-end: a BOM row linking `mapper-tailpipe` validates with
+**0 errors, 0 warnings** beside its ecoinvent supply row.
+
+**Portability.** `project_storage._GENERATED_DATABASES` maps the database to
+its build script, and `database_inventory` reports `installed_generated` +
+`regenerate_with` separately from `installed_premise`. The distinction is the
+one a recipient cares about: a premise database must be regenerated by running
+premise against an IAM scenario, whereas this ships with a script, so "you are
+missing this" arrives with the command that fixes it. The pointer is emitted
+whenever the project **links** to the database, even if it is not installed on
+the exporting machine — that is precisely the case that matters.
+
+### What NOT to do
+
+- **Don't link a `transport, passenger car, ... EURO n` dataset to add
+  combustion.** It bundles the vehicle and the road; a BOM that models those
+  separately would count them twice. That bundling is the whole reason this
+  database exists.
+- **Don't paste the factors as a table.** They are derived from ecoinvent at
+  build time so they track the installed version. A transcribed table is the
+  `remaining_gt_from_2025` mistake in a new place.
+- **Don't mint codes with `uuid4()`, and don't change `stable_code`'s input
+  string.** Either dangles every BOM link into the database on the next
+  rebuild.
+- **Don't rename the database to anything containing `biosphere`.** Four
+  separate refusals filter on that substring; the activity would become
+  unlinkable and invisible in the picker at once.
+- **Don't drop the `type='production'` self-exchange.** Without it the activity
+  never enters the product dictionary and every demand raises
+  `OutsideTechnosphere`.
+- **Don't leave the exchanges unscored, and don't flatten them to one stated
+  pedigree.** Inheriting preserves ecoinvent's per-flow distinctions (diesel
+  NOx and PM2.5 are genuinely tighter); a single blanket score would erase
+  them, and an unscored dominant CO2 term is the failure this database was
+  built to avoid.
+- **Don't add a generated database without adding it to
+  `_GENERATED_DATABASES`.** It would be reported under `installed_base`,
+  telling a recipient they need an ecoinvent licence for something they could
+  rebuild in one command.
+- **Relinking WP5's use-phase rows is a separate data decision.** This database
+  is reference data; no BOM is touched by building it.
 
 
 ## Future Extension: Product Systems (deferred to v1.1)

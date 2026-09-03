@@ -4,12 +4,9 @@
 # GitHub renders its "Cite this repository" button from THIS file only, and
 # JOSS reviewers look for it. The prose version stays in the README.
 #
-# ── TWO THINGS ARE PLACEHOLDERS AND MUST BE FILLED IN BY A HUMAN ────────────
+# ── ONE THING IS A PLACEHOLDER AND MUST BE FILLED IN BY A HUMAN ────────────
 #
-#   1. `doi` under `identifiers` — commented out below. Add the Zenodo or
-#      JOSS-issued DOI once it exists, and update the README's `note` field in
-#      the same commit so the two cannot disagree.
-#   2. `authors` — a single entry, deliberately. The author list, affiliations
+#   1. `authors` — a single entry, deliberately. The author list, affiliations
 #      and ORCIDs are a scholarly decision, not a mechanical one. Add
 #      co-authors here and in paper.md together.
 #
@@ -55,9 +52,12 @@ keywords:
   - industrial ecology
   - brightway2
 
-# identifiers:
-#   # TODO: uncomment and fill once the DOI is issued. Update the README's
-#   # BibTeX `note` field in the SAME commit.
-#   - type: doi
-#     value: 10.5281/zenodo.XXXXXXX
-#     description: Archived software release
+identifiers:
+  # The CONCEPT DOI, which always resolves to the latest archived version --
+  # not the version DOI for any single release. A reader following this in a
+  # year should reach the current version, not v0.2.1 specifically. Zenodo
+  # issues both; the per-version DOI belongs in paper.md if JOSS asks for the
+  # exact archived release.
+  - type: doi
+    value: 10.5281/zenodo.22246255
+    description: Archived software release (concept DOI, resolves to latest)

@@ -5,7 +5,7 @@
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
 [![Build](https://github.com/leofrht-jpg/MApper-Software/actions/workflows/ci.yml/badge.svg)](https://github.com/leofrht-jpg/MApper-Software/actions/workflows/ci.yml)
 [![Version](https://img.shields.io/badge/version-0.2.1-blue.svg)](https://github.com/leofrht-jpg/MApper-Software/releases)
-[![DOI](https://img.shields.io/badge/DOI-pending-lightgrey.svg)](#citation)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22246255.svg)](https://doi.org/10.5281/zenodo.22246255)
 
 MApper is a desktop application that integrates **Life Cycle Assessment (LCA)**, **Dynamic Stock Modelling / Material Flow Analysis (DSM/MFA)**, **prospective LCA (pLCA)**, and **Absolute Environmental Sustainability Assessment (AESA)** in one workflow. It is built for researchers who need to evaluate the environmental impact of evolving material systems over time and against planetary boundaries.
 
@@ -187,9 +187,10 @@ issues: see [SECURITY.md](SECURITY.md).
 
 ## Citation
 
-If you use MApper in your research, please cite it. A JOSS (Journal of Open
-Source Software) paper is in preparation; the DOI will be added here once
-published.
+If you use MApper in your research, please cite it. The DOI below is the
+Zenodo **concept DOI**: it always resolves to the latest archived release, so a
+citation using it stays valid as MApper is updated. A JOSS (Journal of Open
+Source Software) paper is in preparation.
 
 ```bibtex
 @software{ferhati_mapper_2026,
@@ -200,11 +201,13 @@ published.
   year       = {2026},
   publisher  = {Technical University of Denmark},
   url        = {https://mapper.leonardoferhati.com},
-  note       = {JOSS paper and DOI forthcoming}
+  doi        = {10.5281/zenodo.22246255},
+  note       = {Archived on Zenodo; this DOI resolves to the latest release. JOSS paper in preparation}
 }
 ```
 
-> Citation placeholder — replace `note` with the JOSS DOI once the paper is published.
+> The DOI is the concept DOI and needs no updating between releases. Add the
+> JOSS citation alongside it once the paper is published.
 
 ## Copyright and license
 

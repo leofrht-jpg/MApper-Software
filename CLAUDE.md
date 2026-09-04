@@ -8487,6 +8487,63 @@ store — the guard fires immediately on both offending tests, naming each.
   real projects for days while every run passed. The guard is what makes it
   observable; before it, only a manual `ls` of the store would have shown it.
 
+## Check free disk space before investigating a data-corruption message
+
+**Observation, not a conclusion — the mechanism is unknown.**
+
+On 2026-09-03 the AESA CO2e provenance suites
+(`test_aesa_co2e_ratio_provenance.py`, `test_aesa_co2e_documented_claims.py`)
+reported **13-14 failures** of the form:
+
+```
+AR6 C1+C2: pairs_file is missing {'C2', 'C1'}
+assert set() == {'C1', 'C2'}
+```
+
+That message names a **data** problem: it says the shipped
+`ar6_c1c2_pairs.csv` no longer contains the categories the fit declares.
+
+**The file was intact the whole time.** Read directly it gives 214 rows with
+`category` values `C1`/`C2`; read through the test module's own `DATA` path and
+its own `_rows()` helper, under pytest, it gives the same. `DATA` is a fixed
+package path and is NOT touched by the storage-isolation fixture, so the
+obvious hypothesis — that the redirect shadowed it — is ruled out.
+
+What correlated was the machine, not the data:
+
+| run | volume | wall clock | result |
+|---|---|---|---|
+| failing | **91% full** (39 GB free), after a 41 GB copy filled it to 99% | **822 s** | 13-14 CO2e failures |
+| clean | 78% full (98 GB free) | 323 s | 1500 passed, CO2e green |
+
+Same commit, same environment, 2.4x slower on the failing run. Not reproducible
+on a healthy volume. CI on a fresh runner was green throughout.
+
+**So: if these tests fail claiming the pairs file lost its categories, check
+`df -h` FIRST.** The failure message will send you looking for a corrupted CSV,
+and on this evidence that is the wrong place to look. Confirm the file is
+actually damaged (`wc -l`, read the header, check `category` values) before
+touching the data — and re-run once on a volume with headroom, because the
+failure is not deterministic.
+
+Two things this does NOT claim: that disk pressure *causes* it (only that they
+co-occurred), and that the data can never genuinely rot. It claims only that a
+data-shaped message here has at least one non-data explanation, and that the
+cheap check comes first.
+
+#### What NOT to do
+
+- **Don't "repair" the CSVs on the strength of this failure.** They were
+  verified byte-intact while the tests were red. Editing them would introduce
+  the corruption the message describes.
+- **Don't loosen or skip these tests to make them pass.** They are the
+  published-source invariants for the CO2e conversion; a skip here is exactly
+  the vacuous-green this file warns about elsewhere.
+- **Don't conclude "main is red" from a single reproduction.** It reproduced
+  twice under pressure and not at all afterwards. One re-run on a healthy
+  volume is the difference between a real regression and an environment
+  artefact.
+
 ## A test that skips is a test that stopped asserting
 
 `test_supply_chain_truncation_keeps_high_value_paths` took `candidates[0]` off

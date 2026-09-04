@@ -19,6 +19,7 @@ import uuid
 from typing import Optional
 
 import bw2data
+from mapper.core.upload_guard import refuse_if_nothing_resolved
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
@@ -1097,6 +1098,11 @@ async def upload_stock(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(parsed), what="stock")
     scenario.initial_stock = parsed
     dsm_storage.save_state(_current_project(), system_id, state)
     cohort_keys: set[str] = set()
@@ -1132,6 +1138,11 @@ async def upload_inflows(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(inflows), what="inflow")
     scenario.inflows = inflows
     dsm_storage.save_state(_current_project(), system_id, state)
     total = sum(sum(inf.counts.values()) for inf in inflows)
@@ -1165,6 +1176,11 @@ async def upload_stock_targets(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(targets), what="stock-target")
     scenario.stock_targets = targets
     dsm_storage.save_state(_current_project(), system_id, state)
     total = sum(sum(t.counts.values()) for t in targets)
@@ -1203,6 +1219,11 @@ async def upload_outflows(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(outflows), what="outflow")
     scenario.outflows = outflows
     dsm_storage.save_state(_current_project(), system_id, state)
     total = sum(sum(o.counts.values()) for o in outflows)
@@ -1251,6 +1272,11 @@ async def upload_stock_aggregate(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(parsed), what="stock")
     scenario.initial_stock = parsed
     dsm_storage.save_state(_current_project(), system_id, state)
     cohort_keys: set[str] = set()

@@ -23,6 +23,7 @@ import {
   uploadCohortMappings,
   type DimensionDef,
 } from '../../api/client'
+import { buildTemplateFilename } from '../../utils/exportFilename'
 
 const COHORT_SEP = '|'
 
@@ -241,9 +242,11 @@ export function CohortMappingEditor() {
 
   const handleDownloadTemplate = async () => {
     if (!activeSystem?.id) return
-    const safe = activeSystem.name.replace(/\s+/g, '_')
     try {
-      await downloadCohortMappingsTemplate(activeSystem.id, `${safe}_cohort_mappings_template.xlsx`)
+      await downloadCohortMappingsTemplate(
+        activeSystem.id,
+        buildTemplateFilename(activeSystem.name, 'cohort_mappings', { fallback: 'system' }),
+      )
     } catch (e) {
       setStatus({ kind: 'error', msg: `Template download failed: ${e instanceof Error ? e.message : String(e)}` })
     }

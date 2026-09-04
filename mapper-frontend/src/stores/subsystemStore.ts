@@ -202,7 +202,8 @@ export const useSubsystemStore = create<SubsystemStore>((set, get) => ({
   downloadStockTemplate: async (id) => {
     const sysId = get().currentSystemId
     if (!sysId) throw new Error('No active system')
-    await downloadSubsystemStockTemplate(sysId, id)
+    const name = get().subsystems.find((s) => s.id === id)?.name ?? ''
+    await downloadSubsystemStockTemplate(sysId, id, name)
   },
 
   reset: () => set({ ...initial }),

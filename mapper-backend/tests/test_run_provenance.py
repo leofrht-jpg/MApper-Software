@@ -212,8 +212,13 @@ def test_the_aesa_adapters_carry_the_stamp_through():
     tree = ast.parse(src)
     for fn_name in ("single_product_to_impact_result",
                     "prospective_single_product_to_impact_result"):
+        # AsyncFunctionDef too. This one already failed LOUDLY if an adapter
+        # turned async -- `next()` raises StopIteration rather than passing
+        # vacuously (verified by making one async: 1 failed, 21 passed) -- but
+        # a loud failure for the wrong reason still costs someone an hour.
         fn = next(n for n in ast.walk(tree)
-                  if isinstance(n, ast.FunctionDef) and n.name == fn_name)
+                  if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                  and n.name == fn_name)
         body = ast.unparse(fn)
         assert "_run_stamp()" not in body, (
             f"{fn_name} stamps a fresh time -- it is an adapter, not a compute"

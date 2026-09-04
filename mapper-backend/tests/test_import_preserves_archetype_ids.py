@@ -448,3 +448,44 @@ def test_the_persist_guard_would_catch_a_raw_write():
     assert offenders(
         "def _persist_archetype(p, a):\n    dsm_storage.save_archetype(p, a)\n"
     ) == [], "the helper itself is the sanctioned call site"
+
+
+# ── replace validates BEFORE it destroys ────────────────────────────────────
+
+@pytest.mark.parametrize("label,names", [("empty Archetypes sheet", []),
+                                         ("duplicate archetype_name", ["Dup", "Dup"])])
+def test_a_refused_replace_leaves_the_library_intact(project, label, names):
+    """Replace used to wipe first and validate second.
+
+    A well-formed workbook whose Archetypes sheet had zero rows cleared every
+    archetype and THEN answered 400 -- measured: 3 archetypes in, 0 out. Same
+    class as the empty-upload guard: an operation that destroys working state
+    as a side effect of doing what was asked.
+
+    Found by making `test_upload_empty_result_guard` DISCOVER its routes rather
+    than declare them; `import_archetype` was the tenth writing upload and the
+    hand-kept list of nine had never named it.
+    """
+    from fastapi import HTTPException
+
+    for i in (1, 2, 3):
+        bom_api._archetypes[project][f"id{i}"] = _arc(f"Arc{i}", f"id{i}")
+
+    with pytest.raises(HTTPException) as ei:
+        _import(_workbook_bytes(names), "replace")
+    assert ei.value.status_code == 400
+    assert len(bom_api._archetypes[project]) == 3, (
+        f"{label}: the import refused AND destroyed the library"
+    )
+
+
+def test_a_valid_replace_still_prunes(project):
+    """The counterpart: validating first must not stop replace doing its job."""
+    for i in (1, 2, 3):
+        bom_api._archetypes[project][f"id{i}"] = _arc(f"Arc{i}", f"id{i}")
+
+    _import(_workbook_bytes(["Arc1", "Brand New"]), "replace")
+
+    live = {a.name for a in bom_api._archetypes[project].values()}
+    assert live == {"Arc1", "Brand New"}
+    assert bom_api._archetypes[project]["id1"].name == "Arc1"  # id preserved

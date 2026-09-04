@@ -3670,6 +3670,35 @@ async def import_archetype(
     warnings: list[str] = []
     touched: list[tuple[Archetype, str]] = []  # (archetype, "created" | "updated")
 
+    # ── Validate the workbook BEFORE destroying anything ──────────────────
+    #
+    # Replace used to clear the library and THEN parse. A well-formed workbook
+    # whose Archetypes sheet had zero rows wiped every archetype and answered
+    # 400 -- reproduced: 3 archetypes in, 0 out, "Archetypes sheet has no
+    # rows.". Same class as the empty-upload guard: an operation that destroys
+    # working state as a side effect of doing what was asked.
+    #
+    # Both branches could 400 after the wipe -- the multi format on an empty
+    # sheet or a duplicate name, the legacy one on a malformed BOM sheet -- so
+    # both are parsed here and REUSED below rather than re-parsed. This is the
+    # preview-then-apply shape the two subsystem import routes already use.
+    pre_meta: list[dict] | None = None
+    pre_single: tuple | None = None
+    if "Archetypes" in wb.sheetnames:
+        pre_meta = _read_archetypes_sheet(wb)
+        if not pre_meta:
+            raise HTTPException(status_code=400, detail="Archetypes sheet has no rows.")
+        _seen: set[str] = set()
+        for _m in pre_meta:
+            if _m["name"] in _seen:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Duplicate archetype_name '{_m['name']}' in Archetypes sheet.",
+                )
+            _seen.add(_m["name"])
+    else:
+        pre_single = _parse_bom_workbook(wb)
+
     # Snapshot the library BEFORE replace wipes it. Both modes then upsert by
     # NAME, so an archetype whose name is in the workbook keeps its id.
     #
@@ -3747,17 +3776,8 @@ async def import_archetype(
 
     if "Archetypes" in wb.sheetnames:
         # ── Multi-archetype format ──
-        meta = _read_archetypes_sheet(wb)
-        if not meta:
-            raise HTTPException(status_code=400, detail="Archetypes sheet has no rows.")
-        seen_names: set[str] = set()
-        for m in meta:
-            if m["name"] in seen_names:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Duplicate archetype_name '{m['name']}' in Archetypes sheet.",
-                )
-            seen_names.add(m["name"])
+        # Parsed and validated above, before the wipe. Reused, not re-parsed.
+        meta = pre_meta or []
 
         for m in meta:
             roots, wrn, vrows = _parse_bom_workbook(wb, archetype_filter=m["name"])
@@ -3773,7 +3793,9 @@ async def import_archetype(
         fmt = "multi"
     else:
         # ── Legacy single-archetype format (Summary sheet optional). ──
-        roots, warnings, single_vrows = _parse_bom_workbook(wb)
+        # Parsed above, before the wipe. Reused, not re-parsed.
+        assert pre_single is not None
+        roots, warnings, single_vrows = pre_single
         name = file.filename.rsplit(".", 1)[0] if file.filename else "Imported archetype"
         description: str | None = None
         category: str | None = None

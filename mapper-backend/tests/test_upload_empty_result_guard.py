@@ -22,6 +22,8 @@ from __future__ import annotations
 import io
 
 import openpyxl
+import re
+
 import pytest
 from fastapi import HTTPException
 
@@ -117,6 +119,16 @@ def test_a_wellformed_file_with_zero_rows_parses_CLEAN(parser, header, extra):
 
 # ── Every assign-and-persist upload routes through the guard ───────────────
 
+# Every upload route that WRITES to a project store. Declared, but no longer
+# maintained by hand: `test_no_undeclared_writing_upload` discovers them and
+# fails on one that is missing, the way DEMAND_BUILDERS does next door.
+#
+# Before discovery existed this was a hand-kept list of nine, and the sweep
+# immediately found a tenth -- `import_archetype`, which in replace mode wiped
+# the library and THEN validated, so a well-formed workbook with zero rows
+# destroyed every archetype and answered 400. That is the failure this whole
+# file is about, sitting one module away, invisible because the guard's scope
+# was a list somebody had to remember to extend.
 GUARDED = {
     ("api/bom.py", "upload_cohort_mappings"),
     ("api/dsm.py", "upload_stock"),
@@ -128,6 +140,154 @@ GUARDED = {
     ("api/subsystems.py", "upload_manual_inflows"),
     ("api/subsystems.py", "upload_manual_outflows"),
 }
+
+# Upload routes that do NOT write to a project store, each with the reason.
+# An entry here is a claim that must stay true; `test_a_declared_reader_really_does_not_write`
+# checks it rather than trusting the comment.
+READ_ONLY_UPLOADS = {
+    ("api/dsm.py", "parse_labels"): "parses and returns; never persists",
+    ("api/subsystems.py", "import_cohort_mapping"): "preview-then-apply; validate only",
+    ("api/subsystems.py", "import_dependency_rules"): "preview-then-apply; validate only",
+}
+
+# Writing uploads that are NOT empty-result-guarded, each with the reason it
+# does not need to be. These are the judgement calls; the sweep forces them to
+# be made explicitly rather than by omission.
+WRITING_BUT_EXEMPT = {
+    ("api/bom.py", "import_archetype"):
+        "validates the whole workbook BEFORE the replace wipe, so a file that "
+        "resolves nothing cannot destroy the library. Verified: 3 archetypes "
+        "in, 3 out, HTTP 400.",
+    ("api/databases.py", "post_import_project"):
+        "installs into a NEW project; it never overwrites an existing one",
+    ("api/dsm.py", "import_system"): "creates a system; does not replace one",
+    ("api/dsm.py", "import_simulation"): "creates a result; does not replace one",
+    ("api/parameters.py", "import_table"):
+        "validates the header and builds the new table BEFORE writing; a "
+        "malformed sheet 400s with nothing touched (checked at the source)",
+    ("api/aesa.py", "post_config_import"): "creates a configuration; additive",
+    ("api/lcia_methods.py", "post_install_custom"): "installs a method; additive",
+}
+
+
+def _fns(tree):
+    import ast
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield n
+
+
+def _calls(fn) -> set[str]:
+    import ast
+    out = set()
+    for c in ast.walk(fn):
+        if isinstance(c, ast.Call):
+            f = c.func
+            out.add(f.id if isinstance(f, ast.Name) else getattr(f, "attr", ""))
+    return out
+
+
+def _takes_an_upload(fn) -> bool:
+    """A parameter annotated UploadFile, or defaulted to File(...)."""
+    import ast
+    for a in list(fn.args.args) + list(fn.args.kwonlyargs):
+        if a.annotation is not None and "UploadFile" in ast.unparse(a.annotation):
+            return True
+    for d in list(fn.args.defaults) + [d for d in fn.args.kw_defaults if d]:
+        if isinstance(d, ast.Call) and getattr(d.func, "id", "") == "File":
+            return True
+    return False
+
+
+# A PATTERN, not a list of names. A hand-kept list is the very thing that let
+# `import_archetype` sit unclassified, so the criterion must generalise to a
+# helper nobody has written yet.
+#
+# Derived from the code rather than guessed: across the nine known writers the
+# persist calls are save_cohort_mappings / save_state / _persist_subs /
+# _persist_sub_results, and the three known readers call none of them. The bare
+# `save` and `storage_write` arms were added after this sweep classified
+# `post_config_import` (calls `save`) and `post_import_project` (calls
+# `_rehydrate_after_storage_write`) as read-only, which they are not -- a false
+# "read-only" is exactly the blind spot this test exists to remove.
+_PERSISTS = re.compile(r"^(save|_persist|install_)|storage_write")
+
+
+def _discover_upload_routes(root=None):
+    """(writing, read_only) upload routes, discovered rather than declared."""
+    import ast
+    import pathlib as _pl
+
+    root = root or (_pl.Path(__file__).resolve().parents[1] / "mapper")
+    writing, readers = set(), set()
+    for path in sorted(root.rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for fn in _fns(tree):
+            if not _takes_an_upload(fn):
+                continue
+            # as_posix(), not str(): on Windows str() yields backslashes and
+            # nothing would match the declared sets, so the rule would pass by
+            # finding nothing on half the CI matrix.
+            key = (path.relative_to(root).as_posix(), fn.name)
+            # No subscript-assignment heuristic: `d[k] = v` on a LOCAL dict
+            # during parsing is not a store write, and including it classified
+            # both subsystem preview routes as writers.
+            persists = any(_PERSISTS.search(c) for c in _calls(fn))
+            (writing if persists else readers).add(key)
+    return writing, readers
+
+
+def test_no_undeclared_writing_upload():
+    """A NEW upload route that writes must be classified, not silently skipped.
+
+    The neighbouring DEMAND_BUILDERS sweep works this way; this one did not,
+    and the gap hid a real data-loss path in `import_archetype` for as long as
+    it existed. A guard whose scope is maintained by hand drifts, and the drift
+    is invisible.
+    """
+    writing, _ = _discover_upload_routes()
+    undeclared = writing - GUARDED - set(WRITING_BUT_EXEMPT)
+    assert not undeclared, (
+        "these upload routes write to a project store and are neither guarded "
+        "nor exempt. Call refuse_if_nothing_resolved, or add an entry to "
+        f"WRITING_BUT_EXEMPT saying why it is safe: {sorted(undeclared)}"
+    )
+
+
+def test_no_stale_declaration():
+    """A declared entry that no longer exists is as bad as a missing one -- it
+    passes vacuously while looking like coverage."""
+    writing, readers = _discover_upload_routes()
+    found = writing | readers
+    for label, declared in (("GUARDED", GUARDED),
+                            ("WRITING_BUT_EXEMPT", set(WRITING_BUT_EXEMPT)),
+                            ("READ_ONLY_UPLOADS", set(READ_ONLY_UPLOADS))):
+        stale = declared - found
+        assert not stale, f"{label} names routes that no longer exist: {sorted(stale)}"
+
+
+def test_a_declared_reader_really_does_not_write():
+    """READ_ONLY_UPLOADS is a claim, not a comment. Checked."""
+    writing, _ = _discover_upload_routes()
+    wrong = set(READ_ONLY_UPLOADS) & writing
+    assert not wrong, (
+        f"declared read-only but they persist: {sorted(wrong)}"
+    )
+
+
+def test_the_discovery_is_not_vacuous():
+    """It must actually find the routes it is meant to police."""
+    writing, readers = _discover_upload_routes()
+    assert len(writing | readers) >= 15, (
+        f"the sweep found only {len(writing | readers)} upload routes -- it has "
+        "stopped matching and would pass by finding nothing"
+    )
+    assert GUARDED <= writing, (
+        f"a guarded route is no longer detected as writing: {sorted(GUARDED - writing)}"
+    )
 
 
 @pytest.mark.parametrize("rel,fn", sorted(GUARDED))

@@ -69,7 +69,7 @@ jobs:
       # fast enough that people actually wait for it. Keyed on environment.yml:
       # any dependency change invalidates it.
       - name: Cache conda packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/conda_pkgs
           key: conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}

@@ -188,7 +188,13 @@ def test_every_gsd2_helper_uses_the_factor_2():
             continue
         tree = ast.parse(f.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
-            if not isinstance(node, ast.FunctionDef) or "gsd2" not in node.name.lower():
+            # AsyncFunctionDef too. A gsd2 helper is pure arithmetic and
+            # implausibly async, but a FunctionDef-only walk is the exact
+            # shape that made the persist-helper guard vacuous, so it is
+            # not a distinction worth relying on anywhere.
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) or (
+                "gsd2" not in node.name.lower()
+            ):
                 continue
             checked += 1
             consts = {

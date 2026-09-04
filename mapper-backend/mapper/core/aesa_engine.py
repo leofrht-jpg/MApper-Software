@@ -420,8 +420,13 @@ BUILTIN_PRINCIPLES: list[PrincipleDefinition] = [
                         description="Share of global agricultural output / GVA"),
     PrincipleDefinition(id="LA", name="Land Area",
                         description="Share of global land area"),
+    # "Historical" was the wrong word and this string is user-visible (the
+    # Sharing principles editor renders it, and it round-trips through the
+    # exported workbook). Grandfathering allocates on CURRENT entitlement, and
+    # the shipped AR data is a single-year share; "historical" invited exactly
+    # the cumulative reading that was the basis error corrected in Aug 2026.
     PrincipleDefinition(id="AR", name="Acquired Rights",
-                        description="Historical / grandfathered emissions or activity share"),
+                        description="Grandfathering - share of current annual emissions or activity"),
 ]
 
 
@@ -459,10 +464,16 @@ def _layer1_data_from_sharing(sharing: dict) -> dict[str, dict[int, tuple[float,
 def _layer1_sources_from_sharing(sharing: dict) -> dict[str, str]:
     """Build {principle → source string} from sharing_data.json defaults.
 
-    Provenance is per PRINCIPLE, not per layer: layer 1's AR series is a Global
-    Carbon Budget cumulative while its EpC series is a population statistic.
-    Missing or blank sources are dropped rather than stored as "", so a preset
-    that has no provenance dumps ``{}``.
+    Provenance is per PRINCIPLE, not per layer: layer 1's AR series is a Climate
+    TRACE single-year emissions share while its EpC series is a population
+    statistic. Missing or blank sources are dropped rather than stored as "",
+    so a preset that has no provenance dumps ``{}``.
+
+    AR is NOT a cumulative. It held a 1850-2020 CO2 total until August 2026,
+    which made it a different KIND of quantity from the other four principles
+    -- they sample one instant, it integrated over 171 years -- and that is a
+    units error that happens to typecheck. This sentence is the example a
+    reader checks the value against, so it names the current basis explicitly.
     """
     return {pid: str(d["source"]).strip()
             for pid, d in sharing.get("layer1_defaults", {}).items()

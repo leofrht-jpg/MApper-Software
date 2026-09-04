@@ -15,6 +15,20 @@
 // sibling `<main>` paints in the same phase and wins on DOM order, so the
 // overlay can be visible while its buttons are unreachable.
 //
+// THE FAILURE IS INTERMITTENT, AND THAT IS THE TRAP. Whether a click lands
+// depends on what `<main>` happens to be rendering underneath the modal. With
+// no AESA result on screen there is little positioned content and the dialog is
+// clickable; with a radar chart rendered, the chart's containers paint over it
+// and the buttons go dead. Confirmed by screenshot: the radar's spokes and axis
+// labels draw visibly THROUGH the dialog panel, and chart content paints over
+// the "Replace configuration" button. It reads as translucency and is not --
+// it is paint order.
+//
+// So the same click works, then does not, on the same screen. Anyone meeting
+// this for the first time will reasonably conclude it is a flake and chase the
+// handler. It is not a flake and it is not the handler: it is this rule, and
+// this test is the cheap way to find that out.
+//
 // Patch 4X fixed exactly this for the session modals and wrote the explanation
 // into a comment beside them. THE COMMENT DID NOT PROPAGATE: three components
 // added afterwards — ConfigWorkbookButtons, LayerEditModal, PrinciplesEditor —

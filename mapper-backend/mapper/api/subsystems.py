@@ -96,6 +96,7 @@ def _reconcile_project_from_header(
 
 
 from mapper.api.cohort_export import excel_response_from_bytes
+from mapper.api.bom import build_template_filename
 
 
 router = APIRouter(
@@ -443,7 +444,7 @@ async def template_subsystem_stock(system_id: str, subsystem_id: str) -> Respons
         raise HTTPException(status_code=404, detail="Subsystem not found")
     csv_text = dependent_stock_template_csv(sub.dimensions)
     # Static, human-readable filename — no UUID / system_id / timestamp.
-    fname = "initial_stock_template.xlsx"
+    fname = build_template_filename(sub.name, "initial_stock", fallback="subsystem")
     return Response(
         content=csv_text,
         media_type="text/csv",
@@ -537,7 +538,7 @@ async def template_manual_inflows(system_id: str, subsystem_id: str) -> Response
     sub = _require_dependent(system_id, subsystem_id)
     years = _get_system(system_id).time_horizon.years
     csv_text = inflow_template_csv(sub.dimensions, years)
-    fname = f"inflows_template_{_sanitize_filename(sub.name)}.csv"
+    fname = build_template_filename(sub.name, "manual_inflows", suffix="csv", fallback="subsystem")
     return Response(content=csv_text, media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
@@ -547,7 +548,7 @@ async def template_manual_outflows(system_id: str, subsystem_id: str) -> Respons
     sub = _require_dependent(system_id, subsystem_id)
     years = _get_system(system_id).time_horizon.years
     csv_text = outflow_template_csv(sub.dimensions, years)
-    fname = f"outflows_template_{_sanitize_filename(sub.name)}.csv"
+    fname = build_template_filename(sub.name, "manual_outflows", suffix="csv", fallback="subsystem")
     return Response(content=csv_text, media_type="text/csv",
                     headers={"Content-Disposition": f'attachment; filename="{fname}"'})
 
@@ -696,7 +697,11 @@ async def dependency_rules_template(system_id: str, subsystem_id: str) -> Respon
         raise HTTPException(status_code=404, detail="Subsystem not found")
     primary = _get_system(system_id)
     data = _dep_rules_workbook(sub, primary.dimensions)
-    return excel_response_from_bytes(data, "dependency_rules_template.xlsx", kind="round_trip")
+    return excel_response_from_bytes(
+        data,
+        build_template_filename(sub.name, "dependency_rules", fallback="subsystem"),
+        kind="round_trip",
+    )
 
 
 @router.post("/systems/{system_id}/dependency-rules/import")
@@ -889,8 +894,11 @@ async def cohort_mapping_template(system_id: str, subsystem_id: str) -> Response
     archetype_names = sorted(a.name for a in _proj_archetypes().values())
     data = _cohort_mapping_workbook(sub, archetype_names)
     # Filename: cohort_mapping_<subsystem_name>_template.xlsx — spaces→_, lowered.
-    safe = _sanitize_filename(sub.name, "subsystem").lower()
-    return excel_response_from_bytes(data, f"cohort_mapping_{safe}_template.xlsx", kind="round_trip")
+    return excel_response_from_bytes(
+        data,
+        build_template_filename(sub.name, "cohort_mappings", fallback="subsystem"),
+        kind="round_trip",
+    )
 
 
 @router.post("/systems/{system_id}/cohort-mapping/import")

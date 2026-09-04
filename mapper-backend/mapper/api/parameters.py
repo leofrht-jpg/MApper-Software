@@ -441,9 +441,15 @@ def _build_workbook(table: ParameterTable | None) -> Workbook:
     return wb
 
 
-def _sanitize_filename(name: str) -> str:
-    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", (name or "parameters").strip())
-    return cleaned or "parameters"
+def _sanitize_filename(name: str, fallback: str = "parameters", max_len: int = 100) -> str:
+    """Thin alias for the ONE sanitiser -- see bom.sanitize_filename_part.
+
+    Kept as a name so existing call sites read unchanged; the BEHAVIOUR is
+    now shared. Three copies used to disagree on `Fleet (EU)`.
+    """
+    from mapper.api.bom import sanitize_filename_part
+
+    return sanitize_filename_part(name, fallback, max_len)
 
 
 @router.get("/template")

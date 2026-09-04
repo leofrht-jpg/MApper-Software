@@ -170,7 +170,13 @@ def test_initial_stock_template_filename_no_uuid():
     try:
         resp = asyncio.run(sub_api.template_subsystem_stock(sys_id, sub_id))
         cd = resp.headers["content-disposition"]
-        assert cd == 'attachment; filename="initial_stock_template.xlsx"'
+        # Entity-first, like every other template: `{Subsystem}_{artifact}_template`.
+        # It used to be a bare `initial_stock_template.xlsx` — no subsystem name at
+        # all, so two subsystems' templates landed on the same name in ~/Downloads
+        # and the second silently overwrote the first.
+        assert cd == (
+            'attachment; filename="Fueling_Infrastructure_initial_stock_template.xlsx"'
+        )
         assert sub_id not in cd and "670be0bf" not in cd
     finally:
         dsm_api._proj_systems().pop(sys_id, None)

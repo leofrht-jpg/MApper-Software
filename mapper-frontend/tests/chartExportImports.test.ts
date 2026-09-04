@@ -29,7 +29,7 @@
 //
 // Verified load-bearing: installing svg2pdf.js@2.8.1 fails this file with the
 // error above.
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 
@@ -56,5 +56,77 @@ describe('chart PDF export loads at all', () => {
         + 'breaks chart PDF export outright. See the "//svg2pdf.js" note in '
         + 'package.json.',
     ).toBe(true)
+  })
+})
+
+// ── and that it actually PRODUCES a PDF ─────────────────────────────────────
+// The import guard above covers the failure that was actually seen (#86 threw
+// while loading). It would not catch a bump that imports fine and then emits
+// a blank page, which is the other way this can break silently — the download
+// still arrives, so nothing looks wrong until someone opens the file.
+//
+// SCOPE, stated so it is not mistaken for more than it is: this is a SMOKE
+// test, not a fidelity test. jsdom implements no SVG layout, so `getBBox` and
+// `getComputedTextLength` have to be shimmed, and the geometry svg2pdf sees is
+// therefore synthetic. It cannot tell you the chart LOOKS right. What it does
+// tell you is that the whole path — serialize → parse → svg2pdf → jsPDF →
+// blob — runs to completion and emits a structurally valid PDF whose content
+// stream contains stroked paths and drawn text rather than an empty page.
+describe('chart PDF export produces a real PDF', () => {
+  function shimSvgLayout(): void {
+    const proto = SVGElement.prototype as unknown as Record<string, unknown>
+    if (typeof proto.getBBox !== 'function') {
+      proto.getBBox = function (this: SVGElement) {
+        const n = (a: string) => Number(this.getAttribute(a) ?? 0) || 0
+        return { x: n('x'), y: n('y'), width: n('width') || 100, height: n('height') || 20 }
+      }
+    }
+    if (typeof proto.getComputedTextLength !== 'function') {
+      proto.getComputedTextLength = () => 50
+    }
+  }
+
+  function chartContainer(): HTMLElement {
+    const host = document.createElement('div')
+    // Shaped like what serializeSvgForExport receives from a Recharts chart:
+    // the .recharts-surface root findChartSvg looks for, gridlines, two data
+    // paths, and axis text. Recharts renders nothing under jsdom, so the SVG
+    // is written by hand rather than mounted.
+    host.innerHTML = `
+      <svg class="recharts-surface" width="480" height="300" viewBox="0 0 480 300">
+        <rect x="0" y="0" width="480" height="300" fill="#ffffff"></rect>
+        <line x1="40" y1="20" x2="40" y2="260" stroke="#cccccc"></line>
+        <line x1="40" y1="260" x2="460" y2="260" stroke="#cccccc"></line>
+        <path d="M40,240 L140,180 L240,120 L340,90 L440,60" fill="none" stroke="#1D9E75" stroke-width="2"></path>
+        <path d="M40,250 L140,220 L240,200 L340,190 L440,170" fill="none" stroke="#EF9F27" stroke-width="2"></path>
+        <text x="240" y="285" font-size="12" fill="#111111">Year</text>
+        <text x="60" y="40" font-size="12" fill="#111111">kg CO2-eq</text>
+      </svg>`
+    document.body.appendChild(host)
+    return host
+  }
+
+  it('emits a valid PDF containing stroked paths and text', async () => {
+    shimSvgLayout()
+    const { exportChart } = await import('../src/components/charts/chartExport')
+
+    const blobs: Blob[] = []
+    const url = globalThis.URL as unknown as Record<string, unknown>
+    url.createObjectURL = (b: Blob) => { blobs.push(b); return 'blob:test' }
+    url.revokeObjectURL = () => {}
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    await exportChart(chartContainer(), 'guard_chart', 'pdf', 'light')
+
+    expect(blobs.length, 'exportChart should trigger exactly one download').toBe(1)
+    const bytes = new Uint8Array(await blobs[0].arrayBuffer())
+    expect(new TextDecoder().decode(bytes.slice(0, 5))).toBe('%PDF-')
+
+    const body = new TextDecoder('latin1').decode(bytes)
+    const stream = /stream\r?\n([\s\S]*?)endstream/.exec(body)?.[1] ?? ''
+    // A blank page still yields a valid PDF, so assert on what was DRAWN.
+    const count = (re: RegExp) => (stream.match(re) ?? []).length
+    expect(count(/^S$/gm), 'stroked paths in the content stream').toBeGreaterThanOrEqual(2)
+    expect(count(/^BT$/gm), 'text blocks in the content stream').toBeGreaterThanOrEqual(1)
   })
 })

@@ -8047,6 +8047,69 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+### Replace = Merge + delete what's absent. Nothing else.
+
+Both import modes match by NAME and preserve the archetype id. The ONLY
+difference is that replace deletes archetypes absent from the workbook.
+
+It did not used to be. Replace re-minted every id — not as a feature, but
+because it cleared the dict BEFORE building the name index, having captured the
+old library two lines earlier and used it solely to delete files. The
+name→id map was in hand and thrown away.
+
+**An archetype id is referenced from exactly THREE places**, and re-minting
+orphaned all of them:
+
+| surface | repair path |
+|---|---|
+| `CohortMapping.mappings[].archetype_id` | rebuildable by hand in the UI |
+| `Subsystem.cohort_mappings[].archetype_id` | re-import repairs it |
+| `Archetype.includes[].archetype_id` | **none** |
+
+`DependencyRule.dependent_archetype_id` looks like a fourth and is not — it
+holds a dependent COHORT KEY (`"Fuel Station|Large"`). Measured on the live
+project: 0 of its 6 values resolve as BOM archetype ids, all 21
+`SubsystemCohortMapping.archetype_id` do.
+
+This orphaned WP5's 51-row cohort mapping **twice**. Warning people to use
+merge mode had failed twice, which is the evidence it belonged in the importer.
+
+**Composition was broken a second way, and by BOTH modes**: `_upsert` never
+carried `includes` at all, so even a preserved id came back with an empty list.
+The BOM workbook cannot express a composition reference — `_assert_exportable`
+REFUSES to write a composed archetype — so a blank `includes` on import means
+"not expressible here", never "the user removed it".
+
+**Ids are stable PER SURVIVING NAME, never across the set.** A name new to the
+workbook has no id to preserve and gets a fresh one. Nothing may assume the id
+SET is unchanged.
+
+**Preserving an id re-opens a staleness window that re-minting had accidentally
+closed.** `_contribution_cache` is keyed by `("archetype", archetype_id, …)`
+and is never cleared anywhere; while ids changed, a stale entry was unreachable
+because its key changed. Now the id survives and the BOM does not, so the
+import evicts entries for every touched archetype — in BOTH modes, since merge
+always preserved ids and so was always exposed.
+
+**A rename is warned about, never refused.** An archetype whose name is absent
+is deleted; that is the mode's job and rename-and-replace is legitimate. But it
+is the one case an id cannot survive, so the import names the archetype and
+every place that pointed at it. Unreferenced deletions stay silent — warning on
+those trains people to ignore the warning that matters.
+
+#### What NOT to do
+
+- **Don't restore the mode-conditional name match.** Locked by
+  `test_import_preserves_archetype_ids.py` (all three surfaces, both modes) and
+  a source guard in `test_archetype_composition.py`.
+- **Don't drop a field in `_upsert` because the workbook lacks a column for
+  it.** `includes` has no column BY DESIGN. `validation_report` is the only
+  field legitimately not carried, because it is recomputed after import.
+- **Don't describe Replace as "re-creates everything" in UI copy.** It updates
+  matched archetypes in place and deletes the rest. Two modes whose difference
+  nobody can state is how the wrong one gets picked.
+- **Don't refuse on a rename.** Warn, naming the orphaned references.
+
 ### The fifth was an ABSENCE, not a gate
 
 The four above were all gates: a call to `resolve_archetype_with_engine`

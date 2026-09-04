@@ -54,8 +54,13 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
 
   const handleImportClick = () => {
     if (importMode === 'replace' && archetypes.length > 0) {
+      // Archetypes NAMED in the file are updated in place and keep their id;
+      // only those absent from it are deleted. The old copy said "will delete
+      // the N existing archetypes", which stopped being true once ids survive.
+      // The count that matters can't be known before parsing the file, so the
+      // prompt states the rule instead of a number.
       const ok = window.confirm(
-        `Replace all will delete the ${archetypes.length} existing archetype${archetypes.length === 1 ? '' : 's'} before importing. Continue?`,
+        `Replace: archetypes named in the file are updated; any archetype NOT in the file is deleted. You currently have ${archetypes.length}. Continue?`,
       )
       if (!ok) return
     }
@@ -180,14 +185,14 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                     cursor: importing ? 'not-allowed' : 'pointer',
                   }}
                 >
-                  {m === 'merge' ? 'Merge (add/update)' : 'Replace all'}
+                  {m === 'merge' ? 'Merge (add/update)' : 'Replace (delete missing)'}
                 </button>
               )
             })}
             <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginLeft: 6 }}>
               {importMode === 'merge'
-                ? 'Existing archetypes matched by name are updated; new ones added.'
-                : 'Deletes every existing archetype before importing.'}
+                ? 'Archetypes matched by name are updated; new ones added; anything not in the file is left alone.'
+                : 'Same as Merge, and additionally deletes any archetype not in the file. Matched archetypes keep their identity, so cohort mappings and subsystem links survive.'}
             </span>
           </div>
           {result && (
@@ -204,7 +209,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                 <CheckCircle size={12} /> {result.format === 'multi' ? 'Multi-archetype import' : 'Single-archetype import'}
                 {result.mode && (
                   <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>
-                    · {result.mode === 'replace' ? 'replace all' : 'merge'}
+                    · {result.mode === 'replace' ? 'replace (deleted missing)' : 'merge'}
                   </span>
                 )}
               </div>

@@ -30,13 +30,13 @@ jobs:
       run:
         working-directory: mapper-frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Node 24, not 25: vitest workers were seen hanging under 25.9.0. That was
       # probably an artefact of a half-materialised node_modules rather than Node
       # itself (25.9.0 runs the suite fine on a warm tree), but CI pins the
       # version that has never been in question.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -62,14 +62,14 @@ jobs:
         os: [macos-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # A cold conda solve of the Brightway2 + premise stack is the slowest part
       # of this workflow by a wide margin, so the package cache is what makes CI
       # fast enough that people actually wait for it. Keyed on environment.yml:
       # any dependency change invalidates it.
       - name: Cache conda packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/conda_pkgs
           key: conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}

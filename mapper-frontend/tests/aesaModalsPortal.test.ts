@@ -43,6 +43,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { relPosix } from './helpers/relPosix'
 
 const ROOT = path.resolve(__dirname, '..', 'src')
 const SCOPE = [
@@ -75,7 +76,7 @@ function aesaFilesWithOverlays(): { file: string; portals: boolean }[] {
       if (!isAesa) continue
       const src = fs.readFileSync(file, 'utf8')
       if (!OVERLAY.test(src)) continue
-      out.push({ file: path.relative(ROOT, file), portals: src.includes('createPortal') })
+      out.push({ file: relPosix(ROOT, file), portals: src.includes('createPortal') })
     }
   }
   return out

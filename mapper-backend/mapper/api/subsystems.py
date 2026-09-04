@@ -25,6 +25,7 @@ import threading
 import uuid
 
 import bw2data
+from mapper.core.upload_guard import refuse_if_nothing_resolved
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
@@ -399,6 +400,11 @@ async def upload_subsystem_initial_stock(
 
     project = _current_project()
     with _lock:
+        # Guard: a well-formed file with ZERO data rows parses clean and would
+        # otherwise be written straight over live data. Not safe by accident --
+        # the parsers' ValueError is a COLUMN check, which a correct-header /
+        # no-rows file sails through. See core/upload_guard.
+        refuse_if_nothing_resolved(rows_seen=rows, resolved=len(parsed), what="initial-stock")
         sub.initial_stock = parsed
         # Invalidate cached results — they depended on the old base-year floor.
         _sys_sub_results(system_id, project).pop(subsystem_id, None)
@@ -500,6 +506,11 @@ async def upload_manual_inflows(
     manual = _flows_to_manual(inflows)
     project = _current_project()
     with _lock:
+        # Guard: a well-formed file with ZERO data rows parses clean and would
+        # otherwise be written straight over live data. Not safe by accident --
+        # the parsers' ValueError is a COLUMN check, which a correct-header /
+        # no-rows file sails through. See core/upload_guard.
+        refuse_if_nothing_resolved(rows_seen=rows, resolved=len(manual), what="manual-inflow")
         sub.manual_inflows = manual
         _sys_sub_results(system_id, project).pop(subsystem_id, None)
     _persist_subs(project, system_id)
@@ -525,6 +536,11 @@ async def upload_manual_outflows(
     manual = _flows_to_manual(outflows)
     project = _current_project()
     with _lock:
+        # Guard: a well-formed file with ZERO data rows parses clean and would
+        # otherwise be written straight over live data. Not safe by accident --
+        # the parsers' ValueError is a COLUMN check, which a correct-header /
+        # no-rows file sails through. See core/upload_guard.
+        refuse_if_nothing_resolved(rows_seen=rows, resolved=len(manual), what="manual-outflow")
         sub.manual_outflows = manual
         _sys_sub_results(system_id, project).pop(subsystem_id, None)
     _persist_subs(project, system_id)

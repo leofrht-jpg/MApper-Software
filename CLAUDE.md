@@ -5470,10 +5470,40 @@ Two things that follow:
   filename-parity test is pure functions and passes locally that way (16/16)
   while the jsdom-environment files cannot start at all.
 
-Not fixed here — changing the user's Node install is their call, and CI is
-unaffected. Recorded so the next occurrence is a lookup rather than an
-investigation. Related in kind to the disk-pressure episode: check the
-environment before the data.
+**RESOLVED by the jsdom 26 → 30 bump (#89) — the limitation above is over.**
+Measured on the same machine, same Node **25.9.0**, immediately after #89
+merged: the full frontend suite runs locally, **198 files / 1412 tests, all
+passing, 230 s**. A single jsdom file also runs under `--pool=forks`,
+`--pool=threads` and `--no-file-parallelism` alike. Nothing about the Node
+install changed; jsdom 30 simply no longer trips over it.
+
+**The lesson is about the note, not the bug.** This was written down as a
+durable property of the machine ("changing the user's Node install is their
+call"), and it then stopped being true because of an unrelated routine
+dependency bump — with nothing to announce it. It had been re-diagnosed as an
+unexplained local limitation three times in a week — including once in the very
+session that then measured it working, where the fix had already merged an hour
+earlier and the limitation was quoted as a reason to defer a check to CI.
+
+So: **an environment limitation recorded here is a snapshot,
+not a standing fact — re-test it after a major bump of the tool it names,
+before quoting it as a reason.** The re-test cost one command.
+
+Two corollaries that survive:
+
+- `--environment=node` is still the right runner for a DOM-less guard — it is
+  faster, not a workaround, and the source-sweeping guards use it by choice.
+- **Check CI for the same commit before debugging a local-only failure.** If CI
+  is green on the very commit that fails here, the toolchain is the difference,
+  and that remains the cheapest first check.
+
+The original entry closed by saying it was "not fixed here — changing the user's
+Node install is their call". That was true when written and is now superseded:
+no Node change was ever needed. Kept above rather than deleted, because the
+crash signature is still the thing to search for if a future jsdom or Node pairing
+regresses, and because the shape of the mistake is the more durable lesson.
+Related in kind to the disk-pressure episode: check the environment before the
+data — and then check that the environment note is still true.
 
 ### Test determinism — mock the function the component actually calls (Patch 5L)
 

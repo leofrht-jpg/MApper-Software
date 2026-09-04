@@ -59,6 +59,16 @@ function pickFile(container: HTMLElement) {
   fireEvent.change(input)
 }
 
+// The confirm dialog and the error list are PORTALLED to document.body — they
+// have to be, or the AESA sidebar's stacking context paints the radar chart on
+// top of them (see aesaModalsPortal.test.ts, and the rule in CLAUDE.md). So
+// they are NOT inside `container`, which is only the render root. Query the
+// document instead. Everything still in the sidebar itself keeps using
+// `container`, so a testid moving out of the portal shows up as a failure here
+// rather than silently passing against the wrong node.
+const PORTALLED = (sel: string) => document.body.querySelector(sel)
+const bodyText = () => document.body.textContent ?? ''
+
 beforeEach(() => {
   importAESAConfig.mockReset()
   exportAESAConfig.mockClear()
@@ -132,7 +142,7 @@ describe('section (2) workbook buttons', () => {
     const { container, onApply } = await renderButtons()
     pickFile(container)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-import-confirm"]')).not.toBeNull())
+      expect(PORTALLED('[data-testid="aesa-config-import-confirm"]')).not.toBeNull())
     // Nothing applied yet — the dialog is the gate.
     expect(onApply).not.toHaveBeenCalled()
   })
@@ -142,10 +152,10 @@ describe('section (2) workbook buttons', () => {
     const { container, onApply } = await renderButtons()
     pickFile(container)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-import-confirm"]')).not.toBeNull())
-    fireEvent.click(container.querySelector('[data-testid="aesa-config-confirm-cancel"]')!)
+      expect(PORTALLED('[data-testid="aesa-config-import-confirm"]')).not.toBeNull())
+    fireEvent.click(PORTALLED('[data-testid="aesa-config-confirm-cancel"]')!)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-import-confirm"]')).toBeNull())
+      expect(PORTALLED('[data-testid="aesa-config-import-confirm"]')).toBeNull())
     expect(onApply).not.toHaveBeenCalled()
   })
 
@@ -154,8 +164,8 @@ describe('section (2) workbook buttons', () => {
     const { container, onApply } = await renderButtons()
     pickFile(container)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-import-confirm"]')).not.toBeNull())
-    fireEvent.click(container.querySelector('[data-testid="aesa-config-confirm-apply"]')!)
+      expect(PORTALLED('[data-testid="aesa-config-import-confirm"]')).not.toBeNull())
+    fireEvent.click(PORTALLED('[data-testid="aesa-config-confirm-apply"]')!)
     await waitFor(() => expect(onApply).toHaveBeenCalledWith(BUNDLE))
   })
 
@@ -169,14 +179,14 @@ describe('section (2) workbook buttons', () => {
     const { container, onApply } = await renderButtons()
     pickFile(container)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-import-errors"]')).not.toBeNull())
-    const text = container.textContent ?? ''
+      expect(PORTALLED('[data-testid="aesa-config-import-errors"]')).not.toBeNull())
+    const text = bodyText()
     expect(text).toContain('boundary_set_id')
     expect(text).toContain('budget_basis')
     expect(text).toContain('Nothing was changed')
     expect(onApply).not.toHaveBeenCalled()
     // no confirm dialog on a rejected import
-    expect(container.querySelector('[data-testid="aesa-config-import-confirm"]')).toBeNull()
+    expect(PORTALLED('[data-testid="aesa-config-import-confirm"]')).toBeNull()
   })
 
   it('no longer offers to save a preset half — it would be unreachable', async () => {
@@ -187,8 +197,8 @@ describe('section (2) workbook buttons', () => {
     const { container } = await renderButtons()
     pickFile(container)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-confirm-apply"]')).not.toBeNull())
-    expect(container.querySelector('[data-testid="aesa-config-save-preset"]')).toBeNull()
+      expect(PORTALLED('[data-testid="aesa-config-confirm-apply"]')).not.toBeNull())
+    expect(PORTALLED('[data-testid="aesa-config-save-preset"]')).toBeNull()
   })
 
   it('applies the import with a single argument — no save_as_preset', async () => {
@@ -196,8 +206,8 @@ describe('section (2) workbook buttons', () => {
     const { container } = await renderButtons()
     pickFile(container)
     await waitFor(() =>
-      expect(container.querySelector('[data-testid="aesa-config-confirm-apply"]')).not.toBeNull())
-    fireEvent.click(container.querySelector('[data-testid="aesa-config-confirm-apply"]')!)
+      expect(PORTALLED('[data-testid="aesa-config-confirm-apply"]')).not.toBeNull())
+    fireEvent.click(PORTALLED('[data-testid="aesa-config-confirm-apply"]')!)
     await waitFor(() => expect(importAESAConfig).toHaveBeenCalled())
     for (const call of importAESAConfig.mock.calls) {
       expect(call.length, 'importAESAConfig must be called with the file alone').toBe(1)

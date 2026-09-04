@@ -376,6 +376,20 @@ export function PLCADeveloper() {
                                   Superstructure · {d.years.length} scenarios
                                 </span>
                               )}
+                              {d.fallback && (
+                                <span
+                                  data-testid="plca-fallback-badge"
+                                  title={
+                                    'Superstructure generation failed, so premise wrote per-year ' +
+                                    'databases instead. The content is the same — the fallback ' +
+                                    'only changes how it was written — and per-year is the form ' +
+                                    'Impact Assessment can actually compute against.'
+                                  }
+                                  style={{ fontSize: 'var(--text-xs)', color: 'var(--warning)', fontWeight: 500 }}
+                                >
+                                  From superstructure fallback
+                                </span>
+                              )}
                             </div>
                           </td>
                           <td style={{ ...tdStyle, fontFamily: 'var(--font-mono, monospace)', color: 'var(--text-secondary)' }}>{d.name}</td>

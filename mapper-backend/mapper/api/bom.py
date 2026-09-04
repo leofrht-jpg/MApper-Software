@@ -83,8 +83,13 @@ _FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _sanitize_filename(name: str, fallback: str = "archetype", max_len: int = 100) -> str:
-    cleaned = _FILENAME_UNSAFE.sub("_", name).strip("_")
-    return (cleaned or fallback)[:max_len]
+    """Thin alias for the ONE sanitiser -- see :func:`sanitize_filename_part`.
+
+    Kept as a name so existing call sites read unchanged; the BEHAVIOUR is now
+    shared. This copy used to replace every unsafe character with ``_``, which
+    turned ``Fleet (EU)`` into ``Fleet_EU`` and collided it with ``Fleet EU``.
+    """
+    return sanitize_filename_part(name, fallback, max_len)
 
 
 # ── Folder helpers ───────────────────────────────────────────────────────────
@@ -167,6 +172,59 @@ def _proj_dsm_lca_results(project: str | None = None) -> dict[str, list[DSMLCARe
     return _dsm_lca_results.setdefault(p, {})
 
 
+def _invalidate_contribution_cache(arc_ids: set[str]) -> None:
+    """Drop cached contribution results for these archetypes.
+
+    `_contribution_cache` (mapper/api/lca.py) is keyed by
+    ``("archetype", archetype_id, …)`` and is never cleared anywhere. An
+    archetype id is STABLE across every edit — the BOM editor, a relink, a
+    learning-rate application, and (since ids are preserved by name) an import.
+    So without this, a result computed from the previous BOM is served for the
+    new one, with nothing on screen saying so.
+
+    Best-effort: cache hygiene must never fail the write it accompanies.
+    """
+    if not arc_ids:
+        return
+    try:
+        from mapper.api.lca import _contribution_cache
+
+        for key in [
+            k
+            for k in _contribution_cache
+            if isinstance(k, tuple)
+            and k
+            and isinstance(k[0], tuple)
+            and len(k[0]) > 1
+            and k[0][0] == "archetype"
+            and k[0][1] in arc_ids
+        ]:
+            _contribution_cache.pop(key, None)
+    except Exception:  # pragma: no cover — never fail a write over a cache
+        pass
+
+
+def _persist_archetype(project: str, arc: Archetype) -> None:
+    """The ONE place an archetype is written. Saves, then evicts its stale
+    contribution results.
+
+    Every mutation route funnels through here so no future one can add a way to
+    change a BOM while its cached contribution survives — which is what all nine
+    of them did before.
+    """
+    dsm_storage.save_archetype(project, arc)
+    if arc.id:
+        _invalidate_contribution_cache({arc.id})
+
+
+def _forget_archetype(project: str, arc_id: str) -> None:
+    """Delete the file AND the cached results. A deleted archetype's entries are
+    unreachable rather than wrong, but leaving them is a slow leak and they
+    become wrong if the id is ever reused."""
+    dsm_storage.delete_archetype_file(project, arc_id)
+    _invalidate_contribution_cache({arc_id})
+
+
 def _assert_includes_resolvable(arc: Archetype, project: str | None = None) -> None:
     """Save-time gate for archetype composition.
 
@@ -221,7 +279,7 @@ async def create_archetype(body: ArchetypeCreate) -> Archetype:
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
-    dsm_storage.save_archetype(project, arc)
+    _persist_archetype(project, arc)
     return arc
 
 
@@ -296,7 +354,7 @@ async def update_archetype(arc_id: str, body: ArchetypeCreate) -> Archetype:
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc_id] = updated
-    dsm_storage.save_archetype(project, updated)
+    _persist_archetype(project, updated)
     return updated
 
 
@@ -314,7 +372,7 @@ async def delete_archetype(arc_id: str) -> dict[str, bool]:
             mapping.mappings = [m for m in mapping.mappings if m.archetype_id != arc_id]
             mappings[sys_id] = mapping
             dsm_storage.save_cohort_mappings(project, sys_id, mapping)
-    dsm_storage.delete_archetype_file(project, arc_id)
+    _forget_archetype(project, arc_id)
     return {"deleted": True}
 
 
@@ -379,7 +437,7 @@ async def rename_folder(body: FolderRenameBody) -> dict:
             if arc.folder == old or arc.folder.startswith(old + "/"):
                 arc.folder = new + arc.folder[len(old):]
                 arc.updated_at = _now_iso()
-                dsm_storage.save_archetype(project, arc)
+                _persist_archetype(project, arc)
                 renamed += 1
         # Update persisted empty-folder list.
         folders = set(dsm_storage.load_folders(project))
@@ -411,7 +469,7 @@ async def delete_folder(body: FolderDeleteBody) -> dict:
             for arc in affected:
                 if arc.id:
                     archetypes.pop(arc.id, None)
-                    dsm_storage.delete_archetype_file(project, arc.id)
+                    _forget_archetype(project, arc.id)
                     for sys_id, mapping in list(mappings.items()):
                         before = len(mapping.mappings)
                         mapping.mappings = [m for m in mapping.mappings if m.archetype_id != arc.id]
@@ -423,7 +481,7 @@ async def delete_folder(body: FolderDeleteBody) -> dict:
             for arc in affected:
                 arc.folder = None
                 arc.updated_at = _now_iso()
-                dsm_storage.save_archetype(project, arc)
+                _persist_archetype(project, arc)
                 moved_arcs += 1
         # Remove the folder and any descendants from the persisted list.
         folders = set(dsm_storage.load_folders(project))
@@ -439,7 +497,7 @@ async def move_archetype(body: MoveArchetypeBody) -> Archetype:
     arc.folder = new_folder
     arc.updated_at = _now_iso()
     project = _current_project()
-    dsm_storage.save_archetype(project, arc)
+    _persist_archetype(project, arc)
     return arc
 
 
@@ -456,7 +514,7 @@ async def add_bom_node(arc_id: str, body: BOMNodeCreate) -> Archetype:
             detail=f"Parent node '{body.parent_node_id}' not found in this archetype",
         )
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -538,7 +596,7 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
                 )
             node.evolution = body.evolution
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return node
 
 
@@ -549,7 +607,7 @@ async def delete_bom_node(arc_id: str, node_id: str) -> Archetype:
     if not ok:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -557,8 +615,18 @@ async def delete_bom_node(arc_id: str, node_id: str) -> Archetype:
 
 
 @router.get("/bom/archetypes/{arc_id}/flatten", response_model=FlattenedBOM)
-async def flatten_archetype(arc_id: str, year: int | None = None) -> FlattenedBOM:
-    arc = _get_archetype(arc_id)
+async def flatten_archetype(
+    arc_id: str, year: int | None = None, scenario: str | None = None
+) -> FlattenedBOM:
+    # Resolve first: a BOM row holding an expression carries quantity = 1.0 as
+    # a placeholder, so an unresolved flatten reports 1 kg of petrol and a
+    # total_mass_kg to match. `year` is honoured as the keyframe resolution
+    # year, which is what it already meant to the year-aware flattener.
+    from mapper.api.lca import _load_and_splice_archetype, _resolve_archetype_parameters
+
+    arc = _resolve_archetype_parameters(
+        _load_and_splice_archetype(arc_id), scenario, year if year is not None else 2025
+    )
     materials = (
         flatten_roots_for_year(arc.bom, year) if year is not None else flatten_roots(arc.bom)
     )
@@ -708,7 +776,7 @@ async def apply_learning_rate(
     if touched == 0:
         raise HTTPException(status_code=400, detail="No materials matched the given node_ids.")
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -744,7 +812,7 @@ async def apply_rebound_effect(
     if touched == 0:
         raise HTTPException(status_code=400, detail="No materials matched the given node_ids.")
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -768,13 +836,23 @@ async def apply_milestones(arc_id: str, body: ApplyMilestonesRequest) -> BOMNode
         milestones=sorted(body.milestones, key=lambda m: m.year),
     )
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return node
 
 
 @router.post("/bom/archetypes/{arc_id}/lca", response_model=ArchetypeLCAResult)
 async def standalone_lca(arc_id: str, body: ArchetypeLCARequest) -> ArchetypeLCAResult:
-    arc = _get_archetype(arc_id)
+    # Same preparation as every other demand builder. This route has no
+    # frontend caller, which is exactly why it went unnoticed: nothing
+    # hand-tested it, so it computed every expression row at its 1.0
+    # placeholder.
+    from mapper.api.lca import _load_and_splice_archetype, _resolve_archetype_parameters
+    from mapper.api.parameters import validate_parameter_scenarios
+
+    validate_parameter_scenarios(body.parameter_scenario)
+    arc = _resolve_archetype_parameters(
+        _load_and_splice_archetype(arc_id), body.parameter_scenario
+    )
     err_count = validation_error_count(arc.bom)
     if err_count:
         raise HTTPException(
@@ -970,7 +1048,7 @@ async def get_cohort_mappings_template(system_id: str) -> Response:
     archetypes = _proj_archetypes(project)
     archetypes_by_id = {arc_id: arc.name for arc_id, arc in archetypes.items()}
     wb = _cohort_template_workbook(sys_def, existing, archetypes_by_id)
-    filename = f"{_sanitize_filename(sys_def.name, 'system')}_cohort_mappings_template.xlsx"
+    filename = build_template_filename(sys_def.name, "cohort_mappings", fallback="system")
     return excel_response(wb, filename, kind="data")
 
 
@@ -1125,6 +1203,25 @@ async def upload_cohort_mappings(
             invalid_row_colors.append(f"{ck}: {color_raw}")
         elif normalized is not None:
             row_colors[ck] = normalized
+
+    # An upload that resolves NOTHING must not overwrite what is there. Found
+    # live: 51 rows whose archetype labels all failed to resolve were skipped
+    # one by one, an empty mapping was built, and it replaced 51 good rows.
+    # `rows_asserted` counts rows that NAMED an archetype -- a file of blank
+    # archetype cells is the deliberate "clear all" workflow and stays allowed.
+    from mapper.core.upload_guard import refuse_if_nothing_resolved
+
+    # Explicit "" default, not a bare .get(): a row with no archetype cell
+    # asserts nothing and is MEANT not to count, so the miss is the intended
+    # semantics rather than a lookup that failed. Stating that here beats
+    # declaring it in the silent-paths exemption list.
+    rows_asserted = sum(1 for r in parsed if (r.get("archetype", "") or "").strip())
+    refuse_if_nothing_resolved(
+        rows_seen=rows_asserted,
+        resolved=len(entries),
+        what="cohort mapping",
+        hint="Check the archetype names against this project's archetypes.",
+    )
 
     from mapper.models.bom_schemas import CohortMappingEntry
     mapping = CohortMapping(
@@ -1344,6 +1441,61 @@ async def get_dsm_lca(system_id: str) -> DSMLCABatchResult:
 
 def _short_method_label(method: list[str]) -> str:
     return method[-1] if method else "method"
+
+
+def sanitize_filename_part(name: str, fallback: str = "file", max_len: int = 100) -> str:
+    """THE sanitiser. One answer to "what is this name as a filename part?".
+
+    There were four. `bom`, `dsm` and `parameters` each defined their own
+    `_sanitize_filename`, and `build_export_filename` had a fourth inline. They
+    agreed on ordinary names and diverged on the interesting ones:
+
+        Fleet (EU)   ->  bom/dsm 'Fleet_EU'   parameters 'Fleet_EU_'   export 'Fleet_(EU)'
+
+    Parentheses are KEPT. They are legal on every filesystem this ships to, and
+    stripping them is lossy -- `Fleet (EU)` and `Fleet EU` are different systems
+    and must not collide. This also preserves `build_export_filename`, already
+    declared "the ONE Excel-export filename scheme", so every existing
+    `_LCA.xlsx` / `_AESA.xlsx` export keeps its name.
+
+    Rules: strip the characters filesystems actually reject (``/ \\ : * ? " < > |``),
+    collapse whitespace runs to a single ``_``, trim leading/trailing ``_``,
+    cap length. Case is PRESERVED -- lowercasing was the subsystem path's habit
+    and made `Fueling Infrastructure` unrecognisable as the entity it names.
+    """
+    import re
+
+    cleaned = re.sub(r'[/\\:*?"<>|]', "", name or "")
+    cleaned = re.sub(r"\s+", "_", cleaned.strip()).strip("_")
+    return (cleaned or fallback)[:max_len]
+
+
+def build_template_filename(
+    entity_name: str,
+    artifact: str,
+    *,
+    suffix: str = "xlsx",
+    template: bool = True,
+    fallback: str = "entity",
+) -> str:
+    """``{Entity_Name}_{artifact}[_template].{suffix}`` -- entity FIRST.
+
+    The same shape systems already produced for cohort mappings
+    (``Car_Fleet_cohort_mappings_template.xlsx``) and that
+    ``build_export_filename`` produces for exports (``Car_Fleet_LCA.xlsx``):
+    name the thing, then say what the file is.
+
+    Subsystems used to reverse it and lowercase the entity
+    (``cohort_mapping_fueling_infrastructure_template.xlsx``), and the DSM
+    system templates put the artifact first (``stock_template_Car_Fleet.xlsx``),
+    so there were THREE conventions across one download menu. This is the one.
+
+    NOT for ``{dimension}_labels.csv`` -- see the exemption in the tests.
+    """
+    return (
+        f"{sanitize_filename_part(entity_name, fallback)}_{artifact}"
+        f"{'_template' if template else ''}.{suffix}"
+    )
 
 
 def build_export_filename(
@@ -3071,6 +3223,27 @@ def _parse_bom_workbook(
         if basis_cell:
             if basis_cell in ("per_unit", "per_year"):
                 explicit_basis = basis_cell
+                # ACCEPTED, APPLIED, FLAGGED. The reader is deliberately
+                # tolerant -- `_ensure_stage_root` takes the first Basis cell
+                # found anywhere in the stage -- because tightening it would
+                # break workbooks already in the wild. Tolerant reader, strict
+                # writer.
+                #
+                # But a generator that writes Basis on child rows contradicts
+                # this file's own Instructions sheet ("Set ONLY on the stage
+                # root row"), and it works only by accident: the moment two
+                # children of one stage disagree, first-read silently wins and
+                # the loser is invisible. Warn so the author can fix the
+                # WRITER, without refusing a file that already exists.
+                if parent_name:
+                    warnings.append(
+                        f"Row {r_idx}: Basis '{basis_cell}' is on a child row "
+                        f"(parent '{parent_name}'), not the '{stage}' stage "
+                        "root. Accepted and applied to the stage, but the first "
+                        "Basis cell in a stage wins -- if two child rows "
+                        "disagree, one is silently ignored. Set Basis on the "
+                        "stage root row."
+                    )
             else:
                 warnings.append(
                     f"Row {r_idx}: invalid Basis '{basis_cell}'; must be "
@@ -3272,6 +3445,13 @@ def _parse_bom_workbook(
             # otherwise make a stage root and attach as top-level child.
             if name == stage and stage not in stages:
                 node.scope = explicit_scope or None
+                # `basis` must be assigned HERE too. This row BECOMES the stage
+                # root, so `_ensure_stage_root` -- the only other place that
+                # carries basis onto a root -- is never reached for it. Without
+                # this line the Basis column was inert on every real workbook:
+                # scope landed, basis was silently dropped, and a declared
+                # `per year` computed at x1 exactly like an undeclared stage.
+                node.basis = explicit_basis
                 node.is_annual = stage_to_scope(stage, explicit_scope) == "stock"
                 stages[stage] = node
                 node_by_name[(stage, stage)] = node
@@ -3288,6 +3468,15 @@ def _parse_bom_workbook(
             warnings.append(
                 f"Row {r_idx}: stage '{stage}' was not defined explicitly; created a default stage root."
             )
+        elif explicit_basis and stages[stage].basis is None:
+            # The stage root already exists (an explicit root row created it),
+            # so `_ensure_stage_root` -- which carries basis and documents
+            # "first one wins" -- is never reached. Without this the tolerance
+            # was real only for IMPLICITLY created roots, and a workbook that
+            # puts Basis on child rows under an explicit root silently lost it.
+            # `is None` keeps first-read-wins: an explicit root row's value,
+            # and the first child's among children.
+            stages[stage].basis = explicit_basis
 
         parent = node_by_name.get((stage, parent_name))
         if parent is None:
@@ -3404,6 +3593,64 @@ def _apply_validation_to_archetype(arc: Archetype, report: ValidationReport) -> 
     arc.validation_report = report
 
 
+def _archetype_reference_sites(project: str) -> dict[str, list[str]]:
+    """archetype_id -> human-readable places that reference it.
+
+    THREE surfaces, and they are the complete set. `DependencyRule
+    .dependent_archetype_id` looks like a fourth and is not: it holds a dependent
+    COHORT KEY (`"Fuel Station|Large"`), a different namespace — checked against
+    live data, 0 of 6 resolve as BOM archetype ids while all 21
+    `SubsystemCohortMapping.archetype_id` do.
+
+    Best-effort: a store that cannot be read contributes nothing rather than
+    failing the import. This feeds a WARNING, never a refusal.
+    """
+    sites: dict[str, list[str]] = {}
+
+    def _add(arc_id: str | None, where: str) -> None:
+        if arc_id:
+            sites.setdefault(arc_id, []).append(where)
+
+    # 1. system-level cohort mappings
+    try:
+        from mapper.api.dsm import _proj_systems
+
+        systems = _proj_systems(project)
+        for sys_id, cm in _proj_cohort_mappings(project).items():
+            label = getattr(systems.get(sys_id), "name", None) or sys_id
+            for row in cm.mappings or []:
+                _add(getattr(row, "archetype_id", None), f"cohort mapping of '{label}'")
+    except Exception:  # pragma: no cover — best effort
+        pass
+
+    # 2. subsystem cohort mappings
+    try:
+        from mapper.api.subsystems import _proj_subs
+
+        for _sys_id, subs in _proj_subs(project).items():
+            for sub in subs.values():
+                for scm in (sub.cohort_mappings or {}).values():
+                    _add(
+                        getattr(scm, "archetype_id", None),
+                        f"subsystem '{sub.name}' cohort mapping",
+                    )
+    except Exception:  # pragma: no cover — best effort
+        pass
+
+    # 3. archetype composition
+    try:
+        for arc in _proj_archetypes(project).values():
+            for inc in arc.includes or []:
+                _add(
+                    getattr(inc, "archetype_id", None),
+                    f"composition of archetype '{arc.name}'",
+                )
+    except Exception:  # pragma: no cover — best effort
+        pass
+
+    return sites
+
+
 @router.post(
     "/bom/archetypes/import",
     response_model=MultiImportResult,
@@ -3423,23 +3670,59 @@ async def import_archetype(
     warnings: list[str] = []
     touched: list[tuple[Archetype, str]] = []  # (archetype, "created" | "updated")
 
-    # In replace mode, wipe the existing library up front. Merge mode preserves
-    # everything not referenced by the file.
+    # ── Validate the workbook BEFORE destroying anything ──────────────────
+    #
+    # Replace used to clear the library and THEN parse. A well-formed workbook
+    # whose Archetypes sheet had zero rows wiped every archetype and answered
+    # 400 -- reproduced: 3 archetypes in, 0 out, "Archetypes sheet has no
+    # rows.". Same class as the empty-upload guard: an operation that destroys
+    # working state as a side effect of doing what was asked.
+    #
+    # Both branches could 400 after the wipe -- the multi format on an empty
+    # sheet or a duplicate name, the legacy one on a malformed BOM sheet -- so
+    # both are parsed here and REUSED below rather than re-parsed. This is the
+    # preview-then-apply shape the two subsystem import routes already use.
+    pre_meta: list[dict] | None = None
+    pre_single: tuple | None = None
+    if "Archetypes" in wb.sheetnames:
+        pre_meta = _read_archetypes_sheet(wb)
+        if not pre_meta:
+            raise HTTPException(status_code=400, detail="Archetypes sheet has no rows.")
+        _seen: set[str] = set()
+        for _m in pre_meta:
+            if _m["name"] in _seen:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Duplicate archetype_name '{_m['name']}' in Archetypes sheet.",
+                )
+            _seen.add(_m["name"])
+    else:
+        pre_single = _parse_bom_workbook(wb)
+
+    # Snapshot the library BEFORE replace wipes it. Both modes then upsert by
+    # NAME, so an archetype whose name is in the workbook keeps its id.
+    #
+    # Replace used to re-mint every id, and that is not what "replace" means.
+    # The mode's actual job is DELETING archetypes absent from the workbook;
+    # re-minting was a side effect of clearing the dict before building the name
+    # index below — the old code captured `existing` and then used it only to
+    # delete files. An archetype id is referenced from three places
+    # (`_archetype_reference_sites`), so re-minting silently orphaned every one
+    # of them. It has now done so twice to the same project.
+    existing_by_id: dict[str, Archetype] = dict(_proj_archetypes(project))
+    ref_sites = _archetype_reference_sites(project)
+
     if mode == "replace":
         with _lock:
-            existing = dict(_proj_archetypes(project))
             _proj_archetypes(project).clear()
-        for arc_id in existing:
+        for arc_id in existing_by_id:
             try:
-                dsm_storage.delete_archetype_file(project, arc_id)
+                _forget_archetype(project, arc_id)
             except Exception:  # pragma: no cover — filesystem best-effort
                 pass
 
-    # Build a name → existing archetype index (merge mode only) so we can upsert.
-    name_to_existing: dict[str, Archetype] = {}
-    if mode == "merge":
-        for a in _proj_archetypes(project).values():
-            name_to_existing[a.name] = a
+    # name → existing archetype, for BOTH modes.
+    name_to_existing: dict[str, Archetype] = {a.name: a for a in existing_by_id.values()}
 
     def _upsert(
         name: str,
@@ -3448,7 +3731,7 @@ async def import_archetype(
         folder: str | None,
         roots: list,
     ) -> tuple[Archetype, str]:
-        existing = name_to_existing.get(name) if mode == "merge" else None
+        existing = name_to_existing.get(name)
         if existing is not None and existing.id:
             arc = Archetype(
                 id=existing.id,
@@ -3459,6 +3742,13 @@ async def import_archetype(
                 bom=roots,
                 created_at=existing.created_at or _now_iso(),
                 updated_at=_now_iso(),
+                # The BOM workbook cannot express a composition reference — the
+                # exporter REFUSES to write a composed archetype — so a blank
+                # `includes` in the file means "not expressible here", never
+                # "the user removed it". Dropping it (which both modes did)
+                # destroyed composition on every import, and composition is the
+                # one reference surface with no manual repair path.
+                includes=existing.includes,
             )
             action = "updated"
         else:
@@ -3475,7 +3765,7 @@ async def import_archetype(
             action = "created"
         with _lock:
             _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
-        dsm_storage.save_archetype(project, arc)
+        _persist_archetype(project, arc)
         return arc, action
 
     # Per-archetype validation rows accumulated across the workbook so we can
@@ -3486,17 +3776,8 @@ async def import_archetype(
 
     if "Archetypes" in wb.sheetnames:
         # ── Multi-archetype format ──
-        meta = _read_archetypes_sheet(wb)
-        if not meta:
-            raise HTTPException(status_code=400, detail="Archetypes sheet has no rows.")
-        seen_names: set[str] = set()
-        for m in meta:
-            if m["name"] in seen_names:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Duplicate archetype_name '{m['name']}' in Archetypes sheet.",
-                )
-            seen_names.add(m["name"])
+        # Parsed and validated above, before the wipe. Reused, not re-parsed.
+        meta = pre_meta or []
 
         for m in meta:
             roots, wrn, vrows = _parse_bom_workbook(wb, archetype_filter=m["name"])
@@ -3512,7 +3793,9 @@ async def import_archetype(
         fmt = "multi"
     else:
         # ── Legacy single-archetype format (Summary sheet optional). ──
-        roots, warnings, single_vrows = _parse_bom_workbook(wb)
+        # Parsed above, before the wipe. Reused, not re-parsed.
+        assert pre_single is not None
+        roots, warnings, single_vrows = pre_single
         name = file.filename.rsplit(".", 1)[0] if file.filename else "Imported archetype"
         description: str | None = None
         category: str | None = None
@@ -3549,7 +3832,7 @@ async def import_archetype(
         )
         _apply_validation_to_archetype(arc, report)
         # Persist the updated archetype JSON (now with per-row status + report).
-        dsm_storage.save_archetype(project, arc)
+        _persist_archetype(project, arc)
 
     # Auto-register any folders that were introduced.
     existing_folders = set(dsm_storage.load_folders(project))
@@ -3591,6 +3874,31 @@ async def import_archetype(
             updated_count += 1
         else:
             created_count += 1
+
+    # (The import's own cache eviction moved into `_persist_archetype`, which
+    # every write goes through — one mechanism, not two.)
+
+    # An archetype whose NAME is absent from the workbook is deleted by replace
+    # mode. That is the mode's job and it is not refused — a rename-and-replace
+    # is legitimate. But it is the one case ids cannot survive, so anything that
+    # referenced it is now orphaned, and saying nothing is how this went
+    # unnoticed twice. Warn, naming the archetype and every place that pointed
+    # at it.
+    if mode == "replace":
+        imported_names = {a.name for a, _ in touched}
+        for arc_id, old_arc in existing_by_id.items():
+            if old_arc.name in imported_names:
+                continue  # survived by name → id preserved → references intact
+            where = ref_sites.get(arc_id) or []
+            if where:
+                warnings.append(
+                    f"'{old_arc.name}' is not in this workbook, so it was deleted. "
+                    f"{len(where)} reference(s) to it are now unresolved: "
+                    + "; ".join(sorted(set(where))[:5])
+                    + (" …" if len(set(where)) > 5 else "")
+                    + ". Re-import with that archetype present, or repoint those "
+                    "references."
+                )
 
     return MultiImportResult(
         format=fmt,

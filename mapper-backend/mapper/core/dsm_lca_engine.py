@@ -51,6 +51,7 @@ from mapper.core.bom_engine import (
     stages_in_scope,
 )
 from mapper.core.parameter_engine import ParameterEngine
+from mapper.core.prospective_links import resolve_link_db
 from mapper.models.parameter_schemas import ParameterTable
 
 
@@ -665,6 +666,10 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         super().__init__(*args, **kwargs)
         self.prospective_dbs = list(prospective_dbs or [])
         self.fallback_base_db = fallback_base_db
+        # Per-run caches for the link-translation decision. Never
+        # module-level: bw2 project state is mutable.
+        self._exists_cache: dict[tuple[str, str], bool | None] = {}
+        self._link_warnings: list[str] = []
         # Patch — "block" (default, per-year nearest-earlier anchor, step) vs
         # "interpolate" (blend the two bracketing-anchor solves, smooth).
         self.temporal_mode = temporal_mode
@@ -694,14 +699,87 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         else:
             # Interpolation: caller pins an explicit bracketing-anchor db.
             target_db = db
+        # The decision is SHARED with the single-product translator -- see
+        # core/prospective_links.py. This loop used to rewrite every link's
+        # database unconditionally, which crashed the moment a BOM row pointed
+        # at a database premise never generated a variant of (mapper-tailpipe:
+        # 0 of its 2 codes exist in any premise DB, against 61 of 61 for
+        # ecoinvent). A link from a non-base database is pinned silently; a
+        # base-db code that failed to carry over is pinned WITH a warning.
         rewritten = []
         for m in flat:
             if m.ecoinvent_activity is None:
                 rewritten.append(m)
                 continue
-            new_link = m.ecoinvent_activity.model_copy(update={"database": target_db})
+            src_db = m.ecoinvent_activity.database
+            use_db, warning = resolve_link_db(
+                src_db, m.ecoinvent_activity.code, target_db,
+                self._prospective_base_db(), self._activity_exists,
+            )
+            if warning and warning not in self._link_warnings:
+                self._link_warnings.append(warning)
+                _log.warning("_rewrite_db(year=%d): %s", year, warning)
+            if use_db == src_db:
+                rewritten.append(m)
+                continue
+            new_link = m.ecoinvent_activity.model_copy(update={"database": use_db})
             rewritten.append(m.model_copy(update={"ecoinvent_activity": new_link}))
         return rewritten
+
+    def _prospective_base_db(self) -> str | None:
+        """The base this run's prospective databases were generated from.
+
+        Prefers the base the caller declared; falls back to the pLCA registry
+        so a caller that omitted it still gets the intent-based rule rather
+        than degrading to a bare existence probe.
+        """
+        declared = getattr(self, "fallback_base_db", None)
+        if declared:
+            return declared
+        cached = getattr(self, "_base_db_cache", "unset")
+        if cached != "unset":
+            return cached
+        resolved = None
+        try:
+            import bw2data
+
+            from mapper.core.prospective_links import base_db_for
+
+            first = (self.prospective_dbs or [{}])[0]
+            name = first.get("name") if isinstance(first, dict) else None
+            resolved = base_db_for(bw2data.projects.current, name)
+        except Exception:
+            resolved = None
+        self._base_db_cache = resolved
+        return resolved
+
+    def _activity_exists(self, db: str, code: str) -> bool | None:
+        """Cached bw2 existence probe. ``None`` == cannot tell.
+
+        PER RUN, never module-level: bw2 project state is mutable (a database
+        import or a premise generation changes what a key resolves to), which
+        is the same rule the unit-mismatch cache follows.
+
+        A target database that is not in this project returns None rather than
+        False -- absence of the DATABASE says nothing about the CODE, and
+        treating it as a known absence would pin every row of a run whose
+        target simply is not loaded.
+        """
+        key = (db, code)
+        if key in self._exists_cache:
+            return self._exists_cache[key]
+        try:
+            import bw2data
+
+            if db not in bw2data.databases:
+                self._exists_cache[key] = None
+                return None
+            bw2data.get_activity((db, code))
+            ok: bool | None = True
+        except Exception:
+            ok = False
+        self._exists_cache[key] = ok
+        return ok
 
     def _flatten(
         self, archetype_id: str, year: int | None = None, scope: str = "all",

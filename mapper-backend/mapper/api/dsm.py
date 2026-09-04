@@ -19,6 +19,7 @@ import uuid
 from typing import Optional
 
 import bw2data
+from mapper.core.upload_guard import refuse_if_nothing_resolved
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
 
@@ -165,16 +166,14 @@ _FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _sanitize_filename(name: str, fallback: str = "system", max_len: int = 100) -> str:
-    """Produce a filesystem-safe base name for downloads.
+    """Thin alias for the ONE sanitiser -- see bom.sanitize_filename_part.
 
-    Replaces whitespace with underscores, strips non-alphanumeric chars (keeping
-    ``._-``), collapses repeats, and trims to ``max_len``.
+    Kept as a name so existing call sites read unchanged; the BEHAVIOUR is
+    now shared. Three copies used to disagree on `Fleet (EU)`.
     """
-    cleaned = (name or "").strip().replace(" ", "_")
-    cleaned = _FILENAME_UNSAFE.sub("", cleaned).strip("._-")
-    if not cleaned:
-        return fallback
-    return cleaned[:max_len]
+    from mapper.api.bom import sanitize_filename_part
+
+    return sanitize_filename_part(name, fallback, max_len)
 
 
 def _get_system(system_id: str) -> SystemDefinition:
@@ -1099,6 +1098,11 @@ async def upload_stock(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(parsed), what="stock")
     scenario.initial_stock = parsed
     dsm_storage.save_state(_current_project(), system_id, state)
     cohort_keys: set[str] = set()
@@ -1134,6 +1138,11 @@ async def upload_inflows(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(inflows), what="inflow")
     scenario.inflows = inflows
     dsm_storage.save_state(_current_project(), system_id, state)
     total = sum(sum(inf.counts.values()) for inf in inflows)
@@ -1167,6 +1176,11 @@ async def upload_stock_targets(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(targets), what="stock-target")
     scenario.stock_targets = targets
     dsm_storage.save_state(_current_project(), system_id, state)
     total = sum(sum(t.counts.values()) for t in targets)
@@ -1205,6 +1219,11 @@ async def upload_outflows(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(outflows), what="outflow")
     scenario.outflows = outflows
     dsm_storage.save_state(_current_project(), system_id, state)
     total = sum(sum(o.counts.values()) for o in outflows)
@@ -1253,6 +1272,11 @@ async def upload_stock_aggregate(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # Guard: a well-formed file with ZERO data rows parses clean and would
+    # otherwise be written straight over live data. Not safe by accident --
+    # the parsers' ValueError is a COLUMN check, which a correct-header /
+    # no-rows file sails through. See core/upload_guard.
+    refuse_if_nothing_resolved(rows_seen=rows, resolved=len(parsed), what="stock")
     scenario.initial_stock = parsed
     dsm_storage.save_state(_current_project(), system_id, state)
     cohort_keys: set[str] = set()
@@ -2911,7 +2935,7 @@ async def import_system(file: UploadFile = File(...)) -> SystemDefinition:
 async def template_stock(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = stock_template_xlsx(sys_def.dimensions)
-    fname = f"stock_template_{_sanitize_filename(sys_def.name)}.xlsx"
+    fname = build_template_filename(sys_def.name, "stock", fallback="system")
     return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
@@ -2919,7 +2943,7 @@ async def template_stock(system_id: str) -> Response:
 async def template_inflows(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = inflow_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
-    fname = f"inflow_template_{_sanitize_filename(sys_def.name)}.xlsx"
+    fname = build_template_filename(sys_def.name, "inflows", fallback="system")
     return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
@@ -2927,7 +2951,7 @@ async def template_inflows(system_id: str) -> Response:
 async def template_stock_targets(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = stock_target_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
-    fname = f"stock_target_template_{_sanitize_filename(sys_def.name)}.xlsx"
+    fname = build_template_filename(sys_def.name, "stock_targets", fallback="system")
     return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
@@ -2935,7 +2959,7 @@ async def template_stock_targets(system_id: str) -> Response:
 async def template_outflows(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = outflow_template_xlsx(sys_def.dimensions, sys_def.time_horizon.years)
-    fname = f"outflow_template_{_sanitize_filename(sys_def.name)}.xlsx"
+    fname = build_template_filename(sys_def.name, "outflows", fallback="system")
     return excel_response_from_bytes(data, fname, kind="round_trip")
 
 
@@ -2943,5 +2967,5 @@ async def template_outflows(system_id: str) -> Response:
 async def template_stock_aggregate(system_id: str) -> Response:
     sys_def = _get_system(system_id)
     data = aggregate_stock_template_xlsx(sys_def.dimensions)
-    fname = f"stock_aggregate_template_{_sanitize_filename(sys_def.name)}.xlsx"
+    fname = build_template_filename(sys_def.name, "stock_aggregate", fallback="system")
     return excel_response_from_bytes(data, fname, kind="round_trip")

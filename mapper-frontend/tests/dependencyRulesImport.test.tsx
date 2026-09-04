@@ -73,11 +73,15 @@ function selectFile(container: HTMLElement) {
 }
 
 describe('dependency rules template + import', () => {
-  it('Template button calls the template download with (systemId, subsystemId)', async () => {
+  it('Template button passes the subsystem NAME, not just the ids', async () => {
+    // The name is load-bearing: the download is named
+    // `{Subsystem}_dependency_rules_template.xlsx`. Before it was threaded, the
+    // filename was a bare `dependency_rules_template.xlsx` for EVERY subsystem,
+    // so a second download silently overwrote the first in ~/Downloads.
     downloadDependencyRulesTemplate.mockResolvedValue(undefined)
     const { getByText } = render(<DependencyRulesEditor subsystem={SUB} />)
     await act(async () => { fireEvent.click(getByText('Template')) })
-    expect(downloadDependencyRulesTemplate).toHaveBeenCalledWith('sys1', 'sub1')
+    expect(downloadDependencyRulesTemplate).toHaveBeenCalledWith('sys1', 'sub1', SUB.name)
   })
 
   it('valid import → confirm dialog → Replace → saves imported rules', async () => {

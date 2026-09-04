@@ -216,3 +216,314 @@ def test_the_param_table_is_assigned_outside_the_param_set_branch():
                 f"{rel}:{node.lineno} assigns param_table only when "
                 f"parameter_set_id is truthy, so a falsy id hands "
                 f"DSMLCAPipeline no table and silently skips resolution")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# The ABSENCE rule
+# ══════════════════════════════════════════════════════════════════════════
+#
+# The gate sweep above finds calls to ``resolve_archetype_with_engine`` and
+# asks whether they are conditioned. It is structurally blind to a builder
+# that never calls it AT ALL -- and that is how the defect survived a fifth
+# time, in ``_build_archetype_demand`` (contribution analysis), which held its
+# own copy of the flatten loop and simply never resolved. A contribution run on
+# WP5's ICEV-Petrol reported 61.51 kg CO2-eq against a true 3,195.16, and
+# because only the EXPRESSION rows collapsed to their 1.0 placeholder while the
+# literal maintenance rows kept full size, it did not merely scale the total --
+# it INVERTED the ranking. Synthetic rubber showed as 70% of the use phase; it
+# is 1.4%. Combustion showed as 5.2%; it is 73.3%.
+#
+# Extending the same sweep would not have caught it. "Is this call gated?"
+# cannot fire when there is no call. So the rule here is the complement:
+# enumerate every function that turns an archetype ID into a demand vector, and
+# require each one to resolve.
+#
+# The criterion is LOAD-then-FLATTEN, and the distinction is real rather than
+# stylistic: a function that loads an archetype by id owns the raw tree and is
+# the only place that can resolve it, while a function that RECEIVES an
+# ``Archetype`` is downstream of whoever did. That is why ``dsm_lca_engine``'s
+# ``_flatten`` and ``material_flow_engine``'s ``_compute_single_scope`` are not
+# on this list and are not defects -- their callers resolve first
+# (``DSMLCAPipeline._resolved_archetype``; ``api/bom.material_flows``).
+
+# Loading an archetype by id.
+_LOAD_CALLS = {"_get_archetype", "_load_and_splice_archetype"}
+
+# Turning a BOM tree into a flat material list.
+_FLATTEN_CALLS = {
+    "flatten_bom", "flatten_roots", "flatten_root_with_amounts",
+    "flatten_bom_for_year", "flatten_roots_for_year",
+    "flatten_roots_for_year_and_scope",
+}
+
+# Performing the substitution -- directly, or through the shared helper that
+# both single-product builders now go through.
+_RESOLVE_CALLS = RESOLVE_CALLS | {"_resolve_archetype_parameters"}
+
+# Every builder that must resolve. Discovery (below) fails if a new one appears
+# that is not listed here, so the list cannot silently fall behind the code.
+DEMAND_BUILDERS = {
+    ("api/lca.py", "_build_archetype_source_demand"),
+    ("api/lca.py", "_build_archetype_demand"),
+    ("api/bom.py", "standalone_lca"),
+    ("api/bom.py", "flatten_archetype"),
+}
+
+
+def _called_names(fn: ast.AST) -> set[str]:
+    out: set[str] = set()
+    for c in ast.walk(fn):
+        if isinstance(c, ast.Call):
+            f = c.func
+            if isinstance(f, ast.Name):
+                out.add(f.id)
+            elif isinstance(f, ast.Attribute):
+                out.add(f.attr)
+    return out
+
+
+def _functions(tree: ast.AST):
+    for n in ast.walk(tree):
+        if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            yield n
+
+
+def _discover_builders(root: pathlib.Path = PKG) -> set[tuple[str, str]]:
+    """Every function that loads an archetype by id AND flattens it."""
+    found: set[tuple[str, str]] = set()
+    for path in sorted(root.rglob("*.py")):
+        try:
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+        except SyntaxError:
+            continue
+        for fn in _functions(tree):
+            calls = _called_names(fn)
+            if (calls & _LOAD_CALLS) and (calls & _FLATTEN_CALLS):
+                # as_posix(), not str(): on Windows str() yields backslashes and
+                # nothing would ever match DEMAND_BUILDERS, so the whole rule
+                # would pass by finding nothing on half the CI matrix.
+                found.add((path.relative_to(root).as_posix(), fn.name))
+    return found
+
+
+def _resolves(rel: str, name: str, root: pathlib.Path = PKG) -> bool:
+    # encoding is explicit: the default is cp1252 on Windows and these sources
+    # carry non-ASCII, so an implicit read fails there and nowhere else.
+    tree = ast.parse((root / rel).read_text(encoding="utf-8"))
+    for fn in _functions(tree):
+        if fn.name == name:
+            return bool(_called_names(fn) & _RESOLVE_CALLS)
+    raise AssertionError(f"{rel}:{name} not found -- update DEMAND_BUILDERS")
+
+
+@pytest.mark.parametrize("rel,name", sorted(DEMAND_BUILDERS))
+def test_every_demand_builder_resolves(rel, name):
+    """An enumerated builder that stops resolving fails HERE, by name.
+
+    This is the check the gate sweep cannot make: it asserts a call is
+    PRESENT, not that an existing call is unconditioned.
+    """
+    assert _resolves(rel, name), (
+        f"{rel}:{name} loads an archetype and flattens it without resolving "
+        "parameter expressions. Every quantity stored as an expression will "
+        "compute at its 1.0 placeholder. Call _resolve_archetype_parameters "
+        "(api/lca.py) -- do not write a third copy of the resolution logic."
+    )
+
+
+def test_no_unlisted_demand_builder_exists():
+    """Discovery, so the enumeration cannot fall behind the code.
+
+    A new load-then-flatten function is a new demand builder. It must be added
+    to DEMAND_BUILDERS -- at which point the test above starts requiring it to
+    resolve. Without this, the list would only ever cover what someone
+    remembered to add.
+    """
+    undeclared = _discover_builders() - DEMAND_BUILDERS
+    assert not undeclared, (
+        f"undeclared demand builder(s): {sorted(undeclared)}. Add them to "
+        "DEMAND_BUILDERS; they must resolve parameter expressions."
+    )
+
+
+def test_the_listed_builders_all_still_exist():
+    """A stale entry is as bad as a missing one -- it passes vacuously."""
+    live = _discover_builders()
+    stale = DEMAND_BUILDERS - live
+    assert not stale, (
+        f"DEMAND_BUILDERS names function(s) that no longer load-and-flatten: "
+        f"{sorted(stale)}. Remove them, or the entry guards nothing."
+    )
+
+
+def test_the_absence_rule_catches_a_builder_that_never_resolves(tmp_path):
+    """Anti-vacuity, on the exact shape that shipped.
+
+    This is `_build_archetype_demand` as it stood before the fix: it loads, it
+    flattens, it aggregates a demand vector, and it never resolves.
+    """
+    pkg = tmp_path / "pkg"
+    (pkg / "api").mkdir(parents=True)
+    (pkg / "api" / "lca.py").write_text(
+        "def _build_archetype_demand(archetype_id, scope):\n"
+        "    arc = _get_archetype(archetype_id)\n"
+        "    demand = {}\n"
+        "    for m in flatten_bom(arc.bom):\n"
+        "        demand[m.key] = m.quantity\n"
+        "    return demand\n"
+    )
+    found = _discover_builders(pkg)
+    assert ("api/lca.py", "_build_archetype_demand") in found, (
+        "discovery missed a load-then-flatten builder"
+    )
+    assert not _resolves("api/lca.py", "_build_archetype_demand", pkg), (
+        "the absence rule failed to notice a builder with no resolve call"
+    )
+
+
+def test_the_absence_rule_accepts_the_corrected_shape(tmp_path):
+    """And does not fire on a builder that goes through the shared helper."""
+    pkg = tmp_path / "pkg"
+    (pkg / "api").mkdir(parents=True)
+    (pkg / "api" / "lca.py").write_text(
+        "def _build_archetype_demand(archetype_id, scope, parameter_scenario=None):\n"
+        "    arc = _load_and_splice_archetype(archetype_id)\n"
+        "    arc = _resolve_archetype_parameters(arc, parameter_scenario)\n"
+        "    return {m.key: m.quantity for m in flatten_bom(arc.bom)}\n"
+    )
+    assert _resolves("api/lca.py", "_build_archetype_demand", pkg)
+
+
+def test_a_receiving_function_is_not_treated_as_a_builder(tmp_path):
+    """A function handed an already-resolved Archetype is a consumer.
+
+    ``dsm_lca_engine._flatten`` and ``material_flow_engine._compute_single_scope``
+    are this shape. Flagging them would make the rule fire on correct code and
+    train people to add exemptions.
+    """
+    pkg = tmp_path / "pkg"
+    (pkg / "core").mkdir(parents=True)
+    (pkg / "core" / "engine.py").write_text(
+        "def _flatten(arc, scope):\n"
+        "    return [m for m in flatten_bom(arc.bom) if m.ecoinvent_activity]\n"
+    )
+    assert _discover_builders(pkg) == set()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# Prospective link translation: a non-base source database must survive
+# ══════════════════════════════════════════════════════════════════════════
+#
+# The third sibling-divergence in as many weeks, and the same shape as the
+# demand-builder one above: two functions doing one job, one guarded, one not.
+#
+#   api/lca.py:_translate_demand_to_database   probed the target and fell back
+#   core/dsm_lca_engine.py:_rewrite_db         rewrote every link unconditionally
+#
+# The fleet version worked only because every BOM row pointed at base
+# ecoinvent, and premise preserves codes. The first row linking a generated
+# database (mapper-tailpipe) took the whole prospective run down with
+# `ActivityDataset ... does not exist`. Measured on MAp-test: 61/61 ecoinvent
+# codes carry into the premise DB, 0/2 mapper-tailpipe codes do.
+#
+# So this asserts the RULE, not either implementation: a link whose source is
+# not the base must keep its own database.
+
+PROSPECTIVE_TRANSLATORS = {
+    ("api/lca.py", "_translate_demand_to_database"),
+    ("core/dsm_lca_engine.py", "_rewrite_db"),
+}
+
+
+def test_every_prospective_translator_shares_the_one_decision():
+    """Both must route through ``resolve_link_db``.
+
+    Asserting the shared CALL rather than re-checking each implementation is
+    the point: a third copy of the rule is how the second one survived.
+    """
+    missing = [
+        f"{rel}:{name}"
+        for rel, name in sorted(PROSPECTIVE_TRANSLATORS)
+        if "resolve_link_db" not in _called_names(
+            next(fn for fn in _functions(ast.parse((PKG / rel).read_text(encoding="utf-8")))
+                 if fn.name == name)
+        )
+    ]
+    assert not missing, (
+        "these translate links to a prospective database without going through "
+        f"core/prospective_links.resolve_link_db: {missing}"
+    )
+
+
+def test_a_non_base_source_database_is_pinned_not_translated():
+    """The rule itself, on the exact shape that crashed.
+
+    mapper-tailpipe holds only biosphere exchanges -- premise never generated a
+    variant, so there is nothing to translate to and nothing it could have
+    changed. Pinning is the correct model, not a fallback, so it must not warn.
+    """
+    from mapper.core.prospective_links import resolve_link_db
+
+    def never(_db, _code):
+        raise AssertionError("must not probe a non-base database")
+
+    db, warning = resolve_link_db(
+        "mapper-tailpipe", "6475855161f625ab7df55cdeb918d9d1",
+        "ecoinvent-3.10-cutoff_premise_remind_ssp2-pkbudg1150_2025",
+        "ecoinvent-3.10-cutoff", never,
+    )
+    assert db == "mapper-tailpipe"
+    assert warning is None
+
+
+def test_a_base_code_that_carries_over_is_translated():
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "ecoinvent-3.10-cutoff", "abc", "premise_db",
+        "ecoinvent-3.10-cutoff", lambda _d, _c: True,
+    )
+    assert db == "premise_db"
+    assert warning is None
+
+
+def test_a_base_code_that_does_NOT_carry_over_falls_back_AND_warns():
+    """A genuine premise gap is a real finding: the result is only partially
+    translated and the reader has to be told."""
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "ecoinvent-3.10-cutoff", "abc", "premise_db",
+        "ecoinvent-3.10-cutoff", lambda _d, _c: False,
+    )
+    assert db == "ecoinvent-3.10-cutoff"
+    assert warning and "not found in premise_db" in warning
+
+
+def test_cannot_tell_translates_rather_than_pinning():
+    """``None`` is not ``False``.
+
+    Absence of the target DATABASE says nothing about the CODE. Treating it as
+    a known absence would pin every row of a run whose target merely is not
+    loaded -- and would silently rewrite the meaning of every synthetic
+    prospective fixture.
+    """
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "base", "c1", "anchor_2030", "base", lambda _d, _c: None,
+    )
+    assert db == "anchor_2030"
+    assert warning is None
+
+
+def test_an_unknown_base_still_gets_the_guarded_probe():
+    """A caller that cannot say which base it targets must degrade to the
+    probe, never to the unconditional rewrite that crashed."""
+    from mapper.core.prospective_links import resolve_link_db
+
+    db, warning = resolve_link_db(
+        "mapper-tailpipe", "x", "premise_db", None, lambda _d, _c: False,
+    )
+    assert db == "mapper-tailpipe"
+    assert warning is not None

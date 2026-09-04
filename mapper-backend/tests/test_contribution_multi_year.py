@@ -385,8 +385,15 @@ def test_multi_year_runs_against_static_db_with_no_pattern():
 
     db_name = next(d for d in bw2data.databases if "biosphere" not in d.lower())
     db = bw2data.Database(db_name)
-    act = next(iter(db))
-    method = tuple(next(iter(bw2data.methods)))
+    # Pinned, NOT drawn. `next(iter(db))` is a peewee query with no ORDER BY,
+    # which SQLite answers with `ORDER BY Random()` — so it returned a different
+    # activity every process and the assertion below was a lottery over ~23.5k
+    # activities. Sorting by code is stable, so the test now computes the same
+    # thing twice in a row. (`bw2data.methods` iterates in insertion order,
+    # which is stable in practice but not guaranteed; sorted for the same
+    # reason.)
+    act = min(db, key=lambda a: a.key[1])
+    method = min(tuple(m) for m in bw2data.methods)
 
     body = MultiYearContributionRequest(
         target_type="activity",
@@ -417,14 +424,35 @@ def test_multi_year_runs_against_static_db_with_no_pattern():
     assert result.result_type == "multi_year_single_product"
     assert result.years == [2030, 2050]
     assert set(result.results) == {"2030", "2050"}
-    # Both years used the same source DB → scores must match to numerical
-    # precision. (Not bit-identical: the shared-runner optimization reuses a
-    # UMFPACK factorization across years, so year 2 is a back-sub instead of a
-    # fresh spsolve.) The shared-factorisation back-substitution noise is ~5e-9
-    # relative — NOT a result error — so a rel=1e-9 tolerance flaked
-    # nondeterministically (failed in the full suite, passed isolated). rel=1e-7
-    # comfortably clears that noise while still catching any real divergence
-    # (>>1e-7 would mean the years genuinely diverged, e.g. wrong DB).
+    # Both years used the same source DB → the scores must agree. They are NOT
+    # bit-equal: the shared-runner optimisation reuses one UMFPACK factorisation
+    # across years, so 2030 is a fresh spsolve and 2050 a back-substitution.
+    #
+    # WHAT THIS TOLERANCE NOW MEASURES — with the activity pinned above, the
+    # difference is one fixed number: the back-substitution residual for
+    # `hard coal, import from Australia` against the first EF method. Measured
+    # bit-identical across 10 separate processes:
+    #
+    #     2030  0.0023117637073266206
+    #     2050  0.002311763717811075
+    #     rel   4.5352621332693496e-09     (every bit, every run)
+    #
+    # So this is no longer bounding a distribution — it bounds one reproducible
+    # solver residual, and the previous comment's "flake rate" framing no longer
+    # applies because there is nothing left to draw.
+    #
+    # WHY 1e-7 AND NOT 1e-8. 1e-8 would be 2.2x the measured value, which is
+    # ample for THIS activity. But sorting by code pins the activity only for a
+    # given database — a different ecoinvent version sorts a different activity
+    # first, and that one has its own residual. Measured over 100 activities:
+    # median 1.0e-09, p90 9.0e-09, max 6.1e-08. rel=1e-7 clears all 100; rel=1e-8
+    # clears 92. The extra headroom buys survival across a database change, which
+    # is worth more here than the marginal tightening: both bounds catch the
+    # failure this assertion exists for (years computing against different DBs,
+    # which diverge by orders of magnitude, not by 1e-8).
+    #
+    # Cross-platform variation in BLAS/UMFPACK is not measurable from one
+    # machine; CI runs macOS and Windows, which is the check on that.
     s30 = result.results["2030"].score
     s50 = result.results["2050"].score
     assert s30 == pytest.approx(s50, rel=1e-7)

@@ -5397,6 +5397,37 @@ First landing: `tests/axisConflict.test.ts` (9 cases on the 3-way
 axisConflict rule, covering all single-axis allowances, the three pairwise
 conflicts, the three-way conflict, and the N=0 boundary).
 
+### A frontend suite that will not start is the TOOLCHAIN, not the test
+
+Observation, recorded because the error names nothing useful and the machine it
+happened on is the one MApper is developed on.
+
+Every frontend test file — including ones the branch never touched — failed with
+
+    Error: [vitest-pool]: Failed to start forks worker for test files ...
+    Caused by: TypeError: Class extends value undefined is not a constructor or null
+
+reported as `Test Files no tests`, which reads like a discovery problem. It is
+not. `--pool=vmForks` surfaces the real frame:
+`jsdom/lib/generated/idl/AbortSignal.js:249` — jsdom's `AbortSignal` shim is
+incompatible with the locally installed **Node 25.9.0** (Homebrew). CI pins Node
+**24**, so it never appears there, and vitest's own `engines` (`>=24.0.0`)
+accepts 25, so the version looks supported.
+
+Two things that follow:
+
+- **Check whether an UNTOUCHED test file fails the same way before debugging the
+  branch.** That one check separates "my change broke the suite" from "the
+  runner cannot start", and the second costs nothing to rule out.
+- **A test with no DOM can still run**: `--environment=node`. The
+  filename-parity test is pure functions and passes locally that way (16/16)
+  while the jsdom-environment files cannot start at all.
+
+Not fixed here — changing the user's Node install is their call, and CI is
+unaffected. Recorded so the next occurrence is a lookup rather than an
+investigation. Related in kind to the disk-pressure episode: check the
+environment before the data.
+
 ### Test determinism — mock the function the component actually calls (Patch 5L)
 
 `tests/logEntryCopy.test.tsx` was intermittently failing on full-suite runs
@@ -8016,6 +8047,133 @@ BEFORE seeding `useActivityStore`, or the reset subscription wipes the seeded
 activities (this is why `multiProductActivityVintage.test.tsx` reorders its
 `beforeEach`). Same hazard already applied to `bomStore`.
 
+### Replace = Merge + delete what's absent. Nothing else.
+
+Both import modes match by NAME and preserve the archetype id. The ONLY
+difference is that replace deletes archetypes absent from the workbook.
+
+It did not used to be. Replace re-minted every id — not as a feature, but
+because it cleared the dict BEFORE building the name index, having captured the
+old library two lines earlier and used it solely to delete files. The
+name→id map was in hand and thrown away.
+
+**An archetype id is referenced from exactly THREE places**, and re-minting
+orphaned all of them:
+
+| surface | repair path |
+|---|---|
+| `CohortMapping.mappings[].archetype_id` | rebuildable by hand in the UI |
+| `Subsystem.cohort_mappings[].archetype_id` | re-import repairs it |
+| `Archetype.includes[].archetype_id` | **none** |
+
+`DependencyRule.dependent_archetype_id` looks like a fourth and is not — it
+holds a dependent COHORT KEY (`"Fuel Station|Large"`). Measured on the live
+project: 0 of its 6 values resolve as BOM archetype ids, all 21
+`SubsystemCohortMapping.archetype_id` do.
+
+This orphaned WP5's 51-row cohort mapping **twice**. Warning people to use
+merge mode had failed twice, which is the evidence it belonged in the importer.
+
+**Composition was broken a second way, and by BOTH modes**: `_upsert` never
+carried `includes` at all, so even a preserved id came back with an empty list.
+The BOM workbook cannot express a composition reference — `_assert_exportable`
+REFUSES to write a composed archetype — so a blank `includes` on import means
+"not expressible here", never "the user removed it".
+
+**Ids are stable PER SURVIVING NAME, never across the set.** A name new to the
+workbook has no id to preserve and gets a fresh one. Nothing may assume the id
+SET is unchanged.
+
+**Preserving an id re-opens a staleness window that re-minting had accidentally
+closed.** `_contribution_cache` is keyed by `("archetype", archetype_id, …)`
+and is never cleared anywhere; while ids changed, a stale entry was unreachable
+because its key changed. Now the id survives and the BOM does not, so the
+import evicts entries for every touched archetype — in BOTH modes, since merge
+always preserved ids and so was always exposed.
+
+**A rename is warned about, never refused.** An archetype whose name is absent
+is deleted; that is the mode's job and rename-and-replace is legitimate. But it
+is the one case an id cannot survive, so the import names the archetype and
+every place that pointed at it. Unreferenced deletions stay silent — warning on
+those trains people to ignore the warning that matters.
+
+#### What NOT to do
+
+- **Don't restore the mode-conditional name match.** Locked by
+  `test_import_preserves_archetype_ids.py` (all three surfaces, both modes) and
+  a source guard in `test_archetype_composition.py`.
+- **Don't drop a field in `_upsert` because the workbook lacks a column for
+  it.** `includes` has no column BY DESIGN. `validation_report` is the only
+  field legitimately not carried, because it is recomputed after import.
+- **Don't describe Replace as "re-creates everything" in UI copy.** It updates
+  matched archetypes in place and deletes the rest. Two modes whose difference
+  nobody can state is how the wrong one gets picked.
+- **Don't refuse on a rename.** Warn, naming the orphaned references.
+
+### The fifth was an ABSENCE, not a gate
+
+The four above were all gates: a call to `resolve_archetype_with_engine`
+wrapped in a condition. The fifth had no call at all.
+
+`_build_archetype_demand` (contribution analysis, `api/lca.py`) held its OWN
+copy of the flatten loop and never resolved. Same defect, sibling builder,
+invisible to a sweep that asks "is this call conditioned?" — you cannot gate a
+call that does not exist. On WP5's ICEV-Petrol it reported **61.51 kg CO2-eq
+against a true 3,195.16**, and because only the EXPRESSION rows collapsed to
+their 1.0 placeholder while the literal maintenance rows kept full size, it did
+not merely scale the total — **it inverted the ranking**. Synthetic rubber (13 kg
+of tyres, a literal) showed as **70%** of the use phase; it is 1.4%. Petrol
+combustion showed as **5.2%**; it is **73.3%**.
+
+The sweep found two more of the same shape once it was looking for absence:
+`api/bom.py:standalone_lca` (computes an LCA; **no frontend caller**, so nothing
+hand-tested it) and `api/bom.py:flatten_archetype` (reports `total_mass_kg`,
+which was 1 kg of petrol on a parameterised BOM).
+
+**The fix is one shared implementation, not a fifth copy.** `api/lca.py` now
+carries two helpers that every demand builder goes through:
+
+- `_load_and_splice_archetype(id)` — load + composition splice.
+- `_resolve_archetype_parameters(arc, scenario, year)` — validate the scenario
+  name and resolve every expression.
+
+They are split in two rather than fused so `_build_archetype_source_demand`'s
+HTTPException ORDER is preserved byte-for-byte (it validates methods and scope
+between loading and resolving). `ContributionAnalysisRequest` and
+`ArchetypeLCARequest` gained `parameter_scenario`, and for contribution analysis
+**the scenario is part of the cache key** — it changes the resolved quantities,
+so omitting it would serve one scenario's result for another.
+
+**The guard now asserts presence, enumerated.**
+`test_parameter_resolution_never_gated.py` gained an absence rule beside the
+gate rule: it discovers every function that **loads an archetype by id AND
+flattens it**, requires each to be listed in `DEMAND_BUILDERS`, and requires
+each listed one to reach a resolver. Load-then-flatten is the criterion because
+it is the real distinction — a function that loads owns the raw tree and is the
+only place that can resolve it, while one that RECEIVES an `Archetype` is
+downstream of whoever did. That is why `dsm_lca_engine._flatten` and
+`material_flow_engine._compute_single_scope` are correctly NOT on the list:
+their callers resolve first.
+
+Verified load-bearing by removing the resolve call from each builder in turn —
+each removal fails naming that function.
+
+#### What NOT to do
+
+- **Don't write a third copy of the resolution logic.** A second copy is how
+  this survived four fixes; call `_resolve_archetype_parameters`.
+- **Don't add a demand builder without adding it to `DEMAND_BUILDERS`.** The
+  discovery test fails on an undeclared load-then-flatten function, and a
+  companion test fails on a stale entry that no longer matches — a stale entry
+  passes vacuously, which is as bad as a missing one.
+- **Don't extend the GATE sweep and think it covers absence.** "Is this call
+  conditioned?" cannot fire when there is no call. The two rules are
+  complements; both are needed.
+- **Don't omit the parameter scenario from a result's cache key.** Two
+  scenarios resolve the same BOM to different quantities. On MAp-test they
+  happen to coincide (both cases carry zero overrides across 43 parameters),
+  which is exactly the kind of coincidence that hides a key bug.
+
 ### The class, and the guard that closes it
 
 The same false premise shipped **four** times:
@@ -8266,6 +8424,220 @@ Ground truth as of this patch: all 123 test files pass standalone.
 - **A full-suite green does not prove a fixture registers what it names.** Run
   the candidate files in isolation, one process each.
 
+## Prospective link translation: only the BASE database translates
+
+Two functions translate a BOM link to a prospective database, and they had
+drifted apart:
+
+| | probe target? | fall back? |
+|---|---|---|
+| `api/lca.py:_translate_demand_to_database` (single product) | yes | yes, + warning |
+| `core/dsm_lca_engine.py:_rewrite_db` (fleet) | **no** | **no** |
+
+The fleet version rewrote EVERY link's database to the premise anchor
+unconditionally. It worked only because every BOM row pointed at base
+ecoinvent and premise preserves codes. The first row linking a GENERATED
+database took the whole prospective run down with
+`ActivityDataset ... does not exist` — measured on MAp-test: **61 of 61
+ecoinvent codes carry into the premise DB, 0 of 2 `mapper-tailpipe` codes do**.
+
+**The decision now lives once**, in `core/prospective_links.resolve_link_db`,
+called by both. They differ in SHAPE — one walks a demand dict, the other a
+flattened material list — not in intent, so the iteration stayed separate and
+only the rule moved. The third sibling-divergence in as many weeks; a third
+copy is how the second one survived.
+
+```
+if not target_db or src_db == target_db:       keep
+if base_db is not None and src_db != base_db:  keep, SILENTLY
+if exists(target_db, code) is False:           keep, + WARNING
+otherwise:                                     translate
+```
+
+**Pinning a non-base database is the correct model, not a fallback**, which is
+why it does not warn. `mapper-tailpipe` holds only biosphere exchanges and no
+technosphere inputs, so premise never generated a variant and there is nothing
+in it premise could have changed — tailpipe CO2 per kg of fuel is combustion
+stoichiometry, invariant to the electricity mix. A warning would fire on every
+such row in every year and train people to ignore warnings.
+
+**`exists()` returns `True | False | None`, and only a known `False` falls
+back.** "Cannot tell" is not "absent": absence of the target DATABASE says
+nothing about the CODE. The first implementation conflated them and broke 8
+interpolation tests whose fixtures use synthetic database names — it pinned
+every row instead of translating. Treating an unverifiable probe as absence
+CHANGES NUMBERS rather than crashing, which is the worse failure.
+
+`base_db` comes from the caller's declared base, falling back to the pLCA
+registry (`base_db_for`) — the same registry `resolve_prospective_dbs` reads,
+so the two cannot disagree about what a database's base is. `base_db=None`
+deliberately degrades to the probe, so a caller that cannot say which base it
+targets still gets the guarded behaviour rather than the crash.
+
+**The fleet result has nowhere to put a warning.** `ImpactAssessmentResult` has
+no `warnings` field (the single-product result does), so a fleet translation
+warning is logged at WARNING level — reaching `mapper.log` and Settings → Logs
+— and collected on the pipeline. Adding a field is a schema change with
+frontend implications; it was left, deliberately.
+
+#### What NOT to do
+
+- **Don't rewrite a link's database without checking its SOURCE.** A BOM may
+  link a generated or custom database that no premise run ever touched.
+  `tests/test_parameter_resolution_never_gated.py` asserts both translators
+  route through `resolve_link_db`; reverting either fails by name.
+- **Don't treat "cannot probe" as "absent".** Only a positive `False` may fall
+  back. The `None` branch is what keeps a run whose target database is merely
+  unloaded computing the same numbers as before.
+- **Don't warn when pinning a non-base database.** It is correct behaviour, and
+  a warning that fires on every row of every year is a warning nobody reads.
+- **Don't add a third copy of the rule.** Both callers keep their own
+  iteration; the decision is shared.
+
+## Tests wrote into the user's real projects for at least three days
+
+Every storage module holds a module-level
+`STORAGE_DIR = Path(platformdirs.user_data_dir("mapper")) / <name>`, and a test
+that does not redirect it writes into **live user data**. Three test files did.
+
+Found by accident, while dating files for an unrelated investigation. Nothing
+was looking, and the damage was already visible in the app: **Battery
+Circularity had 30 DSM systems, every one of them named `GuardlessProbe`** —
+one per run of `test_project_guard_e2e.py`, accumulating since 2026-08-31 —
+plus three orphaned `sys_promote_*` states from `test_dsm_scenarios.py`. That
+project has **no real DSM system at all** (it is archetype-based), so 100% of
+what its dropdown listed was test leakage.
+
+**Measured, not guessed.** A temporary pytest plugin wrapped `Path.mkdir` and
+`Path.write_text` (the only two write idioms the storage layer uses) and
+attributed every write under `user_data_dir("mapper")` to the running test:
+**3 files, 5 nodes**. Worse than "writes to a fixture project" — the target is
+whatever bw2 project happens to be CURRENT, so which real project gets polluted
+depends on run order and on what the developer last opened.
+
+**The fix is redirection by DEFAULT**, in the conftest that already existed for
+the parameter-registry clear. `_isolate_storage_roots` is autouse and points
+all seven roots at a per-test temp dir. The eight files that already
+monkeypatched a root by hand keep working — their `setattr` overrides an
+already-redirected value, and monkeypatch unwinds in reverse. And
+`project_storage.storage_roots()` reads these module attributes live, so the
+copy/rename/export helpers are redirected with them.
+
+Two things that are easy to get wrong here:
+
+- **`aesa_storage` and `aesa_session_storage` share one directory** — sessions
+  live at `aesa/{project}/sessions/` — so they must redirect to the SAME temp
+  path or that relationship breaks.
+- **`dsm_storage._LEGACY_STORAGE_DIR` (mfa) must be redirected too.**
+  `hydrate_from_disk` migrates from it on first use, so leaving it live lets a
+  test read real data.
+
+### Six tests read live data ON PURPOSE, and blanket redirection broke them
+
+The first cut turned 1495 passed into **1489 passed + 6 skipped**. The six
+assert against the developer's real projects: the content-hash round-trip walks
+the real archetypes, and the paired Monte Carlo foreground tests need Battery
+Circularity's A / A0, whose rows are 100% expressions and are the only place
+that foreground carries any uncertainty at all — which is how the missing
+paired foreground was found in the first place.
+
+They already skip when the project is absent, so they contribute nothing in CI
+and never have; the value is entirely local. Silently converting them to skips
+would have removed the only coverage that catches that class.
+
+So there is an explicit opt-out: a test that requests the **`live_storage`**
+fixture keeps the real roots. Reading is what it permits; **writing is still
+caught**, because the guard does not exempt it.
+
+### The guard fires at the WRITE, not at session end
+
+`_forbid_live_store_writes` (session-scoped, autouse) patches `Path.mkdir` and
+`Path.write_text` to raise `LiveStoreWriteError` naming the offending test and
+path. Failing at the moment of the write means the failure is attributable and
+does not depend on a reporting test running last.
+
+Scoped to the **seven project-data roots**, resolved from platformdirs directly
+rather than from the (redirected) module attributes. Deliberately NOT the whole
+`user_data_dir`: a premise import creates a `workspace` scratch dir there, which
+is not project data and not ours to police.
+
+Verified load-bearing by pointing `test_dsm_scenarios.py` back at the live
+store — the guard fires immediately on both offending tests, naming each.
+
+#### What NOT to do
+
+- **Don't add a storage module without adding its root to `_STORAGE_ROOTS`.**
+  The guard will catch the write, but it will read as a mysterious failure
+  rather than as the one-line registration it is.
+- **Don't make the redirect opt-IN.** It would only ever cover the tests
+  somebody remembered, and the offenders are precisely the ones nobody did.
+- **Don't exempt `live_storage` tests from the write guard.** Reading a real
+  project is the point of them; writing to one never is.
+- **Don't scope the guard to the whole `user_data_dir`.** A third-party import
+  creates `workspace` there and the guard would fight it for no benefit.
+- **Don't "fix" a live-data test by redirecting it.** Six of them exist because
+  real data catches things synthetic fixtures do not. Give them `live_storage`.
+- **A full-suite green does not prove tests are isolated.** These wrote into
+  real projects for days while every run passed. The guard is what makes it
+  observable; before it, only a manual `ls` of the store would have shown it.
+
+## Check free disk space before investigating a data-corruption message
+
+**Observation, not a conclusion — the mechanism is unknown.**
+
+On 2026-09-03 the AESA CO2e provenance suites
+(`test_aesa_co2e_ratio_provenance.py`, `test_aesa_co2e_documented_claims.py`)
+reported **13-14 failures** of the form:
+
+```
+AR6 C1+C2: pairs_file is missing {'C2', 'C1'}
+assert set() == {'C1', 'C2'}
+```
+
+That message names a **data** problem: it says the shipped
+`ar6_c1c2_pairs.csv` no longer contains the categories the fit declares.
+
+**The file was intact the whole time.** Read directly it gives 214 rows with
+`category` values `C1`/`C2`; read through the test module's own `DATA` path and
+its own `_rows()` helper, under pytest, it gives the same. `DATA` is a fixed
+package path and is NOT touched by the storage-isolation fixture, so the
+obvious hypothesis — that the redirect shadowed it — is ruled out.
+
+What correlated was the machine, not the data:
+
+| run | volume | wall clock | result |
+|---|---|---|---|
+| failing | **91% full** (39 GB free), after a 41 GB copy filled it to 99% | **822 s** | 13-14 CO2e failures |
+| clean | 78% full (98 GB free) | 323 s | 1500 passed, CO2e green |
+
+Same commit, same environment, 2.4x slower on the failing run. Not reproducible
+on a healthy volume. CI on a fresh runner was green throughout.
+
+**So: if these tests fail claiming the pairs file lost its categories, check
+`df -h` FIRST.** The failure message will send you looking for a corrupted CSV,
+and on this evidence that is the wrong place to look. Confirm the file is
+actually damaged (`wc -l`, read the header, check `category` values) before
+touching the data — and re-run once on a volume with headroom, because the
+failure is not deterministic.
+
+Two things this does NOT claim: that disk pressure *causes* it (only that they
+co-occurred), and that the data can never genuinely rot. It claims only that a
+data-shaped message here has at least one non-data explanation, and that the
+cheap check comes first.
+
+#### What NOT to do
+
+- **Don't "repair" the CSVs on the strength of this failure.** They were
+  verified byte-intact while the tests were red. Editing them would introduce
+  the corruption the message describes.
+- **Don't loosen or skip these tests to make them pass.** They are the
+  published-source invariants for the CO2e conversion; a skip here is exactly
+  the vacuous-green this file warns about elsewhere.
+- **Don't conclude "main is red" from a single reproduction.** It reproduced
+  twice under pressure and not at all afterwards. One re-run on a healthy
+  volume is the difference between a real regression and an environment
+  artefact.
+
 ## A test that skips is a test that stopped asserting
 
 `test_supply_chain_truncation_keeps_high_value_paths` took `candidates[0]` off
@@ -8292,6 +8664,194 @@ pick. 6/6 runs deterministic afterwards.
   never when it is luck.
 - **Don't order a test fixture on database iteration order.** It varies between
   bw2 sessions. Sort explicitly.
+
+## Prospective Monte Carlo is UNREACHABLE, and premise carries no uncertainty
+
+Two facts that only matter together, so they are written together.
+
+### No button hands a prospective result to Monte Carlo
+
+`MonteCarloRequest.archetype_id` and `MonteCarloMultiRequest.archetype_ids` —
+Monte Carlo is **archetype-scoped**. Tracing every entry point:
+
+- **Single-product Static** → "Run uncertainty" passes `computeDatabase: null`,
+  and that is CORRECT: Static is base-ecoinvent by definition.
+- **Single-product Prospective** → has no "Run uncertainty" button at all.
+- **Multi-item Archetypes** → `handleCompute` calls
+  `compute({ scope, methods, cases })` and never passes `computeDatabase`, so
+  the comparison itself runs against base ecoinvent (archetypes resolve through
+  their BOM's ecoinvent links). The handoff's `computeDatabase: null` therefore
+  MATCHES what was compared.
+- **Multi-item Activities** → carries the premise vintages, and Monte Carlo
+  cannot run there at all: an activities comparison has no archetype. The
+  button is hidden for that reason (not a banner — see below).
+
+**So the only route to a prospective Monte Carlo today is a direct API call**
+with `compute_database` set. Nothing in the UI reaches it.
+
+### When it becomes reachable, settle this FIRST
+
+Measured on the frozen build, same archetype, 25 iterations, seed 9:
+
+| background | GSD² |
+|---|---|
+| base ecoinvent | **1.1202** |
+| premise remind/SSP2-PkBudg1150 2030 | **1.0004** |
+
+A near-total collapse. Checking the exchanges directly (400 activities each):
+
+| | base ecoinvent | premise 2030 |
+|---|---|---|
+| `uncertainty type` | 84.5 % lognormal (2) | **99.9 % undefined (0)** |
+| `scale` usable (>0, not NaN) | **84.5 %** | **0 %** |
+| `scale` = NaN | 0 % | **78.2 %** |
+
+**The distributions are genuinely absent, not merely flagged off.** `scale` is
+present as a KEY on 78 % of premise exchanges but its value is `NaN` — a
+destroyed parameter, not a preserved one. (Watch for this: `nan is not None` is
+True, so an `is not None` check reports these as present. It did, and the first
+reading of this survey was wrong because of it.)
+
+And the loss is **not confined to exchanges premise rewrote**. `clay brick
+production` — which an IAM scenario has no reason to touch — is `ut=2,
+scale=0.051` in base ecoinvent and `ut=0, scale=nan` in the premise copy. So
+this is a property of how premise WRITES the database, not of which exchanges
+it modifies. It is upstream behaviour; MApper only reads what premise wrote.
+
+**Why this is worse than the ~12 % undefined-exchange caveat already
+surfaced:** that caveat makes a reported spread a LOWER BOUND, and the UI says
+so. Here the background contributes essentially NOTHING, so a prospective run
+returns a near-zero spread that reads as *confidence* rather than as *missing
+data*. A tight interval is the most persuasive possible presentation of an
+absence.
+
+**TRIGGER — this is testable, not asserted.** If a background selector is ever
+added to multi-item Archetypes, or a "Run uncertainty" button to the
+single-product Prospective panel, then a prospective Monte Carlo becomes
+reachable from the UI and **this question must be settled before that ships**.
+The check is the table above: re-run the exchange survey against the premise
+database of the day. If `scale` is still 0 % usable, either the run must refuse,
+or every prospective MC result must say in the UI that its background spread is
+absent rather than small. Do not ship the selector and the caveat separately.
+
+### `compute()`'s `computeDatabase` parameter is DEAD, deliberately kept
+
+`useMultiProductLCAStore.compute` declares `computeDatabase?: string | null`
+and threads it to `compute_database`, and **no caller passes it**. It is dead.
+
+It stays. Deleting it removes the only trace in the code that this path was
+expected to carry a background, and that expectation is exactly what the
+trigger above is about. A future background selector wires into this parameter;
+finding it already present, with this note, is the difference between
+implementing a feature and rediscovering a design.
+
+#### What NOT to do
+
+- **Don't add a background selector to multi-item Archetypes without settling
+  the premise-uncertainty question.** The selector is the trigger.
+- **Don't read `computeDatabase: null` on a Monte Carlo handoff as a bug.** It
+  matches what the comparison computed against on every path that has one.
+- **Don't delete the dead parameter** to satisfy a linter.
+- **Don't test for a NaN scale with `is not None`.** `nan is not None` is True,
+  and it turned "0 % usable" into "78 % present" on the first pass here.
+
+## The premise superstructure fallback is recorded, not gated
+
+The audit asked for the fallback to be **opt-in** rather than merely visible,
+on the principle that *"a run that silently computes against a different
+database than requested is a different result"*. The principle is sound. This
+instance does not match it, and the reasoning is written as a chain someone can
+re-check rather than a conclusion to take on trust:
+
+1. **The fallback fires only in the WRITE step.** `ndb.update()` — the
+   expensive, methodologically load-bearing transformation — has already run
+   and produced the per-year databases. Superstructure writes them as one DB
+   plus an SDF; the fallback writes *the same content* as N per-year DBs.
+2. **The result is honestly labelled.** It returns `mode="separate"` with the
+   separate names. Nothing downstream is told it got a superstructure.
+3. **`resolve_prospective_dbs` does `int(entry.get("year"))`.** Superstructure
+   entries carry `year=None`, so they are rejected — **superstructure
+   databases are not computable in MApper at all**. The vintage picker lists
+   them disabled for the same reason.
+4. **Therefore** the fallback yields the only format the compute pipeline can
+   use, and an opt-in flag would ask the user to opt in to a *usable* result
+   instead of an unusable one.
+
+**Step 3 is the load-bearing link, and it is tested directly.** If
+`resolve_prospective_dbs` ever learns to read a superstructure database with a
+year slice — an SDF year-slice activation engine, say — then step 4 no longer
+follows and the opt-in question is live again.
+`test_the_reasoning_still_holds` and `test_a_superstructure_entry_is_actually_rejected`
+both fail at that moment, so the trigger fires on its own rather than waiting
+for someone to reconstruct the argument.
+
+**What did change.** `fallback_warning` reached the task and the WS `done`
+frame but nothing durable, so a dismissed toast left no trace. The registry
+entry now carries `fallback: true`, and the pLCA database list shows a
+`From superstructure fallback` sub-label in the slot that already renders
+`Superstructure · N scenarios`.
+
+**The badge is not a quality signal**, and its tooltip says so: the content is
+identical, the fallback only changes how it was written, and per-year is the
+form Impact Assessment can actually compute against.
+
+#### What NOT to do
+
+- **Don't add an opt-in flag without re-checking step 3.** If it still holds,
+  the flag gates the only usable output.
+- **Don't read the badge as "these databases are worse".** They are the same
+  databases, written differently.
+- **Don't set `fallback` on the superstructure branch.** A superstructure that
+  SUCCEEDED is not a fallback; a test pins that the branch never sets it.
+- **Don't default it to anything but `False`.** Every entry written before this
+  — all 36 in MAp-test — has no key and must load unchanged.
+## A weak, honest fingerprint of the databases and LCIA methods
+
+`compute_database` is a mutable string, premise regenerates databases **in
+place**, and the Method Library installs and uninstalls methods at runtime — so
+a result named things that could point at different content than they did at
+compute time, and nothing detected it.
+
+**A full checksum is not viable, and the number is why: the MAp-test project
+directory is 40.85 GB.** Even one database means materialising every exchange —
+the `Database.load()` cost the multi-year performance notes already warn about.
+
+**A weak fingerprint that detects the common case beats a strong one nobody can
+compute.** Brightway already tracks everything needed, and reading it is free —
+**0.02 ms for all 38 databases**, 0.010 ms for 16 EF methods. Both are dict
+reads on metadata bw2 holds anyway; nothing is loaded.
+
+| field | detects | misses |
+|---|---|---|
+| `modified` | **regeneration** — premise rewriting in place | **tampering**; it moves only when bw2 saves |
+| `number` | a database swapped for a different one | any count-preserving edit |
+| `num_cfs` | a method replaced by one with different coverage | a **count-preserving CF edit** |
+| `abbreviation` | uninstall + reinstall (the Method Library case) | in-place factor edits |
+
+**`abbreviation` is Brightway's persisted registration id, NOT a content
+hash.** The trailing hex was checked against `md5(str(name))` and
+`md5(" ".join(name))` — neither matches — and it is not documented as
+content-derived, so it identifies a **registration**, not content. A test fails
+if the module ever describes it otherwise.
+
+**The limits note travels with the warning.** `LIMITS_NOTE` is appended to the
+export's reproducibility block, because a reader of an exported file cannot see
+the docstring, and *absence of a warning is not evidence the data is
+unchanged*.
+
+#### What NOT to do
+
+- **Don't describe any of these as integrity or content verification.** They
+  detect the ordinary ways a database or method moves under a stored result and
+  nothing more. Overstating converts "we do not know" into a false assurance,
+  which is worse than having no fingerprint.
+- **Don't reach for a real checksum without measuring.** 40.85 GB.
+- **Don't report an uninstalled name as a mismatch.** Absent from *this*
+  project is not the same as changed — it is skipped at fingerprint time and
+  reported as "not installed any more" only when it was present at compute
+  time.
+- **Don't let fingerprinting fail a compute.** Every read is guarded; an
+  unreadable name is simply absent.
 
 ## Two content hashes: the authored BOM, and the parameter table
 
@@ -10352,6 +10912,122 @@ annotation, and one row per (pair × indicator) does not fit beside one row per
   paired item i's GSD² must match a single-item run at the same seed.
 - **Don't claim paired marginals are bit-identical for every item.** Item 0 is;
   later items agree to solver tolerance because of the CGS warm start.
+
+
+## `mapper-tailpipe` — the tank-to-wheel half ecoinvent does not isolate
+
+A fleet whose ICEV use-phase rows link only `market for petrol, low-sulfur`
+carries **well-to-tank supply and no combustion at all**. The single largest
+CO2 term in an ICEV lifecycle is simply absent, and nothing warns: the row
+resolves, validates and computes, it just describes refining rather than
+driving. On WP5 the missing term is ~2,275 kg CO2 per vehicle-year.
+
+**ecoinvent 3.10 cannot be linked to fix this.** Searched and confirmed:
+`operation, passenger car` / `van` / `lorry` all return **0**, and of the
+**151** non-market `EURO`-labelled datasets, **zero** lack a vehicle or road
+technosphere input. The tailpipe flows exist only inside
+`transport, passenger car, ...` leaves, which bundle the fuel, the vehicle
+(`market for passenger car`), `market for road` and road maintenance. A BOM
+that already models the vehicle and the fuel separately cannot link one
+without double-counting two of the three. (Note the naming: it is `EURO 5`
+with a SPACE — searching `euro-` returns 0 and reads as "none exist".)
+
+So `scripts/build_tailpipe_db.py` derives the missing half from those same
+datasets and writes two activities into a **`mapper-tailpipe`** database:
+
+| | per kg fuel | GWP100 | WTT sibling | TTW share |
+|---|---|---|---|---|
+| `petrol combustion, EURO 5` | 3.18 kg CO2 | **3.2236** | 1.0928 | 74.7 % |
+| `diesel combustion, EURO 5` | 3.14 kg CO2 | **3.1549** | 1.0408 | 75.2 % |
+
+Each holds ONLY the eight tailpipe biosphere exchanges plus the mandatory
+`type='production'` self-exchange — **no fuel input**, so it sits ALONGSIDE the
+existing supply row and double-counts nothing.
+
+**The factors are DERIVED at build time, never pasted.** The script reads
+`transport, passenger car, small size, {petrol,diesel}, EURO 5 [RER]` and
+divides each biosphere amount by that dataset's own fuel input, so the
+derivation is reproducible and re-runnable against a future ecoinvent. The
+source activity keys and the ecoinvent database name are written into each
+activity's `comment`, which is what a reader of a result — who has no access to
+the script — actually sees. **Round-trip closure: the derived activity times
+the fuel input reproduces the source leaf's own direct biosphere GWP to
+0.0003 %** (0.162296 vs 0.162297 kg CO2-eq/km), the residual being the 35
+flows not carried, which are negligible for GWP100.
+
+**Codes are deterministic md5, and that is load-bearing.** A BOM row links by
+`(database, code)`. `uuid4()` would dangle every link on rebuild — the exact
+failure that orphaned WP5's cohort mapping on 2026-08-04. A recipient who runs
+the script gets byte-identical codes and existing links keep resolving.
+
+**Uncertainty is inherited, not invented.** All 16 exchanges carry ecoinvent's
+own lognormal `scale` and `pedigree` from the source exchange, so Monte Carlo
+does not treat the model's dominant CO2 term as fixed. Inheriting rather than
+flattening preserves real signal: diesel NOx and PM2.5 come through at
+**GSD² 1.2127** where the other fourteen are **1.5015**. The scale is carried
+across the renormalisation unchanged, which is CONSERVATIVE rather than exact —
+the source dispersion covers both fuel-per-km and emissions-per-fuel, and
+dividing the fuel out arguably removes the first — and overstating a spread is
+the defensible direction. A `FALLBACK_PEDIGREE` exists for a future ecoinvent
+that ships an exchange without uncertainty; it is currently unreached, and the
+build records per exchange which path it took.
+
+**Why the three biosphere blockers do not bite.** Linking `biosphere3` directly
+fails three ways; a custom activity fails none:
+
+- **32-char code rule** (`bom_validator._EXPECTED_CODE_LENGTH`) rejects
+  biosphere3's 36-char hyphenated UUIDs. Our code is ours to mint.
+- **The four biosphere refusals** (`lca.py:169`, `:248`, `:1188`, and
+  `technosphere_only` in `bw2_wrapper.py:387`) all test the literal substring
+  `"biosphere"` in the DATABASE NAME. `mapper-tailpipe` trips none — which is
+  also why the name must never contain that substring.
+- **Demand-vector key**: a raw flow raises `OutsideTechnosphere: Can't find key
+  ... in product dictionary`. A `type='process'` activity with a production
+  exchange is in the product dictionary by construction. (ecoinvent itself
+  contains 400+ activities with zero technosphere inputs and only biosphere
+  exchanges — the identical shape.)
+
+Verified end-to-end: a BOM row linking `mapper-tailpipe` validates with
+**0 errors, 0 warnings** beside its ecoinvent supply row.
+
+**Portability.** `project_storage._GENERATED_DATABASES` maps the database to
+its build script, and `database_inventory` reports `installed_generated` +
+`regenerate_with` separately from `installed_premise`. The distinction is the
+one a recipient cares about: a premise database must be regenerated by running
+premise against an IAM scenario, whereas this ships with a script, so "you are
+missing this" arrives with the command that fixes it. The pointer is emitted
+whenever the project **links** to the database, even if it is not installed on
+the exporting machine — that is precisely the case that matters.
+
+### What NOT to do
+
+- **Don't link a `transport, passenger car, ... EURO n` dataset to add
+  combustion.** It bundles the vehicle and the road; a BOM that models those
+  separately would count them twice. That bundling is the whole reason this
+  database exists.
+- **Don't paste the factors as a table.** They are derived from ecoinvent at
+  build time so they track the installed version. A transcribed table is the
+  `remaining_gt_from_2025` mistake in a new place.
+- **Don't mint codes with `uuid4()`, and don't change `stable_code`'s input
+  string.** Either dangles every BOM link into the database on the next
+  rebuild.
+- **Don't rename the database to anything containing `biosphere`.** Four
+  separate refusals filter on that substring; the activity would become
+  unlinkable and invisible in the picker at once.
+- **Don't drop the `type='production'` self-exchange.** Without it the activity
+  never enters the product dictionary and every demand raises
+  `OutsideTechnosphere`.
+- **Don't leave the exchanges unscored, and don't flatten them to one stated
+  pedigree.** Inheriting preserves ecoinvent's per-flow distinctions (diesel
+  NOx and PM2.5 are genuinely tighter); a single blanket score would erase
+  them, and an unscored dominant CO2 term is the failure this database was
+  built to avoid.
+- **Don't add a generated database without adding it to
+  `_GENERATED_DATABASES`.** It would be reported under `installed_base`,
+  telling a recipient they need an ecoinvent licence for something they could
+  rebuild in one command.
+- **Relinking WP5's use-phase rows is a separate data decision.** This database
+  is reference data; no BOM is touched by building it.
 
 
 ## Future Extension: Product Systems (deferred to v1.1)

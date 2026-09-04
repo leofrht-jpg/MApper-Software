@@ -8,7 +8,7 @@
  */
 
 import { recordComputation } from '../stores/carbonStore'
-import { buildExportFilename } from '../utils/exportFilename'
+import { buildExportFilename, buildTemplateFilename } from '../utils/exportFilename'
 
 // Backend origin. Standalone web dev defaults to localhost:8000 (unchanged —
 // `npm run dev` sets no env). The packaged desktop (Tauri) build sets
@@ -1733,7 +1733,7 @@ export async function getMFAResults(id: string): Promise<SimulationResult> {
 }
 
 export async function downloadStockTemplate(id: string, name: string): Promise<void> {
-  return downloadCSV(`/dsm/systems/${id}/templates/stock`, `stock_template_${name}.xlsx`)
+  return downloadCSV(`/dsm/systems/${id}/templates/stock`, buildTemplateFilename(name, 'stock', { fallback: 'system' }))
 }
 
 export async function exportMFAResults(systemId: string): Promise<void> {
@@ -1807,7 +1807,7 @@ export async function importDSMSystem(file: File): Promise<SystemDefinition> {
 }
 
 export async function downloadInflowTemplate(id: string, name: string): Promise<void> {
-  return downloadCSV(`/dsm/systems/${id}/templates/inflows`, `inflow_template_${name}.xlsx`)
+  return downloadCSV(`/dsm/systems/${id}/templates/inflows`, buildTemplateFilename(name, 'inflows', { fallback: 'system' }))
 }
 
 export async function uploadStockTargets(
@@ -1827,7 +1827,7 @@ export async function uploadOutflows(
 }
 
 export async function downloadOutflowTemplate(id: string, name: string): Promise<void> {
-  return downloadCSV(`/dsm/systems/${id}/templates/outflows`, `outflow_template_${name}.xlsx`)
+  return downloadCSV(`/dsm/systems/${id}/templates/outflows`, buildTemplateFilename(name, 'outflows', { fallback: 'system' }))
 }
 
 export async function uploadStockAggregate(
@@ -2002,11 +2002,11 @@ export async function simulateScenarios(
 }
 
 export async function downloadStockTargetsTemplate(id: string, name: string): Promise<void> {
-  return downloadCSV(`/dsm/systems/${id}/templates/stock-targets`, `stock_target_template_${name}.xlsx`)
+  return downloadCSV(`/dsm/systems/${id}/templates/stock-targets`, buildTemplateFilename(name, 'stock_targets', { fallback: 'system' }))
 }
 
 export async function downloadStockAggregateTemplate(id: string, name: string): Promise<void> {
-  return downloadCSV(`/dsm/systems/${id}/templates/stock-aggregate`, `stock_aggregate_template_${name}.xlsx`)
+  return downloadCSV(`/dsm/systems/${id}/templates/stock-aggregate`, buildTemplateFilename(name, 'stock_aggregate', { fallback: 'system' }))
 }
 
 // ── Subsystem endpoints ──────────────────────────────────────────────────────
@@ -2084,6 +2084,7 @@ export type DependencyRuleImportResult =
 export async function downloadDependencyRulesTemplate(
   systemId: string,
   subsystemId: string,
+  subsystemName = '',
 ): Promise<void> {
   const res = await fetch(
     `${API_BASE}/dsm/systems/${systemId}/dependency-rules/template?subsystem_id=${encodeURIComponent(subsystemId)}`,
@@ -2094,7 +2095,9 @@ export async function downloadDependencyRulesTemplate(
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
-  a.download = 'dependency_rules_template.xlsx'
+  a.download = buildTemplateFilename(subsystemName, 'dependency_rules', {
+    fallback: 'subsystem',
+  })
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -2185,11 +2188,15 @@ export async function clearSubsystemInitialStock(
 export async function downloadSubsystemStockTemplate(
   systemId: string,
   subsystemId: string,
+  subsystemName = '',
 ): Promise<void> {
-  // Static, human-readable filename — no UUID / system_id / timestamp.
+  // Human-readable, entity-first — `{Subsystem}_initial_stock_template.xlsx`,
+  // the same shape a SYSTEM template gets. `downloadCSV` sets `a.download`
+  // unconditionally, so this name wins over the server's Content-Disposition
+  // and has to be built the same way.
   return downloadCSV(
     `/dsm/systems/${systemId}/subsystems/${subsystemId}/stock/template`,
-    'initial_stock_template.xlsx',
+    buildTemplateFilename(subsystemName, 'initial_stock', { fallback: 'subsystem' }),
   )
 }
 
@@ -2231,7 +2238,7 @@ export async function downloadSubsystemManualFlowTemplate(
 ): Promise<void> {
   return downloadCSV(
     `/dsm/systems/${systemId}/subsystems/${subsystemId}/manual-${kind}/template`,
-    `${kind}_template_${name}.csv`,
+    buildTemplateFilename(name, `manual_${kind}`, { suffix: 'csv', fallback: 'subsystem' }),
   )
 }
 
@@ -2654,7 +2661,8 @@ export type SubsystemCohortMappingImportResult =
   | { ok: false; errors: DependencyRuleImportError[] }
 
 /** Native download of the subsystem's populated cohort-mapping Excel template.
- *  Filename is static + human-readable: `cohort_mapping_<subsystem>_template.xlsx`. */
+ *  Filename follows the shared convention: `{Subsystem}_cohort_mappings_template.xlsx`
+ *  — identical in shape to the system-level one. */
 export async function downloadSubsystemCohortMappingTemplate(
   systemId: string,
   subsystemId: string,
@@ -2667,10 +2675,11 @@ export async function downloadSubsystemCohortMappingTemplate(
   if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
-  const safe = subsystemName.trim().replace(/\s+/g, '_').toLowerCase()
   const a = document.createElement('a')
   a.href = url
-  a.download = `cohort_mapping_${safe}_template.xlsx`
+  a.download = buildTemplateFilename(subsystemName, 'cohort_mappings', {
+    fallback: 'subsystem',
+  })
   document.body.appendChild(a)
   a.click()
   document.body.removeChild(a)
@@ -2910,6 +2919,15 @@ export interface ProspectiveDB {
   mode: PLCAMode
   sdf_path?: string | null
   created_at: string
+  /**
+   * True when these per-year databases came from the superstructure FALLBACK.
+   *
+   * Not a quality signal — the content is identical either way, because the
+   * fallback fires only in the write step, after premise has already produced
+   * the transformed databases. It is a durable record, because the generation
+   * warning is transient and the registry is what someone reads months later.
+   */
+  fallback?: boolean
 }
 
 export interface PLCAGenerateRequest {

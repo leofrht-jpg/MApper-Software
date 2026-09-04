@@ -459,21 +459,37 @@ def test_splicing_happens_upstream_of_every_flatten_cache():
             f"{fn.__name__} splices lazily; its cache key would be stale")
 
 
-def test_a_reference_survives_a_MERGE_reimport_but_not_REPLACE():
-    """Merge matches archetypes by NAME and preserves the id, so a reference by
-    archetype id still resolves. Replace mints a fresh uuid4 and orphans it --
-    which is now loud rather than silent, but still a break.
+def test_a_reference_survives_a_REIMPORT_in_BOTH_modes():
+    """Superseded: replace used to orphan the reference, and no longer does.
 
-    Node ids are re-minted by BOTH modes (``assign_node_ids`` only fills
-    missing ones and the parser builds nodes without them), which is why a
+    This test previously asserted the OPPOSITE -- that a reference survives
+    merge "but not REPLACE" -- and did it by grepping the source for
+    ``name_to_existing.get(name) if mode == "merge" else None``. It encoded the
+    bug as the contract, which is why the bug outlived two orphanings of a real
+    project.
+
+    Both modes now match by NAME and preserve the archetype id; replace's job is
+    deleting archetypes ABSENT from the workbook, nothing more. Node ids are
+    still re-minted by both modes (``assign_node_ids`` only fills missing ones,
+    and the parser builds nodes without them), which remains the reason a
     reference is by archetype id and never a node id.
+
+    The behavioural coverage lives in ``test_import_preserves_archetype_ids.py``
+    -- all three surfaces that carry an archetype id (system cohort mapping,
+    subsystem cohort mapping, and composition). Composition is checked there in
+    both modes, because ``_upsert`` also never carried ``includes`` at all, so
+    even a preserved id came back with an empty list.
     """
     import inspect
 
     from mapper.api import bom as bom_mod
 
     src = inspect.getsource(bom_mod)
-    i = src.index("name_to_existing.get(name) if mode == \"merge\" else None")
-    window = src[i:i + 900]
-    assert "id=existing.id" in window, "merge no longer preserves the archetype id"
-    assert "uuid.uuid4()" in window, "replace no longer mints a new id"
+    assert 'name_to_existing.get(name) if mode == "merge" else None' not in src, (
+        "replace mode is matching by name again only in merge -- it re-mints "
+        "ids and orphans every archetype-id reference in the project"
+    )
+    assert "includes=existing.includes" in src, (
+        "_upsert no longer carries composition; the workbook cannot express it, "
+        "so dropping it destroys composition on every import"
+    )

@@ -388,6 +388,10 @@ class ArchetypeLCACalculateResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 # ── Monte Carlo uncertainty propagation (single-product) ─────────────────────
@@ -522,6 +526,10 @@ class MonteCarloResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 class MonteCarloStartResponse(BaseModel):
@@ -701,6 +709,10 @@ class MonteCarloMultiResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 class MonteCarloMultiExportRequest(BaseModel):
@@ -777,6 +789,10 @@ class ArchetypeTrajectoryResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 # ── Multi-Product LCA Comparison (Patch 4AG.1) ─────────────────────────────────
@@ -897,6 +913,10 @@ class MultiProductLCAResult(BaseModel):
     #: one, so a change is ATTRIBUTABLE: the export names which of them moved.
     bom_hashes: dict[str, str] = {}
     parameter_table_hash: str | None = None
+    #: Weak fingerprint of the databases + LCIA methods this run used, taken
+    #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
+    #: does and does NOT detect -- it is not evidence of integrity.
+    data_fingerprint: dict | None = None
 
 
 class StageAmountsMeta(BaseModel):
@@ -977,6 +997,10 @@ class ContributionAnalysisRequest(BaseModel):
     archetype_id: str | None = None
     scope: str = "all"  # "inflows" | "stock" | "outflows" | "all"
     stage_amounts: dict[str, float] | None = None
+    # Which parameter sensitivity case to resolve the BOM against. None and
+    # "Base" both mean Base. It is part of the cache key, because it changes
+    # the resolved quantities and therefore the result -- not just its label.
+    parameter_scenario: str | None = None
     year: int | None = None  # informational; part of cache key
     # Database to compute *against*. When set and different from the activity's
     # source database, keys are translated (db, code) → (compute_database, code)
@@ -1058,6 +1082,9 @@ class ContributionAnalysisResult(BaseModel):
     # specify one — e.g. archetype targets that compute through whichever
     # databases the BOM activities point to).
     compute_database: str | None = None
+    # Echoed back so a stored result records WHICH sensitivity case produced
+    # it. A contribution result that cannot say that is not reproducible.
+    parameter_scenario: str | None = None
     top_technosphere: ContributionsResponse
     top_biosphere: list[BiosphereContributionItem]
     biosphere_rest_amount: float = 0.0

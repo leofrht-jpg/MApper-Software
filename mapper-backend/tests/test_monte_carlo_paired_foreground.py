@@ -286,7 +286,7 @@ pytestmark_numeric = pytest.mark.skipif(not _ok, reason=_why)
 
 
 @pytest.fixture()
-def live():
+def live(live_storage):
     """Battery Circularity's A / A0 with ONE parameter scored.
 
     Their rows are 100% expressions, so this is the only way they carry any

@@ -267,7 +267,7 @@ def _bw2_project(name: str):
 
 
 @pytest.mark.parametrize("project", ["MAp-test", "Battery Circularity"])
-def test_export_then_merge_import_moves_NEITHER_hash(project, monkeypatch):
+def test_export_then_merge_import_moves_NEITHER_hash(project, monkeypatch, live_storage):
     """The cry-wolf case, on real data."""
     import openpyxl
 

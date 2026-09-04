@@ -36,7 +36,7 @@ jobs:
       # probably an artefact of a half-materialised node_modules rather than Node
       # itself (25.9.0 runs the suite fine on a warm tree), but CI pins the
       # version that has never been in question.
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm

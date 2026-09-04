@@ -434,7 +434,32 @@ BUILTIN_PRINCIPLES: list[PrincipleDefinition] = [
 # national burden) and Layer 3 (sub-sector share of the sector) are example
 # placeholders — users should duplicate the preset and edit for their case.
 _DEFAULT_LAYER2_AR = 0.25
+# Each source sits beside the value it describes, because the previous shape --
+# one string in the data file attached to BOTH layers -- described their
+# PRODUCT (0.25 x 0.60 = 0.15) and therefore neither of them. A reader of the
+# exported Sharing Data sheet saw "passenger cars ~60% x transport ~25% = 0.15"
+# next to a factor of 0.25.
+#
+# Neither string names a citation, because neither value has one: both are
+# round estimates, flagged `provisional` in sharing_data.json, and no dataset
+# or data year is recorded for either. Danish EPA is named as where to REFINE
+# them, never as where they came from. Do not add a citation here without
+# also replacing the value it would be citing.
+#
+# No numerals: the value is two lines away in `data=`, and a number repeated in
+# prose is a number that goes stale silently -- which is the other half of what
+# went wrong here.
+_DEFAULT_LAYER2_SOURCE = (
+    "Transport's share of Danish national GHG emissions. Round estimate; no "
+    "dataset or data year is recorded for it. Refine against a Danish EPA "
+    "(Miljostyrelsen) sectoral inventory before publication."
+)
 _DEFAULT_LAYER3_AR = 0.60
+_DEFAULT_LAYER3_SOURCE = (
+    "Passenger cars' share of Danish transport GHG emissions. Round estimate; "
+    "no dataset or data year is recorded for it. Refine against a Danish EPA "
+    "(Miljostyrelsen) sectoral inventory before publication."
+)
 _DEFAULT_BASE_YEAR = 2025
 # The ID is a stable identifier, NOT a citation, and it is deliberately left
 # alone even though the display name no longer cites a paper. Saved
@@ -484,10 +509,11 @@ def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
     """Build the read-only built-in sharing preset (3-layer Multi-D chain)."""
     data = sharing or load_sharing_data()
     # Layers 2 and 3 are the two factors of `layer2.sector_share`: 0.25 x 0.60
-    # = 0.15. The one source string in the data file explains both halves
-    # ("transport ~25% of national total", "passenger cars ~60% of transport"),
-    # so it is attached to both rather than to whichever one it names first.
-    layer23_source = str(data.get("layer2", {}).get("source", "")).strip()
+    # = 0.15. Each gets its OWN source (see _DEFAULT_LAYER{2,3}_SOURCE); the
+    # combined string in `layer2.source` describes the product, which is right
+    # for the legacy 2-layer MultiDConfig -- where 0.15 really is one factor --
+    # and wrong for either layer of the split chain. It stays where it is
+    # correct rather than being reused where it is not.
 
     layer1 = DownscalingLayer(
         layer_number=1,
@@ -504,7 +530,7 @@ def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
         fixed_principle="AR",
         description="Grandfathering: sector share of the national environmental burden.",
         data={"AR": {_DEFAULT_BASE_YEAR: (_DEFAULT_LAYER2_AR, 1.0)}},
-        sources={"AR": layer23_source} if layer23_source else {},
+        sources={"AR": _DEFAULT_LAYER2_SOURCE},
     )
     layer3 = DownscalingLayer(
         layer_number=3,
@@ -513,7 +539,7 @@ def build_default_sharing_preset(sharing: dict | None = None) -> SharingPreset:
         fixed_principle="AR",
         description="Grandfathering: sub-sector share of the sector.",
         data={"AR": {_DEFAULT_BASE_YEAR: (_DEFAULT_LAYER3_AR, 1.0)}},
-        sources={"AR": layer23_source} if layer23_source else {},
+        sources={"AR": _DEFAULT_LAYER3_SOURCE},
     )
     assignments = [
         CategoryAssignment(pb_id=pb_id, principle_id=principle, justification=just)

@@ -8,6 +8,7 @@
  */
 
 import { useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Download, Upload } from 'lucide-react'
 import { Button } from '../ui/Button'
 import {
@@ -119,7 +120,7 @@ export function ConfigWorkbookButtons({
         <Upload size={14} /> Import settings
       </Button>
 
-      {errors.length > 0 && (
+      {errors.length > 0 && createPortal(
         <div
           data-testid="aesa-config-import-errors"
           style={{
@@ -161,9 +162,11 @@ export function ConfigWorkbookButtons({
             </div>
           </div>
         </div>
+        ,
+        document.body,
       )}
 
-      {pending && (
+      {pending && createPortal(
         <div
           data-testid="aesa-config-import-confirm"
           style={{
@@ -204,6 +207,8 @@ export function ConfigWorkbookButtons({
             </div>
           </div>
         </div>
+        ,
+        document.body,
       )}
     </>
   )

@@ -7690,6 +7690,27 @@ with no overrides — not a random shuffle.
   project-scoped key will silently miss. The fixture in
   `tests/cohortMappingColorOverride.test.tsx` is the template.
 
+### Palettes are PER SYSTEM, and MAp-test's two disagree on one archetype
+
+`row_colors` lives on each system's `cohort_mappings.json`, so two systems in
+the same project hold independent palettes. In MAp-test they were assigned
+separately and **agree on 16 of 17 archetypes, differing on ICEV-Petrol**:
+
+| | Car Fleet | WP5 |
+|---|---|---|
+| ICEV-Petrol (all three sizes) | `#ea580c` | `#ef4444` |
+| the other 16 archetypes | identical | identical |
+
+Harmless inside either system — each is internally consistent, one colour per
+archetype across all its sizes. But **a figure drawing on both would render that
+archetype in two colours**, which reads as a data problem rather than a palette
+one and is the sort of thing that costs an afternoon.
+
+Not "fixed": neither palette is authoritative, and silently rewriting one
+system's colours to match the other would change published figures for whichever
+system lost. If a cross-system figure is ever needed, harmonise deliberately and
+say which way it went.
+
 ## Two-layer color overrides — per-dim + per-row (Patch 4AK)
 
 Patch 4AK adds a **per-row coloring layer that COEXISTS with** Patch 4AJ's

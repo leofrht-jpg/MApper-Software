@@ -172,6 +172,59 @@ def _proj_dsm_lca_results(project: str | None = None) -> dict[str, list[DSMLCARe
     return _dsm_lca_results.setdefault(p, {})
 
 
+def _invalidate_contribution_cache(arc_ids: set[str]) -> None:
+    """Drop cached contribution results for these archetypes.
+
+    `_contribution_cache` (mapper/api/lca.py) is keyed by
+    ``("archetype", archetype_id, …)`` and is never cleared anywhere. An
+    archetype id is STABLE across every edit — the BOM editor, a relink, a
+    learning-rate application, and (since ids are preserved by name) an import.
+    So without this, a result computed from the previous BOM is served for the
+    new one, with nothing on screen saying so.
+
+    Best-effort: cache hygiene must never fail the write it accompanies.
+    """
+    if not arc_ids:
+        return
+    try:
+        from mapper.api.lca import _contribution_cache
+
+        for key in [
+            k
+            for k in _contribution_cache
+            if isinstance(k, tuple)
+            and k
+            and isinstance(k[0], tuple)
+            and len(k[0]) > 1
+            and k[0][0] == "archetype"
+            and k[0][1] in arc_ids
+        ]:
+            _contribution_cache.pop(key, None)
+    except Exception:  # pragma: no cover — never fail a write over a cache
+        pass
+
+
+def _persist_archetype(project: str, arc: Archetype) -> None:
+    """The ONE place an archetype is written. Saves, then evicts its stale
+    contribution results.
+
+    Every mutation route funnels through here so no future one can add a way to
+    change a BOM while its cached contribution survives — which is what all nine
+    of them did before.
+    """
+    dsm_storage.save_archetype(project, arc)
+    if arc.id:
+        _invalidate_contribution_cache({arc.id})
+
+
+def _forget_archetype(project: str, arc_id: str) -> None:
+    """Delete the file AND the cached results. A deleted archetype's entries are
+    unreachable rather than wrong, but leaving them is a slow leak and they
+    become wrong if the id is ever reused."""
+    dsm_storage.delete_archetype_file(project, arc_id)
+    _invalidate_contribution_cache({arc_id})
+
+
 def _assert_includes_resolvable(arc: Archetype, project: str | None = None) -> None:
     """Save-time gate for archetype composition.
 
@@ -226,7 +279,7 @@ async def create_archetype(body: ArchetypeCreate) -> Archetype:
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
-    dsm_storage.save_archetype(project, arc)
+    _persist_archetype(project, arc)
     return arc
 
 
@@ -301,7 +354,7 @@ async def update_archetype(arc_id: str, body: ArchetypeCreate) -> Archetype:
     project = _current_project()
     with _lock:
         _proj_archetypes(project)[arc_id] = updated
-    dsm_storage.save_archetype(project, updated)
+    _persist_archetype(project, updated)
     return updated
 
 
@@ -319,7 +372,7 @@ async def delete_archetype(arc_id: str) -> dict[str, bool]:
             mapping.mappings = [m for m in mapping.mappings if m.archetype_id != arc_id]
             mappings[sys_id] = mapping
             dsm_storage.save_cohort_mappings(project, sys_id, mapping)
-    dsm_storage.delete_archetype_file(project, arc_id)
+    _forget_archetype(project, arc_id)
     return {"deleted": True}
 
 
@@ -384,7 +437,7 @@ async def rename_folder(body: FolderRenameBody) -> dict:
             if arc.folder == old or arc.folder.startswith(old + "/"):
                 arc.folder = new + arc.folder[len(old):]
                 arc.updated_at = _now_iso()
-                dsm_storage.save_archetype(project, arc)
+                _persist_archetype(project, arc)
                 renamed += 1
         # Update persisted empty-folder list.
         folders = set(dsm_storage.load_folders(project))
@@ -416,7 +469,7 @@ async def delete_folder(body: FolderDeleteBody) -> dict:
             for arc in affected:
                 if arc.id:
                     archetypes.pop(arc.id, None)
-                    dsm_storage.delete_archetype_file(project, arc.id)
+                    _forget_archetype(project, arc.id)
                     for sys_id, mapping in list(mappings.items()):
                         before = len(mapping.mappings)
                         mapping.mappings = [m for m in mapping.mappings if m.archetype_id != arc.id]
@@ -428,7 +481,7 @@ async def delete_folder(body: FolderDeleteBody) -> dict:
             for arc in affected:
                 arc.folder = None
                 arc.updated_at = _now_iso()
-                dsm_storage.save_archetype(project, arc)
+                _persist_archetype(project, arc)
                 moved_arcs += 1
         # Remove the folder and any descendants from the persisted list.
         folders = set(dsm_storage.load_folders(project))
@@ -444,7 +497,7 @@ async def move_archetype(body: MoveArchetypeBody) -> Archetype:
     arc.folder = new_folder
     arc.updated_at = _now_iso()
     project = _current_project()
-    dsm_storage.save_archetype(project, arc)
+    _persist_archetype(project, arc)
     return arc
 
 
@@ -461,7 +514,7 @@ async def add_bom_node(arc_id: str, body: BOMNodeCreate) -> Archetype:
             detail=f"Parent node '{body.parent_node_id}' not found in this archetype",
         )
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -543,7 +596,7 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
                 )
             node.evolution = body.evolution
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return node
 
 
@@ -554,7 +607,7 @@ async def delete_bom_node(arc_id: str, node_id: str) -> Archetype:
     if not ok:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -723,7 +776,7 @@ async def apply_learning_rate(
     if touched == 0:
         raise HTTPException(status_code=400, detail="No materials matched the given node_ids.")
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -759,7 +812,7 @@ async def apply_rebound_effect(
     if touched == 0:
         raise HTTPException(status_code=400, detail="No materials matched the given node_ids.")
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return arc
 
 
@@ -783,7 +836,7 @@ async def apply_milestones(arc_id: str, body: ApplyMilestonesRequest) -> BOMNode
         milestones=sorted(body.milestones, key=lambda m: m.year),
     )
     arc.updated_at = _now_iso()
-    dsm_storage.save_archetype(_current_project(), arc)
+    _persist_archetype(_current_project(), arc)
     return node
 
 
@@ -3635,7 +3688,7 @@ async def import_archetype(
             _proj_archetypes(project).clear()
         for arc_id in existing_by_id:
             try:
-                dsm_storage.delete_archetype_file(project, arc_id)
+                _forget_archetype(project, arc_id)
             except Exception:  # pragma: no cover — filesystem best-effort
                 pass
 
@@ -3683,7 +3736,7 @@ async def import_archetype(
             action = "created"
         with _lock:
             _proj_archetypes(project)[arc.id] = arc  # type: ignore[index]
-        dsm_storage.save_archetype(project, arc)
+        _persist_archetype(project, arc)
         return arc, action
 
     # Per-archetype validation rows accumulated across the workbook so we can
@@ -3757,7 +3810,7 @@ async def import_archetype(
         )
         _apply_validation_to_archetype(arc, report)
         # Persist the updated archetype JSON (now with per-row status + report).
-        dsm_storage.save_archetype(project, arc)
+        _persist_archetype(project, arc)
 
     # Auto-register any folders that were introduced.
     existing_folders = set(dsm_storage.load_folders(project))
@@ -3800,33 +3853,8 @@ async def import_archetype(
         else:
             created_count += 1
 
-    # Preserving an id has a consequence worth stating: a cache keyed by
-    # archetype id can now outlive an import that changed that archetype's BOM.
-    # `_contribution_cache` is keyed by ("archetype", archetype_id, …) and is
-    # never cleared anywhere, so a result computed from the OLD BOM would be
-    # served for the new one.
-    #
-    # Re-minting used to make those entries unreachable — accidentally, by
-    # changing the key — which is the one thing it was quietly doing right.
-    # MERGE has always preserved ids and so has always been exposed to this;
-    # invalidating for both modes fixes that too.
-    try:
-        from mapper.api.lca import _contribution_cache
-
-        touched_ids = {a.id for a, _ in touched if a.id}
-        for key in [
-            k
-            for k in _contribution_cache
-            if isinstance(k, tuple)
-            and k
-            and isinstance(k[0], tuple)
-            and len(k[0]) > 1
-            and k[0][0] == "archetype"
-            and k[0][1] in touched_ids
-        ]:
-            _contribution_cache.pop(key, None)
-    except Exception:  # pragma: no cover — cache hygiene must never fail an import
-        pass
+    # (The import's own cache eviction moved into `_persist_archetype`, which
+    # every write goes through — one mechanism, not two.)
 
     # An archetype whose NAME is absent from the workbook is deleted by replace
     # mode. That is the mode's job and it is not refused — a rename-and-replace

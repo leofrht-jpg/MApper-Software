@@ -332,3 +332,119 @@ def test_merge_invalidates_it_too(project):
         assert stale not in lca_api._contribution_cache
     finally:
         lca_api._contribution_cache.pop(stale, None)
+
+
+def test_every_archetype_write_goes_through_the_persist_helper():
+    """No route may write an archetype without evicting its cached results.
+
+    Before this, NINE mutation routes changed a BOM while its cached
+    contribution survived — the BOM editor and a material relink among them.
+    An archetype id is stable across every edit, so the cache key never
+    changed and a pre-edit result was served for the post-edit BOM with
+    nothing on screen saying so.
+
+    Asserted structurally rather than per route, so a route added later is
+    covered by construction.
+    """
+    import ast
+    import pathlib
+
+    src = (pathlib.Path(__file__).resolve().parents[1] / "mapper" / "api" / "bom.py").read_text(
+        encoding="utf-8"
+    )
+    tree = ast.parse(src)
+    allowed = {"_persist_archetype", "_forget_archetype"}
+    offenders = []
+    for node in ast.walk(tree):
+        # AsyncFunctionDef too -- every FastAPI route here is `async def`, so a
+        # FunctionDef-only walk skipped all of them and the guard passed while a
+        # raw write sat in a route. Caught by reverting the fix and finding the
+        # guard still green.
+        if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        if node.name in allowed:
+            continue  # the helpers ARE the sanctioned call site
+        for sub in ast.walk(node):
+            if (
+                isinstance(sub, ast.Call)
+                and isinstance(sub.func, ast.Attribute)
+                and sub.func.attr in {"save_archetype", "delete_archetype_file"}
+            ):
+                offenders.append(f"{node.name}:{sub.lineno}")
+    assert not offenders, (
+        "these write an archetype without evicting its contribution cache; "
+        f"call _persist_archetype / _forget_archetype instead: {offenders}"
+    )
+
+
+def test_editing_a_bom_node_evicts_the_cached_contribution(project):
+    """The path that actually matters: the in-app BOM editor.
+
+    This is how the tailpipe relink was done. Edit a row, re-run a contribution
+    analysis, and before this fix you got the pre-edit number back.
+    """
+    from mapper.api import lca as lca_api
+
+    arc = _arc("ICEV-Petrol", "id-a")
+    bom_api._archetypes[project]["id-a"] = arc
+    stale = (("archetype", "id-a", "all", "sa"), ("EF v3.1", "x"), "all", None, None)
+    lca_api._contribution_cache[stale] = {"score": 61.51}
+    try:
+        bom_api._persist_archetype(project, arc)
+        assert stale not in lca_api._contribution_cache
+    finally:
+        lca_api._contribution_cache.pop(stale, None)
+
+
+def test_deleting_an_archetype_forgets_its_cached_results(project):
+    from mapper.api import lca as lca_api
+
+    stale = (("archetype", "id-gone", "all", "sa"), ("EF v3.1", "x"), "all", None, None)
+    keep = (("archetype", "id-stay", "all", "sa"), ("EF v3.1", "x"), "all", None, None)
+    lca_api._contribution_cache[stale] = {"score": 1.0}
+    lca_api._contribution_cache[keep] = {"score": 2.0}
+    try:
+        bom_api._forget_archetype(project, "id-gone")
+        assert stale not in lca_api._contribution_cache
+        assert keep in lca_api._contribution_cache
+    finally:
+        for k in (stale, keep):
+            lca_api._contribution_cache.pop(k, None)
+
+
+def test_the_persist_guard_would_catch_a_raw_write():
+    """Anti-vacuity, and not hypothetical.
+
+    The first version of the guard above walked only `ast.FunctionDef`. Every
+    route in this module is `async def`, so it inspected none of them and passed
+    with a raw `dsm_storage.save_archetype` sitting in a route -- verified by
+    reverting the fix and watching it stay green.
+    """
+    import ast
+
+    def offenders(src: str) -> list[str]:
+        out = []
+        for node in ast.walk(ast.parse(src)):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if node.name in {"_persist_archetype", "_forget_archetype"}:
+                continue
+            for sub in ast.walk(node):
+                if (
+                    isinstance(sub, ast.Call)
+                    and isinstance(sub.func, ast.Attribute)
+                    and sub.func.attr in {"save_archetype", "delete_archetype_file"}
+                ):
+                    out.append(node.name)
+        return out
+
+    assert offenders(
+        "async def a_route():\n    dsm_storage.save_archetype(p, arc)\n"
+    ) == ["a_route"], "an async route must be inspected"
+    assert offenders(
+        "def sync_fn():\n    dsm_storage.delete_archetype_file(p, i)\n"
+    ) == ["sync_fn"]
+    assert offenders("async def ok():\n    _persist_archetype(p, arc)\n") == []
+    assert offenders(
+        "def _persist_archetype(p, a):\n    dsm_storage.save_archetype(p, a)\n"
+    ) == [], "the helper itself is the sanctioned call site"

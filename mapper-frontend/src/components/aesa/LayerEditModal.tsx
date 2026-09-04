@@ -8,6 +8,7 @@
  */
 
 import { useEffect, useMemo, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/Button'
 import type {
@@ -74,7 +75,15 @@ export function LayerEditModal({ layer, principles, onClose, onSave }: Props) {
     return principles
   }, [draft.principle_mode, draft.fixed_principle, principles])
 
-  return (
+    // Patch 4X rule — portal to document.body. This modal renders inside the
+  // `<aside style={{ position: 'sticky' }}>` configuration sidebar (Patch 4V).
+  // `position: sticky` creates a stacking context regardless of z-index, so a
+  // `position: fixed` overlay is trapped in it and positioned content in the
+  // sibling `<main>` can paint over it. Enforced by
+  // tests/aesaModalsPortal.test.ts — a comment alone failed to propagate this
+  // three times after Patch 4X documented it.
+  return createPortal(
+
     <div
       style={backdrop}
       onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
@@ -180,6 +189,8 @@ export function LayerEditModal({ layer, principles, onClose, onSave }: Props) {
         </footer>
       </div>
     </div>
+    ,
+    document.body,
   )
 }
 

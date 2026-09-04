@@ -1153,7 +1153,11 @@ async def upload_cohort_mappings(
     # archetype cells is the deliberate "clear all" workflow and stays allowed.
     from mapper.core.upload_guard import refuse_if_nothing_resolved
 
-    rows_asserted = sum(1 for r in parsed if (r.get("archetype") or "").strip())
+    # Explicit "" default, not a bare .get(): a row with no archetype cell
+    # asserts nothing and is MEANT not to count, so the miss is the intended
+    # semantics rather than a lookup that failed. Stating that here beats
+    # declaring it in the silent-paths exemption list.
+    rows_asserted = sum(1 for r in parsed if (r.get("archetype", "") or "").strip())
     refuse_if_nothing_resolved(
         rows_seen=rows_asserted,
         resolved=len(entries),

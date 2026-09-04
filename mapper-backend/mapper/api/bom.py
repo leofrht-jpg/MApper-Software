@@ -83,8 +83,13 @@ _FILENAME_UNSAFE = re.compile(r"[^A-Za-z0-9._-]+")
 
 
 def _sanitize_filename(name: str, fallback: str = "archetype", max_len: int = 100) -> str:
-    cleaned = _FILENAME_UNSAFE.sub("_", name).strip("_")
-    return (cleaned or fallback)[:max_len]
+    """Thin alias for the ONE sanitiser -- see :func:`sanitize_filename_part`.
+
+    Kept as a name so existing call sites read unchanged; the BEHAVIOUR is now
+    shared. This copy used to replace every unsafe character with ``_``, which
+    turned ``Fleet (EU)`` into ``Fleet_EU`` and collided it with ``Fleet EU``.
+    """
+    return sanitize_filename_part(name, fallback, max_len)
 
 
 # ── Folder helpers ───────────────────────────────────────────────────────────
@@ -990,7 +995,7 @@ async def get_cohort_mappings_template(system_id: str) -> Response:
     archetypes = _proj_archetypes(project)
     archetypes_by_id = {arc_id: arc.name for arc_id, arc in archetypes.items()}
     wb = _cohort_template_workbook(sys_def, existing, archetypes_by_id)
-    filename = f"{_sanitize_filename(sys_def.name, 'system')}_cohort_mappings_template.xlsx"
+    filename = build_template_filename(sys_def.name, "cohort_mappings", fallback="system")
     return excel_response(wb, filename, kind="data")
 
 
@@ -1383,6 +1388,61 @@ async def get_dsm_lca(system_id: str) -> DSMLCABatchResult:
 
 def _short_method_label(method: list[str]) -> str:
     return method[-1] if method else "method"
+
+
+def sanitize_filename_part(name: str, fallback: str = "file", max_len: int = 100) -> str:
+    """THE sanitiser. One answer to "what is this name as a filename part?".
+
+    There were four. `bom`, `dsm` and `parameters` each defined their own
+    `_sanitize_filename`, and `build_export_filename` had a fourth inline. They
+    agreed on ordinary names and diverged on the interesting ones:
+
+        Fleet (EU)   ->  bom/dsm 'Fleet_EU'   parameters 'Fleet_EU_'   export 'Fleet_(EU)'
+
+    Parentheses are KEPT. They are legal on every filesystem this ships to, and
+    stripping them is lossy -- `Fleet (EU)` and `Fleet EU` are different systems
+    and must not collide. This also preserves `build_export_filename`, already
+    declared "the ONE Excel-export filename scheme", so every existing
+    `_LCA.xlsx` / `_AESA.xlsx` export keeps its name.
+
+    Rules: strip the characters filesystems actually reject (``/ \\ : * ? " < > |``),
+    collapse whitespace runs to a single ``_``, trim leading/trailing ``_``,
+    cap length. Case is PRESERVED -- lowercasing was the subsystem path's habit
+    and made `Fueling Infrastructure` unrecognisable as the entity it names.
+    """
+    import re
+
+    cleaned = re.sub(r'[/\\:*?"<>|]', "", name or "")
+    cleaned = re.sub(r"\s+", "_", cleaned.strip()).strip("_")
+    return (cleaned or fallback)[:max_len]
+
+
+def build_template_filename(
+    entity_name: str,
+    artifact: str,
+    *,
+    suffix: str = "xlsx",
+    template: bool = True,
+    fallback: str = "entity",
+) -> str:
+    """``{Entity_Name}_{artifact}[_template].{suffix}`` -- entity FIRST.
+
+    The same shape systems already produced for cohort mappings
+    (``Car_Fleet_cohort_mappings_template.xlsx``) and that
+    ``build_export_filename`` produces for exports (``Car_Fleet_LCA.xlsx``):
+    name the thing, then say what the file is.
+
+    Subsystems used to reverse it and lowercase the entity
+    (``cohort_mapping_fueling_infrastructure_template.xlsx``), and the DSM
+    system templates put the artifact first (``stock_template_Car_Fleet.xlsx``),
+    so there were THREE conventions across one download menu. This is the one.
+
+    NOT for ``{dimension}_labels.csv`` -- see the exemption in the tests.
+    """
+    return (
+        f"{sanitize_filename_part(entity_name, fallback)}_{artifact}"
+        f"{'_template' if template else ''}.{suffix}"
+    )
 
 
 def build_export_filename(

@@ -217,25 +217,72 @@ def test_every_export_declares_its_kind():
     upload templates, then the AESA config export). Omitting `kind` now raises
     a TypeError at call time; this test catches it at review time instead, and
     on paths a test run might not exercise.
+
+    AST, not a line regex. The first version matched `kind=` on the SAME LINE as
+    the opening paren, so it reported two false positives the moment a call was
+    reflowed across lines — while a genuinely missing `kind` on a one-line call
+    several frames away would still have passed. A keyword argument is a
+    property of the CALL, not of a line, so the call is what gets inspected.
     """
+    import ast
     import pathlib
-    import re as _re
 
     api = pathlib.Path(__file__).resolve().parent.parent / "mapper" / "api"
     missing = []
     for f in sorted(api.glob("*.py")):
         if f.name == "cohort_export.py":
             continue
-        for n, line in enumerate(f.read_text(encoding="utf-8").splitlines(), 1):
-            if not _re.search(r"excel_response(_from_bytes)?\(", line):
+        tree = ast.parse(f.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
                 continue
-            if line.lstrip().startswith("#"):
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+            if name not in {"excel_response", "excel_response_from_bytes"}:
                 continue
-            if "kind=" not in line:
-                missing.append(f"{f.name}:{n}: {line.strip()}")
+            kws = {k.arg for k in node.keywords}
+            # `**kwargs` forwarding (arg is None) counts — the caller supplies it.
+            if "kind" not in kws and None not in kws:
+                missing.append(f"{f.name}:{node.lineno}: {name}(...)")
     assert not missing, (
         "excel_response call without an explicit kind=\n  " + "\n  ".join(missing)
     )
+
+
+def test_the_kind_guard_is_not_vacuous():
+    """The guard must fire on a missing kind, INCLUDING across lines.
+
+    Both shapes, because the line-oriented version passed the multi-line one by
+    accident (it never matched it at all) and failed the reflowed *correct*
+    call. Asserted against a synthetic corpus so the sweep cannot go green by
+    finding nothing.
+    """
+    import ast
+
+    def offenders(src: str) -> list[str]:
+        out = []
+        for node in ast.walk(ast.parse(src)):
+            if not isinstance(node, ast.Call):
+                continue
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+            if name not in {"excel_response", "excel_response_from_bytes"}:
+                continue
+            kws = {k.arg for k in node.keywords}
+            if "kind" not in kws and None not in kws:
+                out.append(name)
+        return out
+
+    assert offenders("excel_response(buf, 'a.xlsx')") == ["excel_response"]
+    assert offenders(
+        "excel_response_from_bytes(\n    data,\n    'a.xlsx',\n)"
+    ) == ["excel_response_from_bytes"]
+    # …and stays quiet on the correct forms, one-line and reflowed.
+    assert offenders("excel_response(buf, 'a.xlsx', kind='data')") == []
+    assert offenders(
+        "excel_response_from_bytes(\n    data,\n    'a.xlsx',\n    kind='round_trip',\n)"
+    ) == []
+    assert offenders("excel_response(buf, 'a.xlsx', **opts)") == []
 
 
 def test_export_kind_has_no_default():

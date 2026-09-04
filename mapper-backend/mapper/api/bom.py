@@ -3480,6 +3480,64 @@ def _apply_validation_to_archetype(arc: Archetype, report: ValidationReport) -> 
     arc.validation_report = report
 
 
+def _archetype_reference_sites(project: str) -> dict[str, list[str]]:
+    """archetype_id -> human-readable places that reference it.
+
+    THREE surfaces, and they are the complete set. `DependencyRule
+    .dependent_archetype_id` looks like a fourth and is not: it holds a dependent
+    COHORT KEY (`"Fuel Station|Large"`), a different namespace — checked against
+    live data, 0 of 6 resolve as BOM archetype ids while all 21
+    `SubsystemCohortMapping.archetype_id` do.
+
+    Best-effort: a store that cannot be read contributes nothing rather than
+    failing the import. This feeds a WARNING, never a refusal.
+    """
+    sites: dict[str, list[str]] = {}
+
+    def _add(arc_id: str | None, where: str) -> None:
+        if arc_id:
+            sites.setdefault(arc_id, []).append(where)
+
+    # 1. system-level cohort mappings
+    try:
+        from mapper.api.dsm import _proj_systems
+
+        systems = _proj_systems(project)
+        for sys_id, cm in _proj_cohort_mappings(project).items():
+            label = getattr(systems.get(sys_id), "name", None) or sys_id
+            for row in cm.mappings or []:
+                _add(getattr(row, "archetype_id", None), f"cohort mapping of '{label}'")
+    except Exception:  # pragma: no cover — best effort
+        pass
+
+    # 2. subsystem cohort mappings
+    try:
+        from mapper.api.subsystems import _proj_subs
+
+        for _sys_id, subs in _proj_subs(project).items():
+            for sub in subs.values():
+                for scm in (sub.cohort_mappings or {}).values():
+                    _add(
+                        getattr(scm, "archetype_id", None),
+                        f"subsystem '{sub.name}' cohort mapping",
+                    )
+    except Exception:  # pragma: no cover — best effort
+        pass
+
+    # 3. archetype composition
+    try:
+        for arc in _proj_archetypes(project).values():
+            for inc in arc.includes or []:
+                _add(
+                    getattr(inc, "archetype_id", None),
+                    f"composition of archetype '{arc.name}'",
+                )
+    except Exception:  # pragma: no cover — best effort
+        pass
+
+    return sites
+
+
 @router.post(
     "/bom/archetypes/import",
     response_model=MultiImportResult,
@@ -3499,23 +3557,30 @@ async def import_archetype(
     warnings: list[str] = []
     touched: list[tuple[Archetype, str]] = []  # (archetype, "created" | "updated")
 
-    # In replace mode, wipe the existing library up front. Merge mode preserves
-    # everything not referenced by the file.
+    # Snapshot the library BEFORE replace wipes it. Both modes then upsert by
+    # NAME, so an archetype whose name is in the workbook keeps its id.
+    #
+    # Replace used to re-mint every id, and that is not what "replace" means.
+    # The mode's actual job is DELETING archetypes absent from the workbook;
+    # re-minting was a side effect of clearing the dict before building the name
+    # index below — the old code captured `existing` and then used it only to
+    # delete files. An archetype id is referenced from three places
+    # (`_archetype_reference_sites`), so re-minting silently orphaned every one
+    # of them. It has now done so twice to the same project.
+    existing_by_id: dict[str, Archetype] = dict(_proj_archetypes(project))
+    ref_sites = _archetype_reference_sites(project)
+
     if mode == "replace":
         with _lock:
-            existing = dict(_proj_archetypes(project))
             _proj_archetypes(project).clear()
-        for arc_id in existing:
+        for arc_id in existing_by_id:
             try:
                 dsm_storage.delete_archetype_file(project, arc_id)
             except Exception:  # pragma: no cover — filesystem best-effort
                 pass
 
-    # Build a name → existing archetype index (merge mode only) so we can upsert.
-    name_to_existing: dict[str, Archetype] = {}
-    if mode == "merge":
-        for a in _proj_archetypes(project).values():
-            name_to_existing[a.name] = a
+    # name → existing archetype, for BOTH modes.
+    name_to_existing: dict[str, Archetype] = {a.name: a for a in existing_by_id.values()}
 
     def _upsert(
         name: str,
@@ -3524,7 +3589,7 @@ async def import_archetype(
         folder: str | None,
         roots: list,
     ) -> tuple[Archetype, str]:
-        existing = name_to_existing.get(name) if mode == "merge" else None
+        existing = name_to_existing.get(name)
         if existing is not None and existing.id:
             arc = Archetype(
                 id=existing.id,
@@ -3535,6 +3600,13 @@ async def import_archetype(
                 bom=roots,
                 created_at=existing.created_at or _now_iso(),
                 updated_at=_now_iso(),
+                # The BOM workbook cannot express a composition reference — the
+                # exporter REFUSES to write a composed archetype — so a blank
+                # `includes` in the file means "not expressible here", never
+                # "the user removed it". Dropping it (which both modes did)
+                # destroyed composition on every import, and composition is the
+                # one reference surface with no manual repair path.
+                includes=existing.includes,
             )
             action = "updated"
         else:
@@ -3667,6 +3739,56 @@ async def import_archetype(
             updated_count += 1
         else:
             created_count += 1
+
+    # Preserving an id has a consequence worth stating: a cache keyed by
+    # archetype id can now outlive an import that changed that archetype's BOM.
+    # `_contribution_cache` is keyed by ("archetype", archetype_id, …) and is
+    # never cleared anywhere, so a result computed from the OLD BOM would be
+    # served for the new one.
+    #
+    # Re-minting used to make those entries unreachable — accidentally, by
+    # changing the key — which is the one thing it was quietly doing right.
+    # MERGE has always preserved ids and so has always been exposed to this;
+    # invalidating for both modes fixes that too.
+    try:
+        from mapper.api.lca import _contribution_cache
+
+        touched_ids = {a.id for a, _ in touched if a.id}
+        for key in [
+            k
+            for k in _contribution_cache
+            if isinstance(k, tuple)
+            and k
+            and isinstance(k[0], tuple)
+            and len(k[0]) > 1
+            and k[0][0] == "archetype"
+            and k[0][1] in touched_ids
+        ]:
+            _contribution_cache.pop(key, None)
+    except Exception:  # pragma: no cover — cache hygiene must never fail an import
+        pass
+
+    # An archetype whose NAME is absent from the workbook is deleted by replace
+    # mode. That is the mode's job and it is not refused — a rename-and-replace
+    # is legitimate. But it is the one case ids cannot survive, so anything that
+    # referenced it is now orphaned, and saying nothing is how this went
+    # unnoticed twice. Warn, naming the archetype and every place that pointed
+    # at it.
+    if mode == "replace":
+        imported_names = {a.name for a, _ in touched}
+        for arc_id, old_arc in existing_by_id.items():
+            if old_arc.name in imported_names:
+                continue  # survived by name → id preserved → references intact
+            where = ref_sites.get(arc_id) or []
+            if where:
+                warnings.append(
+                    f"'{old_arc.name}' is not in this workbook, so it was deleted. "
+                    f"{len(where)} reference(s) to it are now unresolved: "
+                    + "; ".join(sorted(set(where))[:5])
+                    + (" …" if len(set(where)) > 5 else "")
+                    + ". Re-import with that archetype present, or repoint those "
+                    "references."
+                )
 
     return MultiImportResult(
         format=fmt,

@@ -5341,6 +5341,53 @@ naming nothing.
   Check the registry before theorising: a tuple that is installed everywhere
   cannot be a project-scoping problem.
 
+### Neither Car Fleet total is a baseline (2026-09-02 vs 2026-09-04)
+
+**Car Fleet's fleet-level GWP100 moved by more than the tailpipe relink
+accounts for, and the residual is UNIDENTIFIED.** Do not treat either figure as
+a reference.
+
+| | |
+|---|---|
+| measured during the #65 station pass, 2026-09-02 | **136,077,173,549.18** kg CO2-eq |
+| measured 2026-09-04 (static, scope=all, base scenario) | **241,761,757,901.48** kg CO2-eq |
+| of the +105.68 Gt gap, the tailpipe relink explains | 36,338,956,529 (15.0 %) |
+| **residual, cause unknown** | **~69.3 Gt** |
+
+Ruled out, each by measurement rather than reasoning:
+
+- **Archetypes.** All 24 non-station archetypes diff byte-identical against the
+  2026-09-02 snapshot except the 12 tailpipe rows and the three chargers'
+  e-waste activity code — and those two codes differ by 0.0035 kg CO2-eq/kg,
+  immaterial.
+- **DSM inputs.** `state.json` (initial stock, inflows, survival config) is
+  unchanged since **2026-08-11**; `system.json` (year range, dimensions) since
+  **2026-07-18**. The fleet configuration did not move.
+- **Scenario.** Car Fleet has only `base`.
+- **Scope.** all 241.76 / stock 170.76 / inflows 70.99 / outflows 0.009 Gt —
+  they sum correctly and none is 136.08.
+- **The station repair.** Infrastructure is 0.6 % of the Car Fleet total, and
+  WP5 recomputed **bit-identical** (199517946180.3539, delta exactly 0) across
+  that repair.
+
+One near-miss, recorded as a hypothesis and NOT a conclusion: scope=stock minus
+the tailpipe contribution is 134.42 Gt, 1.2 % under the 09-02 figure. Close, but
+it does not land, and inventing a reconciliation from a 1.2 % gap is how a wrong
+baseline gets adopted.
+
+**WP5 is unaffected and remains verified** — it is the paper's system; Car Fleet
+is not. The #65 station restoration is confirmed structurally (6/6 concrete and
+asphalt links, 25 EoL waste-stream rows, the R134a row with its description,
+Fuel Station scrap steel at 2250 kg), which is what actually establishes it.
+
+#### What NOT to do
+
+- **Don't quote either Car Fleet number as a before/after pair.** The 09-02
+  figure predates an intended change (tailpipe) AND an unexplained one.
+- **Don't reconcile the residual by picking the scope that comes closest.**
+  Four scopes were measured; none matches, and the nearest is 1.2 % off.
+- **Don't infer the DSM inputs drifted.** They are older than both figures.
+
 ## Variation in MApper
 
 DSM Scaling Rules are temporarily hidden from the UI as of 2026-05-01. Backend

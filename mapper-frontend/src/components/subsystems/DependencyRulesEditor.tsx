@@ -144,7 +144,7 @@ export function DependencyRulesEditor({ subsystem, collapsed, onToggleCollapse }
     if (!systemId) return
     setError('')
     try {
-      await downloadDependencyRulesTemplate(systemId, subsystem.id)
+      await downloadDependencyRulesTemplate(systemId, subsystem.id, subsystem.name)
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'Template download failed')
     }

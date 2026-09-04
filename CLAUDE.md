@@ -5397,6 +5397,37 @@ First landing: `tests/axisConflict.test.ts` (9 cases on the 3-way
 axisConflict rule, covering all single-axis allowances, the three pairwise
 conflicts, the three-way conflict, and the N=0 boundary).
 
+### A frontend suite that will not start is the TOOLCHAIN, not the test
+
+Observation, recorded because the error names nothing useful and the machine it
+happened on is the one MApper is developed on.
+
+Every frontend test file — including ones the branch never touched — failed with
+
+    Error: [vitest-pool]: Failed to start forks worker for test files ...
+    Caused by: TypeError: Class extends value undefined is not a constructor or null
+
+reported as `Test Files no tests`, which reads like a discovery problem. It is
+not. `--pool=vmForks` surfaces the real frame:
+`jsdom/lib/generated/idl/AbortSignal.js:249` — jsdom's `AbortSignal` shim is
+incompatible with the locally installed **Node 25.9.0** (Homebrew). CI pins Node
+**24**, so it never appears there, and vitest's own `engines` (`>=24.0.0`)
+accepts 25, so the version looks supported.
+
+Two things that follow:
+
+- **Check whether an UNTOUCHED test file fails the same way before debugging the
+  branch.** That one check separates "my change broke the suite" from "the
+  runner cannot start", and the second costs nothing to rule out.
+- **A test with no DOM can still run**: `--environment=node`. The
+  filename-parity test is pure functions and passes locally that way (16/16)
+  while the jsdom-environment files cannot start at all.
+
+Not fixed here — changing the user's Node install is their call, and CI is
+unaffected. Recorded so the next occurrence is a lookup rather than an
+investigation. Related in kind to the disk-pressure episode: check the
+environment before the data.
+
 ### Test determinism — mock the function the component actually calls (Patch 5L)
 
 `tests/logEntryCopy.test.tsx` was intermittently failing on full-suite runs

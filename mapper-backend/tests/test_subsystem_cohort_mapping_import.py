@@ -98,7 +98,7 @@ def test_template_filename_no_uuid(system_subsystem_archetype):
     assert resp.status_code == 200
     cd = resp.headers["content-disposition"]
     # Static + human-readable: spaces→_, lowered. No UUID / system id.
-    assert "cohort_mapping_fuel_infrastructure_template.xlsx" in cd
+    assert "Fuel_Infrastructure_cohort_mappings_template.xlsx" in cd
     assert SUB_ID not in cd and SYS_ID not in cd
 
 

@@ -385,8 +385,15 @@ def test_multi_year_runs_against_static_db_with_no_pattern():
 
     db_name = next(d for d in bw2data.databases if "biosphere" not in d.lower())
     db = bw2data.Database(db_name)
-    act = next(iter(db))
-    method = tuple(next(iter(bw2data.methods)))
+    # Pinned, NOT drawn. `next(iter(db))` is a peewee query with no ORDER BY,
+    # which SQLite answers with `ORDER BY Random()` — so it returned a different
+    # activity every process and the assertion below was a lottery over ~23.5k
+    # activities. Sorting by code is stable, so the test now computes the same
+    # thing twice in a row. (`bw2data.methods` iterates in insertion order,
+    # which is stable in practice but not guaranteed; sorted for the same
+    # reason.)
+    act = min(db, key=lambda a: a.key[1])
+    method = min(tuple(m) for m in bw2data.methods)
 
     body = MultiYearContributionRequest(
         target_type="activity",
@@ -417,46 +424,38 @@ def test_multi_year_runs_against_static_db_with_no_pattern():
     assert result.result_type == "multi_year_single_product"
     assert result.years == [2030, 2050]
     assert set(result.results) == {"2030", "2050"}
-    # Both years used the same source DB → scores must match to numerical
-    # precision. Not bit-identical: the shared-runner optimisation reuses one
-    # UMFPACK factorisation across years, so year 2 is a back-substitution
-    # rather than a fresh spsolve.
+    # Both years used the same source DB → the scores must agree. They are NOT
+    # bit-equal: the shared-runner optimisation reuses one UMFPACK factorisation
+    # across years, so 2030 is a fresh spsolve and 2050 a back-substitution.
     #
-    # WHAT THE TOLERANCE IS BOUNDING — this is NOT run-to-run noise. For a
-    # FIXED activity the difference is deterministic: the same activity run in
-    # 8 separate processes gave a bit-identical 1.292273e-08 every time. What
-    # varies is WHICH ACTIVITY gets drawn, because `next(iter(db))` above is a
-    # peewee query with no ORDER BY, which SQLite answers with `ORDER BY
-    # Random()`. So each run picks a different activity out of ~23.5k, and each
-    # activity has its own fixed back-substitution residual. The test passes iff
-    # the activity it happened to draw sits under the tolerance.
+    # WHAT THIS TOLERANCE NOW MEASURES — with the activity pinned above, the
+    # difference is one fixed number: the back-substitution residual for
+    # `hard coal, import from Australia` against the first EF method. Measured
+    # bit-identical across 10 separate processes:
     #
-    # MEASURED — 100 draws, one per process (looping in-process would redraw the
-    # same activity and report a falsely tight spread), each a distinct activity:
+    #     2030  0.0023117637073266206
+    #     2050  0.002311763717811075
+    #     rel   4.5352621332693496e-09     (every bit, every run)
     #
-    #     median 1.0e-09   p90 9.0e-09   max 6.1e-08
-    #     >1e-08:  8/100     >1e-07:  0/100
+    # So this is no longer bounding a distribution — it bounds one reproducible
+    # solver residual, and the previous comment's "flake rate" framing no longer
+    # applies because there is nothing left to draw.
     #
-    # plus one earlier observed FAILURE at 1.1e-07, which is where the largest
-    # observation across all evidence comes from. rel=1e-6 is set from that
-    # observed maximum with ~9x headroom.
+    # WHY 1e-7 AND NOT 1e-8. 1e-8 would be 2.2x the measured value, which is
+    # ample for THIS activity. But sorting by code pins the activity only for a
+    # given database — a different ecoinvent version sorts a different activity
+    # first, and that one has its own residual. Measured over 100 activities:
+    # median 1.0e-09, p90 9.0e-09, max 6.1e-08. rel=1e-7 clears all 100; rel=1e-8
+    # clears 92. The extra headroom buys survival across a database change, which
+    # is worth more here than the marginal tightening: both bounds catch the
+    # failure this assertion exists for (years computing against different DBs,
+    # which diverge by orders of magnitude, not by 1e-8).
     #
-    # The previous comment claimed "~5e-9 noise" and set rel=1e-7 from it. 5e-9
-    # is about the median-to-p90 of this distribution — it described the typical
-    # draw and was then used as though it bounded the tail, which is why the
-    # test still flaked.
-    #
-    # 100 draws out of ~23.5k activities cannot bound the tail either, so this
-    # lowers the flake rate rather than removing it. The deterministic fix is to
-    # stop drawing at random — pin the activity with a sorted pick, the way
-    # test_supply_chain_truncation_keeps_high_value_paths was fixed. Left alone
-    # here to keep this a one-line change to the assertion.
-    #
-    # A divergence >>1e-6 would mean the years genuinely differ (e.g. wrong DB),
-    # which is the thing this assertion exists to catch.
+    # Cross-platform variation in BLAS/UMFPACK is not measurable from one
+    # machine; CI runs macOS and Windows, which is the check on that.
     s30 = result.results["2030"].score
     s50 = result.results["2050"].score
-    assert s30 == pytest.approx(s50, rel=1e-6)
+    assert s30 == pytest.approx(s50, rel=1e-7)
     # Trajectory ordered.
     assert [p.year for p in result.trajectory] == [2030, 2050]
 

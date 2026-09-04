@@ -47,3 +47,44 @@ export function buildExportFilename(
   }
   return `${base}_${domain}.xlsx`
 }
+
+// ── Template downloads ───────────────────────────────────────────────────────
+//
+// `{Entity_Name}_{artifact}[_template].{suffix}` — entity FIRST, the same shape
+// `buildExportFilename` above produces for exports. Mirrors the backend
+// `build_template_filename` (mapper/api/bom.py) byte for byte; locked by shared
+// PARITY_FIXTURES in tests/templateFilename.test.ts.
+//
+// Before this there were THREE conventions in one download menu: systems
+// produced `Car_Fleet_cohort_mappings_template.xlsx` (entity first), the DSM
+// system templates produced `stock_template_Car_Fleet.xlsx` (artifact first),
+// and subsystems produced `cohort_mapping_fueling_infrastructure_template.xlsx`
+// (artifact first, LOWERCASED, singular).
+//
+// Parentheses are KEPT: `Fleet (EU)` and `Fleet EU` are different systems and
+// must not collide. Case is PRESERVED.
+//
+// NOT for `{dimension}_labels.csv` — `parse_label_file` enforces that basename
+// as an upload contract. See the exemption test.
+
+export function sanitizeFilenamePart(
+  name: string,
+  fallback = 'file',
+  maxLen = 100,
+): string {
+  const cleaned = (name || '')
+    .replace(/[/\\:*?"<>|]/g, '')
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/^_+|_+$/g, '')
+  return (cleaned || fallback).slice(0, maxLen)
+}
+
+export function buildTemplateFilename(
+  entityName: string,
+  artifact: string,
+  opts: { suffix?: string; template?: boolean; fallback?: string } = {},
+): string {
+  const { suffix = 'xlsx', template = true, fallback = 'entity' } = opts
+  return `${sanitizeFilenamePart(entityName, fallback)}_${artifact}${template ? '_template' : ''}.${suffix}`
+}

@@ -30,7 +30,7 @@ jobs:
       run:
         working-directory: mapper-frontend
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # Node 24, not 25: vitest workers were seen hanging under 25.9.0. That was
       # probably an artefact of a half-materialised node_modules rather than Node
@@ -62,7 +62,7 @@ jobs:
         os: [macos-latest, windows-latest]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # A cold conda solve of the Brightway2 + premise stack is the slowest part
       # of this workflow by a wide margin, so the package cache is what makes CI

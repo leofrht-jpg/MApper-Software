@@ -1856,6 +1856,55 @@ current-year shares (transport's share of the national total, passenger cars'
 share of transport), and their `"Grandfathering"` descriptions were always
 accurate. The inconsistency was layer 1 alone.
 
+**Each grandfathering layer carries its OWN source, and neither is a citation.**
+They used to share one string, taken from `layer2.source` in the data file:
+*"Passenger cars ~60% of Danish transport GHG x transport ~25% of national
+total = 0.15"*. That sentence describes the PRODUCT, so on the exported Sharing
+Data sheet a reader saw it beside a factor of **0.25**, and again beside
+**0.60** — describing neither. The strings now live in
+`_DEFAULT_LAYER2_SOURCE` / `_DEFAULT_LAYER3_SOURCE`, immediately beside the
+values they describe. The combined string stays on `layer2.source`, where it is
+still correct: the legacy 2-layer `MultiDConfig` really does apply 0.15 as a
+single factor.
+
+**Neither value has a source to cite.** Both are round estimates, flagged
+`provisional: true`, with no dataset and no data year recorded for either. The
+strings say so, and name Danish EPA (Miljostyrelsen) as where to REFINE them —
+never as where they came from. A string that merely named a body would read as
+provenance for a number that has none. Do not add a citation without also
+replacing the value it would be citing. The strings also carry no numerals: the
+value is two lines away in `data=`, and a number repeated in prose goes stale
+silently — which is the other half of what went wrong here.
+
+**An earlier Climate TRACE cross-check implied transport is ~13.2% of Danish
+emissions, not 25% — and this is NOT a reason to change 0.25.** The
+cross-check chains through an unpinned ~73% passenger-car share, so it cannot
+be reconciled against the 0.25 x 0.60 split from anything in this repo, and a
+disagreement that only appears after passing through an unpinned factor is not
+a contradiction. Both layers are treated as stated approximations in the paper's
+methods. Note the pairing to be careful about: layer 1's AR principle DOES have
+a pinned source (Climate TRACE Country Inventory, data year 2022, 59.3 Mt /
+60.57 Gt), so it is tempting to reach for the same dataset to "fix" layers 2
+and 3 into consistency with it. Resist that unless the sub-shares are pinned
+too — a sourced layer 1 beside two re-derived-but-still-unpinned sub-shares
+would look more rigorous while being no better founded.
+
+#### What NOT to do
+
+- **Don't re-merge the two grandfathering sources.** One string that describes
+  a product describes neither factor. Locked by
+  `test_the_grandfathering_layers_carry_THEIR_OWN_source`, which fails with
+  "layers 2 and 3 are sharing one source string again".
+- **Don't delete `layer2.source` from the data file** on the grounds that the
+  chain no longer reads it. The legacy `MultiDConfig` path still does, and the
+  product it describes is the factor that path applies. Locked by
+  `test_the_combined_string_stays_where_it_is_still_correct`.
+- **Don't change 0.25 or 0.60 to chase the Climate TRACE figure.** See above.
+- **Don't put a number in a source string.** The value sits beside it in
+  `data=`; a duplicated number is one that can drift out of agreement with the
+  thing it annotates, unnoticed, which is exactly how the product-describing
+  string survived.
+
 AR allocates `ozone_depletion`, `particulate_matter` and
 `photochemical_ozone_formation` in the default preset, and — via
 `compute_with_sensitivity` — the AR whisker of the sharing-sensitivity box plot

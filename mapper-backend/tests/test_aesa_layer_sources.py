@@ -40,15 +40,75 @@ def test_the_builtin_preset_carries_a_source_for_every_layer1_principle():
             f"layer 1 lost or altered the source for {pid}")
 
 
-def test_the_grandfathering_layers_carry_the_sector_share_source():
-    """Layers 2 and 3 are the two factors of `layer2.sector_share` (0.25 x 0.60
-    = 0.15), and the one source string in the data file explains both halves,
-    so it is attached to both rather than to whichever it names first."""
-    sharing = load_sharing_data()
-    want = sharing["layer2"]["source"].strip()
+def test_the_grandfathering_layers_carry_THEIR_OWN_source():
+    """Layers 2 and 3 are the two factors of `layer2.sector_share`
+    (0.25 x 0.60 = 0.15), and each carries its own source.
+
+    They used to share one string, taken from `layer2.source` in the data
+    file. That string describes the PRODUCT -- "passenger cars ~60% of Danish
+    transport GHG x transport ~25% of national total = 0.15" -- so on the
+    exported Sharing Data sheet a reader saw a sentence about 0.15 sitting
+    next to a factor of 0.25, and the same sentence again next to 0.60. It
+    described neither layer.
+    """
     layers = build_default_sharing_preset().chain.layers
-    assert layers[1].sources["AR"] == want
-    assert layers[2].sources["AR"] == want
+    l2, l3 = layers[1].sources["AR"], layers[2].sources["AR"]
+
+    assert l2 != l3, "layers 2 and 3 are sharing one source string again"
+
+    # Layer 2 is country -> sector: transport within the national total.
+    assert "national" in l2.lower()
+    assert "passenger car" not in l2.lower(), (
+        "layer 2 is the transport share, not the passenger-car share")
+
+    # Layer 3 is sector -> sub-sector: passenger cars within transport.
+    assert "passenger car" in l3.lower()
+    assert "transport" in l3.lower()
+
+    # Neither may describe the product. `x`/`*` between two shares is how the
+    # combined string read, and 0.15 is the product itself.
+    for src in (l2, l3):
+        assert "0.15" not in src, f"a layer source states the product: {src}"
+        assert " x " not in src.lower(), (
+            f"a layer source multiplies two shares together: {src}")
+
+
+def test_neither_grandfathering_source_implies_a_citation():
+    """Both values are round estimates with no dataset and no data year, and
+    the strings have to say so.
+
+    Danish EPA is named as where to REFINE them, never as where they came
+    from. A source string that merely named a body would read as provenance
+    for a number that has none.
+    """
+    layers = build_default_sharing_preset().chain.layers
+    for ly in layers[1:]:
+        src = ly.sources["AR"]
+        assert "round estimate" in src.lower(), (
+            f"layer {ly.layer_number} does not admit it is an estimate: {src}")
+        assert "no dataset or data year is recorded" in src.lower(), (
+            f"layer {ly.layer_number} does not say its provenance is absent: {src}")
+        assert "refine" in src.lower(), (
+            f"layer {ly.layer_number} does not say Danish EPA is a refinement "
+            f"target rather than the origin: {src}")
+        # No numerals: the value is in `data`, and a number repeated in prose
+        # goes stale silently.
+        assert not any(ch.isdigit() for ch in src), (
+            f"layer {ly.layer_number} embeds a number in its source: {src}")
+
+
+def test_the_combined_string_stays_where_it_is_still_correct():
+    """`layer2.source` keeps describing the product, because the legacy
+    2-layer MultiDConfig really does apply 0.15 as a single factor.
+
+    The fix was to stop REUSING it on the split chain, not to delete it.
+    """
+    sharing = load_sharing_data()
+    combined = sharing["layer2"]["source"].strip()
+    assert combined, "the legacy 2-layer shape lost its source string"
+    assert "0.15" in combined, (
+        "layer2.source no longer describes the product it is attached to")
+    assert sharing["layer2"]["sector_share"] == pytest.approx(0.15)
 
 
 def test_sources_default_to_empty_so_older_presets_still_load():

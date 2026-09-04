@@ -1146,6 +1146,25 @@ async def upload_cohort_mappings(
         elif normalized is not None:
             row_colors[ck] = normalized
 
+    # An upload that resolves NOTHING must not overwrite what is there. Found
+    # live: 51 rows whose archetype labels all failed to resolve were skipped
+    # one by one, an empty mapping was built, and it replaced 51 good rows.
+    # `rows_asserted` counts rows that NAMED an archetype -- a file of blank
+    # archetype cells is the deliberate "clear all" workflow and stays allowed.
+    from mapper.core.upload_guard import refuse_if_nothing_resolved
+
+    # Explicit "" default, not a bare .get(): a row with no archetype cell
+    # asserts nothing and is MEANT not to count, so the miss is the intended
+    # semantics rather than a lookup that failed. Stating that here beats
+    # declaring it in the silent-paths exemption list.
+    rows_asserted = sum(1 for r in parsed if (r.get("archetype", "") or "").strip())
+    refuse_if_nothing_resolved(
+        rows_seen=rows_asserted,
+        resolved=len(entries),
+        what="cohort mapping",
+        hint="Check the archetype names against this project's archetypes.",
+    )
+
     from mapper.models.bom_schemas import CohortMappingEntry
     mapping = CohortMapping(
         mfa_system_id=system_id,

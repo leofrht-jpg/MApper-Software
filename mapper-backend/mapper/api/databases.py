@@ -274,6 +274,13 @@ async def post_import_project(file: UploadFile = File(...)) -> ProjectResponse:
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
     _rehydrate_after_storage_write()
+    # A modelling-only archive carries the authored-database DEFINITIONS but no
+    # Brightway payload; rebuild them in the imported (now current) project.
+    # Best-effort: with no biosphere installed yet this reports "pending", and
+    # the ecoinvent-import hook tries again once flows exist.
+    from mapper.api.authored import reconcile_current_project
+
+    reconcile_current_project()
     return ProjectResponse(name=name, is_current=True)
 
 

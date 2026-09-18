@@ -10794,6 +10794,27 @@ into a set of permanent exemptions.
   (status/finish/fail) and calls `fn(task, ...)`. `plca`, `impact` and
   `monte_carlo` all start a plain daemon thread instead.
 
+### Break-checks run with bytecode caching OFF
+
+A break-check (deliberately breaking code to prove a test catches it, then
+restoring) must run with `PYTHONDONTWRITEBYTECODE=1`, and `__pycache__` must be
+cleared before trusting the restored run.
+
+**This has now silently invalidated a verification twice.** Python treats a
+`.pyc` as fresh when the source's `(mtime, size)` match what it recorded. A
+break that only REORDERS lines keeps the size identical, and a restore within
+the same second keeps the mtime — so the restored source runs the BROKEN
+bytecode. On 2026-09-18, during step 2 of the authored databases, a reordering
+break in `api/authored.py` kept running after restore: the "restored" suite
+reported 1 failure, and two unrelated breaks appeared to trip a test they do not
+touch. The first time was the 0.1.8 → 0.2.0 version literal below.
+
+A break-check is exactly where a false result is most costly: a stale-bytecode
+PASS reports that a test catches a defect it may not catch. Run it as:
+
+    PYTHONDONTWRITEBYTECODE=1 python -m pytest ...     # during the break
+    find . -name __pycache__ -type d -prune -exec rm -rf {} +   # before the restored run
+
 ### Clear `__pycache__` before a PyInstaller freeze
 
 A standing step in DESKTOP.md, because the failure is invisible. Python treats
@@ -11219,8 +11240,9 @@ constrained than ecoinvent's own data for the same flow:**
   `unfloored` (with `floor_detail` saying why). An activity with any unfloored
   exchange reports `has_unfloored_exchange`, serialised into the file.
 - `MIN_FLOOR_SAMPLES = 10`: below 10 lognormal ecoinvent exchanges for a flow,
-  neither its median basic variance nor its median GSD² is used. Measured on
-  ecoinvent 3.10 cutoff: 1,095 of 2,545 scored flows fall below it.
+  neither its median basic variance nor its median GSD² is used. **Arbitrary,
+  and documented as such** — see "The 10-exchange floor minimum is a documented
+  choice" below.
 - Stored exchanges validate their own arithmetic on load (`sigma` must equal the
   composition of pedigree + basic variance, `gsd2 = exp(2σ)`), so a hand-edited
   file cannot carry numbers its scores do not produce.
@@ -11253,6 +11275,47 @@ recipient to license ecoinvent for them).
 Routes: `/api/authored-databases` (list/read/create/delete, activities
 add/update/delete, `POST /reconcile`), in `mapper/api/authored.py`. Tests:
 `tests/test_authored_databases.py` (fake bw2 backend; CI has no biosphere).
+
+#### The 10-exchange floor minimum is a documented choice, not a derived one
+
+Measured on ecoinvent 3.10 cutoff (2026-09-18) to decide whether 10 was right.
+The answer: **the data supports no clean threshold for the median, so 10 stays,
+with its arbitrariness recorded here and in the constant's comment.**
+
+Usable exchanges per flow (2,545 flows carry lognormal GSD²; basic variance is
+almost identical, 2,519 flows):
+
+| exchanges | 1 | 2 | 3–4 | 5–9 | 10–19 | 20–49 | 50+ |
+|---|---|---|---|---|---|---|---|
+| flows | 147 | 145 | 354 | 449 | 395 | 354 | 701 |
+| cumulative | 5.8% | 11.5% | 25.4% | **43.0%** | 58.5% | 72.5% | 100% |
+
+How a k-exchange median behaves, from 300 random subsets of each of the 507
+flows with ≥100 exchanges, as the share of subsets whose median sets the GSD²
+floor too LOW (the direction that lets an understated authored value pass):
+
+| k | 1 | 2 | 3 | 5 | 10 | 20 | 50 |
+|---|---|---|---|---|---|---|---|
+| >10% too low | 26.0% | 24.3% | 20.8% | 18.0% | 14.5% | 10.6% | 6.4% |
+| >20% too low | 18.5% | 15.7% | 13.6% | 11.0% | 8.1% | 5.4% | 2.9% |
+
+The error falls smoothly, with no knee. 3 is not close enough to 30 to lower the
+bar, and 10 does not make the median safe either. Basic variance behaves the
+same way, with fatter tails.
+
+**The subsampling is also an imperfect model of rare flows.** Flows with 1–4
+exchanges mostly carry one repeated value (59–100% of them), and their typical
+GSD² differs (median of flow medians 1.53–1.75 for 2–9 exchanges vs 2.49 for
+50+). So neither analysis licenses a number.
+
+**A different estimator changes more than any threshold would** — recorded as
+a proposal, NOT implemented. Using the MAXIMUM of a small sample instead of its
+median makes the floor err strict instead of lenient: at k = 3 it is >10% too
+low for only 3.7% of subsamples (median: 20.8%), at k = 5 for 0.6%. The cost is
+the other direction: at k = 3, 30% of floors land >50% too high, so users give
+more reasons. If the floor minimum is ever revisited, compare
+"max below N, median above N" against the plain threshold rather than tuning
+the number.
 
 #### What NOT to do
 

@@ -69,10 +69,17 @@ from mapper.models.authored_schemas import (
 logger = logging.getLogger(__name__)
 
 #: Below this many lognormal ecoinvent exchanges for a flow, its median is not
-#: used -- neither as the basic variance nor as the floor. A median over three
-#: exchanges is not a statement about the flow. Measured on ecoinvent 3.10
-#: cutoff: 1,095 of the 2,545 biosphere flows that carry any lognormal
-#: exchange fall below 10.
+#: used -- neither as the basic variance nor as the floor.
+#:
+#: THIS NUMBER IS ARBITRARY, and the data says so. Measured on ecoinvent 3.10
+#: cutoff (see CLAUDE.md, "The 10-exchange floor minimum is a documented
+#: choice"): the error of a small-sample median falls smoothly with the count,
+#: with no knee to pick. A 10-exchange median still sets the floor >10% too low
+#: for 14.5% of subsamples (3 exchanges: 20.8%, 50: 6.4%), and flows with few
+#: exchanges are not like common ones (mostly one repeated value), so the
+#: subsampling does not transfer cleanly either. 10 is kept as a conventional
+#: middle; it excludes 1,095 of 2,545 scored flows (43%). Do not read it as
+#: derived, and do not change it without re-running that analysis.
 MIN_FLOOR_SAMPLES = 10
 
 #: Biosphere flow types an authored exchange may reference.

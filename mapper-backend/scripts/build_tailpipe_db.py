@@ -172,17 +172,26 @@ def derive(ei, source_name: str, fuel_key: str) -> dict:
     if fuel <= 0:
         raise SystemExit(f"no positive {fuel_key!r} input on {source_name!r}")
 
-    rows: dict[str, dict] = {}
+    # Keyed by the biosphere FLOW, not its name. One substance can be emitted
+    # to several compartments, and the compartment changes characterisation
+    # (EF v3.1 PM formation for NOx: 1.6e-6 urban vs 2.1e-7 high stacks).
+    # Grouping by name merged a split source onto whichever compartment came
+    # first. A split in the source is information: each compartment is carried
+    # as its own exchange. Same-flow duplicates are still one emission, summed.
+    rows: dict[tuple, dict] = {}
     for e in src.biosphere():
         name = e.input.get("name")
         if name not in FLOWS:
             continue
         d = dict(e)
+        key = tuple(e.input.key)
         row = rows.setdefault(
-            name,
+            key,
             {
+                "name": name,
+                "categories": tuple(e.input.get("categories") or ()),
                 "amount": 0.0,
-                "key": tuple(e.input.key),
+                "key": key,
                 "unit": e.input.get("unit"),
                 "scale": None,
                 "scale_without_pedigree": None,
@@ -201,12 +210,13 @@ def derive(ei, source_name: str, fuel_key: str) -> dict:
                 if swp is not None and not math.isnan(swp):
                     row["scale_without_pedigree"] = float(swp)
 
-    missing = [f for f in FLOWS if f not in rows]
+    present = {row["name"] for row in rows.values()}
+    missing = [f for f in FLOWS if f not in present]
     hard = sorted(REQUIRED_FLOWS.intersection(missing))
     if hard:
         raise SystemExit(f"{source_name!r} carries no {hard} -- refusing to build")
 
-    for name, row in rows.items():
+    for row in rows.values():
         row["factor"] = row["amount"] / fuel
         if row["scale"] is not None:
             # Inherit ecoinvent's own dispersion. See the note written into the
@@ -319,11 +329,19 @@ def main() -> int:
         print(f"{act_name}  [{code}]")
         print(f"  from {d['source_name']} [{d['source_location']}]")
         print(f"  fuel {d['fuel_amount']:.6g} kg per {d['source_unit']}")
+        # FLOWS order, then each compartment the source emits that substance
+        # to. One compartment per name gives exactly the previous output.
+        ordered = []
         for name in FLOWS:
-            row = d["rows"].get(name)
-            if row is None:
+            same = sorted(
+                (r for r in d["rows"].values() if r["name"] == name),
+                key=lambda r: r["categories"],
+            )
+            if not same:
                 print(f"    {name[:44]:46s}   -- absent in source --")
-                continue
+            ordered.extend(same)
+        for row in ordered:
+            name = row["name"]
             amount = row["factor"]
             ex = {
                 "input": row["key"],
@@ -343,7 +361,8 @@ def main() -> int:
             gsd2 = math.exp(2.0 * row["sigma"])
             print(
                 f"    {name[:44]:46s} {amount:>12.6g} kg/kg  "
-                f"GSD2 {gsd2:.4f}  ({row['uncertainty_source']})"
+                f"GSD2 {gsd2:.4f}  ({row['uncertainty_source']})  "
+                f"[{', '.join(row['categories'])}]"
             )
 
         data[key] = {

@@ -194,3 +194,113 @@ def test_no_pointer_when_the_project_neither_links_nor_installs(monkeypatch):
     _installed(monkeypatch, ["biosphere3", "ecoinvent-3.10-cutoff"])
     inv = ps.database_inventory("P", _archetypes())
     assert inv["regenerate_with"] == {}
+
+
+# ── derive() must key by FLOW, not by flow name ─────────────────────────────
+#
+# A substance can be emitted to several compartments (NOx has five in
+# biosphere3), and the compartment changes characterisation: EF v3.1's
+# particulate-matter factor for NOx is 1.6e-6 in urban air and 2.1e-7 from
+# high stacks. derive() used to group by NAME and keep the first key it met,
+# so a source leaf splitting one substance across two compartments was merged
+# onto one of them, amounts summed, with nothing said. The EURO 5 leaves happen
+# to use one compartment per flow, which is why the installed database was
+# right -- by luck, not by construction. These drive derive() with a fake leaf
+# so they run without ecoinvent.
+
+_FUEL = "petrol, low-sulfur"
+_SOURCE = "fake leaf"
+_URBAN = ("biosphere3", "nox-urban")
+_STACK = ("biosphere3", "nox-stack")
+_CO2 = ("biosphere3", "co2")
+
+
+class _Flow(dict):
+    def __init__(self, key, name, categories, unit="kilogram"):
+        super().__init__(name=name, categories=categories, unit=unit)
+        self.key = key
+
+
+class _Exc(dict):
+    def __init__(self, flow, amount, scale=None):
+        super().__init__(amount=amount)
+        if scale is not None:
+            self.update({"uncertainty type": 2, "scale": scale, "loc": 0.0,
+                         "pedigree": {"reliability": 2}})
+        else:
+            self["uncertainty type"] = 0
+        self.input = flow
+
+
+class _Leaf(dict):
+    def __init__(self, biosphere, fuel=0.05):
+        super().__init__(name=_SOURCE, location="RER", database="ei", code="leaf",
+                         unit="kilometer")
+        self._bio = biosphere
+        self._tech = [_Exc(_Flow(("ei", "fuel"), _FUEL, ()), fuel)]
+
+    def biosphere(self):
+        return list(self._bio)
+
+    def technosphere(self):
+        return list(self._tech)
+
+
+class _EI(list):
+    name = "fake-ecoinvent"
+
+
+def _derive(biosphere, fuel=0.05):
+    m = _script()
+    return m, m.derive(_EI([_Leaf(biosphere, fuel)]), _SOURCE, _FUEL)
+
+
+def _co2(amount=0.15):
+    return _Exc(_Flow(_CO2, "Carbon dioxide, fossil", ("air", "urban air close to ground")),
+                amount, scale=0.1)
+
+
+def test_two_compartments_of_one_substance_stay_two_rows():
+    """THE test. A split in the source is information, not an error.
+
+    Each compartment must come through with its own key and its own amount.
+    Against the name-keyed version this fails: one row, amounts summed, and
+    the stack emission relabelled as urban air.
+    """
+    _, d = _derive([
+        _co2(),
+        _Exc(_Flow(_URBAN, "Nitrogen oxides", ("air", "urban air close to ground")), 0.0003, scale=0.2),
+        _Exc(_Flow(_STACK, "Nitrogen oxides", ("air", "non-urban air or from high stacks")), 0.0001, scale=0.4),
+    ], fuel=0.05)
+    nox = {r["key"]: r for r in d["rows"].values() if r["key"] != _CO2}
+    assert set(nox) == {_URBAN, _STACK}, "compartments merged onto one flow"
+    assert nox[_URBAN]["factor"] == pytest.approx(0.0003 / 0.05)
+    assert nox[_STACK]["factor"] == pytest.approx(0.0001 / 0.05)
+
+
+def test_the_same_flow_listed_twice_is_still_summed():
+    """Duplicate rows for ONE flow in ONE compartment are one emission."""
+    flow = _Flow(_URBAN, "Nitrogen oxides", ("air", "urban air close to ground"))
+    _, d = _derive([_co2(), _Exc(flow, 0.0002, scale=0.2), _Exc(flow, 0.0001, scale=0.2)], fuel=0.05)
+    rows = [r for r in d["rows"].values() if r["key"] == _URBAN]
+    assert len(rows) == 1
+    assert rows[0]["factor"] == pytest.approx(0.0003 / 0.05)
+
+
+def test_each_compartment_keeps_its_own_uncertainty():
+    """Never the other compartment's scale -- they are different measurements."""
+    _, d = _derive([
+        _co2(),
+        _Exc(_Flow(_URBAN, "Nitrogen oxides", ("air", "urban air close to ground")), 0.0003, scale=0.2),
+        _Exc(_Flow(_STACK, "Nitrogen oxides", ("air", "non-urban air or from high stacks")), 0.0001, scale=0.4),
+    ])
+    by = {r["key"]: r for r in d["rows"].values()}
+    assert by[_URBAN]["sigma"] == pytest.approx(0.2)
+    assert by[_STACK]["sigma"] == pytest.approx(0.4)
+
+
+def test_a_source_without_fossil_co2_still_refuses():
+    """Keying by flow must not weaken the required-flow check."""
+    with pytest.raises(SystemExit, match="Carbon dioxide, fossil"):
+        _derive([_Exc(_Flow(_URBAN, "Nitrogen oxides", ("air", "urban air close to ground")),
+                      0.0003, scale=0.2)])

@@ -9,6 +9,7 @@
 from fastapi import APIRouter
 
 from mapper.api.activities import router as activities_router
+from mapper.api.authored import router as authored_router
 from mapper.api.aesa import router as aesa_router
 from mapper.api.bom import router as bom_router
 from mapper.api.databases import router as databases_router
@@ -30,6 +31,7 @@ router = APIRouter()
 router.include_router(databases_router)
 router.include_router(demo_router)
 router.include_router(activities_router)
+router.include_router(authored_router)
 router.include_router(ecoinvent_router)
 router.include_router(lca_router)
 router.include_router(monte_carlo_router)

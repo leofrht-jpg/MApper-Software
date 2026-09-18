@@ -269,12 +269,22 @@ def database_inventory(project: str, archetypes) -> dict:
     except Exception:
         pass
 
+    # Authored databases are defined by the project's own definition file,
+    # which travels in every export (it lives in the dsm root). They are the
+    # user's content, not licensed data: listing them under installed_base
+    # would tell a recipient to license ecoinvent for something the importer
+    # rebuilds on its own.
+    from mapper.core.authored_storage import authored_names
+
+    authored = authored_names(project)
     premise = sorted(d for d in installed if _PREMISE_MARKER in d)
     generated = sorted(d for d in installed if d in _GENERATED_DATABASES)
     base = sorted(
         d
         for d in installed
-        if _PREMISE_MARKER not in d and d not in _GENERATED_DATABASES
+        if _PREMISE_MARKER not in d
+        and d not in _GENERATED_DATABASES
+        and d not in authored
     )
 
     # Every generated database the project actually LINKS to needs its build
@@ -297,6 +307,13 @@ def database_inventory(project: str, archetypes) -> dict:
         # Separate again: obtainable by running the script named below.
         "installed_generated": generated,
         "regenerate_with": dict(sorted(regenerate.items())),
+        # Separate again: defined in this archive, rebuilt on import.
+        "authored": authored,
+        "authored_rebuild": (
+            "Rebuilt automatically on import from the project's own "
+            "authored_databases.json once biosphere flows are installed."
+            if authored else ""
+        ),
     }
 
 

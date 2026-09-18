@@ -105,6 +105,11 @@ def _import_worker(task: Task, username: str, password: str, version: str, syste
     task.update("writing", 0.90, "Writing database…")
     ei_import.write_database()
 
+    # Biosphere flows now exist: rebuild any authored database that was
+    # waiting for them (e.g. after a modelling-only project import).
+    from mapper.api.authored import reconcile_current_project
+
+    reconcile_current_project()
     task.update("done", 1.0, f"ecoinvent {version} {system_model} imported successfully.")
 
 
@@ -227,6 +232,11 @@ def _import_local_worker(task: Task, db_name: str, dirpath: str) -> None:
         stop.set()
         hb.join(timeout=1.0)
 
+    # Biosphere flows now exist: rebuild any authored database that was
+    # waiting for them (e.g. after a modelling-only project import).
+    from mapper.api.authored import reconcile_current_project
+
+    reconcile_current_project()
     task.update("done", 1.0, f"ecoinvent '{db_name}' imported successfully ({spold_count:,} datasets).")
 
 

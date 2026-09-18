@@ -11177,6 +11177,98 @@ the exporting machine — that is precisely the case that matters.
   is reference data; no BOM is touched by building it.
 
 
+## Authored databases — user-defined activities by biosphere flows (step 2: backend)
+
+A user creates a bw2 database and authors activities in it by specifying
+**biosphere exchanges**, never an impact score: bw2 has no representation for a
+characterised result, and a synthetic flow characterised in one method would
+contribute exactly zero to every other boundary. Authoring flows means every
+installed method characterises the activity. The mechanism is the one
+`mapper-tailpipe` proved (#94): `type='process'`, a mandatory production
+self-exchange, 32-hex codes, a database name without "biosphere".
+
+**Biosphere-only in v1, and that is load-bearing, not a simplification.**
+`resolve_link_db` deliberately never translates a link into a non-base database,
+so an authored activity with a technosphere input would keep base-ecoinvent
+electricity in every premise year, silently. Nothing in the engine can write a
+technosphere exchange.
+
+**The definition file is the source of truth; bw2 is a materialisation.**
+`dsm/{project}/authored_databases.json` (`mapper/core/authored_storage.py`) — a
+file inside the existing dsm root, like `project_settings.json`, so it travels
+with duplicate / rename / **modelling-only** export / import with no change to
+`project_storage`. Every mutation: validate → `Database.write()` → save the
+file. If the bw2 write fails nothing is saved. A CORRUPT file raises (409) rather
+than reading as empty — empty-then-save would delete every authored activity.
+Writes are atomic.
+
+**Uncertainty — an authored activity must never report itself as better
+constrained than ecoinvent's own data for the same flow:**
+
+- Every exchange is lognormal (`uncertainty type 2`). No path writes a fixed
+  exchange (GSD² exactly 1.0).
+- Pedigree: all five indicators required on every exchange; no defaults.
+- Basic variance: ecoinvent's median `scale without pedigree`² for THAT flow,
+  not a constant. #94's fallback used fossil CO₂'s 0.0006 for every flow; PM2.5's
+  ecoinvent median is 0.30. Not user-settable where ecoinvent has one. Where it
+  does not, the user enters one AND a reason, both stored.
+- Floor: composed GSD² vs ecoinvent's median GSD² for the flow. Below it, the
+  write is refused unless `floor_reason` is given; the reason is stored on the
+  exchange so the claim travels with the number.
+- **`floor_status` is always explicit**: `floored`, `below_floor_with_reason`, or
+  `unfloored` (with `floor_detail` saying why). An activity with any unfloored
+  exchange reports `has_unfloored_exchange`, serialised into the file.
+- `MIN_FLOOR_SAMPLES = 10`: below 10 lognormal ecoinvent exchanges for a flow,
+  neither its median basic variance nor its median GSD² is used. Measured on
+  ecoinvent 3.10 cutoff: 1,095 of 2,545 scored flows fall below it.
+- Stored exchanges validate their own arithmetic on load (`sigma` must equal the
+  composition of pedigree + basic variance, `gsd2 = exp(2σ)`), so a hand-edited
+  file cannot carry numbers its scores do not produce.
+
+**Coverage declaration from the first write.** `scope ∈ {complete, partial}` is
+required on every activity with no default; `scope_note` is required for
+`partial`. Step 4 will surface it on results as "not specified" — it exists now
+so no activity ever needs backfilling.
+
+**ecoinvent statistics are one pass, not per flow.** `Bw2Backend._all_stats`
+reads base ecoinvent's biosphere exchanges through the OUTPUT index (~2.5 s for
+445,588 exchanges), cached per (project, base db `modified`). A per-flow query
+through the input index costs 4–11 s EACH on a project carrying premise copies:
+MAp-test holds 122,817 rows for one NOx flow, 2,793 of them in base ecoinvent.
+
+**Codes are minted once (`uuid4().hex`) and stored**, never hashed from the
+name: a rename would change a name-derived code and dangle every BOM link.
+Deleting an authored database or activity that any archetype links to is
+refused with the links named. Negative amounts are refused in v1.
+
+**Rebuild after import.** `reconcile` rebuilds any authored database whose bw2
+fingerprint (`mapper_authored_fingerprint` in bw2 metadata) differs from the
+file. It runs after project import and after an ecoinvent import. A
+modelling-only import usually has no biosphere yet → `pending`, never a failure;
+a flow key that resolves to a DIFFERENT flow in the recipient's biosphere3 (name,
+compartment or unit) is also `pending`, never written. The export manifest lists
+authored databases under `authored`, not `installed_base` (which would tell a
+recipient to license ecoinvent for them).
+
+Routes: `/api/authored-databases` (list/read/create/delete, activities
+add/update/delete, `POST /reconcile`), in `mapper/api/authored.py`. Tests:
+`tests/test_authored_databases.py` (fake bw2 backend; CI has no biosphere).
+
+#### What NOT to do
+
+- **Don't add a technosphere exchange type** without first making the
+  prospective translator handle authored databases. It would silently mix base
+  and premise backgrounds.
+- **Don't let a missing uncertainty field mean "fixed" or "default".** Every
+  exchange carries all five pedigree scores, a basic variance with provenance,
+  and an explicit `floor_status`.
+- **Don't reuse #94's `FALLBACK_BASIC_VARIANCE` for authored flows.** It is
+  CO₂'s value.
+- **Don't query flow statistics through the input index per flow.** One pass
+  over the output index, cached.
+- **Don't save the definition before the bw2 write succeeds**, and don't read
+  a corrupt definition file as empty.
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

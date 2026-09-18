@@ -11313,9 +11313,19 @@ a proposal, NOT implemented. Using the MAXIMUM of a small sample instead of its
 median makes the floor err strict instead of lenient: at k = 3 it is >10% too
 low for only 3.7% of subsamples (median: 20.8%), at k = 5 for 0.6%. The cost is
 the other direction: at k = 3, 30% of floors land >50% too high, so users give
-more reasons. If the floor minimum is ever revisited, compare
-"max below N, median above N" against the plain threshold rather than tuning
-the number.
+more reasons.
+
+**Decided against (2026-09-18), and why — the better-looking error rate is the
+worse failure mode.** The floor works only because refusing is rare. Under the
+current median, the failure is that some understated values pass; they remain
+visible on the exchange (GSD², floor, status) and the user can still see and
+correct them. Under the max, the failure is that correct values are refused
+often enough that `floor_reason` gets filled routinely — and a reason field
+filled routinely stops being read, which trains people to write a reason
+without thinking. That disables the guard for every exchange, not just the
+ones it misjudged. The second failure is worse even though its too-low rate is
+lower. Do not adopt the max (or any stricter small-sample estimator) without
+also measuring how often it refuses values that are actually fine.
 
 #### What NOT to do
 

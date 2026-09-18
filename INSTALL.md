@@ -95,6 +95,9 @@ Quit MApper, delete the webview cache, and relaunch:
 - Windows: `%LOCALAPPDATA%\com.leonardoferhati.mapper\EBWebView`
 - macOS: `~/Library/Caches/com.leonardoferhati.mapper`
 
+The Windows fix was confirmed on a real machine. The macOS path is untested,
+inferred from where the app's webview keeps its HTTP cache.
+
 Your projects and databases are stored elsewhere and are not touched. You only
 lose remembered view preferences, such as the last open tab.
 

@@ -85,6 +85,22 @@ To generate prospective databases, you need an encryption key:
 **ecoinvent import fails:** Use the cutoff `.7z` file (not lci or lcia variants)
 **Premise key error:** Verify key is saved in `~/.premise/premise_key` (single line, no spaces)
 
+**Desktop app shows an old version after upgrading from v0.1.x:** This affects
+upgrades from v0.1.x only. A fresh install, or an upgrade from v0.2.0 or later,
+does not need this. Builds before v0.2.0 sent the app's `index.html` without a
+`no-cache` header, so the webview can keep reusing the copy it cached then and
+never ask the new version for its own. Settings reports the old version number.
+Quit MApper, delete the webview cache, and relaunch:
+
+- Windows: `%LOCALAPPDATA%\com.leonardoferhati.mapper\EBWebView`
+- macOS: `~/Library/Caches/com.leonardoferhati.mapper`
+
+The Windows fix was confirmed on a real machine. The macOS path is untested,
+inferred from where the app's webview keeps its HTTP cache.
+
+Your projects and databases are stored elsewhere and are not touched. You only
+lose remembered view preferences, such as the last open tab.
+
 ## Contact
 
 Leonardo Ferhati — leo_frht@icloud.com

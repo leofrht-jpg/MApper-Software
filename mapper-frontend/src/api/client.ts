@@ -1019,6 +1019,61 @@ export async function getMethods(): Promise<MethodFamily[]> {
   return request<MethodFamily[]>('/methods')
 }
 
+// ── Biosphere flows grouped by substance (compartment picker) ───────────────
+
+export interface FlowMethodRef {
+  label: string
+  method: string[]
+}
+
+export interface FlowCandidate {
+  database: string
+  code: string
+  name: string
+  categories: string[]
+  unit: string
+  type: string
+  /** Information only; never used to order candidates. */
+  ecoinvent_exchanges: number
+  floor_available: boolean
+  floor_gsd2: number | null
+  floor_n: number
+  characterised: number
+  factors: Record<string, number>
+}
+
+export interface SubstanceGroup {
+  name: string
+  database: string
+  units: string[]
+  /** Alphabetical by compartment; the order carries no meaning. */
+  candidates: FlowCandidate[]
+  varying_methods: FlowMethodRef[]
+  uniform_methods: FlowMethodRef[]
+  family_indicator_count: number
+}
+
+export interface FlowSearchResponse {
+  database: string
+  family: string
+  families: string[]
+  groups: SubstanceGroup[]
+  truncated: boolean
+}
+
+export async function searchBiosphereFlows(params: {
+  q: string
+  database?: string | null
+  family?: string | null
+  limit?: number
+}): Promise<FlowSearchResponse> {
+  const sp = new URLSearchParams({ q: params.q })
+  if (params.database) sp.set('database', params.database)
+  if (params.family) sp.set('family', params.family)
+  if (params.limit) sp.set('limit', String(params.limit))
+  return request<FlowSearchResponse>(`/biosphere-flows/search?${sp.toString()}`)
+}
+
 // ── Phase 1B functions ────────────────────────────────────────────────────────
 
 export async function validateEcoinventCredentials(

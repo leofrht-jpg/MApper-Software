@@ -156,9 +156,9 @@ def test_the_static_single_product_adapter_carries_the_gaps(monkeypatch, boiler)
 
 
 def test_compute_and_the_annotation_resolve_the_mapping_in_one_place():
-    src = (BACKEND / "core" / "aesa_engine.py").read_text()
+    src = (BACKEND / "core" / "aesa_engine.py").read_text(encoding="utf-8")
     assert src.count("suggest_method_mapping(methods, boundary_set)") == 1
-    assert "resolve_method_mapping(config, impact.results, bset)" in (BACKEND / "api" / "aesa.py").read_text()
+    assert "resolve_method_mapping(config, impact.results, bset)" in (BACKEND / "api" / "aesa.py").read_text(encoding="utf-8")
 
 
 # ── Every result constructor passes the annotation ──────────────────────────

@@ -63,10 +63,11 @@ See [INSTALL.md](INSTALL.md) for ecoinvent and premise data setup.
   python -m pytest tests/
   ```
 
-  Use `python -m pytest`, not bare `pytest`: there is no `conftest.py` and the
-  backend is not pip-installed, so `import mapper` only resolves because
-  `python -m` puts the working directory on `sys.path`. Bare `pytest` fails at
-  collection.
+  Bare `pytest` works too, from any directory. The backend is not
+  pip-installed; `pythonpath = ["."]` in `mapper-backend/pyproject.toml` puts it
+  on `sys.path`, and `tests/test_bare_pytest_collects.py` fails if that line is
+  lost. (Before it existed, bare `pytest` failed every file at collection with
+  `ModuleNotFoundError: No module named 'mapper'`.)
 
   19 of the 695 tests need a real ecoinvent database and skip themselves when
   none is present, so a clean checkout runs 676.

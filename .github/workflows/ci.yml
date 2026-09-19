@@ -117,10 +117,10 @@ jobs:
 
       # ── macOS: one pytest process for the whole suite ───────────────────────
       #
-      # `python -m pytest`, not bare `pytest`: the package is not installed and
-      # tests/conftest.py sits below the rootdir, so `import mapper` only
-      # resolves because `python -m` puts the working directory on sys.path.
-      # Bare `pytest` fails at collection.
+      # The package is not installed; `pythonpath = ["."]` in
+      # mapper-backend/pyproject.toml is what makes `import mapper` resolve, for
+      # bare `pytest` and `python -m pytest` alike. Guarded by
+      # tests/test_bare_pytest_collects.py.
       #
       # BRIGHTWAY2_DIR points at an empty scratch directory so the run is
       # hermetic and the ecoinvent-dependent tests take their documented skip

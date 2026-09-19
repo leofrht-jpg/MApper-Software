@@ -35,6 +35,9 @@ from mapper.models.authored_schemas import (
     ExchangeInput,
     ExchangePreview,
     MaterialisationStatus,
+    ReachedIndicator,
+    ReachedIndicatorsRequest,
+    ReachedIndicatorsResponse,
 )
 
 router = APIRouter(prefix="/authored-databases", tags=["authored-databases"])
@@ -116,6 +119,24 @@ async def preview_exchange(body: ExchangeInput) -> ExchangePreview:
         return ExchangePreview(ok=True, exchange=eng.resolve_exchange(body, get_backend(project)))
     except eng.AuthoredError as err:
         return ExchangePreview(ok=False, problems=err.problems, codes=err.codes)
+
+
+@router.post("/reached-indicators", response_model=ReachedIndicatorsResponse)
+async def reached_indicators(body: ReachedIndicatorsRequest) -> ReachedIndicatorsResponse:
+    """The indicators the listed flows reach: the only ones a PARTIAL activity
+    can be declared complete for. Uses the backend's ``reached_methods`` -- the
+    same function the save-time floor calls -- so the editor cannot offer a
+    tick that saving would refuse. Writes nothing."""
+    from mapper.core.flow_characterisation import pick_family
+
+    reached = get_backend(_project()).reached_methods((f.database, f.code) for f in body.flows)
+    items = sorted((m for m in reached if m), key=lambda m: (m[0], m[1:]))
+    families = sorted({m[0] for m in items})
+    return ReachedIndicatorsResponse(
+        families=families,
+        default_family=pick_family(None, families) if families else None,
+        indicators=[ReachedIndicator(method=list(m), family=m[0], label=" › ".join(m[1:])) for m in items],
+    )
 
 
 @router.post("", response_model=AuthoredDatabase, dependencies=[Depends(verify_project_state)])

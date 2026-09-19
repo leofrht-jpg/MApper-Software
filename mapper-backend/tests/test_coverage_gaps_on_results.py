@@ -56,7 +56,9 @@ def boiler(monkeypatch):
     import bw2data
 
     monkeypatch.setattr(fc, "characterisation_index", lambda bd: CF_INDEX)
-    act = _activity([CO2], "partial")
+    # CO2-only boiler: its author declares climate change complete (true for a
+    # CO2-only stack) and nothing else.
+    act = _activity([CO2], "partial", ticks=[GW])
     authored_storage.save_definitions(bw2data.projects.current, _defs(act))
     return act
 
@@ -86,7 +88,7 @@ def test_the_annotation_moves_no_number(monkeypatch, boiler):
     import bw2data
 
     partial = _single(monkeypatch, _product(boiler.code))
-    complete = boiler.model_copy(update={"scope": "complete", "scope_note": None})
+    complete = boiler.model_copy(update={"scope": "complete", "scope_note": None, "complete_indicators": []})
     authored_storage.save_definitions(bw2data.projects.current, _defs(complete))
     whole = _single(monkeypatch, _product(boiler.code))
     assert whole.coverage_gaps == [] and partial.coverage_gaps

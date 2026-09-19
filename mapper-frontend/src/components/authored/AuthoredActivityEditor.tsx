@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { Plus, Trash2, X } from 'lucide-react'
 import {
   addAuthoredActivity,
+  fetchReachedIndicators,
   previewAuthoredExchange,
   structuredErrorDetail,
   updateAuthoredActivity,
@@ -22,6 +23,7 @@ import {
   type AuthoredScope,
   type ExchangePreview,
   type FlowCandidate,
+  type ReachedIndicatorsResponse,
 } from '../../api/client'
 import { NumberInput } from '../ui/NumberInput'
 import { PedigreeEditor } from '../uncertainty/PedigreeEditor'
@@ -130,6 +132,11 @@ export function AuthoredActivityEditor({ database, initial, onSaved, onCancel, d
   const [picking, setPicking] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveProblems, setSaveProblems] = useState<string[]>([])
+  // Per-indicator declaration (partial only). Keys are full method tuples joined
+  // by '|'. Starts EMPTY for a new activity: nothing is complete until ticked.
+  const [ticked, setTicked] = useState<Set<string>>(
+    () => new Set((initial?.complete_indicators ?? []).map((m) => m.join('|'))))
+  const [reached, setReached] = useState<ReachedIndicatorsResponse | null>(null)
   const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
   const tickets = useRef<Record<string, number>>({})
 
@@ -163,6 +170,24 @@ export function AuthoredActivityEditor({ database, initial, onSaved, onCancel, d
 
   useEffect(() => () => { Object.values(timers.current).forEach(clearTimeout) }, [])
 
+  // What the listed flows reach -- the only indicators that can be ticked.
+  // Asked of the backend (same function as the save-time floor), never derived here.
+  const flowsKey = rows.map((r) => `${r.flow.database}|${r.flow.code}`).sort().join(',')
+  const reachTicket = useRef(0)
+  useEffect(() => {
+    if (scope !== 'partial' || rows.length === 0) { setReached(null); return }
+    const ticket = ++reachTicket.current
+    const t = setTimeout(() => {
+      fetchReachedIndicators(rows.map((r) => ({ database: r.flow.database, code: r.flow.code })))
+        .then((res) => { if (reachTicket.current === ticket) setReached(res) })
+        .catch(() => { if (reachTicket.current === ticket) setReached(null) })
+    }, debounceMs)
+    return () => clearTimeout(t)
+  }, [flowsKey, scope]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const reachedKeys = new Set((reached?.indicators ?? []).map((i) => i.method.join('|')))
+  const staleTicks = scope === 'partial' && reached ? [...ticked].filter((k) => !reachedKeys.has(k)) : []
+
   const unfloored = rows.some((r) => r.preview?.exchange?.floor_status === 'unfloored')
   const blockers: string[] = []
   if (!name.trim()) blockers.push('a name')
@@ -171,6 +196,7 @@ export function AuthoredActivityEditor({ database, initial, onSaved, onCancel, d
   if (rows.length === 0) blockers.push('at least one exchange')
   if (rows.some((r) => !complete(r))) blockers.push('all five pedigree scores on every exchange')
   if (rows.some((r) => complete(r) && !r.preview?.ok)) blockers.push('every exchange accepted by the check below it')
+  if (staleTicks.length) blockers.push('no ticks on indicators no listed flow reaches (untick them)')
 
   const save = async () => {
     if (blockers.length || scope === null) return
@@ -178,6 +204,8 @@ export function AuthoredActivityEditor({ database, initial, onSaved, onCancel, d
       name: name.trim(), reference_product: refProduct.trim() || null, unit, location, comment,
       scope, scope_note: scope === 'partial' ? scopeNote.trim() : null,
       exchanges: rows.map(toInput),
+      // A complete activity declares full coverage by definition: no ticks.
+      complete_indicators: scope === 'partial' ? [...ticked].sort().map((k) => k.split('|')) : [],
     }
     setSaving(true)
     setSaveProblems([])
@@ -258,6 +286,15 @@ export function AuthoredActivityEditor({ database, initial, onSaved, onCancel, d
               onRemove={() => setRows((rs) => rs.filter((x) => x.key !== r.key))} />
           ))}
         </div>
+
+        {scope === 'partial' && rows.length > 0 && (
+          <CoverageDeclaration
+            reached={reached}
+            ticked={ticked}
+            stale={staleTicks}
+            onToggle={(k) => setTicked((t) => { const n = new Set(t); if (n.has(k)) n.delete(k); else n.add(k); return n })}
+          />
+        )}
 
         {unfloored && (
           <div data-testid="activity-unfloored" style={{ fontSize: 'var(--text-xs)', color: 'var(--warning)' }}>
@@ -381,5 +418,74 @@ function ExchangeRowView({ row, complete, onChange, onRemove }: {
         </ul>
       )}
     </div>
+  )
+}
+
+/** Partial activities only. Lists the indicators the listed flows reach and lets
+ *  the author tick those the partial inventory is complete for. Nothing starts
+ *  ticked; an indicator no listed flow reaches is never offered. */
+function CoverageDeclaration({ reached, ticked, stale, onToggle }: {
+  reached: ReachedIndicatorsResponse | null
+  ticked: Set<string>
+  stale: string[]
+  onToggle: (key: string) => void
+}) {
+  const [family, setFamily] = useState<string | null>(null)
+  const fam = family && reached?.families.includes(family) ? family : reached?.default_family ?? null
+  const shown = (reached?.indicators ?? []).filter((i) => i.family === fam)
+  const tickedHere = shown.filter((i) => ticked.has(i.method.join('|'))).length
+  return (
+    <fieldset data-testid="authored-coverage-declaration" style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', margin: 0, display: 'grid', gap: 'var(--space-2)' }}>
+      <legend style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', padding: '0 4px' }}>
+        Which indicators is this partial inventory complete for?
+      </legend>
+      <p style={{ margin: 0, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+        Listed: the indicators your flows are characterised by. A factor means a flow contributes, not that
+        the flows you listed are enough. Tick an indicator only if they are. Everything you leave unticked,
+        and every indicator not listed here, is marked <strong>not specified</strong> on results.
+      </p>
+      {!reached && <span data-testid="authored-coverage-loading" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>Finding the indicators these flows reach…</span>}
+      {reached && reached.indicators.length === 0 && (
+        <span data-testid="authored-coverage-none" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+          No installed indicator characterises these flows, so none can be declared complete.
+        </span>
+      )}
+      {reached && reached.families.length > 1 && (
+        <label style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'flex', gap: 6, alignItems: 'center' }}>
+          Method family
+          <select data-testid="authored-coverage-family" value={fam ?? ''} onChange={(e) => setFamily(e.target.value)}
+            style={{ height: 24, background: 'var(--bg-elevated)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)' }}>
+            {reached.families.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </label>
+      )}
+      {shown.length > 0 && (
+        <div style={{ display: 'grid', gap: 2 }}>
+          {shown.map((i) => {
+            const k = i.method.join('|')
+            return (
+              <label key={k} style={{ display: 'flex', gap: 6, fontSize: 'var(--text-sm)', alignItems: 'center' }}>
+                <input type="checkbox" data-testid={`coverage-tick-${k}`} checked={ticked.has(k)} onChange={() => onToggle(k)} />
+                {i.label}
+              </label>
+            )
+          })}
+          <span data-testid="authored-coverage-summary" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+            {tickedHere} of {shown.length} declared complete in {fam}; {ticked.size - stale.length} across all families.
+          </span>
+        </div>
+      )}
+      {stale.length > 0 && (
+        <div data-testid="authored-coverage-stale" style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', display: 'grid', gap: 2 }}>
+          Ticked, but no listed flow reaches it any more -- it cannot be declared complete:
+          {stale.map((k) => (
+            <label key={k} style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+              <input type="checkbox" data-testid={`coverage-stale-${k}`} checked onChange={() => onToggle(k)} />
+              {k.split('|').join(' › ')}
+            </label>
+          ))}
+        </div>
+      )}
+    </fieldset>
   )
 }

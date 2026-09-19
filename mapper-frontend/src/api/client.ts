@@ -1047,6 +1047,8 @@ export interface AuthoredActivityInput {
   scope: AuthoredScope
   scope_note?: string | null
   exchanges: AuthoredExchangeInput[]
+  /** PARTIAL only: indicators declared complete (full method tuples). Default: none. */
+  complete_indicators?: string[][]
 }
 
 export interface AuthoredFlowSnapshot {
@@ -1083,6 +1085,8 @@ export interface AuthoredActivity {
   scope_note: string | null
   exchanges: AuthoredExchange[]
   has_unfloored_exchange: boolean
+  /** PARTIAL only: indicators the author declared complete. Absent on activities written before the declaration existed = none. */
+  complete_indicators?: string[][]
 }
 
 export interface AuthoredDatabase {
@@ -1112,6 +1116,10 @@ export interface CoverageGap {
   code: string
   activity_name: string
   scope_note: string
+  /** not_reached: no listed flow is characterised by the indicator.
+   *  not_declared: listed flows contribute, but the author has not declared it complete.
+   *  Absent on gaps stored before the declaration existed = not_reached. */
+  kind?: 'not_reached' | 'not_declared'
 }
 
 export interface AESACoverageGap extends CoverageGap {
@@ -1171,6 +1179,21 @@ export function structuredErrorDetail(e: unknown): Record<string, unknown> | nul
   } catch {
     return null
   }
+}
+
+export interface ReachedIndicator { method: string[]; family: string; label: string }
+export interface ReachedIndicatorsResponse {
+  families: string[]
+  default_family: string | null
+  indicators: ReachedIndicator[]
+}
+
+/** The indicators these flows reach: the only ones a partial activity can be
+ *  declared complete for. Same backend function as the save-time floor. */
+export async function fetchReachedIndicators(flows: { database: string; code: string }[]): Promise<ReachedIndicatorsResponse> {
+  return request<ReachedIndicatorsResponse>('/authored-databases/reached-indicators', {
+    method: 'POST', body: JSON.stringify({ flows }),
+  })
 }
 
 /** Dry run of one exchange by the SAME code that saving uses. */

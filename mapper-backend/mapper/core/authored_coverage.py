@@ -19,8 +19,12 @@ characterisation index, never from a solve, so it cannot change a number --
 and a "complete" activity never produces a gap, because there a missing flow
 really is zero.
 
-An indicator is covered when ANY of the activity's flows has a factor under
-that method, including a factor of 0: the method has then spoken for the flow.
+An indicator is SPECIFIED when (a) a listed flow has a factor under the method
+(0 included: the method has spoken) AND (b) the author declared the partial
+inventory complete for it (``complete_indicators``). A factor means a flow
+contributes, not that the listed flows suffice; only the author knows that, so
+(b) is required and defaults to "not declared". (a) is the floor: the
+declaration can narrow what counts as specified, never widen it.
 """
 from __future__ import annotations
 
@@ -83,31 +87,41 @@ def partial_activities(defs) -> dict[Key, AuthoredActivity]:
     return {(db.name, a.code): a for db in defs.databases for a in db.activities if a.scope == "partial"}
 
 
+def reached(flow_keys: Iterable[Key], cf_index: dict) -> set[tuple[str, ...]]:
+    """Method tuples at least one of these flows has a factor under (0 included)."""
+    out: set[tuple[str, ...]] = set()
+    for key in flow_keys:
+        for m, _cf in cf_index.get(tuple(key), ()):
+            out.add(tuple(m))
+    return out
+
+
 def gaps(keys: Iterable[Key], methods: Iterable[Iterable[str]],
          partial: dict[Key, AuthoredActivity], cf_index: dict) -> list[CoverageGap]:
-    """Pure: one gap per (method, partial activity) the method does not reach.
+    """Pure: one gap per (method, partial activity) not SPECIFIED.
 
-    Ordered by the methods as given, then by activity key, so the result is
-    deterministic and follows the run's indicator order.
+    Specified = reached by a listed flow AND declared complete by the author.
+    The reach test is re-applied here, not trusted from save time: a tick whose
+    reach was lost since (a method reinstalled with other factors) is a
+    ``not_reached`` gap, never "specified". Ordered by the methods as given,
+    then by activity key.
     """
     linked = sorted(k for k in set(keys) if k in partial)
-    covered: dict[Key, set[tuple[str, ...]]] = {}
-    for k in linked:
-        seen: set[tuple[str, ...]] = set()
-        for ex in partial[k].exchanges:
-            for m, _cf in cf_index.get((ex.flow.database, ex.flow.code), ()):
-                seen.add(tuple(m))
-        covered[k] = seen
+    reach = {k: reached(((ex.flow.database, ex.flow.code) for ex in partial[k].exchanges), cf_index)
+             for k in linked}
+    ticked = {k: {tuple(m) for m in partial[k].complete_indicators} for k in linked}
     out: list[CoverageGap] = []
     for m in methods:
         mt = tuple(m)
         for k in linked:
-            if mt not in covered[k]:
-                act = partial[k]
-                out.append(CoverageGap(
-                    method=list(mt), database=k[0], code=k[1],
-                    activity_name=act.name, scope_note=act.scope_note or "",
-                ))
+            if mt in reach[k] and mt in ticked[k]:
+                continue
+            act = partial[k]
+            out.append(CoverageGap(
+                method=list(mt), database=k[0], code=k[1],
+                activity_name=act.name, scope_note=act.scope_note or "",
+                kind="not_declared" if mt in reach[k] else "not_reached",
+            ))
     return out
 
 

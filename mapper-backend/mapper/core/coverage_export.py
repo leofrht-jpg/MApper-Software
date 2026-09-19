@@ -38,9 +38,10 @@ LABEL = "Authored-activity coverage"
 
 EXPLANATION = (
     "Status per indicator. 'NOT SPECIFIED': a PARTIAL authored activity this "
-    "result used has no flow characterised by the indicator, so its "
-    "contribution is UNKNOWN, not zero, and the value is missing a term of "
-    "unknown size. 'specified': checked, nothing left open. 'not recorded': "
+    "result used is not declared complete for the indicator -- either no listed "
+    "flow is characterised by it, or listed flows contribute but its author has "
+    "not declared them sufficient -- so its contribution is UNKNOWN, not zero. "
+    "'specified': checked, nothing left open. 'not recorded': "
     "the result was computed before MApper checked this; it is unknown "
     "whether the indicator is specified."
 )
@@ -59,6 +60,12 @@ class CoverageEntry:
     aesa: bool = False
 
 
+WHY = {
+    "not_reached": "no listed flow is characterised by this indicator",
+    "not_declared": "listed flows contribute, but the author has not declared the partial inventory complete for it",
+}
+
+
 def _method_path(m) -> str:
     return " › ".join(m)
 
@@ -73,13 +80,14 @@ def _rows(entry: CoverageEntry) -> list[list]:
             name, match = _method_path(ind), [g for g in (entry.gaps or []) if list(g.method) == list(ind)]
         lead = [entry.label] if entry.label is not None else []
         if entry.gaps is None:
-            out.append(lead + [name] + ([""] if entry.aesa else []) + [NOT_RECORDED, "", "", ""])
+            out.append(lead + [name] + ([""] if entry.aesa else []) + [NOT_RECORDED, "", "", "", ""])
         elif not match:
-            out.append(lead + [name] + ([""] if entry.aesa else []) + [SPECIFIED, "", "", ""])
+            out.append(lead + [name] + ([""] if entry.aesa else []) + [SPECIFIED, "", "", "", ""])
         else:
             for g in match:
                 out.append(lead + [name] + ([_method_path(g.method)] if entry.aesa else [])
-                           + [NOT_SPECIFIED, g.activity_name, g.database, g.scope_note])
+                           + [NOT_SPECIFIED, g.activity_name, g.database, g.scope_note,
+                              WHY.get(getattr(g, "kind", "not_reached"), "")])
     return out
 
 
@@ -122,7 +130,7 @@ def add_coverage_sheet(wb, entries: Sequence[CoverageEntry], *, discriminator: s
     multi = any(e.label is not None for e in entries)
     aesa = any(e.aesa for e in entries)
     header = ([discriminator] if multi else []) + (["Boundary", "Method"] if aesa else ["Indicator"]) + [
-        "Status", "Partial authored activity", "Database", "Declared scope (author's note)"]
+        "Status", "Partial authored activity", "Database", "Declared scope (author's note)", "Why"]
     ws.append(header)
     for c in ws[3]:
         c.font = Font(bold=True)

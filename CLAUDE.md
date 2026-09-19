@@ -8728,62 +8728,89 @@ store — the guard fires immediately on both offending tests, naming each.
   real projects for days while every run passed. The guard is what makes it
   observable; before it, only a manual `ls` of the store would have shown it.
 
-## Check free disk space before investigating a data-corruption message
+## The repos lived on an iCloud-synced Desktop, and iCloud evicted them
 
-**Observation, not a conclusion — the mechanism is unknown.**
+**Moved 2026-09-18.** Both repositories now live in `~/Developer/MApper` and
+`~/Developer/MApper - Website`, outside iCloud Drive. Until then they sat under
+`~/Desktop/MyPhD/9. Entrepreneurship/MApper/`, and `~/Desktop` is synced by
+iCloud "Desktop & Documents" (`defaults read com.apple.finder
+FXICloudDriveDesktop` = 1). With "Optimise Mac Storage" macOS **evicts** file
+contents to iCloud, leaving a `dataless` placeholder of the right size — more
+aggressively the fuller the disk.
 
-On 2026-09-03 the AESA CO2e provenance suites
+**Measured on the day of the move:**
+
+| | dataless | of files |
+|---|---|---|
+| `mapper-frontend/node_modules` | 22,524 | 24,165 (93%) |
+| `mapper-backend` | 5,535 | 5,788 (96%) |
+| `.git` | 3,098 | 5,683 (55%) |
+| website repo, total | 23,304 | 24,197 |
+
+**What eviction does to tools, and why it read as corruption:**
+
+- **A first read downloads the file, and can take minutes.** `require('jsdom')`
+  took 21 min 51 s wall with 2.2 s of CPU; the next load, with the files now
+  local, 0.58 s. Vitest spent 397 s running two files whose tests take 140 ms.
+- **Some evicted files read back EMPTY, with no error.** 90 files marked
+  `compressed,dataless` (in the staged sidecar, `mapper-tauri/resources/`)
+  reported their full size in `ls` and returned **0 bytes** to `cat`. A
+  program reading one gets an empty or truncated file and nothing says so.
+- **Sync creates `" 2"` conflict copies** of files and directories it thinks
+  were edited in two places.
+
+**Every storage symptom filed without a cause fits this mechanism:**
+
+1. Dataless `node_modules` — `next build` failing on the website (Lessons.md,
+   2026-07-30) and tools hanging on dataless files (Lessons.md, 2026-08-29).
+2. An inconsistent `whatwg-url` — files of one package version read back
+   partly evicted, partly local.
+3. The website build timing out — the build reading thousands of evicted
+   `node_modules` files.
+4. Duplicate git refs, twice — `" 2"` copies of ref files such as
+   `refs/heads/main 2`, which break `git fetch` (Lessons.md; ToDo.md).
+5. The `desktop_entry 2.py` conflict copy — the same `" 2"` duplication
+   applied to a source file.
+6. The corrupted `tapable` export — a module read while evicted, empty or
+   truncated.
+
+Items 2, 5 and 6 were reported in sessions whose records were not found when
+this section was written; the explanation for them rests on the mechanism, not
+on re-examining those incidents.
+
+**The 2026-09-03 CO2e failures are a CANDIDATE for the same cause, not a
+confirmed one.** The AESA CO2e provenance suites
 (`test_aesa_co2e_ratio_provenance.py`, `test_aesa_co2e_documented_claims.py`)
-reported **13-14 failures** of the form:
+reported 13-14 failures of the form `AR6 C1+C2: pairs_file is missing
+{'C2', 'C1'}` — i.e. `ar6_c1c2_pairs.csv` appeared to have lost its
+categories. Read directly, the file was intact (214 rows, `C1`/`C2`). The run
+coincided with a 91%-full volume and ran 2.4x slow; the re-run on a 78%-full
+volume was green, as was CI throughout. An evicted CSV that read back empty or
+partial to the test, and was fully downloaded by the later direct inspection,
+explains every observation. It was not verified at the time — nobody checked
+the file's `dataless` flag — so it stays a candidate.
 
-```
-AR6 C1+C2: pairs_file is missing {'C2', 'C1'}
-assert set() == {'C1', 'C2'}
-```
+**If a data-shaped failure appears again, check in this order:**
 
-That message names a **data** problem: it says the shipped
-`ar6_c1c2_pairs.csv` no longer contains the categories the fit declares.
-
-**The file was intact the whole time.** Read directly it gives 214 rows with
-`category` values `C1`/`C2`; read through the test module's own `DATA` path and
-its own `_rows()` helper, under pytest, it gives the same. `DATA` is a fixed
-package path and is NOT touched by the storage-isolation fixture, so the
-obvious hypothesis — that the redirect shadowed it — is ruled out.
-
-What correlated was the machine, not the data:
-
-| run | volume | wall clock | result |
-|---|---|---|---|
-| failing | **91% full** (39 GB free), after a 41 GB copy filled it to 99% | **822 s** | 13-14 CO2e failures |
-| clean | 78% full (98 GB free) | 323 s | 1500 passed, CO2e green |
-
-Same commit, same environment, 2.4x slower on the failing run. Not reproducible
-on a healthy volume. CI on a fresh runner was green throughout.
-
-**So: if these tests fail claiming the pairs file lost its categories, check
-`df -h` FIRST.** The failure message will send you looking for a corrupted CSV,
-and on this evidence that is the wrong place to look. Confirm the file is
-actually damaged (`wc -l`, read the header, check `category` values) before
-touching the data — and re-run once on a volume with headroom, because the
-failure is not deterministic.
-
-Two things this does NOT claim: that disk pressure *causes* it (only that they
-co-occurred), and that the data can never genuinely rot. It claims only that a
-data-shaped message here has at least one non-data explanation, and that the
-cheap check comes first.
+1. `find <path> -flags +dataless` — is anything the code reads evicted? If the
+   repo is back under `~/Desktop` or `~/Documents`, that is the problem.
+2. `df -h /System/Volumes/Data` — a full disk drives eviction.
+3. Only then suspect the data: `wc -l`, read the header, compare with git.
 
 #### What NOT to do
 
-- **Don't "repair" the CSVs on the strength of this failure.** They were
-  verified byte-intact while the tests were red. Editing them would introduce
-  the corruption the message describes.
-- **Don't loosen or skip these tests to make them pass.** They are the
-  published-source invariants for the CO2e conversion; a skip here is exactly
-  the vacuous-green this file warns about elsewhere.
-- **Don't conclude "main is red" from a single reproduction.** It reproduced
-  twice under pressure and not at all afterwards. One re-run on a healthy
-  volume is the difference between a real regression and an environment
-  artefact.
+- **Don't put a repository (anything with `node_modules`, `.git` or build
+  output) under `~/Desktop` or `~/Documents`.** iCloud will evict it, slowly
+  and without errors. `~/Developer` is not synced.
+- **Don't trust a file count or `ls` size as proof a copy is complete** while
+  the source may be evicted. The 90 empty-reading files had correct listed
+  sizes. Verify with `git status` / `git fsck` for tracked content, and compare
+  the copy's actual sizes for everything else.
+- **Don't "repair" data because a test says it changed** until you have ruled
+  out eviction. The CO2e CSVs were byte-intact while the tests were red;
+  editing them would have introduced the corruption the message described.
+- **Don't loosen or skip the CO2e tests to make them pass.** They are the
+  published-source invariants for the conversion.
 
 ## A test that skips is a test that stopped asserting
 

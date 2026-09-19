@@ -26,15 +26,21 @@ export function gapsFor<G extends CoverageGap>(gaps: G[] | undefined | null, met
   return gaps.filter((g) => methodKey(g.method) === k)
 }
 
+export const WHY: Record<'not_reached' | 'not_declared', string> = {
+  not_reached: 'no listed flow is characterised by this indicator',
+  not_declared: 'its flows contribute, but its author has not declared the partial inventory complete for this indicator',
+}
+
 function describe(gaps: CoverageGap[]): string {
   const acts = [...new Map(gaps.map((g) => [`${g.database}|${g.code}`, g])).values()]
   return acts
-    .map((g) => `${g.activity_name} (${g.database}) — partial inventory${g.scope_note ? `: ${g.scope_note}` : ''}`)
+    .map((g) => `${g.activity_name} (${g.database}): ${WHY[g.kind ?? 'not_reached']}.` +
+      `${g.scope_note ? ` Declared scope: ${g.scope_note}` : ''}`)
     .join('\n')
 }
 
 export const NOT_SPECIFIED_TITLE =
-  'Not specified: a partial authored activity in this result has no flow characterised by this indicator, so its contribution is unknown — not zero.'
+  'Not specified: a partial authored activity in this result is not declared complete for this indicator, so its contribution is unknown — not zero.'
 
 /** Inline marker beside one indicator. Renders nothing when there is no gap. */
 export function NotSpecifiedMarker({ gaps, testId = 'not-specified-marker' }: { gaps: CoverageGap[]; testId?: string }) {
@@ -72,8 +78,8 @@ export function CoverageGapNote({ gaps, labelFor, testId = 'coverage-gap-note' }
     }}>
       <strong>Not specified for {indicators.length} indicator{indicators.length === 1 ? '' : 's'}:</strong>{' '}
       {indicators.join(', ')}. {acts.length === 1 ? 'The activity' : 'These activities'} declared a partial inventory
-      ({acts.map((g) => g.activity_name).join(', ')}), and none of {acts.length === 1 ? 'its' : 'their'} flows is
-      characterised by {indicators.length === 1 ? 'that indicator' : 'those indicators'}. Those values are missing a
+      ({acts.map((g) => g.activity_name).join(', ')}) that is not declared complete for{' '}
+      {indicators.length === 1 ? 'that indicator' : 'those indicators'}. Those values are missing a
       contribution of unknown size, not a zero one.
       {acts.some((g) => g.scope_note) && (
         <ul style={{ margin: '4px 0 0 16px', padding: 0 }}>

@@ -67,6 +67,7 @@ describe('the lookup and the marker', () => {
     expect(m.textContent).toBe('not specified')
     expect(m.getAttribute('title')).toContain('Boiler')
     expect(m.getAttribute('title')).toContain('unknown — not zero')
+    expect(m.getAttribute('title')).toContain('no listed flow is characterised')
     expect(m.getAttribute('title')).toContain('CO2 only')
   })
 
@@ -155,5 +156,15 @@ describe('AESA', () => {
     const { container } = render(<DetailTable results={ROWS} coverageGaps={[AGAP]} />)
     expect(within(container).queryByTestId('aesa-detail-not-specified-acidification-2030')).not.toBeNull()
     expect(within(container).queryByTestId('aesa-detail-not-specified-climate_change-2030')).toBeNull()
+  })
+})
+
+
+describe('the reason travels with the marker', () => {
+  it('says "not declared complete" when the flows reach the indicator', () => {
+    const { getByTestId } = render(<NotSpecifiedMarker gaps={[{ ...GAP, kind: 'not_declared' }]} />)
+    const t = getByTestId('not-specified-marker').getAttribute('title')!
+    expect(t).toContain('has not declared the partial inventory complete')
+    expect(t).not.toContain('no listed flow is characterised')
   })
 })

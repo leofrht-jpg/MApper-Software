@@ -66,7 +66,8 @@ STATS = {
 
 
 class FakeBackend:
-    def __init__(self, flows=(NOX, CO2, RARE, FEW, NOBV, IND), stats=None, installed=()):
+    def __init__(self, flows=(NOX, CO2, RARE, FEW, NOBV, IND), stats=None, installed=(), cf_index=None):
+        self.cf_index = cf_index or {}
         self.flows = {(f.database, f.code): f for f in flows}
         self.stats = STATS if stats is None else stats
         self.dbs: dict[str, tuple[dict, str]] = {}
@@ -93,6 +94,11 @@ class FakeBackend:
 
     def delete(self, name):
         self.dbs.pop(name, None)
+
+    def reached_methods(self, flow_keys):
+        from mapper.core.authored_coverage import reached
+
+        return reached(flow_keys, self.cf_index)
 
 
 def ex(flow=NOX, amount=0.01, pedigree=None, **kw) -> ExchangeInput:

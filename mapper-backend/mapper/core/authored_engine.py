@@ -134,6 +134,8 @@ class Backend(Protocol):
     def fingerprint_of(self, name: str) -> str | None: ...
     def write(self, name: str, data: dict, fingerprint: str) -> None: ...
     def delete(self, name: str) -> None: ...
+    #: Method tuples at least one of these flows is characterised by.
+    def reached_methods(self, flow_keys: Iterable[tuple[str, str]]) -> set[tuple[str, ...]]: ...
 
 
 def now_iso() -> str:
@@ -342,6 +344,20 @@ def build_activity(inp: ActivityInput, backend: Backend, code: str) -> AuthoredA
             codes.extend(err.codes)
     if problems:
         raise AuthoredError(problems, codes)
+    # The floor: a tick may only NARROW what counts as specified. An indicator
+    # no listed flow reaches cannot be declared complete. Activity-level, so it
+    # lives here rather than in the exchange loop (which stays resolve-only).
+    if inp.scope == "partial" and inp.complete_indicators:
+        reached = backend.reached_methods((ex.flow.database, ex.flow.code) for ex in resolved)
+        for m in inp.complete_indicators:
+            if tuple(m) not in reached:
+                problems.append(
+                    f"{' › '.join(m)}: no listed flow is characterised by this indicator, so "
+                    "the activity cannot be declared complete for it"
+                )
+                codes.append("indicator_not_reached")
+        if problems:
+            raise AuthoredError(problems, codes)
     try:
         return AuthoredActivity(
             code=code,
@@ -353,6 +369,7 @@ def build_activity(inp: ActivityInput, backend: Backend, code: str) -> AuthoredA
             scope=inp.scope,
             scope_note=inp.scope_note,
             exchanges=resolved,
+            complete_indicators=inp.complete_indicators,
         )
     except ValueError as err:
         raise AuthoredError([str(err)]) from err
@@ -362,8 +379,16 @@ def build_activity(inp: ActivityInput, backend: Backend, code: str) -> AuthoredA
 
 
 def fingerprint(db: AuthoredDatabase) -> str:
-    """Content hash of what gets written. Timestamps excluded."""
-    payload = db.model_dump(mode="json", exclude={"created_at", "updated_at"})
+    """Content hash of what gets written. Timestamps excluded.
+
+    ``complete_indicators`` is excluded too: it is an annotation that never
+    reaches Brightway, and hashing it would have made adding the field mark
+    every existing authored database stale ("rebuild") on upgrade.
+    """
+    payload = db.model_dump(mode="json", exclude={
+        "created_at": True, "updated_at": True,
+        "activities": {"__all__": {"complete_indicators"}},
+    })
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
 
@@ -526,6 +551,12 @@ class Bw2Backend:
 
         self._bd = bw2data
         self._authored = set(authored)
+
+    def reached_methods(self, flow_keys) -> set[tuple[str, ...]]:
+        from mapper.core.authored_coverage import reached
+        from mapper.core.flow_characterisation import characterisation_index
+
+        return reached(flow_keys, characterisation_index(self._bd))
 
     def flow(self, database: str, code: str) -> FlowInfo | None:
         if database not in self._bd.databases:

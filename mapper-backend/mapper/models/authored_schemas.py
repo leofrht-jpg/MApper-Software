@@ -33,6 +33,18 @@ claim travels with the value:
   partial one. Required on every activity from the first write, so no
   activity exists without a coverage declaration.
 
+* ``complete_indicators`` -- PARTIAL activities only: the indicators (full
+  method tuples) the author declares the partial inventory complete for. A
+  nonzero factor means a flow CONTRIBUTES to an indicator, not that the listed
+  flows SUFFICE -- only the author knows that. Defaults to empty: an author who
+  ticks nothing gets every indicator marked "not specified", the honest reading
+  of an unfinished declaration. It can only NARROW what counts as specified:
+  an indicator no listed flow reaches cannot be ticked (refused at save, and
+  re-checked at compute). A complete activity declares full coverage by
+  definition and carries no ticks. Annotation only: never written to
+  Brightway and excluded from the materialisation fingerprint, so adding the
+  field left every existing authored database's fingerprint unchanged.
+
 Stored models validate their own arithmetic on load: ``sigma`` must equal the
 composition of ``pedigree`` and ``basic_variance`` and ``gsd2`` must equal
 ``exp(2*sigma)``, so a hand-edited file cannot carry numbers that disagree
@@ -112,6 +124,19 @@ class ExchangeInput(BaseModel):
         return _check_pedigree(v)
 
 
+def _check_ticks(act) -> None:
+    """Complete activities carry no ticks; ticks are deduplicated and sorted
+    (the order carries no meaning, and a stable order keeps files diffable)."""
+    if act.scope == "complete" and act.complete_indicators:
+        raise ValueError(
+            "complete_indicators is only for a PARTIAL activity: a complete one "
+            "declares full coverage by definition"
+        )
+    if any(not m for m in act.complete_indicators):
+        raise ValueError("complete_indicators entries must be method tuples")
+    act.complete_indicators = [list(m) for m in sorted({tuple(m) for m in act.complete_indicators})]
+
+
 class ActivityInput(BaseModel):
     name: str
     reference_product: str | None = None
@@ -121,6 +146,9 @@ class ActivityInput(BaseModel):
     scope: ScopeKind  # required: no default, from the first write
     scope_note: str | None = None
     exchanges: list[ExchangeInput] = Field(min_length=1)
+    #: PARTIAL only: indicators the author declares complete (full method
+    #: tuples). Empty = nothing declared complete. See the module docstring.
+    complete_indicators: list[list[str]] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def _scope_note_for_partial(self) -> "ActivityInput":
@@ -131,6 +159,7 @@ class ActivityInput(BaseModel):
             )
         if _blank(self.name):
             raise ValueError("activity name is required")
+        _check_ticks(self)
         return self
 
 
@@ -212,8 +241,14 @@ class AuthoredExchange(BaseModel):
 
 
 class CoverageGap(BaseModel):
-    """An indicator a result cannot speak for: a PARTIAL authored activity it
-    links has no flow characterised by ``method``. Unknown, not zero."""
+    """An indicator a result cannot speak for, because of a PARTIAL authored
+    activity it uses. Its contribution is unknown, not zero.
+
+    ``kind``: ``not_reached`` -- no listed flow is characterised by ``method``;
+    ``not_declared`` -- listed flows contribute, but the author has not declared
+    the partial inventory complete for it. Gaps stored before the per-indicator
+    declaration existed default to ``not_reached``, the only kind there was.
+    """
 
     method: list[str]
     database: str
@@ -221,6 +256,7 @@ class CoverageGap(BaseModel):
     activity_name: str
     #: The author's own statement of what the partial inventory leaves out.
     scope_note: str = ""
+    kind: Literal["not_reached", "not_declared"] = "not_reached"
 
 
 class AuthoredActivity(BaseModel):
@@ -233,6 +269,9 @@ class AuthoredActivity(BaseModel):
     scope: ScopeKind
     scope_note: str | None = None
     exchanges: list[AuthoredExchange] = Field(min_length=1)
+    #: PARTIAL only: indicators the author declares complete (full method
+    #: tuples). Empty = nothing declared complete. See the module docstring.
+    complete_indicators: list[list[str]] = Field(default_factory=list)
 
     @field_validator("code")
     @classmethod
@@ -249,6 +288,7 @@ class AuthoredActivity(BaseModel):
         dupes = sorted({k for k in keys if keys.count(k) > 1})
         if dupes:
             raise ValueError(f"the same flow appears more than once: {dupes}")
+        _check_ticks(self)
         return self
 
     @computed_field  # serialised, so the flag is visible in the file itself
@@ -287,6 +327,30 @@ class AuthoredDefinitions(BaseModel):
 
 
 # ── Responses ──────────────────────────────────────────────────────────────
+
+
+class FlowRef(BaseModel):
+    database: str
+    code: str
+
+
+class ReachedIndicatorsRequest(BaseModel):
+    flows: list[FlowRef]
+
+
+class ReachedIndicator(BaseModel):
+    method: list[str]
+    family: str
+    #: The method path below the family, for display.
+    label: str
+
+
+class ReachedIndicatorsResponse(BaseModel):
+    """What the per-indicator declaration can offer: only indicators a listed
+    flow reaches (the floor). Nothing here is pre-ticked."""
+    families: list[str]
+    default_family: str | None
+    indicators: list[ReachedIndicator]
 
 
 class MaterialisationStatus(BaseModel):

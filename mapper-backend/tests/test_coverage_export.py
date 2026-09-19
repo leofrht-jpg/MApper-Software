@@ -28,6 +28,8 @@ BACKEND = Path(__file__).resolve().parents[1] / "mapper"
 GW = ["EF v3.1", "climate change", "GWP100"]
 AC = ["EF v3.1", "acidification", "accumulated exceedance (AE)"]
 GAP = CoverageGap(method=AC, database="mine", code="abc", activity_name="Boiler", scope_note="CO2 only")
+DECLARED = CoverageGap(method=GW, database="mine", code="abc", activity_name="Boiler",
+                       scope_note="CO2 only", kind="not_declared")
 
 
 def _flat(ws) -> str:
@@ -169,3 +171,11 @@ def test_the_guard_sees_the_builders_it_should():
     names = {fn.name for _, fn in _builders()}
     assert {"_build_aesa_workbook", "_build_mfa_lca_workbook", "_build_multi_product_workbook",
             "_build_monte_carlo_workbook", "_build_contribution_workbook"} <= names
+
+
+def test_the_why_column_tells_the_two_kinds_apart():
+    wb = _wb([ce.CoverageEntry(None, [GAP, DECLARED], [GW, AC])])
+    cov = _flat(wb["Coverage"])
+    assert "| Why" in cov
+    assert "GWP100 | NOT SPECIFIED | Boiler | mine | CO2 only | listed flows contribute" in cov
+    assert "(AE) | NOT SPECIFIED | Boiler | mine | CO2 only | no listed flow is characterised" in cov

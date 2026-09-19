@@ -11572,9 +11572,10 @@ backend and carried on the result as `coverage_gaps`; the UI only shows it.
   Monte Carlo pass `total_demand`, the fleet passes `fleet_link_keys`, which
   splices and filters roots with `stage_to_scope` exactly as the fleet counts
   them. So a partial activity sitting only in the Use Phase does not mark an
-  inflows run. Covered = ANY of the activity's flows has a factor under the
-  method, a factor of 0 included (the method has spoken). A COMPLETE activity
-  never gaps: there a missing flow really is zero.
+  inflows run. SPECIFIED = a listed flow has a factor under the method (0
+  included) AND the author declared the partial inventory complete for it --
+  see "Per-indicator coverage declaration" below. A COMPLETE activity never
+  gaps: there a missing flow really is zero.
 - **Cannot change a number.** Pinned by a test that runs the same product with
   the boiler declared partial and complete and requires identical scores and
   stage breakdowns.
@@ -11616,6 +11617,47 @@ backend and carried on the result as `coverage_gaps`; the UI only shows it.
   none" -- a stored old result deserialising to `[]` would claim a check that
   never happened. Carry `None` through adapters and mirrors; never `?? []` it
   into a store that feeds an export.
+
+### Per-indicator coverage declaration (partial activities)
+
+The step-4 rule was "an indicator is covered when ANY listed flow has a factor
+for it". The worked example (a methane flare, CO2 + unburnt CH4, partial)
+broke it: methane carries small factors for photochemical ozone formation,
+freshwater ecotoxicity and non-carcinogenic toxicity, so those read as
+SPECIFIED while in a real flare they are dominated by exactly the NOx and
+NMVOC left out. **A nonzero factor means a flow contributes, not that the
+listed flows suffice -- and only the author knows which.**
+
+So a PARTIAL activity carries `complete_indicators` (full method tuples): the
+indicators its author declares the partial inventory complete for.
+
+- **Default: nothing complete.** An author who ticks nothing gets every
+  indicator marked -- the honest reading of an unfinished declaration. Never
+  prefill from reach; the editor shows the reached indicators UNticked.
+- **The old rule is the floor, enforced twice.** Only indicators a listed flow
+  reaches can be ticked: refused at save (`indicator_not_reached`, in
+  `build_activity`, outside the resolve-only exchange loop), and re-checked at
+  compute (`authored_coverage.gaps`: specified = reached AND ticked), so a
+  tick whose reach was lost since (method reinstalled) is marked, not trusted.
+  The declaration can narrow what counts as specified, never widen it.
+- **Complete activities carry no ticks** (refused by the schema) and get no
+  step in the editor.
+- **Each gap says why**: `kind` = `not_reached` (no listed flow characterised)
+  or `not_declared` (flows contribute, not declared complete). Shown in the
+  marker tooltip and a `Why` column on the Coverage sheet.
+- **The editor asks the backend what is reachable**
+  (`POST /authored-databases/reached-indicators`, the same `reached_methods`
+  the save floor calls) -- it never derives reach itself -- and blocks saving
+  on a tick that lost its reach after a flow was removed.
+
+**Migration.** Activities written before the field loaded with
+`complete_indicators = []`: strictly MORE markers, never fewer. The field is
+an annotation, so it is **excluded from the materialisation fingerprint** --
+hashing it would have marked every existing authored database stale
+("Rebuild") on upgrade; a test pins the fingerprint to the pre-field formula.
+It never reaches Brightway. No `extra="forbid"` on the models, so a 0.3.0 build
+reading a newer file loads it and ignores the ticks (and would drop them if it
+re-saved the activity).
 
 ### Every result workbook states coverage for EVERY indicator
 

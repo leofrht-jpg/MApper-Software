@@ -39,6 +39,7 @@ vi.mock('../src/api/client', async () => {
     getPedigreeTable: vi.fn(async () => TABLE),
     searchBiosphereFlows: vi.fn(),
     previewAuthoredExchange: vi.fn(),
+    fetchReachedIndicators: vi.fn(),
     addAuthoredActivity: vi.fn(),
     updateAuthoredActivity: vi.fn(),
   }
@@ -68,9 +69,21 @@ const accepted = (floor_status: AuthoredExchange['floor_status'], extra: Partial
   } as any,
 })
 
+const GWT = ['EF v3.1', 'climate change', 'global warming potential (GWP100)']
+const POF = ['EF v3.1', 'photochemical oxidant formation: human health', 'tropospheric ozone concentration increase']
+const REACHED = {
+  families: ['EF v3.1', 'IPCC 2021'], default_family: 'EF v3.1',
+  indicators: [
+    { method: GWT, family: 'EF v3.1', label: 'climate change › global warming potential (GWP100)' },
+    { method: POF, family: 'EF v3.1', label: 'photochemical oxidant formation: human health › tropospheric ozone concentration increase' },
+    { method: ['IPCC 2021', 'climate change', 'GWP100'], family: 'IPCC 2021', label: 'climate change › GWP100' },
+  ],
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   __resetPedigreeCache()
+  ;(client.fetchReachedIndicators as any).mockResolvedValue(REACHED)
   ;(globalThis as any).ResizeObserver = class { observe() {} unobserve() {} disconnect() {} }
   ;(client.searchBiosphereFlows as any).mockResolvedValue({
     database: 'biosphere3', family: 'EF v3.1', families: ['EF v3.1'], truncated: false,
@@ -250,5 +263,79 @@ describe('authored activity editor', () => {
     expect(sent.scope).toBe('partial')
     expect(sent.exchanges[0].floor_reason).toBe('Stack measurement')
     expect(client.addAuthoredActivity).not.toHaveBeenCalled()
+  })
+})
+
+
+describe('per-indicator coverage declaration', () => {
+  async function partialWithFlow(body: ReturnType<typeof within>) {
+    ;(client.previewAuthoredExchange as any).mockResolvedValue(accepted('floored'))
+    fireEvent.change(body.getByTestId('authored-name'), { target: { value: 'Flare' } })
+    fireEvent.click(body.getByTestId('scope-partial'))
+    fireEvent.change(body.getByTestId('scope-note'), { target: { value: 'CO2 and CH4 only' } })
+    await addFlow(body, 's')
+    await scoreAll(body, 's')
+    await waitFor(() => body.getByTestId(`coverage-tick-${GWT.join('|')}`))
+  }
+
+  it('lists only the reached indicators, with nothing ticked', async () => {
+    const { body } = renderEditor()
+    await partialWithFlow(body)
+    const gw = body.getByTestId(`coverage-tick-${GWT.join('|')}`) as HTMLInputElement
+    const pof = body.getByTestId(`coverage-tick-${POF.join('|')}`) as HTMLInputElement
+    expect(gw.checked).toBe(false)
+    expect(pof.checked).toBe(false)
+    // default family shown; the other family is behind the selector
+    expect(body.queryByTestId('coverage-tick-IPCC 2021|climate change|GWP100')).toBeNull()
+    expect(body.getByTestId('authored-coverage-summary').textContent).toContain('0 of 2')
+    const sent = (client.fetchReachedIndicators as any).mock.calls.at(-1)[0]
+    expect(sent).toEqual([{ database: 'biosphere3', code: 's' }])
+  })
+
+  it('sends exactly the ticked indicators on save', async () => {
+    ;(client.addAuthoredActivity as any).mockResolvedValue({})
+    const { body, onSaved } = renderEditor()
+    await partialWithFlow(body)
+    fireEvent.click(body.getByTestId(`coverage-tick-${GWT.join('|')}`))
+    await waitFor(() => expect(body.getByTestId('authored-save')).not.toBeDisabled())
+    fireEvent.click(body.getByTestId('authored-save'))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect((client.addAuthoredActivity as any).mock.calls[0][1].complete_indicators).toEqual([GWT])
+  })
+
+  it('a complete activity has no declaration step and sends no ticks', async () => {
+    ;(client.previewAuthoredExchange as any).mockResolvedValue(accepted('floored'))
+    ;(client.addAuthoredActivity as any).mockResolvedValue({})
+    const { body, onSaved } = renderEditor()
+    fireEvent.change(body.getByTestId('authored-name'), { target: { value: 'Leak' } })
+    fireEvent.click(body.getByTestId('scope-complete'))
+    await addFlow(body, 's')
+    await scoreAll(body, 's')
+    await waitFor(() => expect(body.getByTestId('authored-save')).not.toBeDisabled())
+    expect(body.queryByTestId('authored-coverage-declaration')).toBeNull()
+    fireEvent.click(body.getByTestId('authored-save'))
+    await waitFor(() => expect(onSaved).toHaveBeenCalled())
+    expect((client.addAuthoredActivity as any).mock.calls[0][1].complete_indicators).toEqual([])
+  })
+
+  it('a tick no listed flow reaches any more blocks saving until unticked', async () => {
+    ;(client.previewAuthoredExchange as any).mockResolvedValue(accepted('floored'))
+    const stored: AuthoredActivity = {
+      code: 'abc', name: 'Flare', reference_product: 'x', unit: 'kilogram', location: 'GLO', comment: '',
+      scope: 'partial', scope_note: 'CO2 and CH4 only', has_unfloored_exchange: false,
+      complete_indicators: [GWT, ['EF v3.1', 'water use', 'x']],
+      exchanges: [{
+        ...accepted('floored').exchange,
+        pedigree: { 'reliability': 1, 'completeness': 1, 'temporal correlation': 1,
+          'geographical correlation': 1, 'further technological correlation': 1 },
+      }],
+    }
+    const { body } = renderEditor({ initial: stored })
+    await waitFor(() => body.getByTestId('authored-coverage-stale'))
+    expect((body.getByTestId(`coverage-tick-${GWT.join('|')}`) as HTMLInputElement).checked).toBe(true)
+    expect(body.getByTestId('authored-blockers').textContent).toContain('no ticks on indicators no listed flow reaches')
+    fireEvent.click(body.getByTestId('coverage-stale-EF v3.1|water use|x'))
+    await waitFor(() => expect(body.queryByTestId('authored-coverage-stale')).toBeNull())
+    await waitFor(() => expect(body.getByTestId('authored-save')).not.toBeDisabled())
   })
 })

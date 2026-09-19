@@ -12,7 +12,7 @@ import {
   CartesianGrid, Legend, Line, LineChart,
   ReferenceLine, ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from 'recharts'
-import type { CarbonBudgetConfig, SharingPreset, SustainabilityRatioResult } from '../../api/client'
+import type { AESACoverageGap, CarbonBudgetConfig, SharingPreset, SustainabilityRatioResult } from '../../api/client'
 import { computeChainFactor } from '../../stores/aesaStore'
 import { ZONE_COLOR } from './zones'
 import { boundaryLabelText } from '../../utils/aesaBoundaryLabels'
@@ -22,12 +22,16 @@ import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { colorForIndicator } from '../../utils/aesaIndicatorColors'
+import { NOT_SPECIFIED_HATCH, gapsForPb, notSpecifiedTitle } from '../authored/CoverageMarkers'
 import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 
 interface Props {
   results: SustainabilityRatioResult[]
   carbonBudget?: CarbonBudgetConfig | null
   sharing?: SharingPreset | null
+  /** Indicators resting on a partial authored activity: dotted line and a
+   *  legend note -- their SR is a lower bound. */
+  coverageGaps?: AESACoverageGap[] | null
 }
 
 // Patch 4S — palette moved to `utils/aesaIndicatorColors.ts`. Old
@@ -36,7 +40,7 @@ interface Props {
 // detached legend wrapper, which is why the legend swatches rendered
 // as faint outlines instead of filled colors.
 
-export function TimelineView({ results, carbonBudget, sharing }: Props) {
+export function TimelineView({ results, carbonBudget, sharing, coverageGaps }: Props) {
   const [logScale, setLogScale] = useState(false)
   const timelineRef = useRef<HTMLDivElement>(null)
   // SR ≈ 1.0 — Fixed-only is the only sensible notation.
@@ -182,6 +186,15 @@ export function TimelineView({ results, carbonBudget, sharing }: Props) {
                       <span style={{ color: 'var(--text-secondary)' }} title={p.name}>
                         {p.short}
                       </span>
+                      {gapsForPb(coverageGaps, p.id).length > 0 && (
+                        <span
+                          data-testid={`aesa-timeline-not-specified-${p.id}`}
+                          title={notSpecifiedTitle(gapsForPb(coverageGaps, p.id))}
+                          style={{ color: NOT_SPECIFIED_HATCH }}
+                        >
+                          {' '}(not specified, SR is a lower bound)
+                        </span>
+                      )}
                     </li>
                   )
                 })}
@@ -272,6 +285,8 @@ export function TimelineView({ results, carbonBudget, sharing }: Props) {
               type="monotone"
               stroke={colorForIndicator(p.id, idx)}
               strokeWidth={1.75}
+              // Dotted, NOT the reference lines' "4 4" dash.
+              strokeDasharray={gapsForPb(coverageGaps, p.id).length ? '1 3' : undefined}
               dot={{ r: 2 }}
               activeDot={{ r: 4 }}
               connectNulls

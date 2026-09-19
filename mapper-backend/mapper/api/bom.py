@@ -1418,6 +1418,19 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
         raise HTTPException(status_code=500, detail=f"DSM×LCA failed: {e}")
 
     _proj_dsm_lca_results(project)[system_id] = results
+    from mapper.core.authored_coverage import coverage_gaps, fleet_link_keys
+
+    gaps, gap_warning = coverage_gaps(
+        fleet_link_keys(
+            archetypes,
+            [aid for aid, _ in cohort_to_archetype.values()]
+            + [aid for m in sub_cohort_mappings.values() for aid, _ in m.values()],
+            body.scope,
+        ),
+        method_tuples, project,
+    )
+    if gap_warning:
+        setup_warnings.append(gap_warning)
     return DSMLCABatchResult(
         results=results,
         methods_calculated=len(results),
@@ -1425,6 +1438,7 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
         year_end=body.year_end,
         warnings=setup_warnings,
         compute_metrics=meter.build(),
+        coverage_gaps=gaps,
     )
 
 
@@ -1434,7 +1448,39 @@ async def get_dsm_lca(system_id: str) -> DSMLCABatchResult:
     res = _proj_dsm_lca_results().get(system_id)
     if res is None:
         raise HTTPException(status_code=404, detail="No DSM × LCA results yet.")
-    return DSMLCABatchResult(results=res, methods_calculated=len(res))
+    return DSMLCABatchResult(
+        results=res, methods_calculated=len(res),
+        # Recomputed, not cached: a static annotation from the cached run's
+        # scope + methods and the current mappings. Omitting it would make a
+        # rehydrated result read as if nothing were unspecified.
+        coverage_gaps=_fleet_coverage_for_cached(system_id, res),
+    )
+
+
+def _coverage_entry_for_cached(system_id: str, res: list):
+    from mapper.core.coverage_export import CoverageEntry
+
+    return CoverageEntry(None, _fleet_coverage_for_cached(system_id, res), [list(r.method) for r in res])
+
+
+def _fleet_coverage_for_cached(system_id: str, res: list) -> list:
+    if not res:
+        return []
+    from mapper.api import subsystems as _subs
+    from mapper.core.authored_coverage import coverage_gaps, fleet_link_keys
+    from mapper.core.dsm_lca_engine import build_subsystem_cohort_mapping
+
+    project = _current_project()
+    mapping = _proj_cohort_mappings(project).get(system_id)
+    ids = [e.archetype_id for e in (mapping.mappings if mapping else [])]
+    for sub in _subs.get_subsystems_for_system(system_id, project).values():
+        sub_map, _unmapped = build_subsystem_cohort_mapping(sub)
+        ids += [aid for aid, _ in sub_map.values()]
+    gaps, _warning = coverage_gaps(
+        fleet_link_keys(_proj_archetypes(project), ids, res[0].scope),
+        [tuple(r.method) for r in res], project,
+    )
+    return gaps
 
 
 # ── DSM × LCA Excel export ───────────────────────────────────────────────────
@@ -1591,6 +1637,10 @@ def _build_mfa_lca_workbook(
     #: caller, which holds the ``ImpactAssessmentResult``, threads it in.
     computed_at: str | None = None,
     mapper_version: str | None = None,
+    #: One ``CoverageEntry`` per result the workbook reports (two when a
+    #: Static-vs-Projected compare sheet is added). None = the caller had no
+    #: coverage record, and the workbook SAYS so rather than going silent.
+    coverage_entries: list | None = None,
 ) -> Workbook:
     """Build a comprehensive XLSX workbook for Impact Assessment results.
     Designed for easy analysis in Excel (pivot tables, filtering).
@@ -2023,6 +2073,9 @@ def _build_mfa_lca_workbook(
         ws_dsm.freeze_panes = "B2"
         _autosize(ws_dsm)
 
+    from mapper.core.coverage_export import CoverageEntry, finalize_coverage
+    finalize_coverage(wb, coverage_entries or [
+        CoverageEntry(None, None, [list(r.method) for r in results])])
     return wb
 
 
@@ -2072,6 +2125,7 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
         subsystems=sub_export,
         # This route computes and exports in one call, so the stamp is now.
         **_run_stamp(),
+        coverage_entries=[_coverage_entry_for_cached(system_id, results)],
     )
     scope = results[0].scope
     # Subsystems that actually contributed cohorts to the aggregated results —

@@ -28,6 +28,7 @@ import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { stageAmountsEqual } from './StageAmountsEditor'
 import { useMonteCarloStore } from '../../stores/monteCarloStore'
+import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 
 interface Props {
   archetypeId: string | null
@@ -520,6 +521,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
                 />
               </div>
             )}
+            <CoverageGapNote gaps={activeResult.coverage_gaps} testId="single-product-static-coverage-note" />
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
@@ -540,7 +542,10 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
                         {activeScenario}
                       </td>
                     )}
-                    <td style={td}>{r.method_label}</td>
+                    <td style={td}>
+                      {r.method_label}
+                      <NotSpecifiedMarker gaps={gapsFor(activeResult.coverage_gaps, r.method)} />
+                    </td>
                     <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
                       {valueFormat.format(r.score)}
                     </td>

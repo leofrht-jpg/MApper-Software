@@ -57,6 +57,7 @@ import {
   exportMultiProductComparison,
   type MultiProductItemResult,
 } from '../../api/client'
+import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 import { useMonteCarloStore } from '../../stores/monteCarloStore'
 
 type Scope = 'inflows' | 'stock' | 'outflows' | 'all'
@@ -991,6 +992,14 @@ function ResultsSection({
         </Button>
       </div>
 
+      {/* Not-specified indicators, across every item: the cell markers only
+          show in Table view, and Chart is the default. */}
+      <CoverageGapNote
+        gaps={[...new Map(result.items
+          .flatMap((it) => it.archetype_result?.coverage_gaps ?? it.activity_result?.coverage_gaps ?? [])
+          .map((g) => [`${g.method.join('|')}|${g.database}|${g.code}`, g])).values()]}
+        testId="multi-product-coverage-note"
+      />
       {/* Errors banner (when partial / total failure) */}
       {result.error_count > 0 && (
         <ErrorsBanner result={result} />
@@ -1144,6 +1153,7 @@ function ResultsTable({ result }: { result: import('../../api/client').MultiProd
 function ResultRow({ item, methodLabels }: { item: MultiProductItemResult; methodLabels: string[] }) {
   const methodResults = item.archetype_result?.results ?? item.activity_result?.results ?? []
   const byLabel = new Map(methodResults.map((m) => [m.method_label, m]))
+  const gaps = item.archetype_result?.coverage_gaps ?? item.activity_result?.coverage_gaps
   return (
     <tr
       data-testid={`multi-product-row-${item.item_id}`}
@@ -1189,6 +1199,7 @@ function ResultRow({ item, methodLabels }: { item: MultiProductItemResult; metho
         return (
           <td key={label} style={{ ...tdStyle, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
             {m ? `${m.score.toExponential(3)} ${m.unit}` : item.status === 'success' ? '—' : ''}
+            {m && <NotSpecifiedMarker gaps={gapsFor(gaps, m.method)} testId={`not-specified-${item.item_id}`} />}
           </td>
         )
       })}

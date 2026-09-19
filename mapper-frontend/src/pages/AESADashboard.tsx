@@ -28,6 +28,7 @@ import { useImpactStore } from '../stores/impactStore'
 import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
 import { buildIndicatorColorMap } from '../utils/aesaIndicatorColors'
 import { resolveBoundarySet } from '../utils/aesaBoundaryLabels'
+import { CoverageGapNote } from '../components/authored/CoverageMarkers'
 import {
   exportAESA,
   type AESAComputeResult,
@@ -622,9 +623,13 @@ export function AESADashboard() {
                   />
                 ) : (
                   <>
-                    {view === 'radar'    && <RadarView results={filteredResult.results} />}
-                    {view === 'timeline' && <TimelineView results={filteredResult.results} carbonBudget={draft?.carbon_budget ?? null} sharing={draft?.sharing ?? null} />}
-                    {view === 'detail'   && <DetailTable results={filteredResult.results} />}
+                    <CoverageGapNote
+                      gaps={(result?.coverage_gaps ?? []).filter((g) => filteredResult.results.some((r) => r.pb_id === g.pb_id))}
+                      testId="aesa-coverage-note"
+                    />
+                    {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} />}
+                    {view === 'timeline' && <TimelineView results={filteredResult.results} carbonBudget={draft?.carbon_budget ?? null} sharing={draft?.sharing ?? null} coverageGaps={result?.coverage_gaps} />}
+                    {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} />}
                     {view === 'boxplot'  && <BoxPlotView result={filteredResult} />}
                   </>
                 )}

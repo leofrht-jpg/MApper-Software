@@ -595,6 +595,9 @@ export interface DSMLCAResult {
 }
 
 export interface DSMLCABatchResult {
+  /** Indicators this result cannot speak for (a PARTIAL authored activity with no
+   *  characterised flow for that method). Absent on results stored before step 4. */
+  coverage_gaps?: CoverageGap[] | null
   results: DSMLCAResult[]
   methods_calculated: number
   year_start?: number | null
@@ -1101,6 +1104,20 @@ export interface AuthoredDatabaseView {
   status: MaterialisationStatus
 }
 
+/** An indicator a result cannot speak for: a PARTIAL authored activity it used
+ *  has no flow characterised by `method`, so its contribution is unknown, not zero. */
+export interface CoverageGap {
+  method: string[]
+  database: string
+  code: string
+  activity_name: string
+  scope_note: string
+}
+
+export interface AESACoverageGap extends CoverageGap {
+  pb_id: string
+}
+
 export interface ExchangePreview {
   ok: boolean
   exchange: AuthoredExchange | null
@@ -1327,6 +1344,8 @@ export interface ActivityLCAMethodResult {
 }
 
 export interface ActivityLCAResult {
+  /** Indicators the result cannot speak for (a partial authored activity). */
+  coverage_gaps?: CoverageGap[] | null
   results: ActivityLCAMethodResult[]
   elapsed_seconds: number
 }
@@ -1363,6 +1382,9 @@ export interface ArchetypeLCAMethodResult {
 }
 
 export interface ArchetypeLCACalculateResult {
+  /** Indicators this result cannot speak for (a PARTIAL authored activity with no
+   *  characterised flow for that method). Absent on results stored before step 4. */
+  coverage_gaps?: CoverageGap[] | null
   archetype_id: string
   archetype_name: string
   scope: string
@@ -3303,6 +3325,9 @@ export interface ImpactAssessmentMeta {
 }
 
 export interface ImpactAssessmentResult {
+  /** Indicators this result cannot speak for (a PARTIAL authored activity with no
+   *  characterised flow for that method). Absent on results stored before step 4. */
+  coverage_gaps?: CoverageGap[] | null
   task_id: string
   meta: ImpactAssessmentMeta
   results: DSMLCAResult[]
@@ -4200,6 +4225,8 @@ export interface AESAYearSummary {
 }
 
 export interface AESAComputeResult {
+  /** PB axes whose SR rests on a partial authored activity: unknown, not small. */
+  coverage_gaps?: AESACoverageGap[] | null
   config_id: string | null
   results: SustainabilityRatioResult[]
   summary_by_year: AESAYearSummary[]
@@ -4884,6 +4911,9 @@ export interface VarianceContributor {
 }
 
 export interface MonteCarloResult {
+  /** Indicators this result cannot speak for (a PARTIAL authored activity with no
+   *  characterised flow for that method). Absent on results stored before step 4. */
+  coverage_gaps?: CoverageGap[] | null
   archetype_id: string
   archetype_name: string
   scope: string
@@ -5035,6 +5065,9 @@ export async function exportMonteCarlo(
 // ── Paired multi-item uncertainty ────────────────────────────────────────────
 
 export interface ItemDistribution {
+  /** Indicators this result cannot speak for (a PARTIAL authored activity with no
+   *  characterised flow for that method). Absent on results stored before step 4. */
+  coverage_gaps?: CoverageGap[] | null
   archetype_id: string
   archetype_name: string
   distributions: ArchetypeLCAMethodDistribution[]

@@ -11558,6 +11558,88 @@ guard that skips where it gates merges is not a guard.
 bom's helpers through thin lazy wrappers -- `_sanitize_filename`,
 `build_template_filename`.
 
+## "Not specified" markers (step 4 of authored databases)
+
+A PARTIAL authored activity says only its listed flows were specified. So an
+indicator none of those flows is characterised by is not small for that
+activity -- it is UNKNOWN, and every result that used the activity inherits
+that. Each such (indicator, activity) is a `CoverageGap`, computed by the
+backend and carried on the result as `coverage_gaps`; the UI only shows it.
+
+- **Computed from what the run USED, never from a solve.**
+  `core/authored_coverage.coverage_gaps(keys, methods, project)` takes the
+  `(database, code)` keys of the run's actual demand -- single-product and
+  Monte Carlo pass `total_demand`, the fleet passes `fleet_link_keys`, which
+  splices and filters roots with `stage_to_scope` exactly as the fleet counts
+  them. So a partial activity sitting only in the Use Phase does not mark an
+  inflows run. Covered = ANY of the activity's flows has a factor under the
+  method, a factor of 0 included (the method has spoken). A COMPLETE activity
+  never gaps: there a missing flow really is zero.
+- **Cannot change a number.** Pinned by a test that runs the same product with
+  the boiler declared partial and complete and requires identical scores and
+  stage breakdowns.
+- **Never fails a run, never vanishes silently.** A failure becomes a result
+  warning ("... NOT marked"), because an absent annotation reads as "nothing
+  unspecified". Fast path: no linked partial activity -> the characterisation
+  index is never built.
+- **Carried on:** `ArchetypeLCACalculateResult` (so multi-item archetypes too),
+  `ActivityLCAResult` (an authored activity picked directly in Activities
+  mode), `DSMLCABatchResult` + `ImpactAssessmentResult` (both fleet paths --
+  the Static tab's N=1 run goes through `/dsm-lca`, not `/impact/calculate`;
+  `GET /dsm-lca` RECOMPUTES it rather than caching, so a rehydrated result is
+  not silently clean), `MonteCarloResult`, `ItemDistribution` (per paired
+  item), and the AESA adapters. `AESAComputeResult.coverage_gaps` adds the
+  `pb_id`, mapped with `resolve_method_mapping` -- the SAME function compute
+  uses, so a marked axis cannot disagree with the SR it marks.
+  `test_every_result_constructor_passes_coverage_gaps` fails on any
+  constructor of those types that omits the field.
+- **Shown:** a `not specified` marker per indicator (Static / Projected /
+  multi-item / system-level sidebars / AESA detail table) and a
+  `CoverageGapNote` per result, including the author's scope note. AESA radar:
+  the axis is HATCHED and the vertex drawn hollow -- the SR is a LOWER BOUND,
+  not a value to read. Timeline: the series is dotted (`1 3`, deliberately not
+  the reference lines' `4 4`) and the legend says so. Monte Carlo: a note per
+  result/item, and `Not specified` rows on the workbook Summary.
+- **Keyed by the full method tuple, never the label.** `EF v3.1` and its
+  `no LT` variant share last elements; `gapsFor` joins the whole tuple.
+
+#### What NOT to do
+
+- **Don't derive gaps in the frontend.** Read `coverage_gaps` off the result.
+- **Don't colour "not specified" with a zone colour.** It is grey
+  (`NOT_SPECIFIED_HATCH`, a literal so it survives export): unknown must not
+  read as "in the uncertainty zone".
+- **Don't cache the fleet annotation in a new registry.** Recompute it; a
+  tenth project-keyed dict is a tenth thing to prune on rename.
+- **Don't default `coverage_gaps` to `[]`.** The default is `None` = NOT
+  RECORDED (a result computed before the check existed). `[]` means "checked,
+  none" -- a stored old result deserialising to `[]` would claim a check that
+  never happened. Carry `None` through adapters and mirrors; never `?? []` it
+  into a store that feeds an export.
+
+### Every result workbook states coverage for EVERY indicator
+
+A workbook that names some indicators "not specified" and says nothing about
+the rest invites the reader to infer the rest were checked -- worse than never
+mentioning it. So every workbook reporting impact or SR values (8 in
+`impact.py`, the fleet `_build_mfa_lca_workbook`, the LCA Calculator,
+contribution + multi-year contribution, AESA, both Monte Carlo) ends with a
+**`Coverage` sheet listing every indicator it reports** (every boundary, for
+AESA) with one of three statuses -- `specified`, `NOT SPECIFIED` (+ activity,
+database, the author's scope note), `not recorded` -- and a pointer line at
+the foot of its FIRST sheet with the headline ("1 of 25 indicator(s) NOT
+SPECIFIED", "Checked: all 25 specified", "NOT RECORDED for ..."). One helper,
+`core/coverage_export.finalize_coverage`, so the wording is identical in every
+file; appended, so no existing cell moves. Multi-result workbooks carry a
+discriminator column (LCI Scenario / Sensitivity case / DSM scenario / Pair /
+Trajectory / Item / Year). The fleet `/dsm-lca` export recomputes the gaps
+like `GET /dsm-lca`; a Static-vs-Projected export states both results.
+
+`test_every_result_workbook_states_coverage` discovers every `_build_*workbook`
+in `mapper/api` and fails on one that neither calls `finalize_coverage` nor is
+in `EXEMPT` with a reason (BOM, DSM stock, parameters, sharing presets -- no
+result values). A new result workbook cannot ship silent.
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

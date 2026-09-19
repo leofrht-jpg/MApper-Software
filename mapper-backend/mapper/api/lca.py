@@ -88,6 +88,10 @@ from mapper.ws.progress import stream_task_progress
 
 from mapper.api.cohort_export import excel_response
 from mapper.core.content_hash import hashes_for_ids as _content_hashes
+from mapper.core.authored_coverage import coverage_gaps as _coverage_gaps
+from mapper.core.coverage_export import CoverageEntry as _CE
+from mapper.core.coverage_export import finalize_coverage as _finalize_coverage
+from mapper.core.coverage_export import methods_of as _methods_of
 from mapper.core.database_fingerprint import fingerprint as _fingerprint
 from mapper.core.run_provenance import (
     provenance_rows as _provenance_rows,
@@ -318,8 +322,11 @@ async def calculate_activity_lca(body: ActivityLCARequest) -> ActivityLCAResult:
         ))
 
     elapsed = round(time.perf_counter() - t0, 2)
+    # An authored activity picked directly (multi-item Activities mode) is the
+    # plainest case: its own partial inventory IS the result.
+    gaps, _gap_warning = _coverage_gaps(total_demand.keys(), method_tuples, bw2data.projects.current)
     return ActivityLCAResult(
-        results=results, elapsed_seconds=elapsed, **_run_stamp()
+        results=results, elapsed_seconds=elapsed, coverage_gaps=gaps, **_run_stamp()
     )
 
 
@@ -716,9 +723,13 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
         ))
 
     elapsed = round(time.perf_counter() - t0, 2)
+    gaps, gap_warning = _coverage_gaps(total_demand.keys(), method_tuples, bw2data.projects.current)
+    if gap_warning:
+        warnings.append(gap_warning)
 
     return ArchetypeLCACalculateResult(
         **_run_stamp(),
+        coverage_gaps=gaps,
         data_fingerprint=_fingerprint(
             [body.compute_database], method_tuples
         ),
@@ -1043,6 +1054,7 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
             ws4.append([d.archetype_name, stage_name] + values)
     _auto_width(ws4)
 
+    _finalize_coverage(wb, [_CE(r.archetype_name if len(data) > 1 else None, r.coverage_gaps, _methods_of(r)) for r in data], discriminator="Archetype")
     return wb
 
 
@@ -1272,6 +1284,7 @@ def _compute_contribution_analysis(
     # Apply prospective-database translation before computing or hitting the
     # cache. Warnings (e.g. fallbacks for missing keys) are surfaced on the
     # response so the frontend can flag partial translations.
+    source_keys = set(demand)
     demand, translation_warnings = _translate_demand_to_database(
         demand, body.compute_database
     )
@@ -1457,7 +1470,12 @@ def _compute_contribution_analysis(
 
     from mapper import __version__ as _mapper_version
 
+    gaps, gap_warning = _coverage_gaps(source_keys, [method_tuple], bw2data.projects.current)
+    if gap_warning:
+        translation_warnings = [*translation_warnings, gap_warning]
+
     return ContributionAnalysisResult(
+        coverage_gaps=gaps,
         target_type=body.target_type,
         target_label=target_label,
         method=list(method_tuple),
@@ -1979,6 +1997,7 @@ def _build_contribution_workbook(result: ContributionAnalysisResult):
         ws6.append(row)
     _auto_width(ws6)
 
+    _finalize_coverage(wb, [_CE(None, result.coverage_gaps, [list(result.method)])], discriminator="Result")
     return wb
 
 
@@ -2106,6 +2125,7 @@ def _build_multi_year_workbook(result: MultiYearContributionResult):
         ws_w.append(["—", "No warnings."])
     _auto_width(ws_w)
 
+    _finalize_coverage(wb, [_CE(str(y), r.coverage_gaps, [list(r.method)]) for y, r in sorted(result.results.items(), key=lambda kv: int(kv[0]))], discriminator="Year")
     return wb
 
 

@@ -8,7 +8,8 @@
  */
 
 import { useMemo, useRef, useState } from 'react'
-import type { SustainabilityRatioResult } from '../../api/client'
+import type { AESACoverageGap, SustainabilityRatioResult } from '../../api/client'
+import { NOT_SPECIFIED_HATCH, gapsForPb, notSpecifiedTitle } from '../authored/CoverageMarkers'
 import { ZONE_COLOR, srOrInf } from './zones'
 import { boundaryLabel, radarLabelLayout } from '../../utils/aesaBoundaryLabels'
 import { ChartExportButton } from '../charts/ChartExportButton'
@@ -20,11 +21,14 @@ import { YearSlider } from '../ui/YearSlider'
 interface Props {
   results: SustainabilityRatioResult[]
   size?: number
+  /** Axes whose SR rests on a partial authored activity: drawn hatched, the
+   *  vertex hollow -- the SR is a lower bound, not a value to read. */
+  coverageGaps?: AESACoverageGap[] | null
 }
 
 const MAX_DISPLAY_SR = 3.0
 
-export function RadarView({ results, size = 480 }: Props) {
+export function RadarView({ results, size = 480, coverageGaps }: Props) {
   const years = useMemo(() => {
     const s = new Set<number>()
     for (const r of results) s.add(r.year)
@@ -109,6 +113,29 @@ export function RadarView({ results, size = 480 }: Props) {
           return <line key={i} x1={cx} y1={cy} x2={e.x} y2={e.y} stroke="var(--border-subtle)" strokeWidth={1} />
         })}
 
+        {/* Not-specified axes: a hatched band along the axis. */}
+        <defs>
+          <pattern id="radar-not-specified" patternUnits="userSpaceOnUse" width={5} height={5} patternTransform="rotate(45)">
+            <line x1={0} y1={0} x2={0} y2={5} stroke={NOT_SPECIFIED_HATCH} strokeWidth={2} />
+          </pattern>
+        </defs>
+        {yearResults.map((r, i) => {
+          const g = gapsForPb(coverageGaps, r.pb_id)
+          if (!g.length) return null
+          const angleDeg = -90 + (i * 360) / n
+          return (
+            <rect
+              key={r.pb_id + '-ns'}
+              data-testid={`radar-not-specified-${r.pb_id}`}
+              x={cx} y={cy - 7} width={radius} height={14}
+              fill="url(#radar-not-specified)" fillOpacity={0.9}
+              transform={`rotate(${angleDeg} ${cx} ${cy})`}
+            >
+              <title>{notSpecifiedTitle(g)}</title>
+            </rect>
+          )
+        })}
+
         {/* Ring labels */}
         <text x={cx + 4} y={cy - rSafe - 2} fontSize={10} fill={ZONE_COLOR.safe}>SR=1.0</text>
         <text x={cx + 4} y={cy - rUncert - 2} fontSize={10} fill={ZONE_COLOR.zone_of_uncertainty}>SR=2.0</text>
@@ -119,11 +146,19 @@ export function RadarView({ results, size = 480 }: Props) {
         {/* Points */}
         {yearResults.map((r, i) => {
           const p = pointFor(i, r.sr)
+          const g = gapsForPb(coverageGaps, r.pb_id)
           return (
             <g key={r.pb_id}>
-              <circle cx={p.x} cy={p.y} r={5} fill={ZONE_COLOR[r.zone]} stroke="var(--bg-surface)" strokeWidth={1.5}>
-                <title>{`${r.pb_name}: SR=${fmtSRDisplay(r.sr)} (${r.zone})`}</title>
-              </circle>
+              {g.length ? (
+                // Hollow: a lower bound, not a value.
+                <circle cx={p.x} cy={p.y} r={5} fill="none" stroke={NOT_SPECIFIED_HATCH} strokeWidth={2} strokeDasharray="2 2">
+                  <title>{`${r.pb_name}: SR ≥ ${fmtSRDisplay(r.sr)} (not specified)\n\n${notSpecifiedTitle(g)}`}</title>
+                </circle>
+              ) : (
+                <circle cx={p.x} cy={p.y} r={5} fill={ZONE_COLOR[r.zone]} stroke="var(--bg-surface)" strokeWidth={1.5}>
+                  <title>{`${r.pb_name}: SR=${fmtSRDisplay(r.sr)} (${r.zone})`}</title>
+                </circle>
+              )}
             </g>
           )
         })}
@@ -177,6 +212,12 @@ export function RadarView({ results, size = 480 }: Props) {
             {z.replace(/_/g, ' ')}
           </span>
         ))}
+        {!!coverageGaps?.length && yearResults.some((r) => gapsForPb(coverageGaps, r.pb_id).length) && (
+          <span data-testid="radar-legend-not-specified" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+            <span style={{ width: 10, height: 8, background: `repeating-linear-gradient(45deg, ${NOT_SPECIFIED_HATCH} 0 2px, transparent 2px 4px)` }} />
+            not specified (SR is a lower bound)
+          </span>
+        )}
       </div>
     </div>
   )

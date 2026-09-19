@@ -30,6 +30,7 @@ import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { ViewToggle } from './ViewToggle'
 import { MethodSelector } from './MethodSelector'
+import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 import { stageAmountsEqual } from './StageAmountsEditor'
 
 interface Props {
@@ -699,6 +700,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
               </div>
             )}
 
+            <CoverageGapNote gaps={activeRun.result.coverage_gaps} testId="single-product-projected-coverage-note" />
             {/*
              * Both views stay mounted via visibility-toggle (display: none).
              * Local state in either view (chart hover, scroll position, etc.)
@@ -766,7 +768,10 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
                   <tbody>
                     {activeRun.result.results.map((r) => (
                       <tr key={r.method.join('|')} style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                        <td style={td}>{r.method_label}</td>
+                        <td style={td}>
+                          {r.method_label}
+                          <NotSpecifiedMarker gaps={gapsFor(activeRun.result.coverage_gaps, r.method)} />
+                        </td>
                         <td style={{ ...td, textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>
                           {valueFormat.format(r.score)}
                         </td>

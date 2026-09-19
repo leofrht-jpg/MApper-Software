@@ -47,6 +47,8 @@ from mapper.core.aesa_engine import (
     load_ssp_trajectories,
     resolve_sharing,
     suggest_method_mapping,
+    aesa_coverage_gaps,
+    resolve_method_mapping,
 )
 from mapper.models.aesa_schemas import (
     AESAComputeRequest,
@@ -416,6 +418,9 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
         result = AESAEngine.compute_with_sensitivity(impact.results, config, bset)
     else:
         result = AESAEngine.compute(impact.results, config, bset)
+    result.coverage_gaps = aesa_coverage_gaps(
+        impact.coverage_gaps, resolve_method_mapping(config, impact.results, bset)
+    )
     result.compute_metrics = meter.build()
     return result
 
@@ -965,6 +970,11 @@ def _build_aesa_workbook(
     ws.append(["Uncertainty", "Deterministic. Monte Carlo planned for v1.1"])
     _autosize(ws)
 
+    # One status per boundary, in the result's own order: AESA inherits the
+    # impact result's coverage through the method -> PB mapping.
+    from mapper.core.coverage_export import CoverageEntry, finalize_coverage
+    pbs = list(dict.fromkeys((r.pb_id, r.pb_name) for r in result.results))
+    finalize_coverage(wb, [CoverageEntry(None, result.coverage_gaps, pbs, aesa=True)])
     return wb
 
 

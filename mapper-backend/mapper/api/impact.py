@@ -100,6 +100,11 @@ from openpyxl.styles import Alignment, Font, PatternFill
 
 from mapper.api.cohort_export import excel_response
 from mapper.core.content_hash import mismatch_rows_for_ids as _hash_mismatch_rows
+from mapper.core.authored_coverage import coverage_gaps as _coverage_gaps
+from mapper.core.coverage_export import CoverageEntry as _CE
+from mapper.core.coverage_export import finalize_coverage as _finalize_coverage
+from mapper.core.coverage_export import methods_of as _methods_of
+from mapper.core.authored_coverage import fleet_link_keys as _fleet_link_keys
 from mapper.core.database_fingerprint import (
     LIMITS_NOTE as _FP_LIMITS,
     fingerprint as _fingerprint,
@@ -429,6 +434,21 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
             prospective_dbs = per_scenario_prospective[0]
             year_to_db = per_scenario_year_to_db[0]
 
+    # Which indicators this run cannot speak for (partial authored
+    # activities). Static annotation: independent of the LCI scenario, since
+    # an authored database is pinned rather than translated.
+    coverage_gaps, coverage_warning = _coverage_gaps(
+        _fleet_link_keys(
+            archetypes,
+            [aid for aid, _ in cohort_to_archetype.values()]
+            + [aid for m in sub_cohort_mappings.values() for aid, _ in m.values()],
+            body.scope,
+        ),
+        method_tuples, project,
+    )
+    if coverage_warning:
+        setup_warnings.append(coverage_warning)
+
     task_id = uuid.uuid4().hex
     task = _TaskState()
     with _TASK_LOCK:
@@ -593,6 +613,7 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                 sc_out = ImpactAssessmentResult(
                     task_id=task_id, meta=sc_meta, results=sc_results,
                     elapsed_seconds=None,  # filled in by caller for single mode
+                    coverage_gaps=coverage_gaps,
                     **_run_stamp(),
                 )
                 return sc_out, yr_to_db
@@ -1377,6 +1398,7 @@ def _build_multi_scenario_workbook(
     ws_idx.freeze_panes = "A2"
     _autosize(ws_idx)
 
+    _finalize_coverage(wb, [_CE(_scenario_label(sc.scenario), sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_result.scenarios], discriminator="LCI Scenario")
     return wb
 
 
@@ -1668,6 +1690,7 @@ def _build_multi_param_workbook(
     ws_idx.freeze_panes = "B2"
     _autosize(ws_idx)
 
+    _finalize_coverage(wb, [_CE(sc.scenario, sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_param_result.scenarios], discriminator="Sensitivity case")
     return wb
 
 
@@ -1994,6 +2017,7 @@ def _build_multi_dsm_workbook(
 
     _autosize(ws_idx)
 
+    _finalize_coverage(wb, [_CE(sc.scenario_name, sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_dsm_result.scenarios], discriminator="DSM scenario")
     return wb
 
 
@@ -2289,6 +2313,7 @@ def _build_multi_paired_workbook(
 
     _autosize(ws_idx)
 
+    _finalize_coverage(wb, [_CE(f"{sc.dsm_scenario_name} × {sc.lci_scenario_label}", sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_paired_result.scenarios], discriminator="Pair")
     return wb
 
 
@@ -2502,6 +2527,12 @@ async def post_export(body: ImpactExportRequest) -> Response:
         sim_result=sim,
         computed_at=result.computed_at,
         mapper_version=result.mapper_version,
+        coverage_entries=(
+            [_CE(result.meta.mode.capitalize(), result.coverage_gaps, _methods_of(result)),
+             _CE(compare_partner.meta.mode.capitalize(), compare_partner.coverage_gaps, _methods_of(compare_partner))]
+            if compare_partner is not None
+            else [_CE(None, result.coverage_gaps, _methods_of(result))]
+        ),
     )
 
     # Decide pairing for the Static-vs-Projected sheet.
@@ -2811,6 +2842,7 @@ def _build_single_product_static_workbook(
         ws_sb.freeze_panes = "A2"
         _sp_autosize(ws_sb)
 
+    _finalize_coverage(wb, [_CE(name if len(scenarios) > 1 else None, res.coverage_gaps, _methods_of(res)) for name, res in scenarios], discriminator="Sensitivity case")
     return wb
 
 
@@ -3033,6 +3065,7 @@ def _build_single_product_prospective_workbook(
         ws_sb.freeze_panes = "A2"
         _sp_autosize(ws_sb)
 
+    _finalize_coverage(wb, [_CE(f"{r.iam}/{r.ssp} {r.year if r.year is not None else r.db_name}", r.result.coverage_gaps, _methods_of(r.result)) for r in runs], discriminator="Trajectory")
     return wb
 
 
@@ -3230,6 +3263,7 @@ def _build_single_product_comparison_workbook(
     ws_s.freeze_panes = "A2"
     _sp_autosize(ws_s)
 
+    _finalize_coverage(wb, [_CE("Static", static_result.coverage_gaps, _methods_of(static_result))] + [_CE(f"{r.iam}/{r.ssp} {r.year if r.year is not None else r.db_name}", r.result.coverage_gaps, _methods_of(r.result)) for r in projected_runs], discriminator="Result")
     return wb
 
 
@@ -3672,6 +3706,14 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
             ws_err.cell(row=ws_err.max_row, column=4).alignment = Alignment(wrap_text=True)
         _sp_autosize(ws_err)
 
+    # Successful items only: a failed item reports no value (it is listed on
+    # the Errors sheet). A success without a result payload is malformed and
+    # must fail here rather than vanish from the statement.
+    _finalize_coverage(wb, [
+        _CE(it.label, (it.archetype_result or it.activity_result).coverage_gaps,
+            _methods_of(it.archetype_result or it.activity_result))
+        for it in body.result.items if it.status == "success"
+    ], discriminator="Item")
     return wb
 
 

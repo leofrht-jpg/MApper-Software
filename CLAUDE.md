@@ -10821,6 +10821,34 @@ into a set of permanent exemptions.
   (status/finish/fail) and calls `fn(task, ...)`. `plca`, `impact` and
   `monte_carlo` all start a plain daemon thread instead.
 
+### In a Claude Code shell, `grep -r` skips gitignored files — silently
+
+In Claude Code's shell, `grep` is not `/usr/bin/grep`: it is a shell function
+that runs ugrep with `--ignore-files` (and `--exclude-dir=.git`). **Anything
+listed in `.gitignore` is skipped, and a search whose only matches are in
+ignored files returns no matches, exit 1, no warning** — which reads as a clean
+result. Your own Terminal uses the real `/usr/bin/grep` and is not affected.
+
+Found on 2026-09-18 during the repo move: a `grep -r` path audit returned 0
+files while `.claude/settings.local.json` (gitignored) held 11 stale paths and
+`mapper-backend/unlinked.log` (gitignored) held more. It was first mistaken for
+an iCloud-eviction artefact; it happened on the fully local `~/Developer` copy,
+so it is not.
+
+What it does and does not affect:
+
+- **Searches over tracked source are fine.** Tracked files are never ignored.
+- **Searches for things that live in ignored places are unreliable:** local
+  settings (`.claude/`), logs (`*.log`), exports (`mapper-backend/export/`,
+  `export/`), `_reference/`, `mapper-backend/data/`, `.env*`, build output.
+- **A "no occurrences" conclusion needs the real grep** whenever the answer
+  could sit in an ignored file:
+
+      find <dir> -type f -not -path "*/node_modules/*" -print0 | xargs -0 /usr/bin/grep -lIE "<pattern>"
+
+  or call `/usr/bin/grep -r` explicitly. `.xlsx` files are zip archives and
+  need unzipping; neither grep sees inside them.
+
 ### Break-checks run with bytecode caching OFF
 
 A break-check (deliberately breaking code to prove a test catches it, then

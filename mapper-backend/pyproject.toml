@@ -4,3 +4,11 @@ version = "0.2.2"
 description = "MApper FastAPI backend"
 license = "MPL-2.0"
 requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+# The backend is not pip-installed, so `import mapper` needs this directory on
+# sys.path. Without it bare `pytest` fails every file at collection (127
+# ImportErrors), which reads as a broken branch; only `python -m pytest` worked,
+# because `python -m` adds the working directory. Relative to this file, so it
+# holds from any cwd.
+pythonpath = ["."]

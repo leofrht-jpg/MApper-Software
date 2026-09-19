@@ -176,6 +176,18 @@ def _sanitize_filename(name: str, fallback: str = "system", max_len: int = 100) 
     return sanitize_filename_part(name, fallback, max_len)
 
 
+def build_template_filename(entity_name: str, artifact: str, **kw) -> str:
+    """The ONE template-filename scheme, from ``bom`` (lazy: bom imports dsm).
+
+    The five template routes below called this name after #103 without it ever
+    being defined or imported here, so every DSM "Download template" link
+    raised NameError -> 500. Pyflakes' undefined-name check now guards it.
+    """
+    from mapper.api.bom import build_template_filename as _build
+
+    return _build(entity_name, artifact, **kw)
+
+
 def _get_system(system_id: str) -> SystemDefinition:
     sys_def = _proj_systems().get(system_id)
     if not sys_def:
@@ -1735,10 +1747,10 @@ async def simulate_scenarios(
             continue
         for case in cases:
             try:
-                engine = ParameterEngine(table, scenario=case)
+                engine, table, scen = _scaling_params(case)
                 model = DynamicStockModel(
                     sys_def, view, parameter_engine=engine,
-                    parameter_table=table, parameter_scenario=case,
+                    parameter_table=table, parameter_scenario=scen,
                 )
                 results[_key(sid, case)] = model.simulate()
             except Exception as e:

@@ -1093,7 +1093,7 @@ def _translate_demand_to_database(
     # registry resolve_prospective_dbs uses.
     from mapper.core.prospective_links import base_db_for, resolve_link_db
 
-    base_db = base_db_for(_current_project(), compute_database)
+    base_db = base_db_for(bw2data.projects.current, compute_database)
 
     _exists_cache: dict[tuple[str, str], bool] = {}
 

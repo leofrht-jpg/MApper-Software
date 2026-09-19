@@ -11532,6 +11532,32 @@ link refusals filter on is already refused in authored database names.
   `tests/test_bare_pytest_collects.py`, which runs pytest from a directory
   outside the backend.
 
+## No undefined names -- pyflakes guards the package
+
+Three names were called without ever being defined, and each shipped, because
+each sat behind a route no test drove to that line:
+
+| name | since | what broke |
+|---|---|---|
+| `lca._current_project` | #97, v0.2.1 | every single-product computation against an INSTALLED premise database (Prospective tab, prospective contribution, trajectory, Monte Carlo with a background) -- NameError |
+| `dsm.build_template_filename` | #103, v0.2.2 | all five DSM "Download template" links -- 500 |
+| `dsm.simulate_scenarios` `table` | v0.1.0 | `simulate-scenarios` for a scenario WITH scaling rules -- 500 (latent: no project has rules) |
+
+The first is the instructive one: the unit tests only reached its early
+returns, the integration tests skip without a premise database, and CI has
+none -- so the line that raised was reachable only on a real user's machine.
+
+`tests/test_undefined_names.py` drives each through its entry point, and runs
+**pyflakes' undefined-name check over the whole package with no exemptions**
+(annotation-only hits were fixed too, via `TYPE_CHECKING` / a real import, so
+the rule stays "zero"). pyflakes is pinned in `environment.yml`; the guard
+skips locally when it is absent but FAILS on CI (`CI` is set there), because a
+guard that skips where it gates merges is not a guard.
+
+`dsm` cannot import `bom` at module level (bom imports dsm), so dsm reaches
+bom's helpers through thin lazy wrappers -- `_sanitize_filename`,
+`build_template_filename`.
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

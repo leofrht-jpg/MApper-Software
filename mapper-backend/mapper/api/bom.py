@@ -50,6 +50,7 @@ from mapper.core.dsm_engine import all_cohort_keys
 from mapper.core.material_flow_engine import compute_material_flows
 from mapper.core.dsm_lca_engine import DSMLCAPipeline
 from mapper.models.bom_schemas import (
+    CohortMappingEntry,
     Archetype,
     ArchetypeCreate,
     ArchetypeLCARequest,

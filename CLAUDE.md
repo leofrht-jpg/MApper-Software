@@ -11397,6 +11397,53 @@ also measuring how often it refuses values that are actually fine.
 - **Don't save the definition before the bw2 write succeeds**, and don't read
   a corrupt definition file as empty.
 
+## Biosphere-flow compartment picker (step 3a of authored databases)
+
+Biosphere flows that share a name differ only by compartment (biosphere3 has
+562 names shared by more than one flow; Nitrogen oxides has five), and the
+compartment can change a characterisation factor while leaving the others
+identical. So choosing a flow by name is a guess. The picker shows what a
+method family does with each compartment.
+
+- **Backend:** `GET /api/biosphere-flows/search?q=&database=&family=&limit=`
+  (`mapper/api/biosphere_flows.py`; separate prefix because
+  `/authored-databases/{name}` would capture `/flows`). Pure search in
+  `mapper/core/flow_characterisation.py::search_groups`. The flow → (method,
+  factor) index over ALL installed methods builds in 0.23 s and is rebuilt
+  when the installed method set changes (fingerprint: each method's CF count
+  and registration id).
+- **Per compartment:** full path, flow type, factors for the selected family,
+  "characterised by X of Y", ecoinvent usage count, and whether a GSD² floor
+  applies (from the same single statistics pass as authoring).
+- **Per substance:** `varying_methods` (a factor present for one compartment
+  and absent for another counts as differing) and `uniform_methods`.
+- **Family:** EF v3.1 by default, else the alphabetically first installed
+  family — the Impact Assessment picker's fallback — with a switcher.
+- **Frontend:** `<BiosphereFlowPicker>` (`components/authored/`), mounted in
+  the Database Explorer as "Browse by substance" for biosphere databases (list
+  view hidden, not unmounted). Choosing a compartment opens its detail.
+
+**Measured on MAp-test (EF v3.1):** for NOx only particulate-matter formation
+differs (1.6e-6 urban / ground-level / unspecified vs 2.1e-7 high stacks /
+stratosphere); acidification, marine and terrestrial eutrophication and
+photochemical ozone are uniform. Coverage does NOT differ under EF v3.1 (every
+compartment 5 of 25). It differs under the **"no LT" variants**, which exclude
+long-term emissions by design: under "EF v3.1 no LT" the long-term NOx
+compartment is characterised by 0 indicators; 14 of 46 installed families show
+some compartment coverage gap for NOx. The family switcher is what surfaces
+this.
+
+#### What NOT to do
+
+- **Don't sort candidates by ecoinvent usage, or preselect one.** A first row
+  or a big number reads as a recommendation. Candidates are alphabetical by
+  compartment, the UI says the order means nothing, and the usage column is
+  labelled as information. Each rule has a test that fails if it is broken.
+- **Don't show factors from families other than the selected one.**
+- **Don't treat a missing factor as "same".** Absent in one compartment and
+  present in another is exactly the difference that silently zeroes an
+  indicator.
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

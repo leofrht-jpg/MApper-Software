@@ -522,7 +522,13 @@ class Bw2Backend:
             out.append(name)
         return sorted(out)
 
-    def _all_stats(self) -> dict:
+    def _all_stats(self) -> tuple[dict, dict]:
+        """``(stats, usage)`` from ONE pass over base ecoinvent.
+
+        ``stats``: flow key -> FlowStats, for flows with lognormal exchanges.
+        ``usage``: flow key -> number of biosphere exchanges using the flow,
+        whatever their uncertainty type (the compartment picker shows it).
+        """
         base = self._base_databases()
         key = (
             self._bd.projects.current,
@@ -537,6 +543,7 @@ class Bw2Backend:
         gsd2: dict = defaultdict(list)
         bvar: dict = defaultdict(list)
         where: dict = defaultdict(set)
+        usage: dict = defaultdict(int)
         # One pass per base database via the output index: ~2.5 s for
         # ecoinvent 3.10's 445,588 biosphere exchanges. A per-flow query is
         # 4-11 s EACH on a project carrying premise copies, because the input
@@ -548,6 +555,7 @@ class Bw2Backend:
                 (b,),
             ).fetchall()
             for idb, icode, blob in rows:
+                usage[(idb, icode)] += 1
                 d = pickle.loads(blob)
                 if d.get("uncertainty type") != 2:
                     continue
@@ -569,11 +577,17 @@ class Bw2Backend:
             )
             for k, v in gsd2.items()
         }
-        self._stats_cache[key] = stats
-        return stats
+        self._stats_cache[key] = (stats, dict(usage))
+        return self._stats_cache[key]
 
     def flow_stats(self, database: str, code: str) -> FlowStats | None:
-        return self._all_stats().get((database, code))
+        return self._all_stats()[0].get((database, code))
+
+    def all_stats(self) -> dict:
+        return self._all_stats()[0]
+
+    def usage(self) -> dict:
+        return self._all_stats()[1]
 
     def installed(self) -> list[str]:
         return list(self._bd.databases)

@@ -18,6 +18,7 @@ import { Badge } from '../components/ui/Badge'
 import { Button } from '../components/ui/Button'
 import { DemoLoadButton } from '../components/DemoLoadButton'
 import { ImportWizard } from '../components/ImportWizard'
+import { BiosphereFlowPicker } from '../components/authored/BiosphereFlowPicker'
 import {
   type ActivityDetail,
   type ActivityExportDetail,
@@ -704,6 +705,12 @@ export function DatabaseExplorer() {
   const [showCompare, setShowCompare] = useState(false)
   const [focusedIndex, setFocusedIndex] = useState(0)
   const [exporting, setExporting] = useState<null | 'csv' | 'xlsx'>(null)
+  // Biosphere databases get a second view: flows grouped by substance, with
+  // what each compartment does under a method family. Same test as the
+  // database dropdown uses to put a database in its Biosphere section.
+  const isBiosphereDb = !!selectedDatabase && (selectedDatabase === 'biosphere3' || selectedDatabase.startsWith('biosphere'))
+  const [explorerView, setExplorerView] = useState<'list' | 'substance'>('list')
+  const showSubstance = isBiosphereDb && explorerView === 'substance'
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const searchInputRef = useRef<HTMLInputElement>(null)
   const parentRef = useRef<HTMLDivElement>(null)
@@ -867,6 +874,38 @@ export function DatabaseExplorer() {
 
         {/* Left: Activity table + filters */}
         <div style={{ display: 'flex', flexDirection: 'column', borderRight: '1px solid var(--border-subtle)', overflow: 'hidden' }}>
+          {isBiosphereDb && (
+            <div data-testid="explorer-view-toggle" style={{ display: 'flex', gap: 4, padding: 'var(--space-2) var(--space-4)', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
+              {(['list', 'substance'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  data-testid={`explorer-view-${v}`}
+                  aria-pressed={explorerView === v}
+                  onClick={() => setExplorerView(v)}
+                  style={{
+                    padding: '4px 10px', fontSize: 'var(--text-xs)', cursor: 'pointer',
+                    borderRadius: 'var(--radius-md)', border: '1px solid var(--border-default)',
+                    background: explorerView === v ? 'var(--bg-active)' : 'transparent',
+                    color: explorerView === v ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  }}
+                >
+                  {v === 'list' ? 'List' : 'Browse by substance'}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Substance view: mounted only for biosphere databases, hidden (not
+              unmounted) when the list is showing, so its search survives. */}
+          {isBiosphereDb && (
+            <div data-testid="explorer-substance-view" style={{ display: showSubstance ? 'flex' : 'none', flex: 1, overflow: 'hidden' }}>
+              <BiosphereFlowPicker
+                database={selectedDatabase}
+                onSelect={(c) => openDetail(c.database, c.code)}
+              />
+            </div>
+          )}
+          <div data-testid="explorer-list-view" style={{ display: showSubstance ? 'none' : 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
           {/* Search bar */}
           <div style={{ padding: 'var(--space-3) var(--space-4)', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0 }}>
             <SearchInput
@@ -1022,6 +1061,7 @@ export function DatabaseExplorer() {
                 })}
               </div>
             )}
+          </div>
           </div>
         </div>
 

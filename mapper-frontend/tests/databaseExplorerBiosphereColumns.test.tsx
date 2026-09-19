@@ -8,7 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
-import { render } from '@testing-library/react'
+import { render, within } from '@testing-library/react'
 import {
   ActivityDetailPanel, CompareModal, PlaceCell, compartmentLabel,
 } from '../src/pages/DatabaseExplorer'
@@ -38,10 +38,13 @@ describe('compartment display', () => {
   })
 
   it('a list row shows the compartment for a flow and the location for an activity', () => {
+    // Scope each query to its own render: screen-level queries would find the
+    // first render's cell while checking the second.
     const flow = render(<PlaceCell location={URBAN.location} categories={URBAN.categories} />)
-    expect(flow.getByTestId('compartment-cell').textContent).toBe('air › urban air close to ground')
+    expect(within(flow.container).getByTestId('compartment-cell').textContent)
+      .toBe('air › urban air close to ground')
     const act = render(<PlaceCell location="GLO" categories={[]} />)
-    expect(act.queryByTestId('compartment-cell')).toBeNull()
+    expect(within(act.container).queryByTestId('compartment-cell')).toBeNull()
     expect(act.container.textContent).toBe('GLO')
   })
 
@@ -69,8 +72,8 @@ describe('compartment display', () => {
           input_unit: 'kilogram', input_database: 'ei', amount: 0.05, type: 'technosphere' },
       ],
     }
-    const { getAllByTestId } = render(<ActivityDetailPanel detail={detail} onBack={() => {}} />)
-    const places = getAllByTestId('exchange-place').map((e) => e.textContent)
+    const { container } = render(<ActivityDetailPanel detail={detail} onBack={() => {}} />)
+    const places = within(container).getAllByTestId('exchange-place').map((e) => e.textContent)
     expect(places).toContain('air › urban air close to ground')
     expect(places).toContain('RER')
   })

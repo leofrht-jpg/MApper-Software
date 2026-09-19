@@ -65,6 +65,8 @@ export interface ActivitySummary {
   unit: string
   product: string
   database: string
+  /** Biosphere flows only: the compartment. Empty/absent for technosphere. */
+  categories?: string[]
 }
 
 export interface ActivityPage {
@@ -100,6 +102,7 @@ export interface ExchangeDetail {
   input_key: string
   input_name: string
   input_location: string
+  input_categories?: string[]
   input_unit: string
   input_database: string
   amount: number
@@ -114,6 +117,7 @@ export interface ActivityDetail {
   unit: string
   product: string
   database: string
+  categories?: string[]
   exchanges: ExchangeDetail[]
   metadata: Record<string, string>
 }

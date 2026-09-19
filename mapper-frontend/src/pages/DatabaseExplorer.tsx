@@ -32,7 +32,28 @@ import {
 
 const EXCHANGE_TYPES = ['production', 'technosphere', 'biosphere'] as const
 
-function ActivityDetailPanel({
+/** A biosphere flow's compartment, e.g. "air › urban air close to ground".
+ *  Same-named flows (Nitrogen oxides has five) differ only by this, so it is
+ *  shown wherever a flow is listed. Empty for technosphere activities. */
+export function compartmentLabel(categories?: string[]): string {
+  return categories && categories.length > 0 ? categories.join(' › ') : ''
+}
+
+/** Location for an activity, compartment for a biosphere flow. */
+export function PlaceCell({ location, categories }: { location: string; categories?: string[] }) {
+  const compartment = compartmentLabel(categories)
+  if (compartment) {
+    return (
+      <span data-testid="compartment-cell" title={compartment}
+        style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+        {compartment}
+      </span>
+    )
+  }
+  return location ? <Badge label={location} variant="default" /> : <span />
+}
+
+export function ActivityDetailPanel({
   detail,
   onBack,
 }: {
@@ -75,6 +96,7 @@ function ActivityDetailPanel({
         </p>
         <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
           {detail.location && <Badge label={detail.location} variant="default" />}
+          {compartmentLabel(detail.categories) && <Badge label={compartmentLabel(detail.categories)} variant="default" />}
           {detail.unit && <Badge label={detail.unit} variant="default" />}
           <Badge label={detail.database} variant="lca" />
         </div>
@@ -154,13 +176,13 @@ function ActivityDetailPanel({
                       onMouseLeave={(e) => (e.currentTarget.style.background = 'transparent')}
                     >
                       <span
-                        title={exc.input_location ? `${exc.input_name} · ${exc.input_location}` : exc.input_name}
+                        title={[exc.input_name, compartmentLabel(exc.input_categories) || exc.input_location].filter(Boolean).join(' · ')}
                         style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                       >
                         {exc.input_name}
-                        {exc.input_location && (
-                          <span style={{ color: 'var(--text-secondary)', marginLeft: 6 }}>
-                            {exc.input_location}
+                        {(compartmentLabel(exc.input_categories) || exc.input_location) && (
+                          <span data-testid="exchange-place" style={{ color: 'var(--text-secondary)', marginLeft: 6 }}>
+                            {compartmentLabel(exc.input_categories) || exc.input_location}
                           </span>
                         )}
                       </span>
@@ -192,7 +214,7 @@ function ActivityDetailPanel({
 
 // ── Compare modal ─────────────────────────────────────────────────────────────
 
-function CompareModal({
+export function CompareModal({
   activities, onClose,
 }: {
   activities: ActivitySummary[]
@@ -240,8 +262,11 @@ function CompareModal({
             <tbody>
               {([
                 ['Name', (a: ActivitySummary) => a.name],
-                ['Reference product', (a: ActivitySummary) => a.product],
+                // A biosphere flow has no reference product: the backend sends ''
+                // rather than the name, and a dash says so instead of a duplicate.
+                ['Reference product', (a: ActivitySummary) => a.product || '—'],
                 ['Location', (a: ActivitySummary) => a.location || '—'],
+                ['Compartment', (a: ActivitySummary) => compartmentLabel(a.categories) || '—'],
                 ['Unit', (a: ActivitySummary) => a.unit || '—'],
                 ['Database', (a: ActivitySummary) => a.database],
                 ['Code', (a: ActivitySummary) => a.code],
@@ -437,7 +462,7 @@ function SelectionPanel({
                   {a.database}
                 </div>
               </div>
-              {a.location ? <Badge label={a.location} variant="default" /> : <span />}
+              <PlaceCell location={a.location} categories={a.categories} />
               {a.unit ? <Badge label={a.unit} variant="default" /> : <span />}
               <button
                 onClick={(e) => { e.stopPropagation(); onRemove(a.key) }}
@@ -917,7 +942,7 @@ export function DatabaseExplorer() {
           {/* Table header */}
           <div style={{ display: 'grid', gridTemplateColumns: '24px 2fr 1fr 1fr', padding: '0 var(--space-4)', height: 36, alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', flexShrink: 0, backgroundColor: 'var(--bg-surface)', gap: 8 }}>
             <span />
-            {['Name', 'Location', 'Unit'].map((col) => (
+            {['Name', activities.some((a) => a.categories?.length) ? 'Location / compartment' : 'Location', 'Unit'].map((col) => (
               <span key={col} style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>{col}</span>
             ))}
           </div>
@@ -990,7 +1015,7 @@ export function DatabaseExplorer() {
                         {isSelected && <Check size={11} color="#fff" />}
                       </span>
                       <span title={act.name} style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{act.name}</span>
-                      {act.location ? <Badge label={act.location} variant="default" /> : <span />}
+                      <PlaceCell location={act.location} categories={act.categories} />
                       {act.unit ? <Badge label={act.unit} variant="default" /> : <span />}
                     </div>
                   )

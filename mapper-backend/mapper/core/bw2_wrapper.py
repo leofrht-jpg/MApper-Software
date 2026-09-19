@@ -302,15 +302,32 @@ def list_databases() -> list[dict]:
 
 # ── Phase 1A: Activities ──────────────────────────────────────────────────────
 
+#: bw2 ``type`` values carried by biosphere flows. A flow has no reference
+#: product and no location; its compartment (``categories``) is what tells
+#: same-named flows apart -- Nitrogen oxides has five, identical by name.
+_BIOSPHERE_FLOW_TYPES = frozenset({"emission", "natural resource", "economic", "inventory indicator"})
+
+
+def _is_biosphere_flow(act) -> bool:
+    return act.get("type") in _BIOSPHERE_FLOW_TYPES
+
+
 def _activity_to_summary(act) -> dict:
+    biosphere = _is_biosphere_flow(act)
     return {
         "key": str(act.key),
         "code": act.get("code", ""),
         "name": act.get("name", ""),
         "location": str(act.get("location", "")),
         "unit": act.get("unit", ""),
-        "product": act.get("reference product", act.get("name", "")),
+        # A biosphere flow has no reference product. Falling back to the name
+        # made the column duplicate Name, which reads as data; empty is honest.
+        # Technosphere activities keep the fallback: the BOM linker stores this
+        # value as the link's reference_product, and some activities (the demo
+        # project's synthetic ones) carry no reference product at all.
+        "product": "" if biosphere else act.get("reference product", act.get("name", "")),
         "database": act.get("database", ""),
+        "categories": [str(c) for c in (act.get("categories") or ())] if biosphere else [],
     }
 
 
@@ -452,6 +469,10 @@ def get_activity_detail(database_name: str, code: str) -> dict:
                 "input_key": str(exc.input.key),
                 "input_name": inp.get("name", ""),
                 "input_location": str(inp.get("location", "")),
+                "input_categories": (
+                    [str(c) for c in (inp.get("categories") or ())]
+                    if _is_biosphere_flow(inp) else []
+                ),
                 "input_unit": inp.get("unit", ""),
                 "input_database": inp.get("database", ""),
                 "amount": float(exc.get("amount", 0)),

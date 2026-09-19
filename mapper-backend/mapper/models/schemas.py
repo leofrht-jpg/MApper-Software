@@ -73,6 +73,9 @@ class ActivitySummary(BaseModel):
     unit: str
     product: str
     database: str
+    # Biosphere flows only: the compartment, e.g. ["air", "urban air close to
+    # ground"]. Empty for technosphere activities.
+    categories: list[str] = []
 
 
 class ActivityPage(BaseModel):
@@ -91,6 +94,7 @@ class ExchangeDetail(BaseModel):
     input_key: str
     input_name: str
     input_location: str
+    input_categories: list[str] = []
     input_unit: str
     input_database: str
     amount: float
@@ -105,6 +109,7 @@ class ActivityDetail(BaseModel):
     unit: str
     product: str
     database: str
+    categories: list[str] = []
     exchanges: list[ExchangeDetail]
     metadata: dict
 

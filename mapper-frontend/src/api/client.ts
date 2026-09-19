@@ -1019,6 +1019,150 @@ export async function getMethods(): Promise<MethodFamily[]> {
   return request<MethodFamily[]>('/methods')
 }
 
+// ── Authored databases (activities defined by biosphere exchanges) ─────────
+
+export type PedigreeScoresInput = Record<string, number>
+export type AuthoredScope = 'complete' | 'partial'
+export type FloorStatus = 'floored' | 'below_floor_with_reason' | 'unfloored'
+
+export interface AuthoredExchangeInput {
+  flow_database: string
+  flow_code: string
+  amount: number
+  pedigree: PedigreeScoresInput
+  basic_variance?: number | null
+  basic_variance_reason?: string | null
+  floor_reason?: string | null
+}
+
+export interface AuthoredActivityInput {
+  name: string
+  reference_product?: string | null
+  unit: string
+  location: string
+  comment: string
+  scope: AuthoredScope
+  scope_note?: string | null
+  exchanges: AuthoredExchangeInput[]
+}
+
+export interface AuthoredFlowSnapshot {
+  database: string
+  code: string
+  name: string
+  categories: string[]
+  unit: string
+}
+
+export interface AuthoredExchange {
+  flow: AuthoredFlowSnapshot
+  amount: number
+  pedigree: PedigreeScoresInput
+  basic_variance: number
+  basic_variance_source: 'ecoinvent_median' | 'user_entered'
+  basic_variance_detail: string
+  sigma: number
+  gsd2: number
+  floor_status: FloorStatus
+  floor_gsd2: number | null
+  floor_detail: string
+  floor_reason: string | null
+}
+
+export interface AuthoredActivity {
+  code: string
+  name: string
+  reference_product: string
+  unit: string
+  location: string
+  comment: string
+  scope: AuthoredScope
+  scope_note: string | null
+  exchanges: AuthoredExchange[]
+  has_unfloored_exchange: boolean
+}
+
+export interface AuthoredDatabase {
+  name: string
+  description: string
+  created_at: string
+  updated_at: string
+  activities: AuthoredActivity[]
+}
+
+export interface MaterialisationStatus {
+  database: string
+  state: 'in_sync' | 'rebuilt' | 'pending' | 'failed'
+  detail: string
+}
+
+export interface AuthoredDatabaseView {
+  database: AuthoredDatabase
+  status: MaterialisationStatus
+}
+
+export interface ExchangePreview {
+  ok: boolean
+  exchange: AuthoredExchange | null
+  problems: string[]
+  // Parallel to `problems`: a machine-readable code per problem (e.g. `below_floor`).
+  codes: string[]
+}
+
+export async function listAuthoredDatabases(): Promise<AuthoredDatabaseView[]> {
+  return request<AuthoredDatabaseView[]>('/authored-databases')
+}
+
+export async function createAuthoredDatabase(name: string, description = ''): Promise<AuthoredDatabase> {
+  return request<AuthoredDatabase>('/authored-databases', {
+    method: 'POST', body: JSON.stringify({ name, description }),
+  })
+}
+
+export async function deleteAuthoredDatabase(name: string): Promise<{ deleted: string }> {
+  return request(`/authored-databases/${encodeURIComponent(name)}`, { method: 'DELETE' })
+}
+
+export async function addAuthoredActivity(db: string, body: AuthoredActivityInput): Promise<AuthoredActivity> {
+  return request<AuthoredActivity>(`/authored-databases/${encodeURIComponent(db)}/activities`, {
+    method: 'POST', body: JSON.stringify(body),
+  })
+}
+
+export async function updateAuthoredActivity(db: string, code: string, body: AuthoredActivityInput): Promise<AuthoredActivity> {
+  return request<AuthoredActivity>(`/authored-databases/${encodeURIComponent(db)}/activities/${code}`, {
+    method: 'PUT', body: JSON.stringify(body),
+  })
+}
+
+export async function deleteAuthoredActivity(db: string, code: string): Promise<{ deleted: string }> {
+  return request(`/authored-databases/${encodeURIComponent(db)}/activities/${code}`, { method: 'DELETE' })
+}
+
+export async function reconcileAuthoredDatabases(): Promise<MaterialisationStatus[]> {
+  return request<MaterialisationStatus[]>('/authored-databases/reconcile', { method: 'POST' })
+}
+
+/** The structured ``detail`` of a FastAPI error (e.g. ``{problems, codes}`` or
+ *  ``{links}``), or null when the detail was a plain string. */
+export function structuredErrorDetail(e: unknown): Record<string, unknown> | null {
+  if (!(e instanceof HttpError)) return null
+  try {
+    const parsed = JSON.parse(e.detail)
+    const d = parsed?.detail
+    return d && typeof d === 'object' && !Array.isArray(d) ? d as Record<string, unknown> : null
+  } catch {
+    return null
+  }
+}
+
+/** Dry run of one exchange by the SAME code that saving uses. */
+export async function previewAuthoredExchange(body: AuthoredExchangeInput): Promise<ExchangePreview> {
+  return request<ExchangePreview>('/authored-databases/preview-exchange', {
+    method: 'POST', body: JSON.stringify(body),
+  })
+}
+
 // ── Biosphere flows grouped by substance (compartment picker) ───────────────
 
 export interface FlowMethodRef {
@@ -1038,6 +1182,9 @@ export interface FlowCandidate {
   floor_available: boolean
   floor_gsd2: number | null
   floor_n: number
+  /** ecoinvent's median basic variance for the flow; null = authoring requires one. */
+  basic_variance: number | null
+  basic_variance_n: number
   characterised: number
   factors: Record<string, number>
 }

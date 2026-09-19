@@ -11450,6 +11450,85 @@ this.
   positive line the check would be invisible exactly where most users sit, and
   silence reads as "not checked" rather than "nothing to report".
 
+## Authoring UI (step 3b of authored databases)
+
+Mounted in the **Database Explorer**, not a new tab: "New authored database"
+beside Import; an **Authored** section in the database dropdown; for a
+selected authored database a bar with its activity count, **Add activity**,
+**Delete database**, and (when the Brightway copy is `pending` / `failed`) a
+**Rebuild** button calling `/reconcile`; **Edit / Delete** on an authored
+activity's detail panel (`ActivityDetailPanel` gained an optional `actions`
+slot). Components live in `components/authored/`
+(`AuthoredActivityEditor`, `AuthoredDatabaseControls`).
+
+### The editor restates NO rule. It shows the preview's verdict.
+
+`POST /api/authored-databases/preview-exchange` runs **`resolve_exchange`**, the
+same function saving reaches through `build_activity`, and writes nothing. The
+editor previews each exchange (debounced, ticketed so a late reply for an older
+version of the row is dropped, and cleared on every edit) and renders what it is
+told: GSD², floored / below-floor / **Unfloored**, and the problems on refusal.
+
+**Agreement is tested, not assumed.** `tests/test_authored_preview.py` sends 16
+inputs to BOTH endpoints and requires the same verdict, the same problem list,
+the same codes, and the stored exchange equal to the previewed one. A table
+only covers the inputs it lists, so two AST guards cover the rest: the
+`build_activity` exchange loop may contain **only** `try: resolve_exchange(...)`,
+and the preview route must call `resolve_exchange`. Break-checked: a
+save-only rule, "preview supplies the floor reason", and "report only the first
+problem" are each caught.
+
+**Refusals carry machine-readable `codes`, parallel to `problems`**
+(`negative_amount`, `below_floor`, `bv_required`, `unknown_flow`, ...). The UI
+keys on the code, never on message text -- the floor-reason box appears because
+the preview returned `below_floor`. A new refusal must get its own code; the
+agreement test fails on the generic `invalid`.
+
+### The shared pedigree editor, opt-in props
+
+`PedigreeEditor` serves Monte Carlo scoring AND authoring. Authoring's needs are
+props that default to the old behaviour, so Monte Carlo is unchanged:
+
+- `requireAll` -- a score of 1 must be CHOSEN, not defaulted: no Clear, unset
+  indicators read "not scored yet" and are listed. An authored exchange is
+  refused unless all five are recorded.
+- `basicVarianceMode` -- `derived` (ecoinvent's median, read-only; decided by
+  `derived_basic_variance()`, the same helper the engine uses, served on the
+  picker candidate as `basic_variance`) or `required` (empty until the user
+  types one; a reason box sits beside it). `editable` is the Monte Carlo mode.
+- `basicVarianceNote` -- where the value comes from.
+
+### Scope has no default
+
+Complete / Partial is a required choice; neither radio is pre-selected, and
+Partial requires a note saying what was left out. A pre-selected "complete"
+would let an inventory of CO₂ alone pass as a whole inventory.
+
+### Verified live, not assumed: a BOM row can link an authored activity
+
+In a throwaway Brightway project (`BRIGHTWAY2_DIR` and every storage root
+pointed at a scratch dir, deleted afterwards): the activity's code is 32 chars
+(`uuid4().hex`, what the validator's length check expects); `GET /databases`
+lists the database unfiltered and `GET /activities/{db}?search=` finds the
+activity -- the two calls `EcoinventLinker` makes; `validate_bom` accepts the
+link with no issues; and `POST /lca/calculate-archetype` through it returned
+**6.0 = 3 MJ × 2 kg CO₂/MJ × CF 1** exactly. The `biosphere` substring the four
+link refusals filter on is already refused in authored database names.
+
+#### What NOT to do
+
+- **Don't add an exchange rule anywhere but `resolve_exchange`.** The AST guard
+  fails; more to the point, preview would then approve what save refuses.
+- **Don't branch the UI on problem text.** Key on `codes`.
+- **Don't default the scope, a pedigree score, or the basic variance.** Each is
+  a statement about the data the user has to make.
+- **Don't use `window.confirm` for the deletes.** It is a no-op in WKWebView;
+  both deletes confirm with a second in-place button, and a refusal lists the
+  BOM rows (`detail.links`) that would dangle.
+- **Run the backend suite as `python -m pytest`.** There is no install and no
+  pytest `pythonpath`, so bare `pytest` fails to import `mapper` in every file
+  (127 collection errors) -- which reads as a broken branch.
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

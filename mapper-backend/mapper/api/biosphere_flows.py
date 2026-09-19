@@ -27,8 +27,8 @@ def _bw2():
     return bw2data
 
 
-def _statistics() -> tuple[dict, dict]:
-    """(usage, floors) from the shared ecoinvent statistics pass.
+def _statistics() -> tuple[dict, dict, dict]:
+    """(usage, floors, variances) from the shared ecoinvent statistics pass.
 
     Never fails the search: without ecoinvent (a biosphere-only project, a
     fresh import) usage is zero and no floor is available, which is true.
@@ -40,13 +40,19 @@ def _statistics() -> tuple[dict, dict]:
         stats = backend.all_stats()
         usage = backend.usage()
     except Exception:
-        return {}, {}
-    floors = {
-        k: (s.n_lognormal, s.median_gsd2)
-        for k, s in stats.items()
-        if s.n_lognormal >= eng.MIN_FLOOR_SAMPLES
-    }
-    return usage, floors
+        return {}, {}, {}
+    # The same helpers resolve_exchange uses, so the picker cannot tell the
+    # editor something about a flow that saving would then contradict.
+    floors = {}
+    variances = {}
+    for k, st in stats.items():
+        floor = eng.floor_gsd2_of(st)
+        if floor is not None:
+            floors[k] = (st.n_lognormal, floor)
+        bv = eng.derived_basic_variance(st)
+        if bv is not None:
+            variances[k] = (st.n_basic_variance, bv)
+    return usage, floors, variances
 
 
 @router.get("/search", response_model=FlowSearchResponse)
@@ -68,10 +74,10 @@ async def search_flows(
     fams = fc.families(bd)
     fam = fc.pick_family(family, fams)
     family_methods = [tuple(m) for m in bd.methods if len(m) >= 3 and m[0] == fam]
-    usage, floors = _statistics()
+    usage, floors, variances = _statistics()
     groups, truncated = fc.search_groups(
         fc.biosphere_flows(bd, database), fc.characterisation_index(bd),
-        fam, family_methods, q, usage=usage, floors=floors, limit=limit,
+        fam, family_methods, q, usage=usage, floors=floors, variances=variances, limit=limit,
     )
     return FlowSearchResponse(database=database, family=fam, families=fams,
                               groups=groups, truncated=truncated)

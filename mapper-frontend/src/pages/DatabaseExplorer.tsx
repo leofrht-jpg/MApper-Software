@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { Upload, X, Check, ArrowLeft, Download, BarChart3, ChevronDown, Filter } from 'lucide-react'
+import { Upload, X, Check, ArrowLeft, Download, BarChart3, ChevronDown, Filter, PenLine } from 'lucide-react'
 import { SearchInput } from '../components/ui/SearchInput'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { FilterDropdown } from '../components/ui/FilterDropdown'
@@ -19,9 +19,14 @@ import { Button } from '../components/ui/Button'
 import { DemoLoadButton } from '../components/DemoLoadButton'
 import { ImportWizard } from '../components/ImportWizard'
 import { BiosphereFlowPicker } from '../components/authored/BiosphereFlowPicker'
+import { AuthoredActivityEditor } from '../components/authored/AuthoredActivityEditor'
+import {
+  AuthoredActivityActions, AuthoredDatabaseBar, NewAuthoredDatabaseModal, useAuthoredDatabases,
+} from '../components/authored/AuthoredDatabaseControls'
 import {
   type ActivityDetail,
   type ActivityExportDetail,
+  type AuthoredActivity,
   type ActivitySortBy,
   type ActivitySummary,
   type DatabaseResponse,
@@ -57,9 +62,12 @@ export function PlaceCell({ location, categories }: { location: string; categori
 export function ActivityDetailPanel({
   detail,
   onBack,
+  actions,
 }: {
   detail: ActivityDetail
   onBack: () => void
+  /** Extra controls under the header, e.g. Edit/Delete for an authored activity. */
+  actions?: React.ReactNode
 }) {
   const [tab, setTab] = useState<'exchanges' | 'metadata'>('exchanges')
 
@@ -101,6 +109,7 @@ export function ActivityDetailPanel({
           {detail.unit && <Badge label={detail.unit} variant="default" />}
           <Badge label={detail.database} variant="lca" />
         </div>
+        {actions}
       </div>
 
       {/* Tabs */}
@@ -488,11 +497,13 @@ function SelectionPanel({
 // ── Database dropdown ─────────────────────────────────────────────────────────
 
 function DatabaseDropdown({
-  databases, selected, onSelect,
+  databases, selected, onSelect, authored,
 }: {
   databases: DatabaseResponse[]
   selected: string | null
   onSelect: (name: string) => void
+  /** Names of the project's authored databases, listed in their own section. */
+  authored?: ReadonlySet<string>
 }) {
   const [open, setOpen] = useState(false)
   const [hover, setHover] = useState<{ name: string; x: number; y: number } | null>(null)
@@ -531,15 +542,17 @@ function DatabaseDropdown({
     }
   }, [open])
 
-  const { main, biosphere } = useMemo(() => {
+  const { main, biosphere, mine } = useMemo(() => {
     const main: DatabaseResponse[] = []
     const biosphere: DatabaseResponse[] = []
+    const mine: DatabaseResponse[] = []
     for (const db of databases) {
-      if (db.name === 'biosphere3' || db.name.startsWith('biosphere')) biosphere.push(db)
+      if (authored?.has(db.name)) mine.push(db)
+      else if (db.name === 'biosphere3' || db.name.startsWith('biosphere')) biosphere.push(db)
       else main.push(db)
     }
-    return { main, biosphere }
-  }, [databases])
+    return { main, biosphere, mine }
+  }, [databases, authored])
 
   const selectedDb = databases.find((d) => d.name === selected) ?? null
 
@@ -656,6 +669,21 @@ function DatabaseDropdown({
               {biosphere.map(renderItem)}
             </>
           )}
+          {mine.length > 0 && (
+            <>
+              {(main.length > 0 || biosphere.length > 0) && (
+                <div style={{ height: 1, background: '#30363d', margin: '4px 0' }} />
+              )}
+              <div data-testid="db-dropdown-authored" style={{
+                padding: '6px 12px', fontSize: 'var(--text-xs)',
+                color: 'var(--text-tertiary)', textTransform: 'uppercase',
+                letterSpacing: 'var(--tracking-wide)',
+              }}>
+                Authored
+              </div>
+              {mine.map(renderItem)}
+            </>
+          )}
         </div>
       )}
       {open && hover && (
@@ -688,7 +716,7 @@ function DatabaseDropdown({
 // ── Main DatabaseExplorer ─────────────────────────────────────────────────────
 
 export function DatabaseExplorer() {
-  const { databases } = useProjectStore()
+  const { databases, fetchDatabases } = useProjectStore()
   const {
     selectedDatabase, activities, totalActivities,
     selectedLocations, selectedUnits, sortBy, distinctValues, searchQuery,
@@ -705,6 +733,12 @@ export function DatabaseExplorer() {
   const [showCompare, setShowCompare] = useState(false)
   const [focusedIndex, setFocusedIndex] = useState(0)
   const [exporting, setExporting] = useState<null | 'csv' | 'xlsx'>(null)
+  const { views: authoredViews, reload: reloadAuthored } = useAuthoredDatabases()
+  const authoredNames = useMemo(() => new Set(authoredViews.map((v) => v.database.name)), [authoredViews])
+  const authoredView = authoredViews.find((v) => v.database.name === selectedDatabase) ?? null
+  const [showNewAuthored, setShowNewAuthored] = useState(false)
+  // Editor target: an authored database, and the activity when editing one.
+  const [editing, setEditing] = useState<{ database: string; activity?: AuthoredActivity } | null>(null)
   // Biosphere databases get a second view: flows grouped by substance, with
   // what each compartment does under a method family. Same test as the
   // database dropdown uses to put a database in its Biosphere section.
@@ -837,6 +871,17 @@ export function DatabaseExplorer() {
 
   const showDetail = selectedActivity !== null
 
+  // After any authored change: the authored record, the database list (record
+  // counts) and the activity table all move together.
+  const refreshAuthored = async (select?: string) => {
+    await Promise.all([reloadAuthored(), fetchDatabases()])
+    const db = select ?? selectedDatabase
+    if (db) setDatabase(db)
+  }
+  const authoredDetail = selectedActivity && authoredView && selectedActivity.database === authoredView.database.name
+    ? authoredView.database.activities.find((a) => a.code === selectedActivity.code) ?? null
+    : null
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: 'var(--space-5)' }}>
 
@@ -847,6 +892,16 @@ export function DatabaseExplorer() {
             Database Explorer
           </h1>
         </div>
+        <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <Button
+          variant="secondary"
+          data-testid="authored-new-db-open"
+          onClick={() => setShowNewAuthored(true)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+        >
+          <PenLine size={14} strokeWidth={1.5} />
+          New authored database
+        </Button>
         <Button
           variant="primary"
           onClick={() => setShowImport(true)}
@@ -858,6 +913,7 @@ export function DatabaseExplorer() {
           <Upload size={14} strokeWidth={1.5} />
           Import database
         </Button>
+        </div>
       </div>
 
       {/* Database selector */}
@@ -866,6 +922,19 @@ export function DatabaseExplorer() {
           databases={databases}
           selected={selectedDatabase}
           onSelect={setDatabase}
+          authored={authoredNames}
+        />
+      )}
+      {authoredView && (
+        <AuthoredDatabaseBar
+          view={authoredView}
+          onAddActivity={() => setEditing({ database: authoredView.database.name })}
+          onChanged={() => void refreshAuthored()}
+          onDeleted={async () => {
+            await Promise.all([reloadAuthored(), fetchDatabases()])
+            const next = databases.find((d) => d.name !== authoredView.database.name)
+            if (next) setDatabase(next.name)
+          }}
         />
       )}
 
@@ -1077,6 +1146,14 @@ export function DatabaseExplorer() {
             <ActivityDetailPanel
               detail={selectedActivity}
               onBack={closeDetail}
+              actions={authoredDetail && authoredView ? (
+                <AuthoredActivityActions
+                  database={authoredView.database.name}
+                  activity={authoredDetail}
+                  onEdit={() => setEditing({ database: authoredView.database.name, activity: authoredDetail })}
+                  onDeleted={() => { closeDetail(); void refreshAuthored() }}
+                />
+              ) : undefined}
             />
           ) : (
             <SelectionPanel
@@ -1101,6 +1178,26 @@ export function DatabaseExplorer() {
       `}</style>
 
       {showImport && <ImportWizard onClose={() => setShowImport(false)} />}
+      {showNewAuthored && (
+        <NewAuthoredDatabaseModal
+          existing={databases.map((d) => d.name)}
+          onCancel={() => setShowNewAuthored(false)}
+          onCreated={(name) => { setShowNewAuthored(false); void refreshAuthored(name) }}
+        />
+      )}
+      {editing && (
+        <AuthoredActivityEditor
+          database={editing.database}
+          initial={editing.activity}
+          onCancel={() => setEditing(null)}
+          onSaved={async (a) => {
+            const db = editing.database
+            setEditing(null)
+            await refreshAuthored(db)
+            void openDetail(db, a.code)
+          }}
+        />
+      )}
       {showCompare && selectedActivities.length >= 2 && (
         <CompareModal activities={selectedActivities} onClose={() => setShowCompare(false)} />
       )}

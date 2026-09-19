@@ -149,12 +149,14 @@ def search_groups(
     *,
     usage: dict | None = None,
     floors: dict | None = None,
+    variances: dict | None = None,
     limit: int = 30,
 ) -> tuple[list[SubstanceGroup], bool]:
     """Substance groups whose name contains ``query`` (case-insensitive).
 
     ``usage``: flow key -> number of ecoinvent exchanges.
     ``floors``: flow key -> (n_lognormal, median_gsd2) where a floor applies.
+    ``variances``: flow key -> (n, median basic variance) where ecoinvent has one.
     Returns ``(groups, truncated)``.
     """
     q = query.strip().casefold()
@@ -162,6 +164,7 @@ def search_groups(
         return [], False
     usage = usage or {}
     floors = floors or {}
+    variances = variances or {}
     fam = set(family_methods)
     labels = _labels(sorted(fam))
 
@@ -184,6 +187,7 @@ def search_groups(
         candidates = []
         for f, d in zip(members, per_flow):
             fl = floors.get((f.database, f.code))
+            bv = variances.get((f.database, f.code))
             candidates.append(FlowCandidate(
                 database=f.database, code=f.code, name=f.name,
                 categories=list(f.categories), unit=f.unit, type=f.type,
@@ -191,6 +195,8 @@ def search_groups(
                 floor_available=fl is not None,
                 floor_gsd2=None if fl is None else fl[1],
                 floor_n=0 if fl is None else fl[0],
+                basic_variance=None if bv is None else bv[1],
+                basic_variance_n=0 if bv is None else bv[0],
                 characterised=len(d),
                 factors={labels[m]: cf for m, cf in sorted(d.items())},
             ))

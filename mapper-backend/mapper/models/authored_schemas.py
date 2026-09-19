@@ -286,3 +286,18 @@ class MaterialisationStatus(BaseModel):
 class AuthoredDatabaseView(BaseModel):
     database: AuthoredDatabase
     status: MaterialisationStatus
+
+
+class ExchangePreview(BaseModel):
+    """What saving this exchange would do, computed by the same code as saving.
+
+    ``ok`` is the verdict; on success ``exchange`` is exactly what would be
+    stored, on failure ``problems`` is exactly what saving would report.
+    """
+
+    ok: bool
+    exchange: AuthoredExchange | None = None
+    problems: list[str] = []
+    #: Parallel to ``problems``: machine-readable, e.g. ``below_floor``.
+    codes: list[str] = []
+

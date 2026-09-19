@@ -34,6 +34,11 @@ class FlowCandidate(BaseModel):
     floor_available: bool
     floor_gsd2: float | None = None
     floor_n: int = 0
+    #: ecoinvent's median basic variance for this flow, when it has a usable
+    #: one; None means authoring will require the user to enter one. Decided
+    #: by the same helper ``resolve_exchange`` uses.
+    basic_variance: float | None = None
+    basic_variance_n: int = 0
     #: Indicators of the selected family that characterise this flow.
     characterised: int
     #: label -> characterisation factor, for the selected family only.

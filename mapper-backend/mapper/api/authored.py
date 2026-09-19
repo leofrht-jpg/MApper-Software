@@ -32,6 +32,8 @@ from mapper.models.authored_schemas import (
     AuthoredDatabase,
     AuthoredDatabaseView,
     DatabaseCreate,
+    ExchangeInput,
+    ExchangePreview,
     MaterialisationStatus,
 )
 
@@ -66,6 +68,7 @@ def _invalid(err: eng.AuthoredError) -> HTTPException:
         "error": "authored_validation_failed",
         "message": "The authored activity could not be written.",
         "problems": err.problems,
+        "codes": err.codes,
     })
 
 
@@ -97,6 +100,22 @@ async def get_authored(name: str) -> AuthoredDatabaseView:
     project = _project()
     db = _db_or_404(_load(project), name)
     return AuthoredDatabaseView(database=db, status=eng.status_of(db, get_backend(project)))
+
+
+@router.post("/preview-exchange", response_model=ExchangePreview)
+async def preview_exchange(body: ExchangeInput) -> ExchangePreview:
+    """Dry run of one exchange. Writes nothing.
+
+    Calls ``resolve_exchange`` -- the SAME function saving calls through
+    ``build_activity`` -- so the editor shows the verdict saving will give,
+    not a second implementation of the floor and variance rules.
+    ``tests/test_authored_preview.py`` asserts the two agree input for input.
+    """
+    project = _project()
+    try:
+        return ExchangePreview(ok=True, exchange=eng.resolve_exchange(body, get_backend(project)))
+    except eng.AuthoredError as err:
+        return ExchangePreview(ok=False, problems=err.problems, codes=err.codes)
 
 
 @router.post("", response_model=AuthoredDatabase, dependencies=[Depends(verify_project_state)])

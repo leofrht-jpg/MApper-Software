@@ -23,7 +23,7 @@ import asyncio
 import threading
 import time
 import uuid
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
@@ -40,6 +40,9 @@ from mapper.core.monte_carlo_engine import (
     variance_shares,
 )
 from mapper.models.bom_schemas import MaterialPedigreeLibrary
+
+if TYPE_CHECKING:  # annotation only; openpyxl is imported lazily at use
+    from openpyxl import Workbook
 from mapper.models.schemas import (
     ArchetypeLCAMethodDistribution,
     ItemDistribution,

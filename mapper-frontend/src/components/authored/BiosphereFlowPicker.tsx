@@ -35,6 +35,12 @@ export const FLOOR_TOOLTIP =
   "ecoinvent's median GSD² for this flow, used as the lower bound when authoring an exchange. " +
   '— means ecoinvent has too few lognormal exchanges for this flow to give one.'
 
+/** Shown when no compartment of a substance has fewer indicators than another. */
+export function noGapStatement(compartments: number, n: number, total: number, family: string): string {
+  if (compartments === 1) return `Characterised by ${n} of ${total} ${family} indicators.`
+  return `No coverage gap: every compartment is characterised by the same ${n} of ${total} ${family} indicators.`
+}
+
 const MIN_QUERY = 2
 
 function compartment(c: FlowCandidate): string {
@@ -194,6 +200,15 @@ function GroupBlock({ group, family, open, onToggle, selected, onPick }: {
         {group.uniform_methods.length > 0 && (
           <div data-testid="flow-picker-uniform" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 6 }}>
             Same factor in every compartment: {group.uniform_methods.map((m) => m.label).join(', ')}
+          </div>
+        )}
+        {/* The coverage check always reports. A warning appears on a compartment
+            with fewer indicators; when there is none, say so -- silence at the
+            default family would read as "not checked" rather than "nothing to
+            report" (EF v3.1 has no NOx gap; 14 of 46 families do). */}
+        {group.candidates.every((c) => c.characterised === best) && (
+          <div data-testid="flow-picker-no-gap" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 6 }}>
+            {noGapStatement(group.candidates.length, best, group.family_indicator_count, family)}
           </div>
         )}
         {varying.length === 0 && group.candidates.length > 1 && (

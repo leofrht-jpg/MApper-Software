@@ -143,6 +143,16 @@ describe('BiosphereFlowPicker', () => {
     expect(within(container).getByTestId('flow-picker-candidate-l').textContent).toContain('Not characterised')
   })
 
+  it('says so when the family has no coverage gap, and does not when it has one', async () => {
+    const ef = await renderSearched()
+    expect(within(ef.container).getByTestId('flow-picker-no-gap').textContent).toBe(
+      'No coverage gap: every compartment is characterised by the same 2 of 25 EF v3.1 indicators.')
+    ef.unmount()
+    const { container } = await renderSearched(NO_LT)
+    expect(within(container).queryByTestId('flow-picker-no-gap')).toBeNull()
+    expect(within(container).getAllByTestId('flow-picker-coverage-warning')).toHaveLength(1)
+  })
+
   it('selects nothing until the user clicks, then returns the flow', async () => {
     const { container, onSelect } = await renderSearched()
     expand(container)

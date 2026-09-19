@@ -153,7 +153,8 @@ def client(monkeypatch):
               for i, m in enumerate(EF + [AC_NOLT])})
     bd.databases = _DBs({BIO: {"modified": "t"}, "ecoinvent-3.10-cutoff": {"modified": "t"}})
     monkeypatch.setattr(api, "_bw2", lambda: bd)
-    monkeypatch.setattr(api, "_statistics", lambda: ({(BIO, "s"): 2793}, {(BIO, "s"): (2422, 1.93)}))
+    monkeypatch.setattr(api, "_statistics", lambda: ({(BIO, "s"): 2793}, {(BIO, "s"): (2422, 1.93)},
+                                                     {(BIO, "s"): (2000, 0.08)}))
     monkeypatch.setattr(api.fc, "biosphere_flows", lambda bd_, db: FLOWS)
     fc._index_cache.clear()
     from mapper.main import app
@@ -170,6 +171,9 @@ def test_the_route_returns_groups_for_the_default_family(client):
     (g,) = body["groups"]
     stack = next(c for c in g["candidates"] if c["code"] == "s")
     assert stack["ecoinvent_exchanges"] == 2793 and stack["floor_gsd2"] == 1.93
+    assert stack["basic_variance"] == 0.08 and stack["basic_variance_n"] == 2000
+    urban = next(c for c in g["candidates"] if c["code"] == "u")
+    assert urban["basic_variance"] is None, "no ecoinvent variance: authoring will require one"
 
 
 def test_the_route_refuses_a_database_that_is_not_biosphere(client):

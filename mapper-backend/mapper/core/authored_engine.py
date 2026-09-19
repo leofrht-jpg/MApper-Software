@@ -89,10 +89,20 @@ _BIOSPHERE = "biosphere"
 
 
 class AuthoredError(ValueError):
-    """A request that cannot be written. ``problems`` names every failure."""
+    """A request that cannot be written.
 
-    def __init__(self, problems: list[str]):
+    ``problems`` names every failure for a person; ``codes`` is the parallel
+    machine-readable list (``below_floor``, ``bv_required`` ...). The UI keys its
+    behaviour off codes -- e.g. showing the floor-reason box exactly when the
+    verdict is ``below_floor`` -- so it never re-derives a rule from wording or
+    re-implements it. Preview and save return the same codes.
+    """
+
+    def __init__(self, problems: list[str], codes: list[str] | None = None):
         self.problems = list(problems)
+        self.codes = list(codes) if codes is not None else ["invalid"] * len(self.problems)
+        if len(self.codes) != len(self.problems):
+            raise ValueError("AuthoredError: codes and problems must be parallel")
         super().__init__("; ".join(self.problems))
 
 
@@ -177,9 +187,30 @@ def _label(flow: FlowInfo) -> str:
     return f"{flow.name} [{', '.join(flow.categories)}]"
 
 
+def derived_basic_variance(stats: FlowStats | None) -> float | None:
+    """ecoinvent's median basic variance for a flow, or None if it has no usable one.
+
+    The ONE place this rule lives: ``resolve_exchange`` uses it to decide whether
+    the user may (must) enter a variance, and the compartment picker uses it to
+    tell the editor which, the moment a flow is chosen.
+    """
+    if (stats is not None and stats.median_basic_variance is not None
+            and stats.n_basic_variance >= MIN_FLOOR_SAMPLES):
+        return stats.median_basic_variance
+    return None
+
+
+def floor_gsd2_of(stats: FlowStats | None) -> float | None:
+    """ecoinvent's median GSD2 for a flow -- the floor -- or None if there is none."""
+    if stats is not None and stats.n_lognormal >= MIN_FLOOR_SAMPLES:
+        return stats.median_gsd2
+    return None
+
+
 def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
     """Turn a user's exchange into a stored one, or raise naming why not."""
     problems: list[str] = []
+    codes: list[str] = []
     where = f"{inp.flow_database}/{inp.flow_code}"
 
     if inp.amount < 0:
@@ -187,41 +218,38 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
             f"{where}: negative amount {inp.amount!r}. Negative biosphere amounts "
             "(for example CO2 uptake) are not supported in this version; model the "
             "flow as positive or leave it out."
-        ])
+        ], ["negative_amount"])
     if not inp.amount > 0 or not math.isfinite(inp.amount):
-        raise AuthoredError([f"{where}: amount must be a positive number, got {inp.amount!r}"])
+        raise AuthoredError([f"{where}: amount must be a positive number, got {inp.amount!r}"], ["amount_not_positive"])
     if _BIOSPHERE not in inp.flow_database.casefold():
         raise AuthoredError([
             f"{where}: authored activities take biosphere exchanges only; "
             f"{inp.flow_database!r} is not a biosphere database"
-        ])
+        ], ["not_biosphere"])
 
     flow = backend.flow(inp.flow_database, inp.flow_code)
     if flow is None:
-        raise AuthoredError([f"{where}: no such biosphere flow is installed in this project"])
+        raise AuthoredError([f"{where}: no such biosphere flow is installed in this project"], ["unknown_flow"])
     if flow.type not in ALLOWED_FLOW_TYPES:
         raise AuthoredError([
             f"{_label(flow)}: flow type {flow.type!r} cannot be authored "
             f"(allowed: {', '.join(sorted(ALLOWED_FLOW_TYPES))})"
-        ])
+        ], ["flow_type"])
 
     stats = backend.flow_stats(flow.database, flow.code)
-    enough = stats is not None and stats.n_lognormal >= MIN_FLOOR_SAMPLES
-    have_bv = (
-        stats is not None
-        and stats.median_basic_variance is not None
-        and stats.n_basic_variance >= MIN_FLOOR_SAMPLES
-    )
+    derived = derived_basic_variance(stats)
+    floor = floor_gsd2_of(stats)
 
     # Basic variance: ecoinvent's, or the user's with a reason. Never both.
-    if have_bv:
+    if derived is not None:
         if inp.basic_variance is not None:
+            codes.append("bv_not_settable")
             problems.append(
                 f"{_label(flow)}: the basic variance comes from ecoinvent for this flow "
                 f"(median {stats.median_basic_variance:.4g} over {stats.n_basic_variance} "
                 "exchanges) and is not user-settable. Remove basic_variance."
             )
-        bv = stats.median_basic_variance
+        bv = derived
         bv_source = "ecoinvent_median"
         bv_detail = (
             f"median of ecoinvent's basic variance for this flow over "
@@ -235,25 +263,27 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
                  f"exchanges for this flow (fewer than {MIN_FLOOR_SAMPLES})"
         )
         if inp.basic_variance is None:
+            codes.append("bv_required")
             problems.append(f"{_label(flow)}: {why}, so basic_variance must be entered")
         elif not (inp.basic_variance >= 0 and math.isfinite(inp.basic_variance)):
+            codes.append("bv_invalid")
             problems.append(f"{_label(flow)}: basic_variance must be a finite value >= 0")
         if inp.basic_variance_reason is None or not inp.basic_variance_reason.strip():
+            codes.append("bv_reason_required")
             problems.append(f"{_label(flow)}: {why}, so basic_variance_reason is required")
         bv = inp.basic_variance if inp.basic_variance is not None else 0.0
         bv_source = "user_entered"
         bv_detail = (inp.basic_variance_reason or "").strip()
 
     if problems:
-        raise AuthoredError(problems)
+        raise AuthoredError(problems, codes)
 
     sigma = total_sigma(inp.pedigree, bv)
     gsd2 = gsd2_from_sigma(sigma)
 
     # The floor.
     floor_reason = None
-    if enough:
-        floor = stats.median_gsd2
+    if floor is not None:
         floor_detail = (
             f"ecoinvent median GSD2 for this flow: {floor:.4g} over "
             f"{stats.n_lognormal} lognormal exchanges in {', '.join(stats.sources)}"
@@ -267,13 +297,12 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
                     "better constrained than ecoinvent's own data. Raise the pedigree "
                     "scores, or give floor_reason explaining why the tighter spread is "
                     "justified; the reason is stored on the exchange."
-                ])
+                ], ["below_floor"])
             status = "below_floor_with_reason"
             floor_reason = reason
         else:
             status = "floored"
     else:
-        floor = None
         status = "unfloored"
         count = 0 if stats is None else stats.n_lognormal
         floor_detail = (
@@ -303,14 +332,16 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
 def build_activity(inp: ActivityInput, backend: Backend, code: str) -> AuthoredActivity:
     """Resolve every exchange, collecting ALL problems before refusing."""
     problems: list[str] = []
+    codes: list[str] = []
     resolved: list[AuthoredExchange] = []
     for ex in inp.exchanges:
         try:
             resolved.append(resolve_exchange(ex, backend))
         except AuthoredError as err:
             problems.extend(err.problems)
+            codes.extend(err.codes)
     if problems:
-        raise AuthoredError(problems)
+        raise AuthoredError(problems, codes)
     try:
         return AuthoredActivity(
             code=code,

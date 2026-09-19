@@ -73,17 +73,38 @@ interface Props {
   disabledReason?: string
   testIdPrefix: string
   compact?: boolean
+  /** Authoring: every indicator must be chosen explicitly, including 1, and
+   *  there is no "clear". Without this, an unscored indicator silently counts
+   *  as 1 -- the least uncertain score -- which is the understatement authored
+   *  activities must not be able to make by omission. Default false. */
+  requireAll?: boolean
+  /** How the basic variance is set.
+   *  'editable' (default): free input, falling back to the table default.
+   *  'derived': read-only, from ecoinvent for this flow; `basicVarianceNote`
+   *             says where it came from. Never user-settable.
+   *  'required': the user must enter one; no default is substituted. */
+  basicVarianceMode?: 'editable' | 'derived' | 'required'
+  basicVarianceNote?: string
 }
 
 export function PedigreeEditor({
   scores, basicVariance, onChange, disabledReason, testIdPrefix, compact,
+  requireAll = false, basicVarianceMode = 'editable', basicVarianceNote,
 }: Props) {
   const table = usePedigreeTable()
 
-  const effectiveBasic = basicVariance ?? table?.default_basic_variance ?? 0.0006
+  // Only 'editable' substitutes a default. 'derived' and 'required' show what
+  // is actually there, so an absent value reads as absent, not as 0.0006.
+  const effectiveBasic = basicVarianceMode === 'editable'
+    ? (basicVariance ?? table?.default_basic_variance ?? 0.0006)
+    : basicVariance
+  const missing = requireAll && table
+    ? table.indicators.filter((i) => scores?.[i] === undefined)
+    : []
   const gsd2 = useMemo(
-    () => (table ? gsd2Of(table, scores, effectiveBasic) : null),
-    [table, scores, effectiveBasic],
+    () => (table && effectiveBasic !== null && missing.length === 0
+      ? gsd2Of(table, scores, effectiveBasic) : null),
+    [table, scores, effectiveBasic, missing.length],
   )
   const scored = scores !== null && Object.keys(scores).length > 0
 
@@ -112,7 +133,8 @@ export function PedigreeEditor({
 
   const setScore = (indicator: string, value: number) => {
     const next: PedigreeScores = { ...(scores ?? {}) }
-    if (value <= 1) delete next[indicator]
+    // requireAll records 1 explicitly; otherwise 1 means "not recorded".
+    if (value <= 1 && !requireAll) delete next[indicator]
     else next[indicator] = value
     onChange(Object.keys(next).length ? next : null, basicVariance)
   }
@@ -121,7 +143,8 @@ export function PedigreeEditor({
     <div data-testid={`${testIdPrefix}-editor`} style={{ display: 'grid', gap: 'var(--space-2)' }}>
       <div style={{ display: 'grid', gap: 6 }}>
         {table.indicators.map((ind) => {
-          const value = scores?.[ind] ?? 1
+          const chosen = scores?.[ind]
+          const value = requireAll ? chosen : (chosen ?? 1)
           return (
             <div key={ind} style={{ display: 'grid', gridTemplateColumns: compact ? '110px 1fr' : '130px 1fr', gap: 10, alignItems: 'center' }}>
               <label
@@ -155,7 +178,9 @@ export function PedigreeEditor({
                   </button>
                 ))}
                 <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginLeft: 6 }}>
-                  {value === 1 ? 'no added uncertainty' : (SCORE_HELP[ind]?.[value - 1]?.slice(0, 52) ?? '')}
+                  {value === undefined ? 'not scored yet'
+                    : value === 1 ? 'no added uncertainty'
+                    : (SCORE_HELP[ind]?.[value - 1]?.slice(0, 52) ?? '')}
                 </span>
               </div>
             </div>
@@ -166,13 +191,45 @@ export function PedigreeEditor({
       <div style={{ display: 'flex', gap: 'var(--space-4)', alignItems: 'center', flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
           Basic variance
-          <NumberInput
-            data-testid={`${testIdPrefix}-basic`}
-            value={effectiveBasic}
-            onChange={(v) => onChange(scores, v)}
-            style={{ width: 90, height: 24, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
-          />
+          {basicVarianceMode === 'editable' && (
+            <NumberInput
+              data-testid={`${testIdPrefix}-basic`}
+              value={effectiveBasic ?? 0}
+              onChange={(v) => onChange(scores, v)}
+              style={{ width: 90, height: 24, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }}
+            />
+          )}
+          {basicVarianceMode === 'derived' && (
+            <span data-testid={`${testIdPrefix}-basic-derived`} style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+              {basicVariance === null ? '—' : basicVariance.toPrecision(3)}
+            </span>
+          )}
+          {basicVarianceMode === 'required' && (
+            <input
+              data-testid={`${testIdPrefix}-basic-required`}
+              type="number"
+              min={0}
+              step="any"
+              value={basicVariance === null ? '' : String(basicVariance)}
+              placeholder="required"
+              onChange={(e) => {
+                const t = e.target.value.trim()
+                const v = t === '' ? null : Number(t)
+                onChange(scores, v === null || Number.isNaN(v) ? null : v)
+              }}
+              style={{
+                width: 90, height: 24, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)',
+                border: `1px solid ${basicVariance === null ? 'var(--warning)' : 'var(--border-default)'}`,
+                borderRadius: 'var(--radius-sm)', background: 'var(--bg-surface)', color: 'var(--text-primary)',
+              }}
+            />
+          )}
         </label>
+        {basicVarianceNote && (
+          <span data-testid={`${testIdPrefix}-basic-note`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+            {basicVarianceNote}
+          </span>
+        )}
         <span
           data-testid={`${testIdPrefix}-gsd2`}
           style={{ fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontVariantNumeric: 'tabular-nums' }}
@@ -183,7 +240,7 @@ export function PedigreeEditor({
               second constant into the codebase. */}
           <span style={{ color: 'var(--text-secondary)' }}> = exp(2σ) · 95% range ≈ ÷/× {gsd2 ? gsd2.toFixed(2) : '—'}</span>
         </span>
-        {scored && (
+        {scored && !requireAll && (
           <button
             type="button"
             data-testid={`${testIdPrefix}-clear`}
@@ -199,7 +256,12 @@ export function PedigreeEditor({
         )}
       </div>
 
-      {!scored && (
+      {requireAll && missing.length > 0 && (
+        <p data-testid={`${testIdPrefix}-missing`} style={{ fontSize: 'var(--text-xs)', color: 'var(--warning)', margin: 0 }}>
+          Score every indicator, including 1 where it applies. Not yet scored: {missing.map((i) => SHORT[i] ?? i).join(', ')}.
+        </p>
+      )}
+      {!scored && !requireAll && (
         <p data-testid={`${testIdPrefix}-unscored`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', margin: 0 }}>
           Unscored — contributes no foreground variance. Leave it this way unless you can
           score it honestly.

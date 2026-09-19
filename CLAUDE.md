@@ -11525,9 +11525,12 @@ link refusals filter on is already refused in authored database names.
 - **Don't use `window.confirm` for the deletes.** It is a no-op in WKWebView;
   both deletes confirm with a second in-place button, and a refusal lists the
   BOM rows (`detail.links`) that would dangle.
-- **Run the backend suite as `python -m pytest`.** There is no install and no
-  pytest `pythonpath`, so bare `pytest` fails to import `mapper` in every file
-  (127 collection errors) -- which reads as a broken branch.
+- **Don't remove `pythonpath = ["."]` from `mapper-backend/pyproject.toml`.**
+  The backend is not pip-installed; without that line bare `pytest` fails to
+  import `mapper` in every file (127 collection errors), which reads as a
+  broken branch, and only `python -m pytest` works. Guarded by
+  `tests/test_bare_pytest_collects.py`, which runs pytest from a directory
+  outside the backend.
 
 ## Future Extension: Product Systems (deferred to v1.1)
 

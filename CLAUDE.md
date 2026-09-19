@@ -11443,6 +11443,12 @@ this.
 - **Don't treat a missing factor as "same".** Absent in one compartment and
   present in another is exactly the difference that silently zeroes an
   indicator.
+- **Don't let the coverage check fall silent.** Each expanded substance shows
+  either a warning on the compartment with fewer indicators, or the line "No
+  coverage gap: every compartment is characterised by the same N of M <family>
+  indicators." At the default family (EF v3.1) NOx has no gap, so without the
+  positive line the check would be invisible exactly where most users sit, and
+  silence reads as "not checked" rather than "nothing to report".
 
 ## Future Extension: Product Systems (deferred to v1.1)
 

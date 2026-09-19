@@ -211,6 +211,18 @@ class AuthoredExchange(BaseModel):
         return self
 
 
+class CoverageGap(BaseModel):
+    """An indicator a result cannot speak for: a PARTIAL authored activity it
+    links has no flow characterised by ``method``. Unknown, not zero."""
+
+    method: list[str]
+    database: str
+    code: str
+    activity_name: str
+    #: The author's own statement of what the partial inventory leaves out.
+    scope_note: str = ""
+
+
 class AuthoredActivity(BaseModel):
     code: str
     name: str

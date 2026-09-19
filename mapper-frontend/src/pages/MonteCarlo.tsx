@@ -32,6 +32,7 @@ import {
   PairwiseDifferences,
 } from '../components/uncertainty/MultiItemUncertainty'
 import { exportMonteCarloMulti } from '../api/client'
+import { CoverageGapNote } from '../components/authored/CoverageMarkers'
 import { exportMonteCarlo, getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
 
 const DEFAULT_ITERATIONS = 1000
@@ -318,6 +319,7 @@ export function MonteCarloPage({ onNavigate }: Props) {
           >
             <div style={{ display: 'grid', gap: 'var(--space-5)' }}>
               <LowerBoundNote result={result} />
+              <CoverageGapNote gaps={result.coverage_gaps} testId="mc-coverage-note" />
 
               {flagged.length > 0 && (
                 <Banner tone="warning" testId="mc-ratio-flag">
@@ -727,6 +729,14 @@ function MultiItemMode({
             }
           >
             <div style={{ display: 'grid', gap: 'var(--space-5)' }}>
+              {result.items.map((it) => (
+                <CoverageGapNote
+                  key={it.archetype_id}
+                  gaps={it.coverage_gaps}
+                  labelFor={(m) => `${m[m.length - 1]} (${it.archetype_name})`}
+                  testId={`mc-coverage-note-${it.archetype_id}`}
+                />
+              ))}
               <Section
                 title="Pairwise differences"
                 note="The headline of a paired run: what the comparison is actually asking."

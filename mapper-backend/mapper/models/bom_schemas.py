@@ -22,6 +22,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from mapper.core.compute_metrics import ComputeMetrics
+from mapper.models.authored_schemas import CoverageGap
 
 
 # ── Ecoinvent link ────────────────────────────────────────────────────────────
@@ -537,6 +538,9 @@ class DSMLCABatchResult(BaseModel):
     year_end: int | None = None
     warnings: list[str] = Field(default_factory=list)
     compute_metrics: ComputeMetrics | None = None
+    #: Indicators this run cannot speak for (partial authored activities). An
+    #: annotation -- never changes a number.
+    coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
 
 
 # ── Impact Assessment (unified pipeline) ─────────────────────────────────────
@@ -680,6 +684,10 @@ class ImpactAssessmentResult(BaseModel):
     #: at COMPUTE time. See ``mapper/core/database_fingerprint.py`` for what it
     #: does and does NOT detect -- it is not evidence of integrity.
     data_fingerprint: dict | None = None
+    #: Indicators this result cannot speak for: a PARTIAL authored activity it
+    #: used has no flow characterised by that method, so its contribution is
+    #: unknown, not zero. An annotation -- never changes a number.
+    coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
 
 
 class ScenarioImpactResult(BaseModel):

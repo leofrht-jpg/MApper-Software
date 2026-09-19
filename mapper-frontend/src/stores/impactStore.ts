@@ -14,6 +14,7 @@ import {
   type ImpactCompareResult,
   type ImpactProgressMessage,
   type DSMLCAResult,
+  type CoverageGap,
   type MultiScenarioProjectedImpactResult,
   type PairedDSMLCIRef,
   type ProspectiveScenarioRef,
@@ -174,6 +175,7 @@ interface ImpactStore {
     yearStart: number | null
     yearEnd: number | null
     baseDb?: string | null
+    coverageGaps?: CoverageGap[] | null
   }) => void
   clearStatic: () => void
 }
@@ -837,7 +839,7 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
     setCompareScenarioIndex,
     clearCompare: () => set({ compareResult: null }),
 
-    setStaticFromMFA: ({ mfaSystemId, results, scope, yearStart, yearEnd, baseDb }) => {
+    setStaticFromMFA: ({ mfaSystemId, results, scope, yearStart, yearEnd, baseDb, coverageGaps }) => {
       if (!results.length) return
       const synthetic: ImpactAssessmentResult = {
         task_id: `dsm-mirror-${mfaSystemId}-${Date.now()}`,
@@ -852,6 +854,7 @@ export const useImpactStore = create<ImpactStore>((set, get) => {
           year_to_database: {},
         },
         results,
+        coverage_gaps: coverageGaps ?? null,
       }
       set({ staticResult: synthetic, compareResult: null })
     },

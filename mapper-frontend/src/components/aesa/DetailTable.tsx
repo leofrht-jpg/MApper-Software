@@ -9,16 +9,18 @@
 
 import { Fragment, useMemo, useState } from 'react'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { SustainabilityRatioResult } from '../../api/client'
+import type { AESACoverageGap, SustainabilityRatioResult } from '../../api/client'
+import { NotSpecifiedMarker, gapsForPb } from '../authored/CoverageMarkers'
 import { ZONE_COLOR, ZONE_LABEL, fmt, fmtSR, srOrInf } from './zones'
 
 interface Props {
   results: SustainabilityRatioResult[]
+  coverageGaps?: AESACoverageGap[] | null
 }
 
 type SortKey = 'year' | 'pb_name' | 'sr' | 'impact' | 'allocated_sos' | 'zone' | 'principle'
 
-export function DetailTable({ results }: Props) {
+export function DetailTable({ results, coverageGaps }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('sr')
   const [sortDesc, setSortDesc] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -114,7 +116,10 @@ export function DetailTable({ results }: Props) {
                   </td>
                   <td style={td}>{r.year}</td>
                   <td style={td}>
-                    <div>{r.pb_name.replace(/_/g, ' ')}</div>
+                    <div>
+                      {r.pb_name.replace(/_/g, ' ')}
+                      <NotSpecifiedMarker gaps={gapsForPb(coverageGaps, r.pb_id)} testId={`aesa-detail-not-specified-${r.pb_id}-${r.year}`} />
+                    </div>
                     <div style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{r.ef_indicator}</div>
                   </td>
                   <td style={td}>

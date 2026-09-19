@@ -89,7 +89,7 @@ def test_the_expected_sheets_are_present():
     wb = _build_monte_carlo_workbook(_result(), _coverage())
     assert wb.sheetnames == [
         "Summary", "Distributions", "Variance contribution",
-        "Pedigree scores", "Samples",
+        "Pedigree scores", "Samples", "Coverage",
     ]
 
 
@@ -263,3 +263,21 @@ def test_a_demo_project_export_is_stamped_and_prefixed():
     assert "DEMO_x_MC.xlsx" in resp.headers["content-disposition"]
     got = load_workbook(io.BytesIO(resp.body))
     assert "SYNTHETIC DEMO DATA" in str(got["Summary"].cell(1, 1).value)
+
+
+
+def test_the_workbook_states_coverage_in_all_three_states():
+    """Specified, NOT SPECIFIED and not recorded -- never silent."""
+    from mapper.models.authored_schemas import CoverageGap
+
+    gap = CoverageGap(method=list(_result().distributions[0].method), database="mine", code="x",
+                      activity_name="Boiler", scope_note="CO2 only")
+    gapped = _build_monte_carlo_workbook(_result(coverage_gaps=[gap]), _coverage())
+    assert "NOT SPECIFIED" in _flat(gapped, "Coverage") and "CO2 only" in _flat(gapped, "Coverage")
+    assert "Authored-activity coverage" in _flat(gapped, "Summary")
+
+    clean = _build_monte_carlo_workbook(_result(coverage_gaps=[]), _coverage())
+    assert "Checked: all" in _flat(clean, "Summary") and "specified" in _flat(clean, "Coverage")
+
+    old = _build_monte_carlo_workbook(_result(), _coverage())   # coverage_gaps absent
+    assert "NOT RECORDED" in _flat(old, "Summary") and "not recorded" in _flat(old, "Coverage")

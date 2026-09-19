@@ -31,6 +31,7 @@ from pydantic import BaseModel, Field, model_validator
 
 from mapper.core.compute_metrics import ComputeMetrics
 
+from mapper.models.authored_schemas import CoverageGap
 from mapper.models.bom_schemas import ImpactAssessmentResult
 from mapper.models.interpolation import interpolate_anchors
 from mapper.models.schemas import ArchetypeLCACalculateResult
@@ -775,6 +776,10 @@ class AESAYearSummary(BaseModel):
     total_assessed: int
 
 
+class AESACoverageGap(CoverageGap):
+    pb_id: str
+
+
 class AESAComputeResult(BaseModel):
     config_id: str | None
     results: list[SustainabilityRatioResult]
@@ -782,6 +787,10 @@ class AESAComputeResult(BaseModel):
     missing_categories: list[str] = Field(default_factory=list)  # PBs with no matching method
     sensitivity: dict[str, list[SustainabilityRatioResult]] | None = None
     compute_metrics: ComputeMetrics | None = None
+    #: PB axes whose SR rests on a PARTIAL authored activity that has no
+    #: characterised flow for the mapped method: unknown, not small. Carried
+    #: from the impact result; an annotation, never changes an SR.
+    coverage_gaps: list[AESACoverageGap] | None = None  # None = not recorded
 
 
 class AESAExportRequest(BaseModel):

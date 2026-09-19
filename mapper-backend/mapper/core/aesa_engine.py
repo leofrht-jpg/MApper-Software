@@ -782,6 +782,8 @@ def single_product_to_impact_result(
         # reshaped for AESA, which can be days later.
         computed_at=result.computed_at,
         mapper_version=result.mapper_version,
+        # None (not recorded) stays None: [] would claim "checked, none".
+        coverage_gaps=getattr(result, "coverage_gaps", None),
         task_id="single-product",
         meta=ImpactAssessmentMeta(
             mode="static",
@@ -880,6 +882,14 @@ def prospective_single_product_to_impact_result(
         mapper_version=next(
             (r.mapper_version for _, r in points if r.mapper_version), None
         ),
+        # Union over the trajectory's points, deduplicated: a partial activity
+        # is partial in every vintage it is solved against.
+        # If ANY point was computed before the check, the series as a whole
+        # was not checked: None, never a union that reads as complete.
+        coverage_gaps=None if any(getattr(r, "coverage_gaps", None) is None for _, r in points) else list({
+            (tuple(g.method), g.database, g.code): g
+            for _, r in points for g in r.coverage_gaps
+        }.values()),
         task_id="single-product",
         meta=ImpactAssessmentMeta(
             mode="projected",
@@ -903,6 +913,36 @@ def _zone_for_sr(sr: float) -> Literal["safe", "zone_of_uncertainty", "high_risk
     return "high_risk"
 
 
+def resolve_method_mapping(config, impact_results, boundary_set) -> list:
+    """The method -> PB mapping a compute uses: the config's, or auto-suggested.
+
+    ONE place, because the coverage annotation maps its gaps to PBs with it
+    too; a second resolver would let the marked axes disagree with the ones
+    the SRs were computed on.
+    """
+    mapping = config.method_mapping
+    if not mapping:
+        methods = [list(r.method) for r in impact_results]
+        mapping = suggest_method_mapping(methods, boundary_set)
+    return mapping
+
+
+def aesa_coverage_gaps(coverage_gaps, mapping) -> list | None:
+    """Attach the PB each gap's method feeds. A gap on an unmapped method is
+    dropped here -- it marks no AESA axis -- but stays on the impact result.
+    ``None`` (the impact result predates the check) stays ``None``."""
+    from mapper.models.aesa_schemas import AESACoverageGap
+
+    if coverage_gaps is None:
+        return None
+    out = []
+    for g in coverage_gaps:
+        for mp in mapping:
+            if list(mp.method_tuple) == list(g.method):
+                out.append(AESACoverageGap(**g.model_dump(), pb_id=mp.pb_id))
+    return out
+
+
 class AESAEngine:
     """Stateless compute: ``AESAEngine.compute(impact_results, config, boundary_set)``."""
 
@@ -917,11 +957,7 @@ class AESAEngine:
         chain = preset.chain
         assignments = preset.assignments_map()
 
-        # Resolve method_mapping: use config.method_mapping or auto-suggest.
-        mapping = config.method_mapping
-        if not mapping:
-            methods = [list(r.method) for r in impact_results]
-            mapping = suggest_method_mapping(methods, boundary_set)
+        mapping = resolve_method_mapping(config, impact_results, boundary_set)
 
         # Method tuple (joined) → DSMLCAResult
         results_by_method: dict[str, DSMLCAResult] = {

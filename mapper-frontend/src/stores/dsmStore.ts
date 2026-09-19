@@ -15,6 +15,7 @@ import {
   HttpError,
   type CohortMappingEntry,
   type DSMLCAResult,
+  type CoverageGap,
   type DSMScalingRule,
   type DSMScenario,
   type DSMSystemState,
@@ -112,6 +113,8 @@ interface DSMStore {
   cohortRowColors: Record<string, string>
   dsmLCAResults: DSMLCAResult[]
   dsmLCAWarnings: string[]
+  /** Indicators the last run cannot speak for (partial authored activities). */
+  dsmLCACoverageGaps: CoverageGap[] | null
   selectedResultIndex: number
   scalingRules: DSMScalingRule[]
   isLoading: boolean
@@ -239,7 +242,7 @@ const INITIAL: Pick<
   | 'systems' | 'activeSystem' | 'systemState' | 'simulationResult'
   | 'multiScenarioResult' | 'lastRunScenarioIds' | 'lastRunCases'
   | 'activeView' | 'selectedYear' | 'stackByDimension' | 'cohortMappings' | 'cohortRowColors'
-  | 'dsmLCAResults' | 'dsmLCAWarnings' | 'selectedResultIndex' | 'scalingRules'
+  | 'dsmLCAResults' | 'dsmLCAWarnings' | 'dsmLCACoverageGaps' | 'selectedResultIndex' | 'scalingRules'
   | 'isLoading' | 'isSimulating' | 'isCalculatingLCA' | 'materialFlows'
   | 'materialFlowLoading'
   | 'materialFlowsRuns' | 'materialFlowAxis' | 'activeMaterialFlowScenario'
@@ -258,6 +261,7 @@ const INITIAL: Pick<
   cohortMappings: {}, cohortRowColors: {},
   dsmLCAResults: [],
   dsmLCAWarnings: [],
+        dsmLCACoverageGaps: null,
   selectedResultIndex: 0,
   scalingRules: [],
   isLoading: false,
@@ -311,6 +315,7 @@ export const useDSMStore = create<DSMStore>((set, get) => ({
         cohortMappings: {}, cohortRowColors: {},
         dsmLCAResults: [],
         dsmLCAWarnings: [],
+        dsmLCACoverageGaps: null,
         selectedResultIndex: 0,
         scalingRules: resolveActiveScalingRules(state),
         materialFlows: null,
@@ -348,6 +353,7 @@ export const useDSMStore = create<DSMStore>((set, get) => ({
         stackByDimension: firstNonAge?.name ?? null,
         dsmLCAResults: [],
         dsmLCAWarnings: [],
+        dsmLCACoverageGaps: null,
         selectedResultIndex: 0,
         scalingRules: resolveActiveScalingRules(state),
         materialFlows: null,
@@ -384,6 +390,7 @@ export const useDSMStore = create<DSMStore>((set, get) => ({
         cohortMappings: {}, cohortRowColors: {},
         dsmLCAResults: [],
         dsmLCAWarnings: [],
+        dsmLCACoverageGaps: null,
         selectedResultIndex: 0,
         scalingRules: resolveActiveScalingRules(state),
         materialFlows: null,
@@ -749,6 +756,8 @@ export const useDSMStore = create<DSMStore>((set, get) => ({
       set({
         dsmLCAResults: batch.results,
         dsmLCAWarnings: batch.warnings ?? [],
+        // null = not recorded; never collapse it into [] ("checked, none").
+        dsmLCACoverageGaps: batch.coverage_gaps ?? null,
         selectedResultIndex: 0,
         isCalculatingLCA: false,
       })
@@ -818,6 +827,7 @@ export const useDSMStore = create<DSMStore>((set, get) => ({
         cohortMappings: {}, cohortRowColors: {},
         dsmLCAResults: [],
         dsmLCAWarnings: [],
+        dsmLCACoverageGaps: null,
         selectedResultIndex: 0,
         scalingRules: resolveActiveScalingRules(state),
         isLoading: false,

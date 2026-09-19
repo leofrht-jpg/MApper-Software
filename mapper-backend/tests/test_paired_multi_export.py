@@ -58,7 +58,7 @@ def _flat(wb, name):
 
 def test_the_sheets():
     wb = _build_monte_carlo_multi_workbook(_result())
-    assert wb.sheetnames == ["Summary", "Distributions", "Pairwise differences", "Samples"]
+    assert wb.sheetnames == ["Summary", "Distributions", "Pairwise differences", "Samples", "Coverage"]
 
 
 def _data_rows(ws) -> list[list]:
@@ -133,3 +133,17 @@ def test_the_route_returns_a_workbook_named_for_the_comparison():
     # build_export_filename: first item + the rest, MC token.
     assert "A_-_Circular_EV+A0_-_Reference_EV_MC.xlsx" in r.headers["content-disposition"]
     assert "Pairwise differences" in load_workbook(io.BytesIO(r.content)).sheetnames
+
+
+
+def test_the_coverage_sheet_names_which_item_is_not_specified():
+    from mapper.models.authored_schemas import CoverageGap
+
+    gap = CoverageGap(method=["EF v3.1", "climate change", "GWP100"], database="mine", code="x",
+                      activity_name="Boiler", scope_note="CO2 only")
+    res = _result()
+    res.items[0] = res.items[0].model_copy(update={"coverage_gaps": []})
+    res.items[1] = res.items[1].model_copy(update={"coverage_gaps": [gap]})
+    cov = _flat(_build_monte_carlo_multi_workbook(res), "Coverage")
+    assert "A0 - Reference EV | EF v3.1 › climate change › GWP100 | NOT SPECIFIED | Boiler" in cov
+    assert "A - Circular EV | EF v3.1 › climate change › GWP100 | specified" in cov

@@ -125,6 +125,7 @@ def test_workbook_has_expected_sheets():
         "Annual totals",
         "By indicator",
         "Parameter Scenarios",
+        "Coverage",
     ]
 
 

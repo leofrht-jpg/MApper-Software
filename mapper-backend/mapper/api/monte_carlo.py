@@ -62,6 +62,7 @@ from mapper.models.schemas import (
     VarianceContributor,
 )
 from mapper.core.content_hash import hashes_for_ids as _content_hashes
+from mapper.core.authored_coverage import coverage_gaps as _coverage_gaps
 from mapper.core.database_fingerprint import fingerprint as _fingerprint
 from mapper.core.run_provenance import (
     stamp as _run_stamp,
@@ -341,8 +342,13 @@ def _run_monte_carlo(
             gsd2=mce.gsd2_from_sigma(p.sigma),
         ))
 
+    gaps, gap_warning = _coverage_gaps(bundle.total_demand.keys(), method_tuples, _current_project())
+    if gap_warning:
+        warnings.append(gap_warning)
+
     return MonteCarloResult(
         **_run_stamp(),
+        coverage_gaps=gaps,
         data_fingerprint=_fingerprint(
             [body.compute_database], method_tuples
         ),
@@ -604,6 +610,7 @@ def _run_monte_carlo_multi(
             raise HTTPException(status_code=400, detail=str(e))
         items.append({
             "id": aid, "name": bundle.arc.name, "demand": demand,
+            "source_keys": set(bundle.total_demand),
             "det": runner(demand, method_tuples),
             "samples": {m: [] for m in method_tuples},
             "arc": bundle.arc,
@@ -748,8 +755,12 @@ def _run_monte_carlo_multi(
                 deterministic=det, n_iterations=n, seed=seed,
                 samples=it["samples"][m] if body.keep_samples else None, **st,
             ))
+        item_gaps, gap_warning = _coverage_gaps(it["source_keys"], method_tuples, _current_project())
+        if gap_warning and gap_warning not in warnings:
+            warnings.append(gap_warning)
         out_items.append(ItemDistribution(
-            archetype_id=it["id"], archetype_name=it["name"], distributions=dists))
+            archetype_id=it["id"], archetype_name=it["name"], distributions=dists,
+            coverage_gaps=item_gaps))
 
     diffs = _pairwise_differences(items, method_tuples)
 
@@ -1067,6 +1078,8 @@ def _build_monte_carlo_workbook(
         apply_sci(ws, min_row=2, min_col=2, max_col=1 + len(with_samples))
     autosize(ws)
 
+    from mapper.core.coverage_export import CoverageEntry, finalize_coverage
+    finalize_coverage(wb, [CoverageEntry(None, result.coverage_gaps, [list(d.method) for d in result.distributions])], discriminator="Result")
     return wb
 
 
@@ -1204,6 +1217,8 @@ def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workboo
         apply_sci(ws, min_row=2, min_col=2, max_col=1 + len(cols))
     autosize(ws)
 
+    from mapper.core.coverage_export import CoverageEntry, finalize_coverage
+    finalize_coverage(wb, [CoverageEntry(it.archetype_name, it.coverage_gaps, [list(d.method) for d in it.distributions]) for it in result.items], discriminator="Item")
     return wb
 
 

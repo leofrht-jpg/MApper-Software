@@ -30,7 +30,7 @@ import { ComputeProgress } from '../ui/ComputeProgress'
 import { YearSlider } from '../ui/YearSlider'
 import { DSMScenariosChip } from './DSMScenariosChip'
 import { useDSMStore } from '../../stores/dsmStore'
-import type { DSMLCAResult } from '../../api/client'
+import type { CoverageGap, DSMLCAResult } from '../../api/client'
 import { useBOMStore } from '../../stores/bomStore'
 import { useImpactStore } from '../../stores/impactStore'
 import { useParameterStore } from '../../stores/parameterStore'
@@ -48,6 +48,7 @@ import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { StackedTotalTooltip } from '../charts/StackedTotalTooltip'
 import { tightStackedDomain } from '../charts/yAxisDomain'
+import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 import { MultiScenarioImpactChart } from '../charts/MultiScenarioImpactChart'
 
 const COHORT_SEP = '|'
@@ -87,6 +88,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
     stackByDimension,
     dsmLCAResults,
     dsmLCAWarnings,
+    dsmLCACoverageGaps,
     selectedResultIndex,
     isCalculatingLCA,
     error,
@@ -171,6 +173,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
       scope: first.scope,
       yearStart: yearStart ?? null,
       yearEnd: yearEnd ?? null,
+      coverageGaps: useDSMStore.getState().dsmLCACoverageGaps,
     })
   }, [dsmLCAResults, activeSystem?.id, yearStart, yearEnd])
 
@@ -268,6 +271,21 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
     dsmScenarioOrder.length, activeDsmScenario, dsmScenarioRuns,
     effectiveSelected.length, activeStaticScenario, staticScenarioRuns,
     dsmLCAResults,
+  ])
+  // Same branching as displayResults: the gaps belong to the run on screen.
+  const displayGaps: CoverageGap[] = useMemo(() => {
+    if (dsmScenarioOrder.length > 1 && activeDsmScenario) {
+      const r = dsmScenarioRuns[activeDsmScenario]?.result
+      if (r) return r.coverage_gaps ?? []
+    }
+    if (effectiveSelected.length > 1 && activeStaticScenario) {
+      return staticScenarioRuns[activeStaticScenario]?.result?.coverage_gaps ?? []
+    }
+    return dsmLCACoverageGaps ?? []
+  }, [
+    dsmScenarioOrder.length, activeDsmScenario, dsmScenarioRuns,
+    effectiveSelected.length, activeStaticScenario, staticScenarioRuns,
+    dsmLCACoverageGaps,
   ])
   const mfaLCAResult = displayResults[selectedResultIndex] ?? null
 
@@ -959,6 +977,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
                       >
                         <div style={{ fontSize: 'var(--text-sm)', fontWeight: active ? 600 : 400, color: active ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.3 }}>
                           {label}
+                          <NotSpecifiedMarker gaps={gapsFor(displayGaps, r.method)} testId={`static-not-specified-${i}`} />
                         </div>
                         {r.unit && (
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>{r.unit}</div>
@@ -973,6 +992,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
 
           {/* Right content panel */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', minWidth: 0 }}>
+            <CoverageGapNote gaps={displayGaps} testId="static-coverage-note" />
             {/* Scenario-context echo. Mirrors the Configuration chip but
                 renders as a non-interactive one-line subheader so Results
                 stays self-describing whether Configuration is expanded or

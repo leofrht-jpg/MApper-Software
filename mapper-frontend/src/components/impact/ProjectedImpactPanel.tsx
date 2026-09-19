@@ -45,6 +45,7 @@ import { useNumberFormatter } from '../charts/numberFormat'
 import { StackedTotalTooltip } from '../charts/StackedTotalTooltip'
 import { tightStackedDomain } from '../charts/yAxisDomain'
 import { MultiScenarioImpactChart } from '../charts/MultiScenarioImpactChart'
+import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 
 
@@ -1500,6 +1501,7 @@ function ProjectedImpactPanelImpl() {
                       >
                         <div style={{ fontSize: 'var(--text-sm)', fontWeight: active ? 600 : 400, color: active ? 'var(--text-primary)' : 'var(--text-secondary)', lineHeight: 1.3 }}>
                           {label}
+                          <NotSpecifiedMarker gaps={gapsFor(projectedResult.coverage_gaps, r.method)} testId={`projected-not-specified-${i}`} />
                         </div>
                         {r.unit && (
                           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>{r.unit}</div>
@@ -1514,6 +1516,7 @@ function ProjectedImpactPanelImpl() {
 
           {/* Right content panel */}
           <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)', minWidth: 0 }}>
+          <CoverageGapNote gaps={projectedResult.coverage_gaps} testId="projected-coverage-note" />
           {/* Scenario-context echo. Mirrors the Configuration chip but
               renders as a non-interactive one-line subheader so Results
               stays self-describing whether Configuration is expanded or

@@ -10,6 +10,8 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
+from mapper.models.authored_schemas import CoverageGap
+
 
 # ── Phase 0 ──────────────────────────────────────────────────────────────────
 
@@ -297,6 +299,9 @@ class ActivityLCAMethodResult(BaseModel):
 class ActivityLCAResult(BaseModel):
     results: list[ActivityLCAMethodResult]
     elapsed_seconds: float = 0.0
+    #: Indicators this result cannot speak for: an activity in the demand is a
+    #: PARTIAL authored one with no flow characterised by that method.
+    coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
     #: Compute-time provenance. ``None`` on results stored before this
     #: shipped -- a builder writes "not recorded", NEVER today's date.
     computed_at: str | None = None          # ISO-8601 UTC
@@ -367,6 +372,10 @@ class ArchetypeLCACalculateResult(BaseModel):
     # activity carried by base ecoinvent but missing from a premise-generated
     # variant). Empty when `compute_database` is None or every key resolved.
     warnings: list[str] = []
+    #: Indicators this result cannot speak for: a PARTIAL authored activity it
+    #: used has no flow characterised by that method, so its contribution is
+    #: unknown, not zero. An annotation -- never changes a number.
+    coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
     # Per-method, per-stage subtotal of impact (Patch 4B). Populated only
     # when `scope == "all"` — for specific-stage scopes the result is
     # already that one stage and a breakdown would be redundant.
@@ -518,6 +527,10 @@ class MonteCarloResult(BaseModel):
     #: Exactly what carried uncertainty, so the workbook is self-contained.
     scored_inputs: list[ScoredInput] = []
     warnings: list[str] = []
+    #: Indicators this result cannot speak for: a PARTIAL authored activity it
+    #: used has no flow characterised by that method, so its contribution is
+    #: unknown, not zero. An annotation -- never changes a number.
+    coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
     #: Compute-time provenance. ``None`` on results stored before this
     #: shipped -- a builder writes "not recorded", NEVER today's date.
     computed_at: str | None = None          # ISO-8601 UTC
@@ -629,6 +642,10 @@ class ItemDistribution(BaseModel):
     archetype_id: str
     archetype_name: str
     distributions: list[ArchetypeLCAMethodDistribution]
+    #: Indicators this result cannot speak for: a PARTIAL authored activity it
+    #: used has no flow characterised by that method, so its contribution is
+    #: unknown, not zero. An annotation -- never changes a number.
+    coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
 
 
 class PairwiseDifference(BaseModel):
@@ -1106,6 +1123,9 @@ class ContributionAnalysisResult(BaseModel):
     # Non-fatal warnings collected during computation (e.g. fell back to base
     # DB for activities not present in the requested compute_database).
     warnings: list[str] = Field(default_factory=list)
+    #: Whether the indicator rests on a partial authored activity. None = not
+    #: recorded (a result stored before the check existed).
+    coverage_gaps: list[CoverageGap] | None = None
     # Reproducibility fields — must be readable in isolation 6+ months later.
     computed_at: str | None = None  # ISO-8601 UTC
     mapper_version: str | None = None

@@ -125,6 +125,39 @@ def gaps(keys: Iterable[Key], methods: Iterable[Iterable[str]],
     return out
 
 
+def uncertainty_notes(keys: Iterable[Key], project: str) -> list:
+    """Every authored exchange the run used, with the basis of its uncertainty.
+
+    Both bases are listed, not just ``supplied``: a sheet that only names the
+    exceptions leaves the reader to assume the rest are ecoinvent-referenced,
+    which is the same silence the coverage statement exists to avoid. Never
+    raises -- an annotation must not fail a run.
+    """
+    from mapper.models.authored_schemas import AuthoredUncertainty
+
+    try:
+        from mapper.core import authored_storage
+
+        defs = authored_storage.load_definitions(project)
+        by_key = {(db.name, a.code): a for db in defs.databases for a in db.activities}
+        out = []
+        for k in sorted({tuple(x) for x in keys} & by_key.keys()):
+            act = by_key[k]
+            for ex in act.exchanges:
+                out.append(AuthoredUncertainty(
+                    database=k[0], code=k[1], activity_name=act.name,
+                    flow_name=ex.flow.name, flow_categories=list(ex.flow.categories),
+                    basic_variance=ex.basic_variance, gsd2=ex.gsd2,
+                    basis=ex.uncertainty_basis,
+                    detail=(ex.floor_detail if ex.uncertainty_basis == "supplied"
+                            else f"{ex.floor_status}: {ex.floor_detail}"),
+                ))
+        return out
+    except Exception as exc:  # noqa: BLE001
+        log.warning("Authored-exchange uncertainty notes unavailable: %s", exc)
+        return []
+
+
 def coverage_gaps(keys: Iterable[Key], methods: Iterable[Iterable[str]],
                   project: str) -> tuple[list[CoverageGap], str | None]:
     """Gaps for a run that computed demand on ``keys`` under ``methods``.

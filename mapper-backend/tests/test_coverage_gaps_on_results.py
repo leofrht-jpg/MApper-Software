@@ -195,3 +195,42 @@ def test_an_authored_activity_picked_directly_is_marked(monkeypatch, boiler):
         activities=[{"database": "mine", "code": boiler.code, "amount": 1.0}],
         methods=[list(GW), list(AC)])))
     assert [tuple(g.method) for g in res.coverage_gaps] == [AC]
+
+
+def _classes_declaring(field: str) -> set[str]:
+    """Result classes that DECLARE ``field``, read from the models.
+
+    Derived rather than hand-listed: adding the field to a seventh result must
+    bring that result's call sites under the guard, not quietly skip them.
+    """
+    out = set()
+    for path in sorted((BACKEND / "models").glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if isinstance(node, ast.ClassDef) and any(
+                    isinstance(b, ast.AnnAssign) and getattr(b.target, "id", "") == field
+                    for b in node.body):
+                out.add(node.name)
+    return out
+
+
+def _constructors_missing(classes: set[str], field: str) -> list[str]:
+    missing = []
+    for path in sorted((BACKEND / "api").glob("*.py")) + sorted((BACKEND / "core").glob("*.py")):
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+                    and node.func.id in classes
+                    and not any(k.arg == field for k in node.keywords)):
+                missing.append(f"{path.relative_to(BACKEND)}:{node.lineno} {node.func.id}")
+    return missing
+
+
+def test_every_result_constructor_passes_authored_uncertainty():
+    """An empty list reads as 'no authored exchange was used', so a result that
+    used one and omits the field says something false about its own numbers."""
+    classes = _classes_declaring("authored_uncertainty")
+    assert len(classes) == 6 and classes <= CARRIERS, classes
+    # ContributionAnalysisResult is the carrier without the field: it reports no
+    # uncertainty at all, so there is no GSD2 for a reader to compare.
+    assert CARRIERS - classes == {"ContributionAnalysisResult"}
+    missing = _constructors_missing(classes, "authored_uncertainty")
+    assert missing == [], "results built without authored_uncertainty:\n" + "\n".join(missing)

@@ -238,6 +238,9 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
             f"(allowed: {', '.join(sorted(ALLOWED_FLOW_TYPES))})"
         ], ["flow_type"])
 
+    if inp.uncertainty_basis == "supplied":
+        return _resolve_supplied(inp, flow)
+
     stats = backend.flow_stats(flow.database, flow.code)
     derived = derived_basic_variance(stats)
     floor = floor_gsd2_of(stats)
@@ -331,6 +334,64 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
     )
 
 
+SUPPLIED_DETAIL = (
+    "uncertainty supplied by the data owner; ecoinvent's per-flow median does not apply "
+    "(this amount is a characterised result, not an emission amount)"
+)
+
+
+def _resolve_supplied(inp: ExchangeInput, flow: FlowInfo) -> AuthoredExchange:
+    """The ``supplied`` basis: the author states the variance and its source,
+    and no ecoinvent statistic is consulted -- not for the variance, not for the
+    floor. Deliberately MORE work than the default, never less."""
+    problems: list[str] = []
+    codes: list[str] = []
+    bv = inp.basic_variance
+    if bv is None:
+        codes.append("bv_required")
+        problems.append(
+            f"{_label(flow)}: with the supplied basis the uncertainty is the data owner's, "
+            "so basic_variance must be entered"
+        )
+    elif not (bv >= 0 and math.isfinite(bv)):
+        codes.append("bv_invalid")
+        problems.append(f"{_label(flow)}: basic_variance must be a finite value >= 0")
+    if not (inp.basic_variance_reason or "").strip():
+        codes.append("bv_reason_required")
+        problems.append(
+            f"{_label(flow)}: with the supplied basis, basic_variance_reason is required -- "
+            "say whose uncertainty this is and where it comes from"
+        )
+    if (inp.floor_reason or "").strip():
+        codes.append("floor_reason_not_applicable")
+        problems.append(
+            f"{_label(flow)}: no floor is applied on the supplied basis, so floor_reason "
+            "is meaningless here. Remove it."
+        )
+    if problems:
+        raise AuthoredError(problems, codes)
+
+    sigma = total_sigma(inp.pedigree, bv)
+    return AuthoredExchange(
+        flow=FlowSnapshot(
+            database=flow.database, code=flow.code, name=flow.name,
+            categories=list(flow.categories), unit=flow.unit,
+        ),
+        amount=inp.amount,
+        pedigree=dict(inp.pedigree),
+        basic_variance=bv,
+        basic_variance_source="supplied",
+        basic_variance_detail=(inp.basic_variance_reason or "").strip(),
+        sigma=sigma,
+        gsd2=gsd2_from_sigma(sigma),
+        floor_status="not_applicable",
+        floor_gsd2=None,
+        floor_detail=SUPPLIED_DETAIL,
+        floor_reason=None,
+        uncertainty_basis="supplied",
+    )
+
+
 def build_activity(inp: ActivityInput, backend: Backend, code: str) -> AuthoredActivity:
     """Resolve every exchange, collecting ALL problems before refusing."""
     problems: list[str] = []
@@ -387,7 +448,12 @@ def fingerprint(db: AuthoredDatabase) -> str:
     """
     payload = db.model_dump(mode="json", exclude={
         "created_at": True, "updated_at": True,
-        "activities": {"__all__": {"complete_indicators"}},
+        "activities": {"__all__": {
+            "complete_indicators": True,
+            # Annotations, like complete_indicators: they never reach Brightway,
+            # and hashing them would mark every existing authored database stale.
+            "exchanges": {"__all__": {"uncertainty_basis"}},
+        }},
     })
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()

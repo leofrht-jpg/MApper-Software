@@ -22,7 +22,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from mapper.core.compute_metrics import ComputeMetrics
-from mapper.models.authored_schemas import CoverageGap
+from mapper.models.authored_schemas import AuthoredUncertainty, CoverageGap
 
 
 # ── Ecoinvent link ────────────────────────────────────────────────────────────
@@ -541,6 +541,9 @@ class DSMLCABatchResult(BaseModel):
     #: Indicators this run cannot speak for (partial authored activities). An
     #: annotation -- never changes a number.
     coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
+    #: Authored exchanges this run used and where their uncertainty came from
+    #: (``ecoinvent`` or ``supplied``). Empty when the run used none.
+    authored_uncertainty: list[AuthoredUncertainty] = Field(default_factory=list)
 
 
 # ── Impact Assessment (unified pipeline) ─────────────────────────────────────
@@ -688,6 +691,9 @@ class ImpactAssessmentResult(BaseModel):
     #: used has no flow characterised by that method, so its contribution is
     #: unknown, not zero. An annotation -- never changes a number.
     coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
+    #: Authored exchanges this run used and where their uncertainty came from
+    #: (``ecoinvent`` or ``supplied``). Empty when the run used none.
+    authored_uncertainty: list[AuthoredUncertainty] = Field(default_factory=list)
 
 
 class ScenarioImpactResult(BaseModel):

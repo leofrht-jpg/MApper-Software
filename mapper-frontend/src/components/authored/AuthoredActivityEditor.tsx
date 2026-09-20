@@ -19,6 +19,7 @@ import {
   type AuthoredActivity,
   type AuthoredActivityInput,
   type AuthoredExchangeInput,
+  type UncertaintyBasis,
   type AuthoredFlowSnapshot,
   type AuthoredScope,
   type ExchangePreview,
@@ -44,6 +45,9 @@ export interface ExchangeRow {
   /** 'derived': ecoinvent supplies the basic variance (read-only).
    *  'required': the user must enter one, with a reason. */
   bvMode: 'derived' | 'required'
+  /** Where this exchange's uncertainty comes from. `supplied` is a deliberate
+   *  choice about what the AMOUNT is, never a way out of the floor. */
+  basis: UncertaintyBasis
   derivedBv: number | null
   bvNote: string
   basicVariance: number | null
@@ -63,6 +67,7 @@ export function rowFromCandidate(c: FlowCandidate): ExchangeRow {
     amount: 1,
     pedigree: null,
     bvMode: derived ? 'derived' : 'required',
+    basis: 'ecoinvent',
     derivedBv: c.basic_variance,
     bvNote: derived
       ? `ecoinvent median over ${c.basic_variance_n.toLocaleString()} exchanges`
@@ -82,6 +87,7 @@ function rowFromStored(a: AuthoredActivity['exchanges'][number]): ExchangeRow {
     amount: a.amount,
     pedigree: { ...a.pedigree },
     bvMode: derived ? 'derived' : 'required',
+    basis: a.uncertainty_basis ?? 'ecoinvent',
     derivedBv: derived ? a.basic_variance : null,
     bvNote: derived ? a.basic_variance_detail : 'ecoinvent has no usable basic variance for this flow: enter one, with the reason',
     basicVariance: derived ? null : a.basic_variance,
@@ -91,15 +97,25 @@ function rowFromStored(a: AuthoredActivity['exchanges'][number]): ExchangeRow {
   }
 }
 
+/** The author states the variance when ecoinvent has none to derive, and always
+ *  on the supplied basis -- there the figure's uncertainty is the supplier's. */
+const bvIsTheAuthors = (r: ExchangeRow) => r.basis === 'supplied' || r.bvMode === 'required'
+
 export function toInput(r: ExchangeRow): AuthoredExchangeInput {
+  const own = bvIsTheAuthors(r)
   return {
     flow_database: r.flow.database,
     flow_code: r.flow.code,
     amount: r.amount,
     pedigree: r.pedigree ?? {},
-    basic_variance: r.bvMode === 'required' ? r.basicVariance : null,
-    basic_variance_reason: r.bvMode === 'required' ? r.bvReason : null,
-    floor_reason: r.floorReason.trim() || null,
+    basic_variance: own ? r.basicVariance : null,
+    basic_variance_reason: own ? r.bvReason : null,
+    // A supplied exchange has no floor, so it can carry no reason for being
+    // under one. Any text typed before the basis was changed stays in the form
+    // but is not sent: the backend refuses it, and storing it would be a
+    // reason for a comparison that was never made.
+    floor_reason: r.basis === 'supplied' ? null : (r.floorReason.trim() || null),
+    uncertainty_basis: r.basis,
   }
 }
 
@@ -344,7 +360,10 @@ function ExchangeRowView({ row, complete, onChange, onRemove }: {
 }) {
   const p = row.preview
   const codes = p?.codes ?? []
-  const needsFloorReason = codes.includes('below_floor') || row.floorReason.trim() !== ''
+  const supplied = row.basis === 'supplied'
+  const ownBv = bvIsTheAuthors(row)
+  // Never on the supplied basis: there is no floor there to be under.
+  const needsFloorReason = !supplied && (codes.includes('below_floor') || row.floorReason.trim() !== '')
   const tid = `exchange-${row.flow.code}`
   return (
     <div data-testid={tid} style={{ border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', display: 'grid', gap: 'var(--space-2)' }}>
@@ -368,16 +387,20 @@ function ExchangeRowView({ row, complete, onChange, onRemove }: {
       <PedigreeEditor
         testIdPrefix={`${tid}-pedigree`}
         scores={row.pedigree}
-        basicVariance={row.bvMode === 'derived' ? row.derivedBv : row.basicVariance}
-        onChange={(scores, bv) => onChange(row.bvMode === 'required' ? { pedigree: scores, basicVariance: bv } : { pedigree: scores })}
+        basicVariance={ownBv ? row.basicVariance : row.derivedBv}
+        onChange={(scores, bv) => onChange(ownBv ? { pedigree: scores, basicVariance: bv } : { pedigree: scores })}
         requireAll
-        basicVarianceMode={row.bvMode}
-        basicVarianceNote={row.bvNote}
+        basicVarianceMode={ownBv ? 'required' : 'derived'}
+        basicVarianceNote={supplied
+          ? "Required: the uncertainty of the supplied figure itself. ecoinvent's median for this flow describes an emission amount, which this is not, so it is not used."
+          : row.bvNote}
         compact
       />
-      {row.bvMode === 'required' && (
+      {ownBv && (
         <textarea data-testid={`${tid}-bv-reason`} style={{ ...field, height: 40, paddingTop: 6 }}
-          placeholder="Required: where this basic variance comes from (it is stored on the exchange)"
+          placeholder={supplied
+            ? 'Required: whose uncertainty this is and how you arrived at it — the supplier, the report, what they state (it is stored on the exchange)'
+            : 'Required: where this basic variance comes from (it is stored on the exchange)'}
           value={row.bvReason} onChange={(e) => onChange({ bvReason: e.target.value })} />
       )}
       {needsFloorReason && (
@@ -405,6 +428,11 @@ function ExchangeRowView({ row, complete, onChange, onRemove }: {
               below ecoinvent's median {p.exchange.floor_gsd2?.toFixed(3)}; your reason will be stored with it
             </span>
           )}
+          {p.exchange.floor_status === 'not_applicable' && (
+            <span data-testid={`${tid}-basis-not-applicable`}>
+              no floor: {p.exchange.floor_detail}
+            </span>
+          )}
           {p.exchange.floor_status === 'unfloored' && (
             <span data-testid={`${tid}-unfloored`} style={{ color: 'var(--warning)' }}>
               <strong>Unfloored</strong> — {p.exchange.floor_detail}
@@ -417,7 +445,53 @@ function ExchangeRowView({ row, complete, onChange, onRemove }: {
           {p.problems.map((m) => <li key={m}>{m}</li>)}
         </ul>
       )}
+      <UncertaintyBasisControl tid={tid} basis={row.basis} onChange={(basis) => onChange({ basis })} />
     </div>
+  )
+}
+
+/** The exemption from ecoinvent's floor, and the only way to reach it.
+ *
+ *  Deliberately undersold: closed by default, last in the row, in the quiet
+ *  colour, and phrased as a question about what the amount IS. It is never
+ *  presented as a fix for a floor complaint, because for an emission amount it
+ *  is not one -- the floor exists because authored inventories understate, and
+ *  an author who takes this route to silence a `below_floor` message has made
+ *  their number look better without changing what they know. */
+function UncertaintyBasisControl({ tid, basis, onChange }: {
+  tid: string
+  basis: UncertaintyBasis
+  onChange: (b: UncertaintyBasis) => void
+}) {
+  const supplied = basis === 'supplied'
+  return (
+    <details data-testid={`${tid}-basis`} open={supplied}>
+      <summary data-testid={`${tid}-basis-summary`}
+        style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', cursor: 'pointer' }}>
+        Uncertainty basis: <strong>{supplied ? 'supplied with the figure' : "ecoinvent's spread for this flow"}</strong>
+      </summary>
+      <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', display: 'grid', gap: 6, padding: '6px 0 0 16px' }}>
+        <p style={{ margin: 0 }}>
+          The amount above is read as an emission of this flow, so ecoinvent's spread for that flow is the
+          reference: its median is the basic variance, and its GSD² is the floor.
+        </p>
+        <p style={{ margin: 0 }}>
+          That is wrong for one kind of amount: a characterised result someone else computed — a supplier's
+          product carbon footprint, an EPD — entered against a flow so that the indicator reproduces their
+          number. No emission of that size occurs; the figure's uncertainty is the supplier's, and ecoinvent's
+          per-flow median describes a different quantity. If that is what you have entered, say so here: you
+          then state the variance and where it came from, and no floor is checked.
+        </p>
+        <p style={{ margin: 0, color: 'var(--text-tertiary)' }}>
+          If the amount is an emission, leave this as it is, including when the floor says your GSD² is low.
+        </p>
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', cursor: 'pointer' }}>
+          <input type="checkbox" data-testid={`${tid}-basis-supplied`} checked={supplied}
+            onChange={(e) => onChange(e.target.checked ? 'supplied' : 'ecoinvent')} />
+          <span>This amount is a characterised result, not an emission amount.</span>
+        </label>
+      </div>
+    </details>
   )
 }
 

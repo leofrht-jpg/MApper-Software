@@ -119,7 +119,38 @@ def _count_not_specified(entries) -> int:
     return n
 
 
-def add_coverage_sheet(wb, entries: Sequence[CoverageEntry], *, discriminator: str = "Result") -> str:
+BASIS_HEADER = "Authored exchanges: where each uncertainty comes from"
+BASIS_NOTE = (
+    "'supplied' means the amount is a figure whose uncertainty belongs to whoever produced it "
+    "(a supplier PCF, an EPD, a measurement report) -- a characterised result, not an emission "
+    "amount -- so ecoinvent's per-flow median does not apply and no GSD2 floor was checked "
+    "against it. Do not compare a supplied GSD2 with an ecoinvent-referenced one: they describe "
+    "different quantities."
+)
+
+
+def dedupe_notes(*groups) -> list:
+    """One row per authored exchange across every result in a workbook."""
+    out = {}
+    for g in groups:
+        for n in g or []:
+            out.setdefault((n.database, n.code, n.flow_name), n)
+    return list(out.values())
+
+
+def basis_rows(notes) -> list[list]:
+    """The authored-exchange basis block. Both bases are listed, so silence
+    about an exchange never has to be read as 'ecoinvent'."""
+    rows: list[list] = [[], [BASIS_HEADER], [BASIS_NOTE],
+                        ["Activity", "Database", "Flow", "Basic variance", "GSD2", "Uncertainty basis", "Detail"]]
+    for n in notes or []:
+        flow = n.flow_name + (f" [{', '.join(n.flow_categories)}]" if n.flow_categories else "")
+        rows.append([n.activity_name, n.database, flow, n.basic_variance, round(n.gsd2, 4), n.basis, n.detail])
+    return rows
+
+
+def add_coverage_sheet(wb, entries: Sequence[CoverageEntry], *, discriminator: str = "Result",
+                       notes=None) -> str:
     """Append the Coverage sheet; return the one-line summary for sheet one."""
     from openpyxl.styles import Alignment, Font
 
@@ -137,16 +168,22 @@ def add_coverage_sheet(wb, entries: Sequence[CoverageEntry], *, discriminator: s
     for e in entries:
         for row in _rows(e):
             ws.append(row)
+    if notes:
+        for row in basis_rows(notes):
+            ws.append(row)
+        ws.cell(row=ws.max_row - len(notes) - 1, column=1).alignment = Alignment(wrap_text=True, vertical="top")
     return summary_line(entries)
 
 
-def finalize_coverage(wb, entries: Sequence[CoverageEntry], *, discriminator: str = "Result") -> None:
+def finalize_coverage(wb, entries: Sequence[CoverageEntry], *, discriminator: str = "Result",
+                      notes=None) -> None:
     """Add the Coverage sheet and a pointer line at the foot of the first sheet.
 
-    Appended rather than inserted, so no existing cell moves.
+    Appended rather than inserted, so no existing cell moves. ``notes`` adds the
+    authored-exchange uncertainty-basis block.
     """
     first = wb.worksheets[0]
-    line = add_coverage_sheet(wb, entries, discriminator=discriminator)
+    line = add_coverage_sheet(wb, entries, discriminator=discriminator, notes=notes)
     first.append([])
     first.append([LABEL, line])
 

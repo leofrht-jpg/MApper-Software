@@ -11682,6 +11682,60 @@ in `mapper/api` and fails on one that neither calls `finalize_coverage` nor is
 in `EXEMPT` with a reason (BOM, DSM stock, parameters, sharing presets -- no
 result values). A new result workbook cannot ship silent.
 
+## Exchange-level uncertainty basis (step 5 of authored databases)
+
+The floor above assumes the amount on an exchange IS an emission, so ecoinvent's
+spread for that flow is the right reference. One real use breaks that
+assumption: a supplier's cradle-to-gate PCF entered as one characterised CO2e
+figure against fossil CO2, so GWP100 reproduces the supplier's number. No
+emission of that size occurs. Its uncertainty is the supplier's, and ecoinvent's
+per-flow median describes a different quantity -- the floor there is a category
+error, and the UI was pushing authors toward a `floor_reason` justifying a
+comparison that was never made.
+
+`ExchangeInput.uncertainty_basis` / `AuthoredExchange.uncertainty_basis`:
+
+- **`ecoinvent` is the default and is unchanged.** Every exchange written before
+  the field is `ecoinvent` on load. It is also outside `fingerprint()`, so
+  adding the field did not mark one existing authored database stale.
+- **`supplied` asks for MORE than the default, never less.** `_resolve_supplied`
+  requires `basic_variance` AND `basic_variance_reason` (`bv_required`,
+  `bv_reason_required`) -- the two things the default path does not ask for when
+  ecoinvent has a median. The same input the ecoinvent basis accepts is REFUSED
+  on the supplied one; `test_supplied_is_more_work_than_the_default_never_less`
+  pins exactly that.
+- It refuses `floor_reason` (`floor_reason_not_applicable`) instead of storing a
+  meaningless one, and reports `floor_status="not_applicable"` -- distinct from
+  `unfloored`, which means the check could not run. `has_unfloored_exchange`
+  stays false, and the activity does not warn.
+- The basis never reaches Brightway. Only the variance it implies does.
+
+**It is reachable, and deliberately unattractive.** In the editor it is a closed
+`<details>` at the foot of the row, in the tertiary colour, phrased as a question
+about what the amount IS -- never as a remedy. A `below_floor` complaint does not
+open it, does not mention it, and the panel itself says "If the amount is an
+emission, leave this as it is, including when the floor says your GSD2 is low."
+`authoredActivityEditor.test.tsx` "is not offered as the way out of a
+below-floor complaint" fails if the disclosure opens on a floor verdict. **Don't surface the basis from an error
+path.** An author who takes this route to silence the floor has made their
+number look better without changing what they know.
+
+**The basis survives into the result, not just the editor.**
+`authored_coverage.uncertainty_notes()` lists every authored exchange a run used
+with its basis, on six result models (`authored_uncertainty`). It lists BOTH
+bases: a block naming only the exceptions leaves the reader to assume the rest
+are ecoinvent-referenced, which is the silence the coverage statement exists to
+avoid. It reaches the Coverage sheet of every result workbook AND the Monte
+Carlo **Pedigree scores** sheet -- that is where a reader compares GSD2s, and
+authored exchanges are sampled as background, so they appear in no scored-input
+row and the reader would otherwise have no way to know the two are not
+comparable.
+
+`test_every_result_constructor_passes_authored_uncertainty` derives its carrier
+list FROM the models (classes declaring the field) rather than a hand-kept set,
+so adding the field to a seventh result brings that result's call sites under
+the guard. It caught both AESA adapters on the way in.
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

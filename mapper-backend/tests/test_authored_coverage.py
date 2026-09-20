@@ -211,7 +211,9 @@ def test_the_fingerprint_ignores_the_declaration_and_matches_the_old_formula():
     # the pre-declaration formula, applied to a dump without the field
     legacy = db0.model_dump(mode="json", exclude={"created_at", "updated_at"})
     for a in legacy["activities"]:
-        a.pop("complete_indicators")
+        a.pop("complete_indicators")          # the per-indicator declaration
+        for e in a["exchanges"]:
+            e.pop("uncertainty_basis")        # and the uncertainty basis
     blob = json.dumps(legacy, sort_keys=True, separators=(",", ":"))
     assert eng.fingerprint(db0) == hashlib.sha256(blob.encode("utf-8")).hexdigest()
 

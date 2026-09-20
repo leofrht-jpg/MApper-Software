@@ -1418,17 +1418,15 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
         raise HTTPException(status_code=500, detail=f"DSM×LCA failed: {e}")
 
     _proj_dsm_lca_results(project)[system_id] = results
-    from mapper.core.authored_coverage import coverage_gaps, fleet_link_keys
+    from mapper.core.authored_coverage import coverage_gaps, fleet_link_keys, uncertainty_notes
 
-    gaps, gap_warning = coverage_gaps(
-        fleet_link_keys(
-            archetypes,
-            [aid for aid, _ in cohort_to_archetype.values()]
-            + [aid for m in sub_cohort_mappings.values() for aid, _ in m.values()],
-            body.scope,
-        ),
-        method_tuples, project,
+    _keys = fleet_link_keys(
+        archetypes,
+        [aid for aid, _ in cohort_to_archetype.values()]
+        + [aid for m in sub_cohort_mappings.values() for aid, _ in m.values()],
+        body.scope,
     )
+    gaps, gap_warning = coverage_gaps(_keys, method_tuples, project)
     if gap_warning:
         setup_warnings.append(gap_warning)
     return DSMLCABatchResult(
@@ -1439,6 +1437,7 @@ async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
         warnings=setup_warnings,
         compute_metrics=meter.build(),
         coverage_gaps=gaps,
+        authored_uncertainty=uncertainty_notes(_keys, project),
     )
 
 
@@ -1454,6 +1453,7 @@ async def get_dsm_lca(system_id: str) -> DSMLCABatchResult:
         # scope + methods and the current mappings. Omitting it would make a
         # rehydrated result read as if nothing were unspecified.
         coverage_gaps=_fleet_coverage_for_cached(system_id, res),
+        authored_uncertainty=_fleet_uncertainty_for_cached(system_id, res),
     )
 
 
@@ -1463,11 +1463,29 @@ def _coverage_entry_for_cached(system_id: str, res: list):
     return CoverageEntry(None, _fleet_coverage_for_cached(system_id, res), [list(r.method) for r in res])
 
 
+def _fleet_uncertainty_for_cached(system_id: str, res: list) -> list:
+    if not res:
+        return []
+    from mapper.core.authored_coverage import uncertainty_notes
+
+    return uncertainty_notes(_cached_fleet_keys(system_id, res), _current_project())
+
+
 def _fleet_coverage_for_cached(system_id: str, res: list) -> list:
     if not res:
         return []
+    from mapper.core.authored_coverage import coverage_gaps
+
+    gaps, _warning = coverage_gaps(
+        _cached_fleet_keys(system_id, res), [tuple(r.method) for r in res], _current_project(),
+    )
+    return gaps
+
+
+def _cached_fleet_keys(system_id: str, res: list) -> set:
+    """The keys a cached fleet run used, from the current mappings."""
     from mapper.api import subsystems as _subs
-    from mapper.core.authored_coverage import coverage_gaps, fleet_link_keys
+    from mapper.core.authored_coverage import fleet_link_keys
     from mapper.core.dsm_lca_engine import build_subsystem_cohort_mapping
 
     project = _current_project()
@@ -1476,11 +1494,7 @@ def _fleet_coverage_for_cached(system_id: str, res: list) -> list:
     for sub in _subs.get_subsystems_for_system(system_id, project).values():
         sub_map, _unmapped = build_subsystem_cohort_mapping(sub)
         ids += [aid for aid, _ in sub_map.values()]
-    gaps, _warning = coverage_gaps(
-        fleet_link_keys(_proj_archetypes(project), ids, res[0].scope),
-        [tuple(r.method) for r in res], project,
-    )
-    return gaps
+    return fleet_link_keys(_proj_archetypes(project), ids, res[0].scope)
 
 
 # ── DSM × LCA Excel export ───────────────────────────────────────────────────
@@ -1641,6 +1655,8 @@ def _build_mfa_lca_workbook(
     #: Static-vs-Projected compare sheet is added). None = the caller had no
     #: coverage record, and the workbook SAYS so rather than going silent.
     coverage_entries: list | None = None,
+    #: Authored exchanges the run used, with the basis of each uncertainty.
+    coverage_notes: list | None = None,
 ) -> Workbook:
     """Build a comprehensive XLSX workbook for Impact Assessment results.
     Designed for easy analysis in Excel (pivot tables, filtering).
@@ -2075,7 +2091,7 @@ def _build_mfa_lca_workbook(
 
     from mapper.core.coverage_export import CoverageEntry, finalize_coverage
     finalize_coverage(wb, coverage_entries or [
-        CoverageEntry(None, None, [list(r.method) for r in results])])
+        CoverageEntry(None, None, [list(r.method) for r in results])], notes=coverage_notes)
     return wb
 
 
@@ -2126,6 +2142,7 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
         # This route computes and exports in one call, so the stamp is now.
         **_run_stamp(),
         coverage_entries=[_coverage_entry_for_cached(system_id, results)],
+        coverage_notes=_fleet_uncertainty_for_cached(system_id, results),
     )
     scope = results[0].scope
     # Subsystems that actually contributed cohorts to the aggregated results —

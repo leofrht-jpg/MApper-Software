@@ -296,6 +296,7 @@ def build_demo_project(*, rebuild: bool = False) -> DemoBuildReport:
     import bw2io as bi
 
     from mapper.core import dsm_storage
+    from mapper.core.bom_engine import assign_ids_to_roots
     from mapper.core.dsm_engine import DynamicStockModel
     from mapper.models.bom_schemas import CohortMapping, CohortMappingEntry
     from mapper.models.dsm_schemas import (
@@ -385,6 +386,12 @@ def build_demo_project(*, rebuild: bool = False) -> DemoBuildReport:
         bev.id = "demo-bev"
         icev.id = "demo-icev"
         for arc in (bev, icev):
+            # This path saves straight to storage, so it must do what the
+            # create route does: without ids on the stage roots,
+            # ArchetypeSummary.stage_ids rejects the archetype and
+            # GET /bom/archetypes 500s for the whole project. The loader
+            # backfills too, but a demo built today should not need it.
+            assign_ids_to_roots(arc.bom)
             dsm_storage.save_archetype(DEMO_PROJECT_NAME, arc)
             report.archetypes.append(arc.name)
 

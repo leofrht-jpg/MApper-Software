@@ -11532,6 +11532,36 @@ link refusals filter on is already refused in authored database names.
   `tests/test_bare_pytest_collects.py`, which runs pytest from a directory
   outside the backend.
 
+## Every node gets an id ON LOAD, not only on create
+
+`assign_ids_to_roots` runs on the create and import routes, but an archetype can
+reach disk without passing either: the demo builder constructs its two and calls
+`dsm_storage.save_archetype` directly. Those stage roots had `id: None`, and
+`ArchetypeSummary.stage_ids` is `dict[str, str]` — so `GET /bom/archetypes`
+returned **500 for the whole project**, not just for that archetype. Shipped in
+0.2.x and 0.3.0: the demo project every install gets could not open its
+Archetypes page. Found while verifying the 0.3.0 @ `99df3fa` build; of 73
+archetypes on the author's machine, the 4 affected were the demo's two and their
+`.bak` copies — every hand-built project was clean.
+
+`dsm_storage._backfill_root_ids` fills them in `_load_project`, which both
+loaders funnel through, so **every project already on disk is repaired** rather
+than only the one seeded today.
+
+- **Persisted, not only held in memory.** A regenerated id differs between
+  restarts, and the UI PUTs a stage basis BY that id. Written once; later loads
+  find the ids present and change nothing.
+- **The check walks the whole tree**, not just the roots: `assign_ids_to_roots`
+  fills children too, and an id assigned but never written is a new id next
+  time. `test_a_child_only_gap_is_persisted_too` is the one that catches this —
+  a fixture missing ids everywhere passes either way.
+- **A failed write must not break loading.** Read-only or full disk leaves the
+  in-memory ids in place and is otherwise ignored.
+- The demo builder now assigns ids itself, so a demo built today does not rely
+  on the repair. **Don't treat that as the fix** — it only stops new bad data.
+
+Tests: `tests/test_root_ids_backfilled_on_load.py` (7).
+
 ## No undefined names -- pyflakes guards the package
 
 Three names were called without ever being defined, and each shipped, because

@@ -158,6 +158,41 @@ def delete_system_dir(project: str, system_id: str) -> None:
         shutil.rmtree(d, ignore_errors=True)
 
 
+def _backfill_root_ids(project: str, arc: Archetype) -> Archetype:
+    """Give every node an id on the way in, and persist it if any was missing.
+
+    ``assign_ids_to_roots`` runs on the create and import routes, but an
+    archetype can reach disk without passing either -- the demo project builds
+    its two and calls ``save_archetype`` directly. Such an archetype then has
+    stage roots with ``id: None``, and ``ArchetypeSummary.stage_ids``
+    (``dict[str, str]``) rejects it, so GET /bom/archetypes 500s and the whole
+    list is unreachable for that project. Doing it here fixes every project
+    already on disk, not only the one seeded today.
+
+    Persisted, not just held in memory: a regenerated id would differ between
+    restarts, and the UI PUTs a stage basis BY that id. Written once; on every
+    later load ``assign_node_ids`` finds the ids present and changes nothing.
+    A read-only or full disk must not break loading, so a failed write leaves
+    the in-memory ids in place and is otherwise ignored.
+    """
+    from mapper.core.bom_engine import assign_ids_to_roots
+
+    def any_missing(nodes) -> bool:
+        # The whole tree, not just the roots: assign_ids_to_roots fills
+        # children too, and an id assigned but never written would be a new
+        # one on the next load.
+        return any(not n.id or any_missing(n.children or []) for n in nodes)
+
+    missing = any_missing(arc.bom)
+    assign_ids_to_roots(arc.bom)
+    if missing:
+        try:
+            save_archetype(project, arc)
+        except Exception:  # noqa: BLE001
+            pass
+    return arc
+
+
 def save_archetype(project: str, archetype: Archetype) -> None:
     if not archetype.id:
         return
@@ -224,7 +259,7 @@ def _load_project(project_dir: Path) -> tuple[
                 try:
                     arc = Archetype(**data)
                     if arc.id:
-                        archetypes[arc.id] = arc
+                        archetypes[arc.id] = _backfill_root_ids(project_dir.name, arc)
                 except Exception:
                     continue
             continue

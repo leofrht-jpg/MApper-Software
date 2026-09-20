@@ -784,6 +784,9 @@ def single_product_to_impact_result(
         mapper_version=result.mapper_version,
         # None (not recorded) stays None: [] would claim "checked, none".
         coverage_gaps=getattr(result, "coverage_gaps", None),
+        # Carried through for the same reason: the adapted result reports the
+        # same numbers, so it must report where their uncertainty came from.
+        authored_uncertainty=list(getattr(result, "authored_uncertainty", []) or []),
         task_id="single-product",
         meta=ImpactAssessmentMeta(
             mode="static",
@@ -889,6 +892,12 @@ def prospective_single_product_to_impact_result(
         coverage_gaps=None if any(getattr(r, "coverage_gaps", None) is None for _, r in points) else list({
             (tuple(g.method), g.database, g.code): g
             for _, r in points for g in r.coverage_gaps
+        }.values()),
+        # Deduplicated over the trajectory as well: one authored exchange
+        # solved against N vintages is still one authored exchange.
+        authored_uncertainty=list({
+            (n.database, n.code, n.flow_name, tuple(n.flow_categories)): n
+            for _, r in points for n in getattr(r, "authored_uncertainty", []) or []
         }.values()),
         task_id="single-product",
         meta=ImpactAssessmentMeta(

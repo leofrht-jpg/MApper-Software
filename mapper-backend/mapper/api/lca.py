@@ -89,9 +89,11 @@ from mapper.ws.progress import stream_task_progress
 from mapper.api.cohort_export import excel_response
 from mapper.core.content_hash import hashes_for_ids as _content_hashes
 from mapper.core.authored_coverage import coverage_gaps as _coverage_gaps
+from mapper.core.authored_coverage import uncertainty_notes as _uncertainty_notes
 from mapper.core.coverage_export import CoverageEntry as _CE
 from mapper.core.coverage_export import finalize_coverage as _finalize_coverage
 from mapper.core.coverage_export import methods_of as _methods_of
+from mapper.core.coverage_export import dedupe_notes as _dedupe_notes
 from mapper.core.database_fingerprint import fingerprint as _fingerprint
 from mapper.core.run_provenance import (
     provenance_rows as _provenance_rows,
@@ -326,7 +328,8 @@ async def calculate_activity_lca(body: ActivityLCARequest) -> ActivityLCAResult:
     # plainest case: its own partial inventory IS the result.
     gaps, _gap_warning = _coverage_gaps(total_demand.keys(), method_tuples, bw2data.projects.current)
     return ActivityLCAResult(
-        results=results, elapsed_seconds=elapsed, coverage_gaps=gaps, **_run_stamp()
+        results=results, elapsed_seconds=elapsed, coverage_gaps=gaps, **_run_stamp(),
+        authored_uncertainty=_uncertainty_notes(total_demand.keys(), bw2data.projects.current),
     )
 
 
@@ -730,6 +733,7 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
     return ArchetypeLCACalculateResult(
         **_run_stamp(),
         coverage_gaps=gaps,
+        authored_uncertainty=_uncertainty_notes(total_demand.keys(), bw2data.projects.current),
         data_fingerprint=_fingerprint(
             [body.compute_database], method_tuples
         ),
@@ -1054,7 +1058,7 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
             ws4.append([d.archetype_name, stage_name] + values)
     _auto_width(ws4)
 
-    _finalize_coverage(wb, [_CE(r.archetype_name if len(data) > 1 else None, r.coverage_gaps, _methods_of(r)) for r in data], discriminator="Archetype")
+    _finalize_coverage(wb, [_CE(r.archetype_name if len(data) > 1 else None, r.coverage_gaps, _methods_of(r)) for r in data], notes=_dedupe_notes(*[r.authored_uncertainty for r in data]), discriminator="Archetype")
     return wb
 
 

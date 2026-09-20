@@ -63,8 +63,23 @@ from mapper.core.pedigree import INDICATORS, gsd2_from_sigma, total_sigma
 AUTHORED_SCHEMA_VERSION = 1
 
 ScopeKind = Literal["complete", "partial"]
-FloorStatus = Literal["floored", "below_floor_with_reason", "unfloored"]
-BasicVarianceSource = Literal["ecoinvent_median", "user_entered"]
+FloorStatus = Literal["floored", "below_floor_with_reason", "unfloored", "not_applicable"]
+BasicVarianceSource = Literal["ecoinvent_median", "user_entered", "supplied"]
+#: Where an exchange's uncertainty comes from.
+#:
+#: ``ecoinvent`` (DEFAULT, and what every exchange written before this was)
+#: -- the amount is an emission this activity releases, so ecoinvent's own
+#: spread for that flow is the relevant reference: the basic variance is
+#: ecoinvent's median and the GSD2 floor applies.
+#:
+#: ``supplied`` -- the amount is a figure whose uncertainty belongs to whoever
+#: produced it (a supplier's PCF, an EPD, a measurement report). It is a
+#: characterised RESULT, not an emission amount, so ecoinvent's per-flow median
+#: describes a different quantity: the author MUST state the variance and its
+#: source, and the floor is NOT applied (``floor_status = "not_applicable"``).
+#: Deliberate, never a default: the floor exists because authored inventories
+#: understate, and this exemption is only for data that is not an inventory.
+UncertaintyBasis = Literal["ecoinvent", "supplied"]
 
 _CODE_RE = re.compile(r"^[0-9a-f]{32}$")
 _REL_TOL = 1e-9
@@ -116,6 +131,7 @@ class ExchangeInput(BaseModel):
     pedigree: dict[str, int]
     basic_variance: float | None = None
     basic_variance_reason: str | None = None
+    uncertainty_basis: UncertaintyBasis = "ecoinvent"
     floor_reason: str | None = None
 
     @field_validator("pedigree")
@@ -193,6 +209,8 @@ class AuthoredExchange(BaseModel):
     basic_variance: float
     basic_variance_source: BasicVarianceSource
     basic_variance_detail: str
+    #: ``ecoinvent`` on every exchange written before this field existed.
+    uncertainty_basis: UncertaintyBasis = "ecoinvent"
     sigma: float
     gsd2: float
     floor_status: FloorStatus
@@ -223,9 +241,15 @@ class AuthoredExchange(BaseModel):
             raise ValueError("gsd2 does not equal exp(2*sigma)")
         if _blank(self.floor_detail):
             raise ValueError("floor_detail is required")
-        if self.floor_status == "unfloored":
+        if self.floor_status in ("unfloored", "not_applicable"):
+            # unfloored: the check could not run. not_applicable: it does not
+            # apply (supplied basis). Neither may carry a floor value, and a
+            # supplied exchange may not carry a floor REASON either -- there is
+            # no comparison for a reason to be about.
             if self.floor_gsd2 is not None:
-                raise ValueError("an unfloored exchange cannot carry a floor value")
+                raise ValueError(f"a {self.floor_status} exchange cannot carry a floor value")
+            if self.floor_status == "not_applicable" and self.floor_reason is not None:
+                raise ValueError("a not_applicable exchange cannot carry a floor reason")
         else:
             if self.floor_gsd2 is None:
                 raise ValueError(f"floor_status {self.floor_status!r} requires floor_gsd2")
@@ -257,6 +281,26 @@ class CoverageGap(BaseModel):
     #: The author's own statement of what the partial inventory leaves out.
     scope_note: str = ""
     kind: Literal["not_reached", "not_declared"] = "not_reached"
+
+
+class AuthoredUncertainty(BaseModel):
+    """One authored exchange a RESULT used, and where its uncertainty came from.
+
+    Carried on results so a reader of an exported workbook can tell a
+    ``supplied`` GSD2 from an ecoinvent-referenced one. Without it the Monte
+    Carlo pedigree sheet invites a comparison between two different quantities.
+    """
+
+    database: str
+    code: str
+    activity_name: str
+    flow_name: str
+    flow_categories: list[str] = Field(default_factory=list)
+    basic_variance: float
+    gsd2: float
+    basis: UncertaintyBasis
+    #: Reads as the sentence the sheets print.
+    detail: str = ""
 
 
 class AuthoredActivity(BaseModel):

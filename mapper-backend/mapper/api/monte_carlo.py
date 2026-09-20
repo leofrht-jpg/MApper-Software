@@ -63,6 +63,7 @@ from mapper.models.schemas import (
 )
 from mapper.core.content_hash import hashes_for_ids as _content_hashes
 from mapper.core.authored_coverage import coverage_gaps as _coverage_gaps
+from mapper.core.authored_coverage import uncertainty_notes as _uncertainty_notes
 from mapper.core.database_fingerprint import fingerprint as _fingerprint
 from mapper.core.run_provenance import (
     stamp as _run_stamp,
@@ -349,6 +350,7 @@ def _run_monte_carlo(
     return MonteCarloResult(
         **_run_stamp(),
         coverage_gaps=gaps,
+        authored_uncertainty=_uncertainty_notes(bundle.total_demand.keys(), _current_project()),
         data_fingerprint=_fingerprint(
             [body.compute_database], method_tuples
         ),
@@ -760,7 +762,8 @@ def _run_monte_carlo_multi(
             warnings.append(gap_warning)
         out_items.append(ItemDistribution(
             archetype_id=it["id"], archetype_name=it["name"], distributions=dists,
-            coverage_gaps=item_gaps))
+            coverage_gaps=item_gaps,
+            authored_uncertainty=_uncertainty_notes(it["source_keys"], _current_project())))
 
     diffs = _pairwise_differences(items, method_tuples)
 
@@ -890,6 +893,16 @@ _MIGRATION_NOTE = (
     "raise it to the power 2/1.96: GSD2 = reported ** 1.020408. The correction "
     "is +0.2% at 1.10, +0.6% at 1.37, +1.4% at 2.00, and is always upward."
 )
+
+
+def _append_basis_block(ws, notes) -> None:
+    """The authored-exchange uncertainty-basis block, where a reader compares GSD2s."""
+    from mapper.core.coverage_export import basis_rows
+
+    if not notes:
+        return
+    for row in basis_rows(notes):
+        ws.append(row)
 
 
 def _build_monte_carlo_workbook(
@@ -1048,6 +1061,11 @@ def _build_monte_carlo_workbook(
         ])
     ws.append([])
     ws.append([_GSD2_NOTE])
+    # Authored exchanges are sampled as BACKGROUND (they carry lognormal
+    # uncertainty in Brightway), so they are absent from the rows above -- and
+    # this sheet is exactly where a reader would otherwise compare a supplied
+    # GSD2 against an ecoinvent-referenced one without knowing they differ.
+    _append_basis_block(ws, result.authored_uncertainty)
     autosize(ws)
 
     # ── Samples ───────────────────────────────────────────────────────────────
@@ -1136,6 +1154,12 @@ def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workboo
         ("Caveat", LOWER_BOUND_NOTE),
     ]:
         ws.append([k, v])
+    # One block for the run: it describes exchanges, not items, so an exchange
+    # used by two items is listed once.
+    _append_basis_block(ws, list({
+        (n.database, n.code, n.flow_name): n
+        for it in result.items for n in (it.authored_uncertainty or [])
+    }.values()))
     if result.warnings:
         ws.append(["Warnings", " | ".join(result.warnings)])
     autosize(ws)

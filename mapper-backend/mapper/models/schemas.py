@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from mapper.models.authored_schemas import CoverageGap
+from mapper.models.authored_schemas import AuthoredUncertainty, CoverageGap
 
 
 # ── Phase 0 ──────────────────────────────────────────────────────────────────
@@ -302,6 +302,9 @@ class ActivityLCAResult(BaseModel):
     #: Indicators this result cannot speak for: an activity in the demand is a
     #: PARTIAL authored one with no flow characterised by that method.
     coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
+    #: Authored exchanges this run used and where their uncertainty came from
+    #: (``ecoinvent`` or ``supplied``). Empty when the run used none.
+    authored_uncertainty: list[AuthoredUncertainty] = Field(default_factory=list)
     #: Compute-time provenance. ``None`` on results stored before this
     #: shipped -- a builder writes "not recorded", NEVER today's date.
     computed_at: str | None = None          # ISO-8601 UTC
@@ -376,6 +379,9 @@ class ArchetypeLCACalculateResult(BaseModel):
     #: used has no flow characterised by that method, so its contribution is
     #: unknown, not zero. An annotation -- never changes a number.
     coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
+    #: Authored exchanges this run used and where their uncertainty came from
+    #: (``ecoinvent`` or ``supplied``). Empty when the run used none.
+    authored_uncertainty: list[AuthoredUncertainty] = Field(default_factory=list)
     # Per-method, per-stage subtotal of impact (Patch 4B). Populated only
     # when `scope == "all"` — for specific-stage scopes the result is
     # already that one stage and a breakdown would be redundant.
@@ -531,6 +537,9 @@ class MonteCarloResult(BaseModel):
     #: used has no flow characterised by that method, so its contribution is
     #: unknown, not zero. An annotation -- never changes a number.
     coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
+    #: Authored exchanges this run used and where their uncertainty came from
+    #: (``ecoinvent`` or ``supplied``). Empty when the run used none.
+    authored_uncertainty: list[AuthoredUncertainty] = Field(default_factory=list)
     #: Compute-time provenance. ``None`` on results stored before this
     #: shipped -- a builder writes "not recorded", NEVER today's date.
     computed_at: str | None = None          # ISO-8601 UTC
@@ -646,6 +655,9 @@ class ItemDistribution(BaseModel):
     #: used has no flow characterised by that method, so its contribution is
     #: unknown, not zero. An annotation -- never changes a number.
     coverage_gaps: list[CoverageGap] | None = None  # None = not recorded (pre-check result)
+    #: Authored exchanges this run used and where their uncertainty came from
+    #: (``ecoinvent`` or ``supplied``). Empty when the run used none.
+    authored_uncertainty: list[AuthoredUncertainty] = Field(default_factory=list)
 
 
 class PairwiseDifference(BaseModel):

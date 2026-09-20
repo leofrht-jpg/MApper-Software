@@ -1026,7 +1026,16 @@ export async function getMethods(): Promise<MethodFamily[]> {
 
 export type PedigreeScoresInput = Record<string, number>
 export type AuthoredScope = 'complete' | 'partial'
-export type FloorStatus = 'floored' | 'below_floor_with_reason' | 'unfloored'
+export type FloorStatus = 'floored' | 'below_floor_with_reason' | 'unfloored' | 'not_applicable'
+
+/** Where an exchange's uncertainty comes from.
+ *  `ecoinvent` (the default, and what every exchange written before this was):
+ *  the amount is an emission, so ecoinvent's spread for that flow is the
+ *  reference -- its median is the basic variance and the GSD2 floor applies.
+ *  `supplied`: the amount is a characterised RESULT whose uncertainty belongs
+ *  to whoever produced it (a supplier PCF, an EPD). The author states the
+ *  variance and its source, and no floor is checked. */
+export type UncertaintyBasis = 'ecoinvent' | 'supplied'
 
 export interface AuthoredExchangeInput {
   flow_database: string
@@ -1036,6 +1045,9 @@ export interface AuthoredExchangeInput {
   basic_variance?: number | null
   basic_variance_reason?: string | null
   floor_reason?: string | null
+  /** Default `ecoinvent`. `supplied` asks for MORE than the default (a variance
+   *  AND its source), never less -- see UncertaintyBasis. */
+  uncertainty_basis?: UncertaintyBasis
 }
 
 export interface AuthoredActivityInput {
@@ -1064,7 +1076,7 @@ export interface AuthoredExchange {
   amount: number
   pedigree: PedigreeScoresInput
   basic_variance: number
-  basic_variance_source: 'ecoinvent_median' | 'user_entered'
+  basic_variance_source: 'ecoinvent_median' | 'user_entered' | 'supplied'
   basic_variance_detail: string
   sigma: number
   gsd2: number
@@ -1072,6 +1084,8 @@ export interface AuthoredExchange {
   floor_gsd2: number | null
   floor_detail: string
   floor_reason: string | null
+  /** Absent on exchanges written before the field existed = `ecoinvent`. */
+  uncertainty_basis?: UncertaintyBasis
 }
 
 export interface AuthoredActivity {
@@ -1120,6 +1134,21 @@ export interface CoverageGap {
    *  not_declared: listed flows contribute, but the author has not declared it complete.
    *  Absent on gaps stored before the declaration existed = not_reached. */
   kind?: 'not_reached' | 'not_declared'
+}
+
+/** One authored exchange a result used, and where its uncertainty came from.
+ *  Carried on the result so a reader comparing GSD2s can see which of them are
+ *  ecoinvent-referenced and which are not. Both bases are listed. */
+export interface AuthoredUncertainty {
+  database: string
+  code: string
+  activity_name: string
+  flow_name: string
+  flow_categories: string[]
+  basic_variance: number
+  gsd2: number
+  basis: UncertaintyBasis
+  detail: string
 }
 
 export interface AESACoverageGap extends CoverageGap {

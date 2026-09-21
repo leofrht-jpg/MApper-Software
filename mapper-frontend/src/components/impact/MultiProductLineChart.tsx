@@ -24,6 +24,7 @@
 // static (ecoinvent) vintage has no year/ssp → rendered as a labeled horizontal
 // reference line.
 
+import { methodKey } from '../../utils/methodLabels'
 import { useMemo, useRef, useState } from 'react'
 import {
   CartesianGrid, Line, LineChart, ReferenceLine, ResponsiveContainer,
@@ -50,7 +51,7 @@ interface Props {
   result: MultiProductLCAResult
   /** Structured vintage coords keyed by item_id ("{database}|{code}"). */
   vintageCoords: Record<string, VintageCoord>
-  selectedMethodLabel: string | null
+  selectedMethodKey: string | null
   filenameBase: string
   /** Shared activity caption (e.g. "electricity, low voltage · DK · kWh"). */
   subtitle?: string
@@ -60,9 +61,11 @@ function scenarioColor(idx: number): string {
   return SCENARIO_PALETTE[idx % SCENARIO_PALETTE.length]
 }
 
-function scoreFor(item: MultiProductLCAResult['items'][number], methodLabel: string): number | null {
+function scoreFor(item: MultiProductLCAResult['items'][number], key: string): number | null {
   const results = item.archetype_result?.results ?? item.activity_result?.results ?? []
-  const m = results.find((r) => r.method_label === methodLabel)
+  // Matched on the FULL tuple. Matched on the label, this picked the first of
+  // the four EF v3.1 climate indicators whatever the user selected.
+  const m = results.find((r) => methodKey(r.method) === key)
   return m ? m.score : null
 }
 
@@ -87,7 +90,7 @@ export interface VintageLineModel {
 export function buildVintageLineModel(
   items: MultiProductLCAResult['items'],
   vintageCoords: Record<string, VintageCoord>,
-  selectedMethodLabel: string | null,
+  selectedMethodKey: string | null,
 ): VintageLineModel {
   const success = items.filter((it) => it.status === 'success')
   const iams = new Set<string>()
@@ -102,10 +105,10 @@ export function buildVintageLineModel(
   let unit = ''
   for (const it of success) {
     const c = vintageCoords[it.item_id]
-    const v = selectedMethodLabel ? scoreFor(it, selectedMethodLabel) : null
+    const v = selectedMethodKey ? scoreFor(it, selectedMethodKey) : null
     if (v == null) continue
     const results = it.activity_result?.results ?? it.archetype_result?.results ?? []
-    const mr = results.find((r) => r.method_label === selectedMethodLabel)
+    const mr = results.find((r) => methodKey(r.method) === selectedMethodKey)
     if (mr) unit = mr.unit
     if (c && c.ssp && c.year != null) {
       const key = `${c.base_database ?? ''}|${c.iam ?? ''}|${c.ssp}`
@@ -136,7 +139,7 @@ export function buildVintageLineModel(
 }
 
 export function MultiProductLineChart({
-  result, vintageCoords, selectedMethodLabel, filenameBase, subtitle,
+  result, vintageCoords, selectedMethodKey, filenameBase, subtitle,
 }: Props) {
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -144,7 +147,7 @@ export function MultiProductLineChart({
   const [hidden, setHidden] = useState<Set<string>>(new Set())
 
   const { scenarios, staticLines, rows, unit, years } = useMemo(() => {
-    const model = buildVintageLineModel(result.items, vintageCoords, selectedMethodLabel)
+    const model = buildVintageLineModel(result.items, vintageCoords, selectedMethodKey)
     // Recharts rows: one per year, one numeric key per scenario label. Missing
     // points → null so connectNulls=false leaves gaps (no interpolation).
     const rows = model.years.map((year) => {
@@ -156,9 +159,9 @@ export function MultiProductLineChart({
       return row
     })
     return { ...model, rows }
-  }, [result, vintageCoords, selectedMethodLabel])
+  }, [result, vintageCoords, selectedMethodKey])
 
-  if (!selectedMethodLabel) {
+  if (!selectedMethodKey) {
     return (
       <div data-testid="multi-product-line-no-method" style={{ padding: 'var(--space-4)', textAlign: 'center', fontSize: 11, color: 'var(--text-tertiary)' }}>
         Pick an impact method above.

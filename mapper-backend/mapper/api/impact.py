@@ -73,6 +73,7 @@ from mapper.core.subsystem_engine import (
     compute_subsystem_result,
     subsystem_has_stock_source,
 )
+from mapper.core.method_labels import disambiguated_labels, method_path
 from mapper.models.bom_schemas import (
     ImpactAssessmentMeta,
     ImpactAssessmentRequest,
@@ -1225,7 +1226,8 @@ def _build_multi_scenario_workbook(
     # All scenarios share methods/years (driven by same request body), so we
     # take indicator labels from the first scenario.
     first_results = scenarios[0].result.results
-    labels = [_short_method_label(r.method) for r in first_results]
+    _fleet_methods = [r.method for r in first_results]
+    labels = [_short_method_label(r.method, _fleet_methods) for r in first_results]
     units = [r.unit for r in first_results]
     year_set: set[int] = set()
     for s in scenarios:
@@ -1281,7 +1283,7 @@ def _build_multi_scenario_workbook(
                 sc.base_db,
                 sc.iam,
                 sc.ssp,
-                _short_method_label(r.method),
+                _short_method_label(r.method, _fleet_methods),
                 " › ".join(r.method),
                 r.unit,
                 r.summary.total_impact,
@@ -1510,7 +1512,8 @@ def _build_multi_param_workbook(
     # Indicator labels come from the first scenario; all scenarios share the
     # same method list since they're spawned from one request body.
     first_results = scenarios[0].result.results
-    labels = [_short_method_label(r.method) for r in first_results]
+    _fleet_methods = [r.method for r in first_results]
+    labels = [_short_method_label(r.method, _fleet_methods) for r in first_results]
     units = [r.unit for r in first_results]
 
     year_set: set[int] = set()
@@ -1568,7 +1571,7 @@ def _build_multi_param_workbook(
         for r in s.result.results:
             ws.append([
                 s.scenario,
-                _short_method_label(r.method),
+                _short_method_label(r.method, _fleet_methods),
                 " › ".join(r.method),
                 r.unit,
                 r.summary.total_impact,
@@ -1817,7 +1820,8 @@ def _build_multi_dsm_workbook(
     # Indicator labels come from the first scenario; all share the same method
     # list since they're spawned from one request body.
     first_results = scenarios[0].result.results
-    labels = [_short_method_label(r.method) for r in first_results]
+    _fleet_methods = [r.method for r in first_results]
+    labels = [_short_method_label(r.method, _fleet_methods) for r in first_results]
     units = [r.unit for r in first_results]
 
     year_set: set[int] = set()
@@ -1875,7 +1879,7 @@ def _build_multi_dsm_workbook(
         for r in s.result.results:
             ws.append([
                 s.scenario_name,
-                _short_method_label(r.method),
+                _short_method_label(r.method, _fleet_methods),
                 " › ".join(r.method),
                 r.unit,
                 r.summary.total_impact,
@@ -2107,7 +2111,8 @@ def _build_multi_paired_workbook(
     # Submission order from the request body is preserved through the
     # envelope — matches the in-app pair list order.
     first_results = pairs[0].result.results
-    labels = [_short_method_label(r.method) for r in first_results]
+    _fleet_methods = [r.method for r in first_results]
+    labels = [_short_method_label(r.method, _fleet_methods) for r in first_results]
     units = [r.unit for r in first_results]
 
     year_set: set[int] = set()
@@ -2165,7 +2170,7 @@ def _build_multi_paired_workbook(
         for r in p.result.results:
             ws.append([
                 plabel,
-                _short_method_label(r.method),
+                _short_method_label(r.method, _fleet_methods),
                 " › ".join(r.method),
                 r.unit,
                 r.summary.total_impact,
@@ -2638,12 +2643,21 @@ def _sp_stage_amount_meta_rows(meta) -> list[tuple[str, Any]]:
     ]
 
 
-def _sp_short_method(method: list[str]) -> str:
+def _sp_short_method(method: list[str], among: list | None = None) -> str:
     """Short label for an LCIA method tuple. The full path goes in a
     sibling column when needed; this is what the user sees as the row
-    name."""
+    name.
+
+    ``among`` is the other methods in the same table. Given it, the label is
+    disambiguated (``core.method_labels``) so two indicators never share a row
+    name -- EF v3.1 has four called "global warming potential (GWP100)".
+    Without it the bare indicator is returned, which is correct only where the
+    caller has already established the labels are unique.
+    """
     if not method:
         return "?"
+    if among:
+        return disambiguated_labels(among).get(tuple(method), method[-1])
     return method[-1]
 
 
@@ -2799,8 +2813,8 @@ def _build_single_product_static_workbook(
         for _label, sr in scenarios:
             if not sr.stage_breakdown:
                 continue
-            for _method_label, by_stage in sr.stage_breakdown.items():
-                for stage in by_stage.keys():
+            for entry in sr.stage_breakdown:
+                for stage in entry.by_stage.keys():
                     if stage not in seen:
                         seen.add(stage)
                         stage_order.append(stage)
@@ -2815,22 +2829,22 @@ def _build_single_product_static_workbook(
         for label, sr in scenarios:
             if not sr.stage_breakdown:
                 continue
-            # Map method tuple → ArchetypeLCAMethodResult for unit lookup
-            unit_by_label = {
-                _sp_short_method(r.method): r.unit for r in sr.results
-            }
-            path_by_label = {
-                _sp_short_method(r.method): " › ".join(r.method) for r in sr.results
-            }
-            for method_label, by_stage in sr.stage_breakdown.items():
+            # Keyed by the FULL method tuple. Keyed by the label, this sheet
+            # emitted 14 rows for 25 indicators and could pair a surviving row
+            # with another indicator's path and unit.
+            unit_by_method = {tuple(r.method): r.unit for r in sr.results}
+            sr_methods = [r.method for r in sr.results]
+            for entry in sr.stage_breakdown:
+                mkey = tuple(entry.method)
+                by_stage = entry.by_stage
                 row_total = sum(by_stage.values())
                 row: list = []
                 if is_multi:
                     row.append(label)
                 row.extend([
-                    method_label,
-                    path_by_label.get(method_label, "—"),
-                    unit_by_label.get(method_label, ""),
+                    _sp_short_method(entry.method, sr_methods),
+                    method_path(entry.method),
+                    unit_by_method.get(mkey, ""),
                 ])
                 for stage in stage_order:
                     row.append(by_stage.get(stage, 0.0))
@@ -3024,8 +3038,8 @@ def _build_single_product_prospective_workbook(
         for r in sorted_runs:
             if not r.result.stage_breakdown:
                 continue
-            for _ml, by_stage in r.result.stage_breakdown.items():
-                for stage in by_stage.keys():
+            for entry in r.result.stage_breakdown:
+                for stage in entry.by_stage.keys():
                     if stage not in seen_stages:
                         seen_stages.add(stage)
                         stage_order.append(stage)
@@ -3040,21 +3054,18 @@ def _build_single_product_prospective_workbook(
         for r in sorted_runs:
             if not r.result.stage_breakdown:
                 continue
-            unit_by_label = {
-                _sp_short_method(m.method): m.unit for m in r.result.results
-            }
-            path_by_label = {
-                _sp_short_method(m.method): " › ".join(m.method)
-                for m in r.result.results
-            }
-            for method_label, by_stage in r.result.stage_breakdown.items():
+            # Full tuple, as in the static sheet: the label is not unique.
+            unit_by_method = {tuple(m.method): m.unit for m in r.result.results}
+            run_methods = [m.method for m in r.result.results]
+            for entry in r.result.stage_breakdown:
+                by_stage = entry.by_stage
                 total = sum(by_stage.values())
                 row: list = [
                     r.db_name, r.iam, r.ssp,
                     r.year if r.year is not None else "—",
-                    method_label,
-                    path_by_label.get(method_label, "—"),
-                    unit_by_label.get(method_label, ""),
+                    _sp_short_method(entry.method, run_methods),
+                    method_path(entry.method),
+                    unit_by_method.get(tuple(entry.method), ""),
                 ]
                 for stage in stage_order:
                     row.append(by_stage.get(stage, 0.0))
@@ -3420,14 +3431,20 @@ async def ws_progress(websocket: WebSocket, task_id: str) -> None:
 # ── Multi-product LCA comparison export (Patch 4AG.4) ──────────────────────────
 
 
-def _mp_unique_method_labels(result: MultiProductLCAResult) -> list[tuple[str, str]]:
-    """Walk successful items and collect unique (method_label, unit)
-    pairs in first-seen order. Failed items contribute nothing. The
-    `unit` is paired so the wide-shape sheet headers can show
-    "method (unit)" for unambiguous readout — methods with the same
-    label across different LCIA packages would otherwise collide."""
-    seen: dict[str, str] = {}
-    order: list[str] = []
+def _mp_unique_method_columns(
+    result: MultiProductLCAResult,
+) -> list[tuple[tuple[str, ...], str, str]]:
+    """The wide sheet's columns: ``(method_tuple, label, unit)``, first-seen.
+
+    Deduplicated on the FULL TUPLE. Deduplicating on the label dropped 11 of
+    EF v3.1's 25 indicators from this sheet -- the four climate-change variants
+    share the label "global warming potential (GWP100)" AND the unit
+    "kg CO2-Eq", so pairing the unit into the header did not disambiguate them
+    either. Labels are resolved once, against the whole column set, so two
+    columns never carry the same name.
+    """
+    seen: dict[tuple[str, ...], str] = {}
+    order: list[tuple[str, ...]] = []
     for item in result.items:
         if item.status != "success":
             continue
@@ -3436,10 +3453,12 @@ def _mp_unique_method_labels(result: MultiProductLCAResult) -> list[tuple[str, s
             item.activity_result.results if item.activity_result else []
         )
         for m in method_results:
-            if m.method_label not in seen:
-                seen[m.method_label] = m.unit
-                order.append(m.method_label)
-    return [(label, seen[label]) for label in order]
+            mkey = tuple(m.method)
+            if mkey not in seen:
+                seen[mkey] = m.unit
+                order.append(mkey)
+    labels = disambiguated_labels(order)
+    return [(mkey, labels.get(mkey, mkey[-1] if mkey else "?"), seen[mkey]) for mkey in order]
 
 
 def _build_multi_product_workbook(body: MultiProductExportRequest):
@@ -3476,8 +3495,10 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
     _case_envelopes = (
         [(c, _by_case[c]) for c in _order] if _multi_case else [("Base", result)]
     )
-    method_pairs = _mp_unique_method_labels(result)  # [(label, unit), ...]
-    method_labels = [m for m, _ in method_pairs]
+    # (method_tuple, label, unit) per column -- the tuple is the identity, the
+    # label is what the header says.
+    method_cols = _mp_unique_method_columns(result)
+    method_labels = [lbl for _mk, lbl, _u in method_cols]
 
     wb = Workbook()
 
@@ -3609,7 +3630,7 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
     # (the column header is the same string the user sees in-app). Emitted only
     # when more than Base was run, so a single-case export is byte-identical.
     header = (["Sensitivity case"] if _multi_case else []) + \
-        ["#", "Type", "Item"] + [f"{lbl} ({unit})" for lbl, unit in method_pairs] + ["Error"]
+        ["#", "Type", "Item"] + [f"{lbl} ({unit})" for _mk, lbl, unit in method_cols] + ["Error"]
     ws_wide.append(header)
     _sp_style_header(ws_wide)
     _lead = 1 if _multi_case else 0
@@ -3619,16 +3640,18 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
             item.archetype_result.results if item.archetype_result else
             item.activity_result.results if item.activity_result else []
         )
-        by_label = {m.method_label: m.score for m in method_results}
+        # Full tuple. Keyed by the label, each of the four climate columns
+        # showed whichever climate variant happened to be last in the list.
+        by_method = {tuple(m.method): m.score for m in method_results}
         row = ([_case] if _multi_case else []) + [i, item.type, item.label]
-        for label, _unit in method_pairs:
-            v = by_label.get(label)
+        for mkey, _lbl, _unit in method_cols:
+            v = by_method.get(mkey)
             row.append(v if v is not None else "—")
         row.append(item.error_message or "")
         ws_wide.append(row)
         # Format method-score cells in scientific notation. Skip
         # non-numeric "—" cells (failed items contribute strings).
-        for col_idx in range(4 + _lead, 4 + _lead + len(method_pairs)):
+        for col_idx in range(4 + _lead, 4 + _lead + len(method_cols)):
             cell = ws_wide.cell(row=ws_wide.max_row, column=col_idx)
             if isinstance(cell.value, (int, float)):
                 cell.number_format = "0.000E+00"
@@ -3678,21 +3701,28 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
         ws_sb.append([])
         # Collect all stages across methods in first-seen order.
         stage_order: list[str] = []
-        for stages in sb.values():
-            for stage in stages.keys():
+        for entry in sb:
+            for stage in entry.by_stage.keys():
                 if stage not in stage_order:
                     stage_order.append(stage)
-        header_row = ["Method", "Unit"] + stage_order + ["Total"]
+        header_row = ["Method", "Method path", "Unit"] + stage_order + ["Total"]
         ws_sb.append(header_row)
         _sp_style_header(ws_sb, ws_sb.max_row)
         method_results = item.archetype_result.results
+        # Full tuple. Keyed by the label this sheet still wrote all 25 rows --
+        # which is what made it the worst of the set: the four climate rows
+        # silently carried ONE stage vector between them and looked complete.
+        stages_by_method = {tuple(e.method): e.by_stage for e in sb}
+        item_methods = [m.method for m in method_results]
         for m in method_results:
-            method_stages = sb.get(m.method_label, {})
+            method_stages = stages_by_method.get(tuple(m.method), {})
             stage_values = [method_stages.get(s, 0.0) for s in stage_order]
             total = sum(stage_values)
-            ws_sb.append([m.method_label, m.unit, *stage_values, total])
+            ws_sb.append([_sp_short_method(m.method, item_methods),
+                          method_path(m.method), m.unit, *stage_values, total])
             row_idx = ws_sb.max_row
-            for col_idx in range(3, 3 + len(stage_order) + 1):
+            # Stages start at column 4 now (Method, Method path, Unit).
+            for col_idx in range(4, 4 + len(stage_order) + 1):
                 ws_sb.cell(row=row_idx, column=col_idx).number_format = "0.000E+00"
         _sp_autosize(ws_sb)
 

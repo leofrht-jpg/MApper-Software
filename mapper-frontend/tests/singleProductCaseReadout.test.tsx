@@ -21,6 +21,7 @@ vi.mock('../src/api/client', async () => {
 })
 
 const LABEL = 'climate change | GWP100'
+const METHOD_TUPLE = [FAM, 'climate change', 'GWP100']
 function res(sc: string, total: number, mfg: number, use: number) {
   return {
     archetype_id: 'a1', archetype_name: 'A - Circular EV', scope: 'all', amount: 1,
@@ -28,7 +29,7 @@ function res(sc: string, total: number, mfg: number, use: number) {
     results: [{ method: [FAM, 'climate change', 'GWP100'], method_label: LABEL, score: total, unit: 'kg CO2-eq', contributions: [] }],
     elapsed_seconds: 1, compute_database: null,
     parameter_scenario: sc === 'Base' ? null : sc, warnings: [],
-    stage_breakdown: { [LABEL]: { 'Manufacturing': mfg, 'Use Phase': use } },
+    stage_breakdown: [{ method: METHOD_TUPLE, by_stage: { 'Manufacturing': mfg, 'Use Phase': use } }],
   }
 }
 
@@ -93,8 +94,8 @@ describe('an exported chart cannot be mistaken for Base', () => {
     const { result } = renderHook(() => useNumberFormatter())
     const { container } = render(
       <StageBreakdownChart
-        stageBreakdown={{ [LABEL]: { Manufacturing: 300 } }}
-        methods={[{ method_label: LABEL, score: 300, unit: 'kg' }]}
+        stageBreakdown={[{ method: METHOD_TUPLE, by_stage: { Manufacturing: 300 } }]}
+        methods={[{ method: METHOD_TUPLE, method_label: LABEL, score: 300, unit: 'kg' }]}
         format={result.current}
         filenameBase="a_circular_ev"
         caseLabel="sa_early_repurpose_120kkm"
@@ -111,8 +112,8 @@ describe('an exported chart cannot be mistaken for Base', () => {
     const { result } = renderHook(() => useNumberFormatter())
     const { container } = render(
       <StageBreakdownChart
-        stageBreakdown={{ [LABEL]: { Manufacturing: 300 } }}
-        methods={[{ method_label: LABEL, score: 300, unit: 'kg' }]}
+        stageBreakdown={[{ method: METHOD_TUPLE, by_stage: { Manufacturing: 300 } }]}
+        methods={[{ method: METHOD_TUPLE, method_label: LABEL, score: 300, unit: 'kg' }]}
         format={result.current}
         filenameBase="x"
       />,

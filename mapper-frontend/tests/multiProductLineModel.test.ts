@@ -8,6 +8,7 @@
  */
 
 import { describe, it, expect } from 'vitest'
+import { methodKey } from '../src/utils/methodLabels'
 import { buildVintageLineModel } from '../src/components/impact/MultiProductLineChart'
 import { shortenByCommonPrefix } from '../src/utils/labelPrefix'
 import type { MultiProductLCAResult } from '../src/api/client'
@@ -55,7 +56,7 @@ function build(ssps: string[], years: number[]) {
 describe('buildVintageLineModel — scenario-series mapping', () => {
   it('maps one series per (base+iam+ssp) scenario, plotted by year', () => {
     const { items, coords } = build(['SSP1-PkBudg1150', 'SSP2', 'SSP5-PkBudg1150'], [2030, 2040, 2050])
-    const model = buildVintageLineModel(items, coords, METHOD)
+    const model = buildVintageLineModel(items, coords, methodKey(['m']))
     // 18 items → 3 scenarios (not 18 series).
     expect(model.scenarios.map((s) => s.label).sort()).toEqual(['SSP1-PkBudg1150', 'SSP2', 'SSP5-PkBudg1150'])
     expect(model.years).toEqual([2030, 2040, 2050])
@@ -67,7 +68,7 @@ describe('buildVintageLineModel — scenario-series mapping', () => {
 
   it('reflects the audited DK-grid ordering SSP1 > SSP2 > SSP5 at a fixed year', () => {
     const { items, coords } = build(['SSP1-PkBudg1150', 'SSP2', 'SSP5-PkBudg1150'], [2030, 2040, 2050])
-    const model = buildVintageLineModel(items, coords, METHOD)
+    const model = buildVintageLineModel(items, coords, methodKey(['m']))
     const at = (label: string, year: number) =>
       model.scenarios.find((s) => s.label === label)!.points.find((p) => p.year === year)!.value
     expect(at('SSP1-PkBudg1150', 2040)).toBeGreaterThan(at('SSP2', 2040))
@@ -76,7 +77,7 @@ describe('buildVintageLineModel — scenario-series mapping', () => {
 
   it('colors series by ORIGINAL sorted index — stable regardless of which is hidden later', () => {
     const { items, coords } = build(['SSP1-PkBudg1150', 'SSP2', 'SSP5-PkBudg1150'], [2030, 2040])
-    const model = buildVintageLineModel(items, coords, METHOD)
+    const model = buildVintageLineModel(items, coords, methodKey(['m']))
     const colors = model.scenarios.map((s) => s.color)
     // Distinct colors, indexed by sorted order (not by data value).
     expect(new Set(colors).size).toBe(3)
@@ -90,7 +91,7 @@ describe('buildVintageLineModel — scenario-series mapping', () => {
       status: 'success', activity_result: { results: [{ method: ['m'], method_label: METHOD, score: 0.5, unit: 'kg CO2-eq', contributions: [] }], elapsed_seconds: 0 } as any,
     }
     const allCoords = { ...coords, [`${BASE}|${CODE}`]: { label: 'ecoinvent', database: BASE, base_database: BASE, iam: null, ssp: null, year: null } }
-    const model = buildVintageLineModel([...items, staticItem], allCoords, METHOD)
+    const model = buildVintageLineModel([...items, staticItem], allCoords, methodKey(['m']))
     expect(model.scenarios).toHaveLength(1)                 // only the premise scenario
     expect(model.staticLines).toEqual([{ label: 'ecoinvent', value: 0.5 }])
   })
@@ -101,7 +102,7 @@ describe('buildVintageLineModel — scenario-series mapping', () => {
       premiseItem('SSP2', 2030), premiseItem('SSP2', 2040), premiseItem('SSP2', 2050)]
     const coords = { ...coordFor('SSP1-PkBudg1150', 2030), ...coordFor('SSP1-PkBudg1150', 2050),
       ...coordFor('SSP2', 2030), ...coordFor('SSP2', 2040), ...coordFor('SSP2', 2050) }
-    const model = buildVintageLineModel(items, coords, METHOD)
+    const model = buildVintageLineModel(items, coords, methodKey(['m']))
     expect(model.years).toEqual([2030, 2040, 2050])
     const ssp1 = model.scenarios.find((s) => s.label === 'SSP1-PkBudg1150')!
     // SSP1 has only 2 points (2040 absent) — the row builder will null 2040.

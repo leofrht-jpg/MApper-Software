@@ -41,6 +41,7 @@ from openpyxl import load_workbook
 
 from mapper.api.impact import _build_multi_product_workbook, post_export_multi_product
 from mapper.models.schemas import (
+    StageBreakdownEntry,
     ActivityContribution,
     ActivityLCAMethodResult,
     ActivityLCAResult,
@@ -69,10 +70,12 @@ def _arc_result(arc_id: str, name: str, score: float, with_stages: bool = True) 
                 score=score * 0.001, unit="m3 depriv.", contributions=[],
             ),
         ],
-        stage_breakdown={
-            "EF v3.1 › climate change › GWP100": {"Manufacturing": score * 0.7, "Use Phase": score * 0.3},
-            "EF v3.1 › water use › deprivation": {"Manufacturing": score * 0.0005, "Use Phase": score * 0.0005},
-        } if with_stages else None,
+        stage_breakdown=[
+            StageBreakdownEntry(method=["EF v3.1", "climate change", "GWP100"],
+                                by_stage={"Manufacturing": score * 0.7, "Use Phase": score * 0.3}),
+            StageBreakdownEntry(method=["EF v3.1", "water use", "deprivation"],
+                                by_stage={"Manufacturing": score * 0.0005, "Use Phase": score * 0.0005}),
+        ] if with_stages else None,
         elapsed_seconds=0.1,
     )
 

@@ -13,19 +13,24 @@ import { ChartExportContainer } from './ChartExportContainer'
 import { NumberFormatControl } from './NumberFormatControl'
 import { type useNumberFormatter } from './numberFormat'
 import { CHART_PALETTE } from '../../utils/chartColors'
+import { type StageBreakdownEntry } from '../../api/client'
 
 type NumberFormatterAPI = ReturnType<typeof useNumberFormatter>
 
 interface MethodRow {
+  /** The full tuple: the identity. Lookups key on this, never on the label. */
+  method: string[]
   method_label: string
   score: number
   unit: string
 }
 
+import { methodKey } from '../../utils/methodLabels'
+
 interface Props {
   // Patch 4B — per-method × per-stage subtotal of impact (scope=all only).
-  // Shape mirrors the backend response: { method_label: { stage: score } }.
-  stageBreakdown: Record<string, Record<string, number>>
+  // A list addressed by the FULL method tuple, mirroring the backend.
+  stageBreakdown: StageBreakdownEntry[]
   methods: MethodRow[]
   format: NumberFormatterAPI
   // Used as part of the chart export filename suffix.
@@ -50,13 +55,20 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
   const chartRef = useRef<HTMLDivElement>(null)
   const [hover, setHover] = useState<{ method: string; stage: string } | null>(null)
 
+  // Built once per render from the full tuple; every lookup below goes
+  // through it, so no code path can fall back to the ambiguous label.
+  const byMethod = useMemo(
+    () => new Map(stageBreakdown.map((e) => [methodKey(e.method), e.by_stage])),
+    [stageBreakdown],
+  )
+
   // Stable stage order: first appearance in the first method's breakdown.
   // Stages come from BOM root names which are consistent across methods.
   const stageOrder = useMemo(() => {
     const seen = new Set<string>()
     const order: string[] = []
     for (const method of methods) {
-      const subtotals = stageBreakdown[method.method_label]
+      const subtotals = byMethod.get(methodKey(method.method))
       if (!subtotals) continue
       for (const stage of Object.keys(subtotals)) {
         if (!seen.has(stage)) {
@@ -66,7 +78,7 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
       }
     }
     return order
-  }, [methods, stageBreakdown])
+  }, [methods, byMethod])
 
   const stageColors = useMemo(() => {
     const map: Record<string, string> = {}
@@ -110,7 +122,7 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
       <ChartExportContainer ref={chartRef}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {methods.map((m) => {
-            const subtotals = stageBreakdown[m.method_label] ?? {}
+            const subtotals = byMethod.get(methodKey(m.method)) ?? {}
             const total = Object.values(subtotals).reduce((a, b) => a + b, 0)
             // GROSS denominator, so widths always sum to 100%. With |net| a
             // mixed-sign bar overflows its container and the excess is clipped
@@ -122,8 +134,9 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
             const denom = gross > 1e-30 ? gross : 1
             return (
               <div
-                key={m.method_label}
+                key={methodKey(m.method)}
                 data-testid={`stage-breakdown-row-${m.method_label}`}
+                title={m.method.join(' › ')}
                 style={{ display: 'flex', alignItems: 'center', gap: 12 }}
               >
                 <div style={{ width: 200, flexShrink: 0 }}>
@@ -182,7 +195,7 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
             )
           })}
 
-          {methods.some((m) => Object.values(stageBreakdown[m.method_label] ?? {}).some((v) => v < 0)) && (
+          {methods.some((m) => Object.values(byMethod.get(methodKey(m.method)) ?? {}).some((v) => v < 0)) && (
             <div
               data-testid="stage-breakdown-credit-note"
               style={{ marginLeft: 212, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}

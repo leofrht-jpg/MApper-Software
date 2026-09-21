@@ -7,6 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { methodKey } from '../../utils/methodLabels'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Loader2, Dice5 } from 'lucide-react'
 import {
@@ -247,7 +248,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   }, [activeResult, scenarioOrder, resultsByScenario, scope, archetypeId, stageAmountsByArc])
   const hasStageBreakdown =
     !!activeResult?.stage_breakdown &&
-    Object.keys(activeResult.stage_breakdown).length > 0
+    activeResult.stage_breakdown.length > 0
   const isStale =
     !!activeResult &&
     !stageAmountsEqual(activeResult.stage_amounts, currentStageAmounts)
@@ -485,6 +486,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
               <StageBreakdownChart
                 stageBreakdown={activeResult.stage_breakdown}
                 methods={activeResult.results.map((r) => ({
+                  method: r.method,
                   method_label: r.method_label,
                   score: r.score,
                   unit: r.unit,
@@ -505,14 +507,14 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
               <div style={{ marginTop: 'var(--space-4)' }}>
                 <SensitivityRangeChart
                   base={resultsByScenario[BASE_SCENARIO]?.results
-                    .find((r) => r.method_label === activeResult.results[0].method_label)?.score
+                    .find((r) => methodKey(r.method) === methodKey(activeResult.results[0].method))?.score
                     ?? activeResult.results[0].score}
                   cases={scenarioOrder
                     .filter((c) => c !== BASE_SCENARIO)
                     .map((c) => ({
                       case: c,
                       value: resultsByScenario[c]?.results
-                        .find((r) => r.method_label === activeResult.results[0].method_label)?.score ?? 0,
+                        .find((r) => methodKey(r.method) === methodKey(activeResult.results[0].method))?.score ?? 0,
                     }))}
                   unit={activeResult.results[0].unit}
                   label={activeResult.results[0].method_label}

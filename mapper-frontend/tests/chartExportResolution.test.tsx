@@ -208,8 +208,8 @@ describe('Stage breakdown', () => {
     const { result } = renderHook(() => useNumberFormatter())
     const { container } = render(
       <StageBreakdownChart
-        stageBreakdown={{ m: { Manufacturing: 300 } }}
-        methods={[{ method_label: 'm', score: 300, unit: 'kg' }]}
+        stageBreakdown={[{ method: ['p', 'c', 'm'], by_stage: { Manufacturing: 300 } }]}
+        methods={[{ method: ['p', 'c', 'm'], method_label: 'm', score: 300, unit: 'kg' }]}
         format={result.current} filenameBase="x" />,
     )
     fireEvent.click(container.querySelectorAll('button')[container.querySelectorAll('button').length - 1])
@@ -222,8 +222,8 @@ describe('Stage breakdown', () => {
     const { result } = renderHook(() => useNumberFormatter())
     const { container } = render(
       <StageBreakdownChart
-        stageBreakdown={{ m: { Manufacturing: 300 } }}
-        methods={[{ method_label: 'm', score: 300, unit: 'kg' }]}
+        stageBreakdown={[{ method: ['p', 'c', 'm'], by_stage: { Manufacturing: 300 } }]}
+        methods={[{ method: ['p', 'c', 'm'], method_label: 'm', score: 300, unit: 'kg' }]}
         format={result.current} filenameBase="x" />,
     )
     const btns = container.querySelectorAll('button')

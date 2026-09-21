@@ -17,6 +17,7 @@ import { useActivityStore } from '../src/stores/activityStore'
 import { useProjectStore } from '../src/stores/projectStore'
 import { useMultiProductLCAStore } from '../src/stores/multiProductLCAStore'
 import * as client from '../src/api/client'
+import { methodKey } from '../src/utils/methodLabels'
 import type { ArchetypeSummary, MultiProductLCAResult } from '../src/api/client'
 
 // Patch 4AG.4 — integration tests for the multi-product results
@@ -52,7 +53,8 @@ const RESULT_FULL_SUCCESS: MultiProductLCAResult = {
         { method: ['EF v3.1', 'climate change', 'GWP100'], method_label: 'climate', score: 1234.5, unit: 'kg CO2 eq', contributions: [] },
         { method: ['EF v3.1', 'water use', 'depriv'], method_label: 'water', score: 7.8, unit: 'm3', contributions: [] },
       ],
-      stage_breakdown: { 'climate': { Manufacturing: 1234.5 }, 'water': { Manufacturing: 7.8 } },
+      stage_breakdown: [{ method: ['EF v3.1', 'climate change', 'GWP100'], by_stage: { Manufacturing: 1234.5 } },
+                        { method: ['EF v3.1', 'water use', 'depriv'], by_stage: { Manufacturing: 7.8 } }],
       elapsed_seconds: 0.1,
     } as any,
   }],
@@ -131,8 +133,10 @@ describe('multi-product method picker (Patch 4AG.4)', () => {
     const picker = container.querySelector('[data-testid="multi-product-method-picker"]') as HTMLSelectElement
     expect(picker).not.toBeNull()
     const optionTexts = Array.from(picker.options).map((o) => o.textContent ?? '')
-    expect(optionTexts).toContain('climate')
-    expect(optionTexts).toContain('water')
+    // The picker labels methods from their own tuple, disambiguated against
+    // the other columns -- not from the backend's per-item `method_label`.
+    expect(optionTexts).toContain('climate change')
+    expect(optionTexts).toContain('water use')
   })
 
   it('disappears in table view (the table shows all methods at once)', () => {
@@ -146,14 +150,16 @@ describe('multi-product method picker (Patch 4AG.4)', () => {
     // Initial selection auto-pins to "climate" (first method).
     expect(container.textContent).toContain('kg CO2 eq')
     const picker = container.querySelector('[data-testid="multi-product-method-picker"]') as HTMLSelectElement
-    fireEvent.change(picker, { target: { value: 'water' } })
+    fireEvent.change(picker, { target: { value: methodKey(['EF v3.1', 'water use', 'depriv']) } })
     expect(container.textContent).toContain('m3')
   })
 
   it('default selection is the first method in the result\'s method order', () => {
     const { container } = renderInMultiMode(RESULT_FULL_SUCCESS)
     const picker = container.querySelector('[data-testid="multi-product-method-picker"]') as HTMLSelectElement
-    expect(picker.value).toBe('climate')
+    // The VALUE is the full tuple, not the label: two indicators can share
+    // a label, and selecting one must not select the other.
+    expect(picker.value).toBe(methodKey(['EF v3.1', 'climate change', 'GWP100']))
   })
 })
 

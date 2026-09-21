@@ -33,6 +33,7 @@ import pytest
 from fastapi import HTTPException
 
 from mapper.models.schemas import (
+    StageBreakdownEntry,
     ActivityContribution,
     ActivityLCAMethodResult,
     ActivityLCAResult,
@@ -54,7 +55,9 @@ def _fake_archetype_result(arc_id: str, name: str, score: float) -> ArchetypeLCA
             method_label="EF v3.1 › climate change › GWP100",
             score=score, unit="kg CO2 eq", contributions=[],
         )],
-        stage_breakdown={"EF v3.1 › climate change › GWP100": {"Manufacturing": score * 0.7, "Use Phase": score * 0.3}},
+        stage_breakdown=[StageBreakdownEntry(
+            method=["EF v3.1", "climate change", "GWP100"],
+            by_stage={"Manufacturing": score * 0.7, "Use Phase": score * 0.3})],
         elapsed_seconds=0.1,
     )
 

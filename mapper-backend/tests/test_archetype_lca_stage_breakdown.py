@@ -120,14 +120,19 @@ def test_stage_breakdown_present_when_scope_all_and_sum_invariant(monkeypatch):
     assert res.stage_breakdown is not None, "scope=all should populate stage_breakdown"
     # Stage names mirror BOM root names.
     expected_stages = {"Manufacturing", "Use Phase", "End of Life"}
-    for method_label, by_stage in res.stage_breakdown.items():
-        assert set(by_stage.keys()) == expected_stages, (
-            f"method {method_label!r} missing stages, got {set(by_stage.keys())}"
+    for entry in res.stage_breakdown:
+        assert set(entry.by_stage.keys()) == expected_stages, (
+            f"method {entry.method!r} missing stages, got {set(entry.by_stage.keys())}"
         )
+
+    # One entry per method, addressed by the FULL tuple -- not by the label,
+    # which is not unique across a method family.
+    by_method = {tuple(e.method): e.by_stage for e in res.stage_breakdown}
+    assert len(by_method) == len(res.results), "a method lost its own entry"
 
     # Sum-of-stages invariant: per method, stage subtotals sum to method score.
     for method_result in res.results:
-        subtotals = res.stage_breakdown[method_result.method_label]
+        subtotals = by_method[tuple(method_result.method)]
         stage_sum = sum(subtotals.values())
         assert stage_sum == pytest.approx(method_result.score, rel=1e-9, abs=1e-9), (
             f"stage sum {stage_sum} != method total {method_result.score} for "

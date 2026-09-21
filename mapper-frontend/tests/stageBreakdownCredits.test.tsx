@@ -22,19 +22,20 @@ const fmt = {
   setSettings: () => {},
   format: (v: number) => String(v),
 }
-const METHOD = [{ method_label: 'GWP100', score: 6798.46, unit: 'kg CO2-Eq' }]
+const M = ['EF v3.1', 'climate change', 'GWP100']
+const METHOD = [{ method: M, method_label: 'GWP100', score: 6798.46, unit: 'kg CO2-Eq' }]
 // Fuel Station, real values.
-const WITH_CREDIT = {
-  GWP100: {
+const WITH_CREDIT = [
+  { method: M, by_stage: {
     Manufacturing: 5990.960856,
     'Use Phase': 862.435686,
     Maintenance: 37.839925,
     'End of Life': -92.777048,
-  },
-}
-const ALL_POSITIVE = {
-  GWP100: { Manufacturing: 9405.33, 'Use Phase': 794.44, 'End of Life': 0.0096 },
-}
+  } },
+]
+const ALL_POSITIVE = [
+  { method: M, by_stage: { Manufacturing: 9405.33, 'Use Phase': 794.44, 'End of Life': 0.0096 } },
+]
 
 function widths(container: HTMLElement): number[] {
   return Array.from(container.querySelectorAll('[data-testid^="stage-segment-"]'))

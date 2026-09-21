@@ -356,6 +356,17 @@ class ArchetypeLCAMethodResult(BaseModel):
     contributions: list[MaterialContribution]
 
 
+class StageBreakdownEntry(BaseModel):
+    """One method's per-stage subtotals, addressed by the FULL method tuple.
+
+    The tuple is the identity; ``method[-1]`` is not unique across a method
+    family and must never be used to look an entry up.
+    """
+
+    method: list[str]
+    by_stage: dict[str, float] = {}
+
+
 class ArchetypeLCACalculateResult(BaseModel):
     archetype_id: str
     archetype_name: str
@@ -385,9 +396,13 @@ class ArchetypeLCACalculateResult(BaseModel):
     # Per-method, per-stage subtotal of impact (Patch 4B). Populated only
     # when `scope == "all"` — for specific-stage scopes the result is
     # already that one stage and a breakdown would be redundant.
-    # Shape: {method_label: {stage_name: score}}. Per-method invariant:
-    # sum of stage values equals method.score within float epsilon.
-    stage_breakdown: dict[str, dict[str, float]] | None = None
+    # A LIST addressed by the full method tuple, never a dict keyed by the
+    # indicator label: EF v3.1's 25 indicators share only 14 labels, and the
+    # old `{method_label: ...}` shape silently dropped 11 of them (all four
+    # climate-change variants collapsing onto whichever was written last).
+    # Per-method invariant: sum of stage values equals method.score within
+    # float epsilon.
+    stage_breakdown: list[StageBreakdownEntry] | None = None
     #: Compute-time provenance. ``None`` on results stored before this
     #: shipped -- a builder writes "not recorded", NEVER today's date.
     computed_at: str | None = None          # ISO-8601 UTC

@@ -32,6 +32,7 @@ from mapper.core.bw2_wrapper import (
     run_lca,
 )
 import bw2calc
+from mapper.core.method_labels import disambiguated_labels
 from mapper.core.bom_engine import (
     filter_roots_by_scope,
     flatten_roots,
@@ -57,6 +58,7 @@ from mapper.models.schemas import (
     ArchetypeLCACalculateRequest,
     ArchetypeLCACalculateResult,
     ArchetypeLCAExportRequest,
+    StageBreakdownEntry,
     ArchetypeLCAMethodResult,
     ArchetypeTrajectoryMethodScore,
     ArchetypeTrajectoryRequest,
@@ -269,6 +271,9 @@ async def calculate_activity_lca(body: ActivityLCARequest) -> ActivityLCAResult:
         }
 
     method_tuples = [tuple(ml) for ml in body.methods]
+    # Display labels for this request's methods, disambiguated against each
+    # other. Never a key -- see core.method_labels.
+    act_labels = disambiguated_labels(method_tuples)
 
     # Build total demand
     total_demand: dict[tuple[str, str], float] = {}
@@ -313,7 +318,7 @@ async def calculate_activity_lca(body: ActivityLCARequest) -> ActivityLCAResult:
             ))
 
         contribs.sort(key=lambda c: abs(c.impact), reverse=True)
-        label = method_list[-1] if method_list else ""
+        label = act_labels.get(tuple(method_list), "")
 
         results.append(ActivityLCAMethodResult(
             method=method_list,
@@ -659,10 +664,14 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
     results: list[ArchetypeLCAMethodResult] = []
     # Stage breakdown is populated only when scope == "all" — specific-stage
     # scopes already filter to one stage so a breakdown would be redundant.
-    # Shape: {method_label: {stage_name: score}}.
-    stage_breakdown: dict[str, dict[str, float]] | None = (
-        {} if body.scope == "all" else None
+    # A list of (method tuple, by_stage): keying it by the indicator label
+    # dropped 11 of EF v3.1's 25 indicators, silently.
+    stage_breakdown: list[StageBreakdownEntry] | None = (
+        [] if body.scope == "all" else None
     )
+    # Display labels for this result's method set, disambiguated against each
+    # other. Never a key -- see core.method_labels.
+    labels = disambiguated_labels(method_tuples)
     for method_list, mt in zip(body.methods, method_tuples):
         total_score, unit = total_scores[mt]
 
@@ -712,10 +721,10 @@ async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> Archety
             ))
 
         contribs.sort(key=lambda c: abs(c.impact), reverse=True)
-        label = method_list[-1] if method_list else ""
+        label = labels.get(mt, "")
 
         if stage_breakdown is not None:
-            stage_breakdown[label] = per_stage
+            stage_breakdown.append(StageBreakdownEntry(method=list(method_list), by_stage=per_stage))
 
         results.append(ArchetypeLCAMethodResult(
             method=method_list,
@@ -890,6 +899,7 @@ async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> Ar
     warnings.extend(solve_warnings)
 
     # Assemble the TOTALS-only per-year envelope.
+    traj_labels = disambiguated_labels(bundle.method_tuples)
     years: list[ArchetypeTrajectoryYear] = []
     for year, scores in per_year:
         method_scores: list[ArchetypeTrajectoryMethodScore] = []
@@ -897,7 +907,7 @@ async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> Ar
             score, unit = scores.get(mt, (0.0, ""))
             method_scores.append(ArchetypeTrajectoryMethodScore(
                 method=method_list,
-                method_label=method_list[-1] if method_list else "",
+                method_label=traj_labels.get(mt, ""),
                 score=score,
                 unit=unit,
             ))

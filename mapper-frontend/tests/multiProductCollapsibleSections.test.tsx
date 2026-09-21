@@ -45,7 +45,7 @@ const RESULT: MultiProductLCAResult = {
       archetype_id: 'arc-bev', archetype_name: 'BEV-LFP', scope: 'all',
       amount: 1.0, stage_amounts: {}, stages_included: ['Manufacturing'],
       results: [{ method: ['EF v3.1', 'climate change'], method_label: 'climate', score: 1234.5, unit: 'kg CO2 eq', contributions: [] }],
-      stage_breakdown: { climate: { Manufacturing: 1234.5 } }, elapsed_seconds: 0.1,
+      stage_breakdown: [{ method: ['EF v3.1', 'climate change', 'GWP100'], by_stage: { Manufacturing: 1234.5 } }], elapsed_seconds: 0.1,
     } as any,
   }],
   elapsed_seconds: 0.1, success_count: 1, error_count: 0,

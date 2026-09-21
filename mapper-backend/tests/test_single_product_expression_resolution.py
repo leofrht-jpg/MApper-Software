@@ -106,7 +106,10 @@ def _use_phase(monkeypatch, arc, table, scenario=None) -> float:
     res = asyncio.run(calculate_archetype_lca(ArchetypeLCACalculateRequest(
         archetype_id=arc.id, methods=[["m", "x", "y"]], scope="all",
         parameter_scenario=scenario)))
-    return (res.stage_breakdown or {})[res.results[0].method_label]["Use Phase"]
+    # Addressed by the full method tuple; the label is display only.
+    wanted = tuple(res.results[0].method)
+    (entry,) = [e for e in (res.stage_breakdown or []) if tuple(e.method) == wanted]
+    return entry.by_stage["Use Phase"]
 
 
 def test_expression_resolves_with_no_scenario(monkeypatch):

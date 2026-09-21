@@ -1500,8 +1500,23 @@ def _cached_fleet_keys(system_id: str, res: list) -> set:
 # ── DSM × LCA Excel export ───────────────────────────────────────────────────
 
 
-def _short_method_label(method: list[str]) -> str:
-    return method[-1] if method else "method"
+def _short_method_label(method: list[str], among: list | None = None) -> str:
+    """Column/row label for a method. NEVER a key -- see core.method_labels.
+
+    ``among`` is the other methods on the same sheet. Given it, the label is
+    disambiguated, because ``method[-1]`` is not unique: an EF v3.1 fleet run
+    otherwise produces FOUR columns headed "global warming potential
+    (GWP100)". The numbers under them were always correct and in request
+    order, but a reader transcribing by column name cannot tell which climate
+    variant they have taken.
+    """
+    if not method:
+        return "method"
+    if among:
+        from mapper.core.method_labels import disambiguated_labels
+
+        return disambiguated_labels(among).get(tuple(method), method[-1])
+    return method[-1]
 
 
 def sanitize_filename_part(name: str, fallback: str = "file", max_len: int = 100) -> str:
@@ -1747,7 +1762,8 @@ def _build_mfa_lca_workbook(
                 cell.number_format = SCI_FMT
 
     # Collect common data
-    labels = [_short_method_label(r.method) for r in results]
+    _methods = [r.method for r in results]
+    labels = [_short_method_label(r.method, _methods) for r in results]
     units = [r.unit for r in results]
     years_set: set[int] = set()
     for r in results:
@@ -1818,7 +1834,7 @@ def _build_mfa_lca_workbook(
     data_start = ws.max_row + 1
     for res in results:
         ws.append([
-            _short_method_label(res.method),
+            _short_method_label(res.method, _methods),
             " › ".join(res.method),
             res.unit,
             res.summary.total_impact,

@@ -202,7 +202,7 @@ describe('Multi-item — per-item color stability', () => {
       (c.querySelector(`[data-testid="multi-product-legend-item-${id}"] span`) as HTMLElement).style.backgroundColor
 
     const { container, rerender } = render(
-      <MultiProductComparisonChart result={three} scope="all" selectedMethodLabel="M" />,
+      <MultiProductComparisonChart result={three} scope="all" selectedMethodKey="M" />,
     )
     const ecoBefore = swatch(container, 'db0|elec')
     const ssp5Before = swatch(container, 'db2|elec')
@@ -214,7 +214,7 @@ describe('Multi-item — per-item color stability', () => {
     ])
     // item_ids must match the surviving items so the legend testids line up.
     two.items[1].item_id = 'db2|elec'
-    rerender(<MultiProductComparisonChart result={two} scope="all" selectedMethodLabel="M" />)
+    rerender(<MultiProductComparisonChart result={two} scope="all" selectedMethodKey="M" />)
 
     expect(swatch(container, 'db0|elec')).toBe(ecoBefore)
     expect(swatch(container, 'db2|elec')).toBe(ssp5Before)

@@ -11532,6 +11532,64 @@ link refusals filter on is already refused in authored database names.
   `tests/test_bare_pytest_collects.py`, which runs pytest from a directory
   outside the backend.
 
+## A method is its TUPLE. The label is display only.
+
+`method[-1]` is not unique. Across EF v3.1's 25 indicators there are **14**
+distinct ones: "global warming potential (GWP100)" names four (climate change
+and its biogenic / fossil / land-use variants), "comparative toxic unit for
+human (CTUh)" six, "comparative toxic unit for ecosystems (CTUe)" three, and
+"accumulated exceedance (AE)" names **both acidification and terrestrial
+eutrophication**.
+
+Used as a dict key, that silently dropped **11 of 25** indicators from the
+single-product and multi-product exports, each group collapsing onto whichever
+member was written last. The per-item `SB_*` sheets were the worst of the set:
+they wrote all 25 rows and gave the four climate rows ONE shared stage vector,
+so the sheet looked complete. Measured on delivered workbooks: the Stage
+breakdown sheet held 14 rows against a 25-indicator result, and the surviving
+"global warming potential (GWP100)" row was *climate change: land use and land
+use change*.
+
+**The fleet pipeline was never affected**, for two independent reasons, and
+this is worth knowing before anyone "fixes" it there: every dict on that path
+is keyed on `tuple(r.method)`, and its own `method_label` is
+`" › ".join(m)` — the whole tuple — which is 25/25 distinct.
+
+- **Key on the full tuple.** `stage_breakdown` is a `list[StageBreakdownEntry]`
+  where each entry carries `method: list[str]`, not a `{label: ...}` dict.
+  `method` is REQUIRED on that model: an entry that can be built without one
+  can be written without one.
+- **Labels come from `core/method_labels.py`**, the one implementation
+  (`flow_characterisation._labels` delegates to it). A label is a property of
+  the SET: `m[1]` where that category appears once, `" / ".join(m[1:])` where
+  it does not. The frontend mirrors it in `utils/methodLabels.ts` — the two
+  must agree or a column header and its export disagree.
+- **Fleet sheet headers are disambiguated too.** Not a computation error: the
+  numbers under four identically-named "global warming potential (GWP100)"
+  columns were always correct and in request order. But a reader transcribing
+  by column name cannot tell which climate variant they took, and these sheets
+  are read off for publication. `_short_method_label(method, among)` takes the
+  sheet's method set.
+- **Don't reintroduce a label key.**
+  `tests/test_methods_keyed_by_tuple.py` walks the AST of `api/lca.py`,
+  `api/impact.py`, `api/bom.py`, `api/cohort_export.py`, `api/aesa.py`,
+  `core/dsm_lca_engine.py` and `core/aesa_engine.py` and fails on any dict
+  whose KEY is `.method_label`, `_sp_short_method(...)`, `_short_method_label(...)`
+  or `method[-1]`. A label in a value or in a sheet row is fine.
+
+**AESA was already safe and is unchanged**: `results_by_method` keys on
+`"|".join(r.method)`, and `suggest_method_mapping` matches on `method[1]`,
+which is 25/25 distinct for EF v3.1. Measured against Sala 2020 PB-EF: the 25
+indicators map to 16 boundaries, one method each, so the `(year, pb_id)` SR
+matrix cannot collapse anything. It would only bite with two LCIA packages in
+one run, where two methods can share `method[1]`.
+
+**`is_annual` is a UI hint, by design, not a multiplier.** The schema says so
+(`bom_schemas.BOMNode.is_annual`: "DEPRECATED as a decision input… It must
+never determine a multiplier; `basis` does that") and `content_hash` excludes
+it for the same reason. So the stage-amount preset consulting `basis` and not
+`is_annual` is correct — see the separate note on the lifetime preset.
+
 ## Every node gets an id ON LOAD, not only on create
 
 `assign_ids_to_roots` runs on the create and import routes, but an archetype can

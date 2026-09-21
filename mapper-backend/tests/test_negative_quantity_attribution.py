@@ -77,7 +77,8 @@ def test_the_stage_subtotals_sum_to_the_total():
     finally:
         mp.undo()
     mr = res.results[0]
-    stages = (res.stage_breakdown or {})[mr.method_label]
+    stages = next(e.by_stage for e in (res.stage_breakdown or [])
+                  if tuple(e.method) == tuple(mr.method))
     assert sum(stages.values()) == pytest.approx(mr.score, rel=1e-12), (
         f"unattributed impact: stages {sum(stages.values())!r} vs total "
         f"{mr.score!r}")
@@ -92,7 +93,8 @@ def test_the_negative_row_is_attributed_and_keeps_its_sign():
     finally:
         mp.undo()
     mr = res.results[0]
-    stages = (res.stage_breakdown or {})[mr.method_label]
+    stages = next(e.by_stage for e in (res.stage_breakdown or [])
+                  if tuple(e.method) == tuple(mr.method))
     assert "End of Life" in stages, "the credit stage vanished entirely"
     assert stages["End of Life"] < 0, "a credit must stay negative"
     names = {c.name for c in mr.contributions}
@@ -136,6 +138,7 @@ def test_a_positive_only_bom_is_untouched():
     finally:
         mp.undo()
     mr = res.results[0]
-    stages = (res.stage_breakdown or {})[mr.method_label]
+    stages = next(e.by_stage for e in (res.stage_breakdown or [])
+                  if tuple(e.method) == tuple(mr.method))
     assert sum(stages.values()) == pytest.approx(mr.score, rel=1e-12)
     assert all(v > 0 for v in stages.values())

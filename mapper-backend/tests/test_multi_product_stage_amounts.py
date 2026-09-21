@@ -105,8 +105,12 @@ def test_annual_stage_scales_while_one_time_unaffected(monkeypatch):
     # the one-time stages contributed the same 400 in both.
     assert _score(scaled) - _score(base) == pytest.approx(140.0)
     if base.stage_breakdown:
-        assert base.stage_breakdown["GWP100a"]["Manufacturing"] == pytest.approx(
-            scaled.stage_breakdown["GWP100a"]["Manufacturing"])
+        # Addressed by the full tuple; the label is display only.
+        def _mfg(res):
+            (entry,) = res.stage_breakdown
+            return entry.by_stage["Manufacturing"]
+
+        assert _mfg(base) == pytest.approx(_mfg(scaled))
 
 
 def test_single_vs_one_item_multi_parity(monkeypatch):

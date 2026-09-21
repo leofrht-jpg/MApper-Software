@@ -27,6 +27,7 @@
 // activity items uses a neutral gray to visually separate it from
 // stage colors.
 
+import { methodKey } from '../../utils/methodLabels'
 import { useMemo, useRef, useState } from 'react'
 import {
   Bar, BarChart, CartesianGrid, Cell, ResponsiveContainer, Tooltip,
@@ -48,11 +49,11 @@ interface MultiProductComparisonChartProps {
   result: MultiProductLCAResult
   scope: 'inflows' | 'stock' | 'outflows' | 'all'
   /** Method label to render; parent owns the method-picker state. */
-  selectedMethodLabel: string | null
+  selectedMethodKey: string | null
 }
 
 export function MultiProductComparisonChart({
-  result, scope, selectedMethodLabel,
+  result, scope, selectedMethodKey,
 }: MultiProductComparisonChartProps) {
   const chartRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -93,8 +94,9 @@ export function MultiProductComparisonChart({
     if (scope === 'all') {
       for (const item of successItems) {
         const sb = item.archetype_result?.stage_breakdown
-        if (!sb || !selectedMethodLabel) continue
-        const methodStages = sb[selectedMethodLabel]
+        if (!sb || !selectedMethodKey) continue
+        // Matched on the FULL tuple: `selectedMethodKey` is a methodKey.
+        const methodStages = sb.find((e) => methodKey(e.method) === selectedMethodKey)?.by_stage
         if (!methodStages) continue
         hasArchetypeStages = true
         for (const s of Object.keys(methodStages)) {
@@ -106,15 +108,16 @@ export function MultiProductComparisonChart({
       stageOrder: stages,
       mode: hasArchetypeStages ? ('stacked' as const) : ('solid' as const),
     }
-  }, [successItems, scope, selectedMethodLabel])
+  }, [successItems, scope, selectedMethodKey])
 
   // Bar chart data — one row per item, columns = stage names + ACTIVITY_TOTAL_KEY.
   const chartData = useMemo(() => {
-    if (!selectedMethodLabel) return []
+    if (!selectedMethodKey) return []
     return successItems.map((item, i) => {
       const row: Record<string, string | number> = { name: shortLabels[i] ?? item.label, type: item.type }
       if (mode === 'stacked' && item.archetype_result?.stage_breakdown) {
-        const stages = item.archetype_result.stage_breakdown[selectedMethodLabel] ?? {}
+        const stages = item.archetype_result.stage_breakdown
+          .find((e) => methodKey(e.method) === selectedMethodKey)?.by_stage ?? {}
         for (const s of stageOrder) {
           row[s] = stages[s] ?? 0
         }
@@ -124,7 +127,7 @@ export function MultiProductComparisonChart({
         const methodResults = (
           item.archetype_result?.results ?? item.activity_result?.results ?? []
         )
-        const m = methodResults.find((mr) => mr.method_label === selectedMethodLabel)
+        const m = methodResults.find((mr) => methodKey(mr.method) === selectedMethodKey)
         if (mode === 'stacked') {
           // Activity item in stacked mode → ACTIVITY_TOTAL slot.
           row[ACTIVITY_TOTAL_KEY] = m?.score ?? 0
@@ -135,20 +138,20 @@ export function MultiProductComparisonChart({
       }
       return row
     })
-  }, [successItems, mode, stageOrder, selectedMethodLabel, shortLabels])
+  }, [successItems, mode, stageOrder, selectedMethodKey, shortLabels])
 
   // Unit for the selected method (for y-axis label + tooltip).
   const methodUnit = useMemo(() => {
-    if (!selectedMethodLabel) return ''
+    if (!selectedMethodKey) return ''
     for (const item of successItems) {
       const methodResults = (
         item.archetype_result?.results ?? item.activity_result?.results ?? []
       )
-      const m = methodResults.find((mr) => mr.method_label === selectedMethodLabel)
+      const m = methodResults.find((mr) => methodKey(mr.method) === selectedMethodKey)
       if (m) return m.unit
     }
     return ''
-  }, [successItems, selectedMethodLabel])
+  }, [successItems, selectedMethodKey])
 
   if (successItems.length === 0) {
     return (
@@ -168,7 +171,7 @@ export function MultiProductComparisonChart({
     )
   }
 
-  if (!selectedMethodLabel) {
+  if (!selectedMethodKey) {
     return (
       <div
         data-testid="multi-product-chart-no-method"
@@ -197,7 +200,7 @@ export function MultiProductComparisonChart({
         <ChartExportButton
           chartRef={chartRef}
           legendRef={legendRef}
-          filename={`multi_product_comparison_${selectedMethodLabel}`}
+          filename={`multi_product_comparison_${selectedMethodKey}`}
         />
       </div>
       <ChartExportContainer ref={chartRef} style={{ width: '100%', height: 340 }}>

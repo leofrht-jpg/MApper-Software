@@ -1433,6 +1433,14 @@ export interface ArchetypeLCAMethodResult {
   contributions: MaterialContribution[]
 }
 
+/** One method's per-stage subtotals, addressed by the FULL method tuple.
+ *  `method[-1]` is not unique across a family (EF v3.1: 25 indicators, 14
+ *  distinct labels), so it must never be used to look an entry up. */
+export interface StageBreakdownEntry {
+  method: string[]
+  by_stage: Record<string, number>
+}
+
 export interface ArchetypeLCACalculateResult {
   /** Indicators this result cannot speak for (a PARTIAL authored activity with no
    *  characterised flow for that method). Absent on results stored before step 4. */
@@ -1454,7 +1462,7 @@ export interface ArchetypeLCACalculateResult {
   // Patch 4B: per-method, per-stage subtotal of impact. Populated only
   // when `scope == "all"`. Shape: {method_label: {stage_name: score}}.
   // Sum of stage values per method equals the method total.
-  stage_breakdown?: Record<string, Record<string, number>> | null
+  stage_breakdown?: StageBreakdownEntry[] | null
 }
 
 export interface CalculateArchetypeLCAOptions {

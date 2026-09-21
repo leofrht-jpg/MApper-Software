@@ -44,6 +44,7 @@ from openpyxl import load_workbook
 from mapper.api import impact as impact_api
 from mapper.main import app
 from mapper.models.schemas import (
+    StageBreakdownEntry,
     ArchetypeLCACalculateResult,
     ArchetypeLCAMethodResult,
     SingleProductProspectiveRunPayload,
@@ -71,7 +72,7 @@ def _archetype_result(
     name: str = "BEV-LFP|Small",
     scope: str = "all",
     methods: list[tuple[list[str], float]] | None = None,
-    stage_breakdown: dict[str, dict[str, float]] | None = None,
+    stage_breakdown: list | None = None,
     stage_amounts: dict[str, float] | None = None,
     compute_database: str | None = None,
     parameter_scenario: str | None = None,
@@ -187,18 +188,18 @@ class TestStaticBuilder:
 
     def test_stage_breakdown_sheet_only_when_scope_all_and_present(self):
         # scope="all" and breakdown set → sheet is created.
-        breakdown = {
-            " › ".join(GWP_TUPLE): {
+        breakdown = [
+            StageBreakdownEntry(method=list(GWP_TUPLE), by_stage={
                 "Manufacturing": 400.0,
                 "Use Phase": 800.0,
                 "Maintenance": 30.0,
                 "End of Life": 4.5,
-            },
-            " › ".join(ACID_TUPLE): {
+            }),
+            StageBreakdownEntry(method=list(ACID_TUPLE), by_stage={
                 "Manufacturing": 1.0, "Use Phase": 4.0,
                 "Maintenance": 1.5, "End of Life": 0.28,
-            },
-        }
+            }),
+        ]
         wb = impact_api._build_single_product_static_workbook(
             archetype_name="BEV",
             scope="all",
@@ -218,9 +219,9 @@ class TestStaticBuilder:
     def test_stage_breakdown_omitted_for_specific_scope(self):
         # scope="stock" → even with a breakdown payload, no sheet (would
         # be redundant — single stage = single column).
-        breakdown = {
-            " › ".join(GWP_TUPLE): {"Use Phase": 800.0},
-        }
+        breakdown = [
+            StageBreakdownEntry(method=list(GWP_TUPLE), by_stage={"Use Phase": 800.0}),
+        ]
         wb = impact_api._build_single_product_static_workbook(
             archetype_name="BEV",
             scope="stock",
@@ -284,12 +285,12 @@ class TestProspectiveBuilder:
         assert ws_l.max_row == 1 + 3 * 2  # header + data
 
     def test_stage_breakdown_by_year_sheet_only_when_scope_all(self):
-        breakdown = {
-            " › ".join(GWP_TUPLE): {
+        breakdown = [
+            StageBreakdownEntry(method=list(GWP_TUPLE), by_stage={
                 "Manufacturing": 400.0, "Use Phase": 600.0,
                 "Maintenance": 28.0, "End of Life": 4.0,
-            },
-        }
+            }),
+        ]
         runs = [
             SingleProductProspectiveRunPayload(
                 db_name="ei310_remind_ssp1_2030",

@@ -18,6 +18,7 @@ import { useActivityStore } from '../src/stores/activityStore'
 import { useProjectStore } from '../src/stores/projectStore'
 import { useMultiProductLCAStore } from '../src/stores/multiProductLCAStore'
 import * as client from '../src/api/client'
+import { methodKey } from '../src/utils/methodLabels'
 import type { MultiProductLCAResult } from '../src/api/client'
 
 // Fix 2 — every column/series in a 2+ item comparison is labelled by its
@@ -35,6 +36,8 @@ vi.mock('recharts', async () => {
 })
 
 const METHOD = 'EF v3.1 › climate change › GWP100'
+const METHOD_TUPLE = ['EF v3.1', 'climate change', 'GWP100']
+const METHOD_KEY = methodKey(METHOD_TUPLE)
 const mres = (score: number) => ({
   results: [{ method: ['EF v3.1', 'climate change', 'GWP100'], method_label: METHOD, score, unit: 'kg CO2 eq', contributions: [] }],
   elapsed_seconds: 0.05,
@@ -65,7 +68,7 @@ beforeEach(() => {
 describe('Fix 2 — CHART labels each series with its disambiguated activity', () => {
   it('solid-mode legend carries a distinct entry + disambiguator per item', () => {
     const { container } = render(
-      <MultiProductComparisonChart result={LOOKALIKE} scope="all" selectedMethodLabel={METHOD} />,
+      <MultiProductComparisonChart result={LOOKALIKE} scope="all" selectedMethodKey={METHOD_KEY} />,
     )
     const legend = container.querySelector('[data-testid="multi-product-chart-legend"]')!
     // One legend entry per item, keyed by item_id (color-stable identity).
@@ -85,7 +88,7 @@ describe('Fix 2 — CHART labels each series with its disambiguated activity', (
     // activity name is surfaced once as the subtitle (Issue 1: the process is
     // identifiable, not just the product/db/location).
     const { container } = render(
-      <MultiProductComparisonChart result={LOOKALIKE} scope="all" selectedMethodLabel={METHOD} />,
+      <MultiProductComparisonChart result={LOOKALIKE} scope="all" selectedMethodKey={METHOD_KEY} />,
     )
     const subtitle = container.querySelector('[data-testid="multi-product-chart-subtitle"]')!
     expect(subtitle.textContent).toContain('market for electricity, low voltage')

@@ -17,22 +17,25 @@ import { useNumberFormatter } from '../src/components/charts/numberFormat'
 // parent (SingleProductStaticPanel) — when scope ≠ "all" the backend returns
 // null and the parent doesn't render the chart at all.
 
-const STUB_BREAKDOWN: Record<string, Record<string, number>> = {
-  'IPCC | GWP100a | kg CO2-eq': {
+const M_IPCC = ['IPCC', 'GWP100a', 'kg CO2-eq']
+const M_EF = ['EF', 'ClimateChange', 'kg CO2-eq']
+
+const STUB_BREAKDOWN = [
+  { method: M_IPCC, by_stage: {
     Manufacturing: 4000,
     'Use Phase': 12000,
     'End of Life': -500,
-  },
-  'EF | ClimateChange | kg CO2-eq': {
+  } },
+  { method: M_EF, by_stage: {
     Manufacturing: 4100,
     'Use Phase': 12500,
     'End of Life': -600,
-  },
-}
+  } },
+]
 
 const STUB_METHODS = [
-  { method_label: 'IPCC | GWP100a | kg CO2-eq', score: 15500, unit: 'kg CO2-eq' },
-  { method_label: 'EF | ClimateChange | kg CO2-eq', score: 16000, unit: 'kg CO2-eq' },
+  { method: M_IPCC, method_label: 'IPCC | GWP100a | kg CO2-eq', score: 15500, unit: 'kg CO2-eq' },
+  { method: M_EF, method_label: 'EF | ClimateChange | kg CO2-eq', score: 16000, unit: 'kg CO2-eq' },
 ]
 
 describe('StageBreakdownChart (Patch 4B)', () => {
@@ -69,7 +72,7 @@ describe('StageBreakdownChart (Patch 4B)', () => {
     const { result } = renderHook(() => useNumberFormatter())
     const { container } = render(
       <StageBreakdownChart
-        stageBreakdown={{}}
+        stageBreakdown={[]}
         methods={STUB_METHODS}
         format={result.current}
         filenameBase="test_archetype"

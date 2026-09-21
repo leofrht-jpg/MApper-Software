@@ -123,11 +123,14 @@ def pick_family(requested: str | None, available: list[str]) -> str:
 
 
 def _labels(methods: list[tuple[str, ...]]) -> dict[tuple[str, ...], str]:
-    """Short label per method: the category, extended where it is ambiguous."""
-    by_cat: dict[str, int] = defaultdict(int)
-    for m in methods:
-        by_cat[m[1]] += 1
-    return {m: (m[1] if by_cat[m[1]] == 1 else " / ".join(m[1:])) for m in methods}
+    """Short label per method: the category, extended where it is ambiguous.
+
+    Delegates to ``core.method_labels``, which is now the one implementation --
+    the exports and the picker must not disagree about what a method is called.
+    """
+    from mapper.core.method_labels import disambiguated_labels
+
+    return disambiguated_labels(methods)
 
 
 def _same(values: list[float | None]) -> bool:

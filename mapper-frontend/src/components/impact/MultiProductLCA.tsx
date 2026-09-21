@@ -51,6 +51,7 @@ import { useActivityStore } from '../../stores/activityStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePLCAStore } from '../../stores/plcaStore'
 import { useMultiProductLCAStore } from '../../stores/multiProductLCAStore'
+import { methodColumns, methodKey, methodPath } from '../../utils/methodLabels'
 import { type AmountPreset, type ArchetypeStageAmounts } from '../../stores/singleProductImpactStore'
 import { productItemKey, type ActivityProductItem, type ArchetypeProductItem, type ProductItem } from '../shared/productItem'
 import {
@@ -768,32 +769,29 @@ function ResultsSection({
 
   // Available methods — union across successful items in source
   // order. Failed items contribute nothing.
-  const methodLabels = useMemo(() => {
-    const seen = new Set<string>()
-    const order: string[] = []
+  // Deduped on the FULL method tuple. Deduped on the label, this list had 14
+  // entries for 25 EF v3.1 indicators and the four climate variants were
+  // indistinguishable.
+  const methodCols = useMemo(() => {
+    const all: string[][] = []
     for (const item of result.items) {
       if (item.status !== 'success') continue
       const methodResults = item.archetype_result?.results ?? item.activity_result?.results ?? []
-      for (const m of methodResults) {
-        if (!seen.has(m.method_label)) {
-          seen.add(m.method_label)
-          order.push(m.method_label)
-        }
-      }
+      for (const m of methodResults) all.push(m.method)
     }
-    return order
+    return methodColumns(all)
   }, [result])
 
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
   // Re-pin to the first method whenever the available list changes
   // (e.g. fresh compute) AND the current pick isn't valid.
   useEffect(() => {
-    if (methodLabels.length === 0) {
+    if (methodCols.length === 0) {
       setSelectedMethod(null)
-    } else if (selectedMethod === null || !methodLabels.includes(selectedMethod)) {
-      setSelectedMethod(methodLabels[0])
+    } else if (selectedMethod === null || !methodCols.some((c) => c.key === selectedMethod)) {
+      setSelectedMethod(methodCols[0].key)
     }
-  }, [methodLabels, selectedMethod])
+  }, [methodCols, selectedMethod])
 
   const fmt = useNumberFormatter()
 
@@ -811,7 +809,7 @@ function ResultsSection({
           const env = byCase[c]
           const match = env?.items.find((x) => x.item_id === it.item_id)
           const mr = (match?.archetype_result?.results ?? match?.activity_result?.results ?? [])
-            .find((m) => m.method_label === selectedMethod)
+            .find((m) => methodKey(m.method) === selectedMethod)
           if (mr) scores[c] = mr.score
         }
         return { itemId: it.item_id, label: it.label, byCase: scores }
@@ -822,7 +820,7 @@ function ResultsSection({
     if (!byCase || !selectedMethod) return ''
     for (const it of byCase['Base']?.items ?? []) {
       const mr = (it.archetype_result?.results ?? it.activity_result?.results ?? [])
-        .find((m) => m.method_label === selectedMethod)
+        .find((m) => methodKey(m.method) === selectedMethod)
       if (mr) return mr.unit
     }
     return ''
@@ -887,7 +885,7 @@ function ResultsSection({
         </span>
         <span style={{ flex: 1 }} />
         {/* Method picker (chart view only — table shows all methods at once) */}
-        {view === 'chart' && methodLabels.length > 0 && (
+        {view === 'chart' && methodCols.length > 0 && (
           <select
             data-testid="multi-product-method-picker"
             value={selectedMethod ?? ''}
@@ -900,8 +898,8 @@ function ResultsSection({
               color: 'var(--text-primary)', maxWidth: 280,
             }}
           >
-            {methodLabels.map((m) => (
-              <option key={m} value={m}>{m}</option>
+            {methodCols.map((c) => (
+              <option key={c.key} value={c.key} title={methodPath(c.method)}>{c.label}</option>
             ))}
           </select>
         )}
@@ -1015,7 +1013,7 @@ function ResultsSection({
             items={sensitivityItems}
             cases={caseOrder}
             unit={sensitivityUnit}
-            methodLabel={selectedMethod}
+            methodLabel={methodCols.find((c) => c.key === selectedMethod)?.label ?? ''}
             format={fmt}
             filenameBase="multi_product"
             mode={view === 'by case' ? 'by_case' : 'range'}
@@ -1029,7 +1027,7 @@ function ResultsSection({
           <MultiProductLineChart
             result={result}
             vintageCoords={activityVintageMeta}
-            selectedMethodLabel={selectedMethod}
+            selectedMethodKey={selectedMethod}
             filenameBase="multi_product_comparison"
             subtitle={lineSubtitle || undefined}
           />
@@ -1037,7 +1035,7 @@ function ResultsSection({
           <MultiProductComparisonChart
             result={result}
             scope={scope}
-            selectedMethodLabel={selectedMethod}
+            selectedMethodKey={selectedMethod}
           />
         )
       ) : (
@@ -1105,20 +1103,14 @@ function ResultsTable({ result }: { result: import('../../api/client').MultiProd
   // Collect all unique method labels across successful items for
   // table columns. Order: first-seen wins. (Failed items contribute
   // none.)
-  const allMethodLabels = useMemo(() => {
-    const labels: string[] = []
-    const seen = new Set<string>()
+  const allMethodCols = useMemo(() => {
+    const all: string[][] = []
     for (const it of result.items) {
       if (it.status !== 'success') continue
       const methodResults = it.archetype_result?.results ?? it.activity_result?.results ?? []
-      for (const m of methodResults) {
-        if (!seen.has(m.method_label)) {
-          seen.add(m.method_label)
-          labels.push(m.method_label)
-        }
-      }
+      for (const m of methodResults) all.push(m.method)
     }
-    return labels
+    return methodColumns(all)
   }, [result])
 
   return (
@@ -1135,14 +1127,14 @@ function ResultsTable({ result }: { result: import('../../api/client').MultiProd
               <th style={thStyle}>Item</th>
               <th style={thStyle}>Type</th>
               <th style={thStyle}>Status</th>
-              {allMethodLabels.map((label) => (
-                <th key={label} style={{ ...thStyle, textAlign: 'right' }}>{label}</th>
+              {allMethodCols.map((c) => (
+                <th key={c.key} style={{ ...thStyle, textAlign: 'right' }} title={methodPath(c.method)}>{c.label}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {result.items.map((it) => (
-              <ResultRow key={it.item_id} item={it} methodLabels={allMethodLabels} />
+              <ResultRow key={it.item_id} item={it} methodCols={allMethodCols} />
             ))}
           </tbody>
         </table>
@@ -1150,9 +1142,14 @@ function ResultsTable({ result }: { result: import('../../api/client').MultiProd
   )
 }
 
-function ResultRow({ item, methodLabels }: { item: MultiProductItemResult; methodLabels: string[] }) {
+function ResultRow({ item, methodCols }: {
+  item: MultiProductItemResult
+  methodCols: { key: string; method: string[]; label: string }[]
+}) {
   const methodResults = item.archetype_result?.results ?? item.activity_result?.results ?? []
-  const byLabel = new Map(methodResults.map((m) => [m.method_label, m]))
+  // Keyed by the full tuple. Keyed by the label, every climate column in this
+  // row showed whichever climate variant came last.
+  const byMethod = new Map(methodResults.map((m) => [methodKey(m.method), m]))
   const gaps = item.archetype_result?.coverage_gaps ?? item.activity_result?.coverage_gaps
   return (
     <tr
@@ -1194,10 +1191,10 @@ function ResultRow({ item, methodLabels }: { item: MultiProductItemResult; metho
           </span>
         )}
       </td>
-      {methodLabels.map((label) => {
-        const m = byLabel.get(label)
+      {methodCols.map((c) => {
+        const m = byMethod.get(c.key)
         return (
-          <td key={label} style={{ ...tdStyle, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
+          <td key={c.key} style={{ ...tdStyle, textAlign: 'right', fontFamily: 'var(--font-mono)' }}>
             {m ? `${m.score.toExponential(3)} ${m.unit}` : item.status === 'success' ? '—' : ''}
             {m && <NotSpecifiedMarker gaps={gapsFor(gaps, m.method)} testId={`not-specified-${item.item_id}`} />}
           </td>

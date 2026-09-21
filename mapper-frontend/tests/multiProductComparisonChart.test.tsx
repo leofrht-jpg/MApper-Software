@@ -9,6 +9,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react'
+import { methodKey } from '../src/utils/methodLabels'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { render } from '@testing-library/react'
 import { MultiProductComparisonChart } from '../src/components/impact/MultiProductComparisonChart'
@@ -56,9 +57,7 @@ const STAGED_RESULT: MultiProductLCAResult = {
           method_label: 'EF v3.1 › climate change › GWP100',
           score: 1000, unit: 'kg CO2 eq', contributions: [],
         }],
-        stage_breakdown: {
-          'EF v3.1 › climate change › GWP100': { 'Manufacturing': 700, 'Use Phase': 300 },
-        },
+        stage_breakdown: [{ method: ['EF v3.1', 'climate change', 'GWP100'], by_stage: { 'Manufacturing': 700, 'Use Phase': 300 } }],
         elapsed_seconds: 0.1,
       } as any,
     },
@@ -102,19 +101,19 @@ describe('MultiProductComparisonChart — placeholders', () => {
       <MultiProductComparisonChart
         result={allFailed}
         scope="all"
-        selectedMethodLabel="any"
+        selectedMethodKey="any"
       />,
     )
     expect(container.querySelector('[data-testid="multi-product-chart-empty"]')).not.toBeNull()
     expect(container.querySelector('[data-testid="multi-product-chart"]')).toBeNull()
   })
 
-  it('renders no-method placeholder when selectedMethodLabel is null', () => {
+  it('renders no-method placeholder when selectedMethodKey is null', () => {
     const { container } = render(
       <MultiProductComparisonChart
         result={STAGED_RESULT}
         scope="all"
-        selectedMethodLabel={null}
+        selectedMethodKey={null}
       />,
     )
     expect(container.querySelector('[data-testid="multi-product-chart-no-method"]')).not.toBeNull()
@@ -126,7 +125,7 @@ describe('MultiProductComparisonChart — placeholders', () => {
       <MultiProductComparisonChart
         result={STAGED_RESULT}
         scope="all"
-        selectedMethodLabel="EF v3.1 › climate change › GWP100"
+        selectedMethodKey={methodKey(['EF v3.1', 'climate change', 'GWP100'])}
       />,
     )
     expect(container.querySelector('[data-testid="multi-product-chart"]')).not.toBeNull()
@@ -144,7 +143,7 @@ describe('MultiProductComparisonChart — legend reflects shape mode', () => {
       <MultiProductComparisonChart
         result={STAGED_RESULT}
         scope="all"
-        selectedMethodLabel="EF v3.1 › climate change › GWP100"
+        selectedMethodKey={methodKey(['EF v3.1', 'climate change', 'GWP100'])}
       />,
     )
     const legend = container.querySelector('[data-testid="multi-product-chart-legend"]')!
@@ -161,7 +160,7 @@ describe('MultiProductComparisonChart — legend reflects shape mode', () => {
       <MultiProductComparisonChart
         result={ACTIVITY_RESULT}
         scope="all"
-        selectedMethodLabel="EF v3.1 › climate change › GWP100"
+        selectedMethodKey={methodKey(['EF v3.1', 'climate change', 'GWP100'])}
       />,
     )
     const legend = container.querySelector('[data-testid="multi-product-chart-legend"]')!
@@ -180,7 +179,7 @@ describe('MultiProductComparisonChart — legend reflects shape mode', () => {
       <MultiProductComparisonChart
         result={MIXED_RESULT}
         scope="all"
-        selectedMethodLabel="EF v3.1 › climate change › GWP100"
+        selectedMethodKey={methodKey(['EF v3.1', 'climate change', 'GWP100'])}
       />,
     )
     const legend = container.querySelector('[data-testid="multi-product-chart-legend"]')!
@@ -213,7 +212,7 @@ describe('MultiProductComparisonChart — legend reflects shape mode', () => {
       <MultiProductComparisonChart
         result={inflowsResult}
         scope="inflows"
-        selectedMethodLabel="M"
+        selectedMethodKey="M"
       />,
     )
     const legend = container.querySelector('[data-testid="multi-product-chart-legend"]')!
@@ -230,7 +229,7 @@ describe('MultiProductComparisonChart — color discipline (legend swatches)', (
       <MultiProductComparisonChart
         result={STAGED_RESULT}
         scope="all"
-        selectedMethodLabel="EF v3.1 › climate change › GWP100"
+        selectedMethodKey={methodKey(['EF v3.1', 'climate change', 'GWP100'])}
       />,
     )
     const legend = container.querySelector('[data-testid="multi-product-chart-legend"]')!
@@ -248,7 +247,7 @@ describe('MultiProductComparisonChart — color discipline (legend swatches)', (
       <MultiProductComparisonChart
         result={MIXED_RESULT}
         scope="all"
-        selectedMethodLabel="EF v3.1 › climate change › GWP100"
+        selectedMethodKey={methodKey(['EF v3.1', 'climate change', 'GWP100'])}
       />,
     )
     const legend = container.querySelector('[data-testid="multi-product-chart-legend"]')!
@@ -261,7 +260,7 @@ describe('MultiProductComparisonChart — color discipline (legend swatches)', (
 })
 
 describe('MultiProductComparisonChart — method-switching reactivity', () => {
-  it('changing selectedMethodLabel re-renders with the new method\'s unit on Y-axis label', () => {
+  it('changing selectedMethodKey re-renders with the new method\'s unit on Y-axis label', () => {
     const twoMethodResult: MultiProductLCAResult = {
       items: [{
         type: 'archetype', item_id: 'arc', label: 'arc',
@@ -274,10 +273,8 @@ describe('MultiProductComparisonChart — method-switching reactivity', () => {
             { method: ['EF v3.1', 'climate change', 'GWP100'], method_label: 'climate', score: 100, unit: 'kg CO2 eq', contributions: [] },
             { method: ['EF v3.1', 'water use', 'depriv'], method_label: 'water', score: 5, unit: 'm3', contributions: [] },
           ],
-          stage_breakdown: {
-            'climate': { 'Manufacturing': 70 },
-            'water':   { 'Manufacturing': 1 },
-          },
+          stage_breakdown: [{ method: ['EF v3.1', 'climate change', 'GWP100'], by_stage: { 'Manufacturing': 70 } },
+                            { method: ['EF v3.1', 'water use', 'depriv'], by_stage: { 'Manufacturing': 1 } }],
           elapsed_seconds: 0.05,
         } as any,
       }],
@@ -285,7 +282,7 @@ describe('MultiProductComparisonChart — method-switching reactivity', () => {
     }
     const { rerender, container } = render(
       <MultiProductComparisonChart
-        result={twoMethodResult} scope="all" selectedMethodLabel="climate"
+        result={twoMethodResult} scope="all" selectedMethodKey={methodKey(['EF v3.1', 'climate change', 'GWP100'])}
       />,
     )
     // Y-axis label renders as a <text> element somewhere in the
@@ -294,7 +291,7 @@ describe('MultiProductComparisonChart — method-switching reactivity', () => {
     expect(container.textContent).toContain('kg CO2 eq')
     rerender(
       <MultiProductComparisonChart
-        result={twoMethodResult} scope="all" selectedMethodLabel="water"
+        result={twoMethodResult} scope="all" selectedMethodKey={methodKey(['EF v3.1', 'water use', 'depriv'])}
       />,
     )
     expect(container.textContent).toContain('m3')

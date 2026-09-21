@@ -15,6 +15,7 @@ import { MultiProductLCA } from '../src/components/impact/MultiProductLCA'
 import { useBOMStore } from '../src/stores/bomStore'
 import { useActivityStore } from '../src/stores/activityStore'
 import { useProjectStore } from '../src/stores/projectStore'
+import { useProjectSettingsStore } from '../src/stores/projectSettingsStore'
 import { usePLCAStore } from '../src/stores/plcaStore'
 import { useMultiProductLCAStore } from '../src/stores/multiProductLCAStore'
 import * as client from '../src/api/client'
@@ -167,5 +168,81 @@ describe('Multi-item per-item stage amounts', () => {
     // Keyed by archetype_id (= item_id), carrying preset + lifetime + amounts.
     expect(opts.stageAmountsMeta['arc-a']).toEqual({ preset: 'lifetime', lifetime: 15, amounts: { Manufacturing: 1, 'Use Phase': 15, 'End of Life': 1 } })
     expect(opts.stageAmountsMeta['arc-b'].lifetime).toBe(10)
+  })
+})
+
+// ── The project-default basis reaches the preset (the WP5 defect) ──────────
+//
+// An archetype that declares no per-stage basis inherits the project's
+// use-phase convention for Use Phase and Maintenance. The single-item editor
+// passed that convention to the preset; Multi-item computed it (line 104) and
+// then called `stageAmountsForPreset` without it, so `stageBasis` could never
+// return 'per_year' and EVERY stage came back 1.
+//
+// The result was a run whose Stage amounts sheet recorded "Preset = lifetime,
+// Lifetime (yr) = 15" over a multiplier of 1: a whole vehicle's manufacturing
+// against ONE year of driving, labelled as whole-lifecycle. Measured on a real
+// export: ICEV-Petrol use-phase ADP fossil read 39,082 MJ against 39,124 MJ
+// predicted for a single year, a ratio of 0.999.
+describe('Lifetime preset with an UNDECLARED stage basis', () => {
+  const UNDECLARED: ArchetypeSummary[] = [
+    { id: 'arc-u', name: 'WP5-like', description: null, category: 'pc', folder: 'PC',
+      material_count: 1, unlinked_count: 0,
+      stages: ['Manufacturing', 'Use Phase', 'Maintenance', 'End of Life'],
+      stage_annual: { 'Use Phase': true, Maintenance: true },
+      stage_basis: {},                       // nothing declared — as on MAp-test
+      created_at: '', updated_at: '' },
+  ] as any
+
+  beforeEach(() => {
+    useBOMStore.setState({ archetypes: UNDECLARED, fetchArchetypes: vi.fn() } as any)
+    useProjectSettingsStore.setState({ settings: { use_phase_basis: 'one_year' } } as any)
+  })
+
+  it('scales the project-defaulted stages, and only those', () => {
+    seedItems(arcItem('arc-u', 'WP5-like'))
+    const { getByTestId } = render(<MultiProductLCA />)
+
+    fireEvent.click(getByTestId('multi-product-global-preset-lifetime'))
+    const amounts = useMultiProductLCAStore.getState().stageAmountsByItem['arc:arc-u'].amounts
+
+    // Project convention is one_year → these two are per_year → × lifetime.
+    expect(amounts['Use Phase']).toBe(15)
+    expect(amounts['Maintenance']).toBe(15)
+    // Not project-defaulted and not declared → stay at the identity, which is
+    // the value both conventions agree on.
+    expect(amounts['Manufacturing']).toBe(1)
+    expect(amounts['End of Life']).toBe(1)
+  })
+
+  it('records a lifetime it actually applied', () => {
+    seedItems(arcItem('arc-u', 'WP5-like'))
+    const { getByTestId } = render(<MultiProductLCA />)
+    fireEvent.click(getByTestId('multi-product-global-preset-lifetime'))
+
+    const entry = useMultiProductLCAStore.getState().stageAmountsByItem['arc:arc-u']
+    expect(entry.preset).toBe('lifetime')
+    expect(entry.lifetime).toBe(15)
+    // The defect in one assertion: provenance said 15, every multiplier was 1.
+    expect(Math.max(...Object.values(entry.amounts))).toBe(entry.lifetime)
+  })
+
+  it('an item added AFTER the preset was chosen is seeded with the basis too', () => {
+    // Two call sites omitted it, and they are reached differently: this one is
+    // the reconcile effect seeding a newly added item from the standing global
+    // preset -- no second click on apply-to-all, which would paper over it.
+    const SECOND = { ...UNDECLARED[0], id: 'arc-v', name: 'WP5-like-2' } as any
+    useBOMStore.setState({ archetypes: [...UNDECLARED, SECOND], fetchArchetypes: vi.fn() } as any)
+
+    seedItems(arcItem('arc-u', 'WP5-like'))
+    const { getByTestId } = render(<MultiProductLCA />)
+    fireEvent.click(getByTestId('multi-product-global-preset-lifetime'))
+
+    // Now add a second item. It is seeded by the effect, not by apply-to-all.
+    seedItems(arcItem('arc-u', 'WP5-like'), arcItem('arc-v', 'WP5-like-2'))
+    const seeded = useMultiProductLCAStore.getState().stageAmountsByItem['arc:arc-v']
+    expect(seeded.preset).toBe('lifetime')
+    expect(seeded.amounts['Use Phase']).toBe(15)
+    expect(seeded.amounts['Manufacturing']).toBe(1)
   })
 })

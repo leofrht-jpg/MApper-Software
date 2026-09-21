@@ -208,14 +208,18 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
       if (next[key]) continue
       const arc = archetypes.find((a) => a.id === item.archetype_id)
       if (!arc) continue
-      next[key] = { preset: globalPreset, lifetime: globalLifetime, amounts: stageAmountsForPreset(arc, globalPreset, globalLifetime) }
+      // projectBasis, or a stage whose basis is only project-declared (Use
+      // Phase, Maintenance) can never resolve to per_year and the Lifetime
+      // preset silently yields 1 for every stage -- a run labelled
+      // "Lifetime · 15 yr" that is manufacturing plus ONE year.
+      next[key] = { preset: globalPreset, lifetime: globalLifetime, amounts: stageAmountsForPreset(arc, globalPreset, globalLifetime, undefined, projectBasis) }
       changed = true
     }
     for (const key of Object.keys(next)) {
       if (!valid.has(key)) { delete next[key]; changed = true }
     }
     if (changed) setStageAmountsMap(next)
-  }, [archetypeItems, archetypes, globalPreset, globalLifetime, stageAmountsByItem, setStageAmountsMap])
+  }, [archetypeItems, archetypes, globalPreset, globalLifetime, projectBasis, stageAmountsByItem, setStageAmountsMap])
 
   // Apply-to-all: a global preset pick overwrites every item's amounts.
   const applyGlobalPreset = (preset: AmountPreset, lifetime: number) => {
@@ -226,7 +230,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
       const arc = archetypes.find((a) => a.id === item.archetype_id)
       if (!arc) continue
       const key = productItemKey(item)
-      next[key] = { preset, lifetime, amounts: stageAmountsForPreset(arc, preset, lifetime, next[key]?.amounts) }
+      next[key] = { preset, lifetime, amounts: stageAmountsForPreset(arc, preset, lifetime, next[key]?.amounts, projectBasis) }
     }
     setStageAmountsMap(next)
   }

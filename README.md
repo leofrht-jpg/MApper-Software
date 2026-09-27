@@ -1,10 +1,10 @@
 <p align="center">
-  <img src=".github/assets/hero.png" alt="MApper" width="800">
+  <img src=".github/assets/hero.png"
+       alt="MApper — life-cycle, material-flow and absolute sustainability assessment for products and systems"
+       width="800">
 </p>
 
 # MApper
-
-**Unified LCA · DSM/MFA · pLCA · AESA — a single workflow for system-level, time-resolved environmental sustainability analysis.**
 
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
 [![Build](https://github.com/leofrht-jpg/MApper-Software/actions/workflows/ci.yml/badge.svg)](https://github.com/leofrht-jpg/MApper-Software/actions/workflows/ci.yml)

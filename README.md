@@ -1,3 +1,7 @@
+<p align="center">
+  <img src=".github/assets/hero.png" alt="MApper" width="800">
+</p>
+
 # MApper
 
 **Unified LCA · DSM/MFA · pLCA · AESA — a single workflow for system-level, time-resolved environmental sustainability analysis.**
@@ -28,12 +32,104 @@ MApper couples all four in one **cohort-preserving** pipeline: a time-resolved m
 
 ## Features
 
-- **LCA Engine** — Brightway2 integration with ecoinvent 3.10. Multi-method LCIA with contribution analysis, treemaps, and Sankey diagrams; multi-archetype comparison with per-stage breakdown.
-- **Dynamic Stock Modelling** — Cohort-based stock dynamics with Weibull survival and system-level projections. Material flow quantification grouped by material, component, stage, or archetype.
-- **Prospective LCA** — premise integration for 6 IAMs (REMIND, REMIND-EU, IMAGE, MESSAGE, GCAM, TIAM-UCL) × SSP1–5 scenarios. Year-matched background databases.
-- **AESA** — Planetary-boundary assessment with customizable sharing principles. Radar charts positioning your system relative to the safe operating space.
-- **Archetype System** — Hierarchical Bills of Materials with ecoinvent linking, folder organization, and material evolution modeling (learning rates, milestones, rebound effects).
-- **Impact Assessment** — Stage-aware scope filtering (Manufacturing→inflows, Operation→stock, End of Life→outflows). Multi-indicator calculation (one technosphere solve per year, all indicators via characterisation-matrix switching), UMFPACK factorisation reuse (the premise db for each year is factorised once and back-substituted for every subsequent solve). Comprehensive Excel export.
+- **LCA Engine** — Brightway2 integration with ecoinvent 3.10. Multi-method LCIA
+  with contribution analysis, treemaps, and Sankey diagrams; multi-archetype
+  comparison with per-stage breakdown. Results are addressed by the full method
+  tuple, so indicators sharing a display name stay distinct everywhere — EF v3.1
+  has four indicators called "global warming potential (GWP100)".
+
+- **Uncertainty — Monte Carlo propagation** — Over the **background**
+  (technosphere, biosphere and characterisation factors, resampled by `bw2calc`
+  each iteration), the **foreground** (BOM quantities and parameter expressions,
+  resampled per iteration — parameters are drawn once and expressions re-resolved
+  against the draw, so a shared driver stays correlated instead of averaging
+  away), and per-row uncertainty scored with the **pedigree matrix**, with a
+  reusable material pedigree library.
+
+  **Comparisons use paired sampling, and only paired sampling:** one sampled
+  world per iteration, every compared system solved against it, so a driver two
+  systems share cancels in their difference instead of inflating it. Sampling the
+  systems independently can report "not distinguishable" where the paired run
+  finds a consistent difference.
+
+- **Authored databases** *(new in 0.3.0)* — Create your own Brightway database
+  inside MApper and author activities in it from **biosphere flows**: a process
+  whose impact is its direct emissions, or a supplier's cradle-to-gate figure
+  entered as one characterised value. Authored activities link into a Bill of
+  Materials like any ecoinvent activity. Supporting this:
+  - a **compartment picker** that groups biosphere flows by substance and shows,
+    per compartment, what each method's characterisation factor actually is —
+    choosing NOx to urban air versus high stacks is a decision, not a guess;
+  - **uncertainty discipline** — every exchange is lognormal with all five
+    pedigree scores required, its basic variance defaults to ecoinvent's median
+    for that flow, and a GSD² below ecoinvent's median for the same flow must
+    carry a written reason. You cannot silently claim your data is tighter than
+    ecoinvent's;
+  - an **uncertainty basis** per exchange, for the case where the amount is not
+    an emission but someone else's characterised result. It asks for *more* than
+    the default — a variance and its source — and the basis follows the number
+    into every result and workbook, so a reader comparing two GSD² values is
+    told when they describe different quantities.
+
+- **Dynamic Stock Modelling** — Cohort-based stock dynamics with Weibull survival
+  and system-level projections. Material flow quantification grouped by material,
+  component, stage, or archetype. Named DSM scenarios, scaling rules and survival
+  configurations; **subsystems** with dependency rules, so one stock can drive
+  another (vehicles driving chargers).
+
+- **Parameters** — Drive BOM quantities with named parameters and expressions
+  instead of literals, and vary them as named **scenarios** and sensitivity cases
+  in one run. A scenario says *which values*, never whether to resolve.
+
+- **Prospective LCA** — premise integration for 6 IAMs (REMIND, REMIND-EU, IMAGE,
+  MESSAGE, GCAM, TIAM-UCL) × SSP1–5 scenarios. Year-matched background databases.
+
+- **AESA** — Planetary-boundary assessment with customizable sharing principles
+  and an explicit downscaling chain, each layer carrying its own source string
+  into the export. Radar charts positioning your system relative to the safe
+  operating space.
+
+- **Archetype System** — Hierarchical Bills of Materials with ecoinvent linking,
+  folder organization, material evolution modeling (learning rates, milestones,
+  rebound effects), and **composition** — an archetype can be a component of
+  another.
+
+- **LCIA Method Library** — Install additional method packages (IMPACT World+,
+  LC-IMPACT) or your own characterisation factors from an Excel sheet.
+
+- **Impact Assessment** — Stage-aware scope filtering (Manufacturing→inflows,
+  Operation→stock, End of Life→outflows). Multi-indicator calculation (one
+  technosphere solve per year, all indicators via characterisation-matrix
+  switching), UMFPACK factorisation reuse (the premise db for each year is
+  factorised once and back-substituted for every subsequent solve).
+  Comprehensive Excel export — every workbook that reports impact or
+  sustainability-ratio values carries a **Coverage sheet** naming each indicator
+  it reports as specified, not specified, or not recorded.
+
+- **Projects** — Create, switch, duplicate, rename and delete projects; export and
+  import them. A project export is **modelling-only by default**: your archetypes,
+  parameters, DSM systems and authored databases travel, licensed inventory data
+  does not.
+
+### What MApper does not claim
+
+Two constraints are design decisions, and the software states them rather than
+papering over them.
+
+**Authored activities are biosphere-only in v1.** You can specify elementary
+flows; you cannot give an authored activity a technosphere input. That is
+deliberate: a technosphere link would not be translated into a prospective
+background, so an authored activity would silently keep base-year electricity
+in every future year of a prospective run. An authored activity therefore
+reports the emissions you entered, and nothing about its supply chain.
+
+**A partial inventory's uncovered indicators are marked "not specified", never
+reported as zero.** When you declare an authored activity partial, you also
+declare which indicators it is complete for. Every result and every workbook
+that used it marks the rest as unknown rather than reporting a number that would
+read as "no impact" — because a flow you did not enter is not a flow that does
+not exist. An AESA axis fed by such a result is hatched and its Sustainability
+Ratio is reported as a lower bound.
 
 ## Architecture
 

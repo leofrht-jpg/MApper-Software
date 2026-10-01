@@ -178,7 +178,7 @@ jobs:
           Write-Host "uploaded ${{ steps.art.outputs.name }} to $tag"
 
       # Kept regardless of the upload, so a failed run still yields the binary.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mapper-windows-installer

@@ -11568,6 +11568,40 @@ link refusals filter on is already refused in authored database names.
   `tests/test_bare_pytest_collects.py`, which runs pytest from a directory
   outside the backend.
 
+## A string body is JSON, and `fetch` will not say so
+
+`fetch` sets no `Content-Type` for a string body. Starlette then never parses
+it, and FastAPI reports **422 `model_attributes_type`** — "Input should be a
+valid dictionary or object to extract fields from" — with the JSON quoted back
+in `input` **as a string**. That error names the schema, so it reads as a model
+bug; the body never reached the model.
+
+Found walking 0.3.0 by hand: the entire authoring UI was dead — in `npm run
+dev` exactly as in the packaged app, since `fetch` omits the header in both.
+Five calls in `api/client.ts` (`createAuthoredDatabase`,
+`addAuthoredActivity`, `updateAuthoredActivity`, `fetchReachedIndicators`,
+`previewAuthoredExchange`) sent `JSON.stringify(...)` bare. They were a
+contiguous block added together, which is how five arrived at once and why the
+guard discovers sites rather than listing them.
+
+The header is set in `_withProjectHeader` — the one place this client builds
+headers, used by `request()` and by the direct `fetch` calls — for any string
+body with no Content-Type of its own.
+
+- **Don't set it at the call site.** 54 `fetch` calls, ~120 bodies; the audit
+  found exactly five missing it, and the next one added will miss it too.
+- **Don't widen it past strings.** A `FormData` body must stay unlabelled so
+  the browser can set the multipart boundary. `typeof body === 'string'` is the
+  whole condition.
+- **Don't test it with `TestClient(json=...)`.** That helper sets the header
+  for you, so the test passes while the app is unusable from a browser. The
+  backend half (`tests/test_json_body_needs_content_type.py`) posts raw bytes
+  with no header and pins the 422 as the observable symptom, for all five
+  routes.
+- **Don't mock `request()` to test it.** The frontend half drives the real
+  exported functions through the real `request()` with a spy on `fetch`;
+  mocking the thing under test asserts nothing.
+
 ## A guard that cannot fail — the project's dominant defect class
 
 Recorded as a list because it keeps recurring in new disguises, and because
@@ -11950,6 +11984,21 @@ comparable.
 list FROM the models (classes declaring the field) rather than a hand-kept set,
 so adding the field to a seventh result brings that result's call sites under
 the guard. It caught both AESA adapters on the way in.
+
+**The chain had coverage at both ENDS and none in the middle.** Reported as a
+bug -- a stored `supplied` exchange seemed to reopen on the ecoinvent basis --
+it did not reproduce: the definition file, the model, the declared
+`response_model` and the editor all carried `supplied`. But the only tested
+links were file -> model (`test_uncertainty_basis.py`) and response -> editor
+(`authoredActivityEditor.test.tsx`); **model -> HTTP response had nothing**, and
+that is precisely where this field would vanish without a sound. The default is
+`"ecoinvent"` and the TypeScript field is optional, so a response that omitted
+it would raise nothing anywhere: the editor would fall back, show the ecoinvent
+basis, and demand a floor justification for an amount that is not an emission.
+A silent downgrade to the STRICTER default is the worst shape this can take,
+because the resulting screen looks correct.
+`test_authored_basis_survives_the_response.py` pins that link, over both bases,
+with an anti-vacuity case proving a dropped field is detectable.
 
 ## Future Extension: Product Systems (deferred to v1.1)
 

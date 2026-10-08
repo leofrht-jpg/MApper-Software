@@ -26,6 +26,7 @@ import uuid
 
 import bw2data
 from mapper.core.upload_guard import refuse_if_nothing_resolved
+from mapper.api.cohort_export import strip_cohort_prefix
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
@@ -1233,7 +1234,7 @@ def _build_subsystem_dsm_workbook(
     # dependent_archetype_id is a user-selected readable name). Same convention
     # as cohort_export._split_cohort — no raw <uuid>:: in any cell.
     def _disp(ck: str) -> str:
-        return ck.split("::", 1)[-1]
+        return strip_cohort_prefix(ck)
 
     sub_map = subsystem.cohort_mappings or {}
 

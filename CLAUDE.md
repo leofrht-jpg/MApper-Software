@@ -11532,6 +11532,97 @@ link refusals filter on is already refused in authored database names.
   `tests/test_bare_pytest_collects.py`, which runs pytest from a directory
   outside the backend.
 
+## A guard that cannot fail — the project's dominant defect class
+
+Recorded as a list because it keeps recurring in new disguises, and because
+each instance was caught only by deliberately breaking the thing the guard
+watches. **Write the revert test before trusting the guard.**
+
+| # | the guard | why it could not fail | the fix |
+|---|---|---|---|
+| 1 | cohort-leak render case for `ExpandedCohortChart`'s TOOLTIP | asserted `container.textContent` after a static mount. Recharts renders a tooltip only on hover, and jsdom cannot drive Recharts' pixel hit-detection — so the assertion ran against a DOM the series names never reach. Reverting the fix changed nothing. | assert the `<Area name>` VALUE, harvested from the element tree the component returns. That is the formatter's output, not the existence of a prop. |
+| 2 | cohort-leak render case for `DetailTable` | the component was **never mounted**. The file-level discovery listed it, the describe block read as if it covered it, and nothing rendered it. | mount it — and expand the disclosure: the per-cohort cells are not in the DOM while the row is collapsed, so even a mounted-but-collapsed test asserts on absent markup. |
+| 3 | `chartExpandModalAffordances` "legend label uses the cohort key as the display name" | it asserted the legend `textContent` **contained the raw cohort key**. The fixture pinned the bug: the test passed *because* the defect was live, and would have failed when fixed. | corrected to assert the display string, with the test id still holding the raw key. |
+
+The shapes, stated generally:
+
+- **Asserting on output a static mount cannot produce** (hover, focus,
+  animation, a collapsed disclosure). The assertion is real; the DOM is empty.
+  `expect('').not.toMatch(...)` always passes.
+- **Declaring coverage the test does not perform.** A discovery list, a
+  describe name, or a comment that says a component is covered, with no mount.
+- **A fixture that encodes the defect.** The oldest form: the test was written
+  against observed behaviour rather than intended behaviour, so it defends the
+  bug.
+
+#### What NOT to do
+
+- **Don't trust a guard you have not seen fail.** Revert the fix, run it,
+  confirm it fails BY NAME. For a multi-site fix, one aggregate failure is not
+  enough — six sites must produce six distinct named failures, or some site is
+  uncovered and the aggregate is hiding it.
+- **Don't assert that a formatter/prop EXISTS.** Assert its return value or the
+  rendered output.
+- **Don't anchor a leak regex.** `^...$` against a text node passes while
+  `<uuid>::BEV-LFP|2030` is live. Search; and keep a fixture carrying a suffix
+  so the anchored version cannot be reintroduced quietly.
+- **Don't key an exemption on a line number.** It went stale one import later,
+  inside this very change. Key on the enclosing function.
+
+## A cohort key is an IDENTITY. Its `<owner id>::` prefix never reaches the user.
+
+`aggregate_subsystem_results` prefixes cohort keys with the owning system's or
+subsystem's id (`SUBSYSTEM_KEY_SEP`) so two owners holding the same bare name do
+not merge. Measured on MAp-test, that is not hypothetical: **all 51 primary
+cohort names also exist under a second system id**.
+
+It leaked into six places at once, in two subsystems and one export:
+
+1. the Projected by-cohort legend when no Stack-by is set (`projectLegendLabels`
+   returned the keys verbatim — a documented "fallback" that predated the strip);
+2. **dim parsing** — `parseCohortKey` split on `|` without stripping first, so
+   the first dim value came back as `<uuid>::BEV-LFP`, into the legend AND the
+   colour grouping;
+3. and 4. `ExpandedCohortChart`'s facet-expand legend, and its `<Area>` with no
+   `name` at all, so the tooltip fell through to `dataKey`;
+5. the AESA detail table cell;
+6. the AESA "By Fuel Type" Excel sheet, the one writer with no `CohortResolver`
+   in scope.
+
+**One display rule, one strip.** `cohortDisplayString()` on the frontend and
+`cohort_export.strip_cohort_prefix()` on the backend. `stripCohortPrefix` alone
+is NOT the display rule — it leaves the `|`, so a legend built on it reads
+`CNG Station|Large` while the tooltip reads `CNG Station Large`. Two names for
+one band is the same defect in a quieter form, and it was introduced *while
+fixing the loud one*.
+
+**Identity stays raw.** Colour lookup (`rowColorOverrides[cohortKey]`), React
+keys and test ids all keep the full key. `projectLegendLabels` returns
+`{ key, label }` for exactly this reason; returning one string was what let the
+key reach the legend, and it forced a colour REVERSE-LOOKUP hack that is now
+gone.
+
+- **Don't strip for grouping.** Safe today only because the owners that can
+  co-occur in one chart — a primary system and its own subsystems — have
+  disjoint dim-0 label sets (17 powertrains vs 7 station types). A subsystem
+  reusing a primary dim-0 label, or a chart rendering two SYSTEMS together,
+  would merge them.
+- **Don't assert that a formatter exists.** `tests/cohortKeyNeverRendered.test.tsx`
+  asserts on rendered output and on the `<Area name>` VALUE, and searches for
+  the prefix shape anywhere in the text — an anchored `^...$` match passes while
+  `<uuid>::BEV-LFP|2030` is live.
+- The guard DISCOVERS its sites by query and then guards the query: it asserts
+  the discovered set still contains every known leak site, so narrowing it
+  breaks a test instead of shrinking coverage silently. The backend half asks
+  "which writers emit a cohort key WITHOUT the strip" — the question that found
+  site 6; asking "where is the resolver called" is what missed it.
+- An existing test asserted the legend `textContent` **contained the raw key**.
+  It was pinning the bug, and it is now corrected.
+
+Six rules, each reverted in turn, each caught by its own named test. The SVG/PNG
+export inherits the fix because `extractLegendItems` reads `row.textContent` —
+verified by exporting before and after, not by reading the code.
+
 ## A method is its TUPLE. The label is display only.
 
 `method[-1]` is not unique. Across EF v3.1's 25 indicators there are **14**

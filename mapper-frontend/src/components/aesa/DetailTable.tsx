@@ -8,6 +8,7 @@
  */
 
 import { Fragment, useMemo, useState } from 'react'
+import { cohortDisplayString } from '../../utils/dsmCohortColors'
 import { ChevronDown, ChevronRight } from 'lucide-react'
 import type { AESACoverageGap, SustainabilityRatioResult } from '../../api/client'
 import { NotSpecifiedMarker, gapsForPb } from '../authored/CoverageMarkers'
@@ -170,7 +171,7 @@ export function DetailTable({ results, coverageGaps }: Props) {
                             const pct = total > 0 ? (v / total) * 100 : 0
                             return (
                               <tr key={cohort}>
-                                <td style={{ ...td, width: 140 }}>{cohort}</td>
+                                <td style={{ ...td, width: 140 }}>{cohortDisplayString(cohort)}</td>
                                 <td style={{ ...td, textAlign: 'right', width: 120 }}>{fmt(v)}</td>
                                 <td style={td}>
                                   <div style={{

@@ -1719,8 +1719,8 @@ function ProjectedImpactPanelImpl() {
                   one legend entry per band — wraps to multiple rows).
                 */}
                 {cohortStackKeys.length > 0 && (() => {
-                  const labels = dsmColors.projectLegendLabels(cohortStackKeys)
-                  if (labels.length === 0) return null
+                  const entries = dsmColors.projectLegendLabels(cohortStackKeys)
+                  if (entries.length === 0) return null
                   return (
                     <div
                       ref={projLegendRef}
@@ -1731,25 +1731,19 @@ function ProjectedImpactPanelImpl() {
                         fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
                       }}
                     >
-                      {labels.map((label, idx) => {
-                        // Pick a representative cohort key for color
-                        // lookup. When grouping by Stack-by-dim, all
-                        // cohorts mapping to `label` share a color —
-                        // use the first match. When no grouping,
-                        // `label` IS the cohort key.
-                        const repCohort = stackByDimension
-                          ? cohortStackKeys.find((ck) =>
-                              dsmColors.colorForCohort(ck, 0)
-                              === colorFor(dsmColors.colorMap, label),
-                            ) ?? label
-                          : label
+                      {entries.map(({ key, label }, idx) => {
+                        // `key` is the identity (raw cohort key, or the dim
+                        // value when grouping); `label` is display only. The
+                        // previous version carried one string for both, which
+                        // is why it needed to find a representative cohort by
+                        // REVERSE-LOOKING-UP its colour. That hack is gone.
                         const swatchColor = stackByDimension
-                          ? colorFor(dsmColors.colorMap, label)
-                          : dsmColors.colorForCohort(repCohort, idx)
+                          ? colorFor(dsmColors.colorMap, key)
+                          : dsmColors.colorForCohort(key, idx)
                         return (
                           <span
-                            key={label}
-                            data-testid={`projected-by-cohort-legend-${label}`}
+                            key={key}
+                            data-testid={`projected-by-cohort-legend-${key}`}
                             style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}
                           >
                             <span style={{

@@ -76,7 +76,7 @@ from mapper.models.bom_schemas import ImpactAssessmentResult
 
 
 from mapper.api.bom import build_export_filename
-from mapper.api.cohort_export import excel_response
+from mapper.api.cohort_export import excel_response, strip_cohort_prefix
 
 
 router = APIRouter(prefix="/aesa", tags=["aesa"])
@@ -834,12 +834,27 @@ def _build_aesa_workbook(
     _autosize(ws)
 
     # ── By Fuel Type (cohort breakdown) ──
+    #
+    # The Cohort column carries the dim values joined by "|", NOT the
+    # space-joined form the charts show. That is deliberate and it is about
+    # LOSSLESSNESS, not house style: dim values contain spaces ("CNG Station",
+    # "Public AC Charger"), so the chart's "CNG Station Large" cannot be split
+    # back -- it could be two dims or three. The pipe can.
+    #
+    # The "By cohort" sheet (cohort_export.py) splits the same key into one
+    # column PER DIM, which is the better shape. This sheet cannot: it has no
+    # CohortResolver in scope -- which is exactly why it used to write the raw
+    # `<owner id>::` key -- and acquiring one means threading the system,
+    # mapping, subsystem and dimension context into the AESA export. That is a
+    # sheet-SHAPE change, so it is its own change, not a rider on a leak fix.
     ws = wb.create_sheet("By Fuel Type")
-    ws.append(["Year", "PB", "Cohort", "Impact"])
+    ws.append(["Year", "PB", 'Cohort (dims joined by "|")', "Impact"])
     _style_header(ws)
+    # Stripped, like every other sheet writer. This one had no CohortResolver
+    # in scope and wrote the raw `<owner id>::<cohort>` key into the cell.
     for r in result.results:
         for cohort, val in r.impact_by_cohort.items():
-            ws.append([r.year, r.pb_name, cohort, val])
+            ws.append([r.year, r.pb_name, strip_cohort_prefix(cohort), val])
     for row in ws.iter_rows(min_row=2, min_col=4, max_col=4):
         for cell in row:
             cell.number_format = num_fmt

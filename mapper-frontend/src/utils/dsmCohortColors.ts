@@ -42,12 +42,46 @@ import { useProjectStore } from '../stores/projectStore'
 
 const COHORT_SEP = '|'
 
+/** The separator the backend prefixes keys with (`SUBSYSTEM_KEY_SEP` in
+ *  `core/dsm_lca_engine.py`). One constant, so the five places that used to
+ *  re-type `'::'` cannot drift apart. */
+export const SUBSYSTEM_KEY_SEP = '::'
+
+/**
+ * Drop the `<owner id>::` prefix from a cohort or material key.
+ *
+ * Context-free by design: the prefix is positional, so stripping it needs no
+ * mapping, no system id and no archetype lookup. That is what lets a generic
+ * chart component strip a key without having the DSM context plumbed into it.
+ *
+ * IDENTITY vs PRESENTATION: the stripped form is for DISPLAY ONLY. Colour
+ * resolution, React keys and test ids must keep the raw key — `colorForCohort`
+ * looks `rowColorOverrides` up by it, and two owners can hold the same bare
+ * name (measured: in MAp-test all 51 primary cohort names also exist under a
+ * second system id).
+ */
+export function stripCohortPrefix(key: string): string {
+  const i = key.indexOf(SUBSYSTEM_KEY_SEP)
+  return i >= 0 ? key.slice(i + SUBSYSTEM_KEY_SEP.length) : key
+}
+
 export function parseCohortKey(
   key: string,
   dims: readonly DimensionDef[],
 ): Record<string, string> {
   const nads = dims.filter((d) => !d.is_age)
-  const parts = key.split(COHORT_SEP)
+  // Strip the owner prefix BEFORE splitting. Without this, a prefixed key's
+  // first dim value comes back as `<uuid>::BEV-LFP` — which leaked the id into
+  // the legend AND into the colour grouping, since `groupKeyForDim` feeds
+  // `colorMap`.
+  //
+  // Safe because the owners that can appear in ONE chart -- a primary system
+  // and its own subsystems -- have disjoint dim-0 label sets (measured on
+  // MAp-test: 17 powertrains vs 7 station types, no overlap). It would NOT be
+  // safe if a subsystem reused one of the primary's dim-0 labels, or if a
+  // chart ever rendered two SYSTEMS together: in MAp-test all 51 bare cohort
+  // names exist under two system ids, and stripping would merge them.
+  const parts = stripCohortPrefix(key).split(COHORT_SEP)
   return Object.fromEntries(nads.map((d, i) => [d.name, parts[i] ?? '']))
 }
 
@@ -399,12 +433,9 @@ export function cohortDisplayLabel(
 ): { label: string; archetype: string | null } {
   const { systemId, primaryMappings = {}, subsystems = [], archetypeName } = opts
   let id: string | null = null
-  let rest = cohortKey
-  const idx = cohortKey.indexOf('::')
-  if (idx >= 0) {
-    id = cohortKey.slice(0, idx)
-    rest = cohortKey.slice(idx + 2)
-  }
+  const idx = cohortKey.indexOf(SUBSYSTEM_KEY_SEP)
+  if (idx >= 0) id = cohortKey.slice(0, idx)
+  const rest = stripCohortPrefix(cohortKey)
   const label = rest.split(COHORT_SEP).join(' ').trim() || rest
 
   let arcId: string | undefined
@@ -415,6 +446,17 @@ export function cohortDisplayLabel(
   }
   const name = arcId && archetypeName ? archetypeName(arcId) : undefined
   return { label, archetype: name && name !== label ? name : null }
+}
+
+/**
+ * The ONE display string for a cohort key: prefix stripped, dims joined with a
+ * space. `stripCohortPrefix` alone is not it -- that leaves the `|` separator,
+ * so a legend using it reads `CNG Station|Large` while the tooltip and the
+ * table (which go through `cohortDisplayLabel`) read `CNG Station Large`. Two
+ * names for one band is the same defect as a raw key, in a quieter form.
+ */
+export function cohortDisplayString(cohortKey: string): string {
+  return cohortDisplayLabel(cohortKey).label
 }
 
 /**
@@ -489,7 +531,11 @@ export interface DSMSystemColors {
    * the unique stack values present in the data (alphabetical).
    * When null, returns the cohort keys unchanged.
    */
-  projectLegendLabels: (cohortKeys: readonly string[]) => string[]
+  /** Legend entries as `{ key, label }`. The KEY is the raw cohort key (or the
+   *  dim value when grouping) and is what colour, React keys and test ids must
+   *  use; the LABEL is for display and never carries the owner prefix. Returning
+   *  a bare string here is what let the raw key reach the legend. */
+  projectLegendLabels: (cohortKeys: readonly string[]) => { key: string; label: string }[]
 }
 
 /**
@@ -596,11 +642,18 @@ export function useDSMSystemColors(
       return CHART_PALETTE[fallbackIndex % CHART_PALETTE.length]
     }
 
-    const projectLegendLabels = (cohortKeys: readonly string[]): string[] => {
-      if (!stackByDimension) return [...cohortKeys]
+    const projectLegendLabels = (
+      cohortKeys: readonly string[],
+    ): { key: string; label: string }[] => {
+      // No grouping: one entry per cohort. The key stays raw (colour lookup,
+      // React key, test id); only the label is stripped.
+      if (!stackByDimension) {
+        return cohortKeys.map((ck) => ({ key: ck, label: cohortDisplayString(ck) }))
+      }
       const seen = new Set<string>()
       const order: string[] = []
       for (const ck of cohortKeys) {
+        // Already prefix-free: `parseCohortKey` strips before splitting.
         const v = groupKeyForDim(ck, dims, stackByDimension)
         if (seen.has(v)) continue
         seen.add(v)
@@ -610,7 +663,7 @@ export function useDSMSystemColors(
       // (which derives from the dimension's `labels` field, also
       // alphabetical-by-construction in most projects).
       order.sort((a, b) => a.localeCompare(b))
-      return order
+      return order.map((v) => ({ key: v, label: v }))
     }
 
     return { stackKeys, colorMap, colorForCohort, projectLegendLabels }

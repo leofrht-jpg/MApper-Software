@@ -176,12 +176,18 @@ describe('Patch 4AL+ — legend in expanded modal', () => {
     expect(icevSwatch.style.backgroundColor).toMatch(/ef4444|rgb\(239,\s*68,\s*68\)/i)
   })
 
-  it('legend label uses the cohort key as the display name', () => {
+  it('legend label is the DISPLAY string; the test id keeps the raw key', () => {
+    // This test used to assert `textContent` CONTAINED the raw cohort key,
+    // which pinned the leak: an owner-prefixed key rendered verbatim, and the
+    // `|` separator reached the user too. Identity and presentation are now
+    // separate — the test id stays the key, the text is the display string.
     renderAndExpand(0)
     const bev = document.body.querySelector(
       '[data-testid="expanded-cohort-legend-BEV-LFP|Small"]',
     ) as HTMLElement
-    expect(bev.textContent).toContain('BEV-LFP|Small')
+    expect(bev, 'the test id must still be the raw key').not.toBeNull()
+    expect(bev.textContent).toContain('BEV-LFP Small')
+    expect(bev.textContent).not.toContain('|')
   })
 })
 

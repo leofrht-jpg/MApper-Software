@@ -11915,6 +11915,21 @@ list FROM the models (classes declaring the field) rather than a hand-kept set,
 so adding the field to a seventh result brings that result's call sites under
 the guard. It caught both AESA adapters on the way in.
 
+**The chain had coverage at both ENDS and none in the middle.** Reported as a
+bug -- a stored `supplied` exchange seemed to reopen on the ecoinvent basis --
+it did not reproduce: the definition file, the model, the declared
+`response_model` and the editor all carried `supplied`. But the only tested
+links were file -> model (`test_uncertainty_basis.py`) and response -> editor
+(`authoredActivityEditor.test.tsx`); **model -> HTTP response had nothing**, and
+that is precisely where this field would vanish without a sound. The default is
+`"ecoinvent"` and the TypeScript field is optional, so a response that omitted
+it would raise nothing anywhere: the editor would fall back, show the ecoinvent
+basis, and demand a floor justification for an amount that is not an emission.
+A silent downgrade to the STRICTER default is the worst shape this can take,
+because the resulting screen looks correct.
+`test_authored_basis_survives_the_response.py` pins that link, over both bases,
+with an anti-vacuity case proving a dropped field is detectable.
+
 ## Future Extension: Product Systems (deferred to v1.1)
 
 Product systems — a bag of archetypes with multipliers, drag-drop builder in LCA Architect, cross-tab integration into Impact Assessment Single product mode — was considered for v1.0 but deferred. Reasoning: archetypes already serve as product systems for the load-bearing research questions in MApper's domain (vehicle archetypes, charging infrastructure, wind farm components). Multi-archetype bundling is a sufficient-but-not-necessary feature for v1.0 — current users handle bundling via post-hoc summation of separate archetype results. Revisit for v1.1 if real user demand surfaces post-distribution.

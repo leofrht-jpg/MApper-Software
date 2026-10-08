@@ -28,6 +28,8 @@ import io
 import logging
 import re
 from dataclasses import dataclass
+
+from mapper.core.dsm_lca_engine import SUBSYSTEM_KEY_SEP
 from typing import Any, Literal
 
 from fastapi import Response
@@ -243,6 +245,22 @@ def apply_sci(ws, min_row: int, min_col: int, max_col: int) -> None:
             cell.number_format = SCI_FMT
 
 
+def strip_cohort_prefix(ck: str) -> str:
+    """Drop the ``<owner id>::`` prefix from a cohort key, for DISPLAY.
+
+    The canonical strip for every sheet writer. Context-free -- the prefix is
+    positional -- so a writer with no ``CohortResolver`` in scope can still
+    obey the rule. That is exactly what the AESA "By Fuel Type" sheet could
+    not do, which is why it wrote raw keys into its Cohort column.
+
+    DISPLAY ONLY. The raw key stays the identity: two owners can hold the same
+    bare name -- measured on MAp-test, all 51 primary cohort names also exist
+    under a second system id -- so grouping or joining on the stripped form
+    would merge them.
+    """
+    return ck.split(SUBSYSTEM_KEY_SEP, 1)[-1] if SUBSYSTEM_KEY_SEP in ck else ck
+
+
 @dataclass
 class CohortResolver:
     """Resolves a (possibly subsystem-prefixed) cohort key to its readable
@@ -260,8 +278,8 @@ class CohortResolver:
 
     def split_prefix(self, ck: str) -> tuple[str | None, str]:
         """(owner_id, cohort_suffix). owner_id None for a non-prefixed key."""
-        if "::" in ck:
-            pid, rest = ck.split("::", 1)
+        if SUBSYSTEM_KEY_SEP in ck:
+            pid, rest = ck.split(SUBSYSTEM_KEY_SEP, 1)
             return pid, rest
         return None, ck
 
@@ -295,7 +313,7 @@ class CohortResolver:
 
     def split_cohort(self, ck: str) -> list[str]:
         """Readable cohort split into dim columns — UUID prefix stripped."""
-        display = ck.split("::", 1)[-1] if "::" in ck else ck
+        display = strip_cohort_prefix(ck)
         parts = display.split("|")
         out = parts[: self.n_dims] if self._nonage_names else [display]
         while len(out) < self.n_dims:

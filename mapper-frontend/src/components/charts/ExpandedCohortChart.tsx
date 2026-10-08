@@ -18,6 +18,7 @@ import { NumberFormatControl } from './NumberFormatControl'
 import { type useNumberFormatter } from './numberFormat'
 import { StackedTotalTooltip } from './StackedTotalTooltip'
 import { tightStackedDomain } from './yAxisDomain'
+import { cohortDisplayString } from '../../utils/dsmCohortColors'
 
 // Patch 4AL+ — full-affordance render of a single cohort-stacked
 // scenario for the <ChartExpandModal>. Mirrors the single-scenario
@@ -96,11 +97,14 @@ export function ExpandedCohortChart({
   const legend = useMemo(() => {
     if (legendLabels && legendColor) {
       return legendLabels.map((label, i) => ({
-        label, color: legendColor(label, i),
+        key: label, label, color: legendColor(label, i),
       }))
     }
+    // Display label only; `ck` stays the identity for colour and test id.
+    // This fell back to the raw key, so every facet-expand legend showed
+    // `<owner id>::<cohort>`.
     return cohortKeys.map((ck, i) => ({
-      label: ck, color: colorForCohort(ck, i),
+      key: ck, label: cohortDisplayString(ck), color: colorForCohort(ck, i),
     }))
   }, [legendLabels, legendColor, cohortKeys, colorForCohort])
 
@@ -157,6 +161,9 @@ export function ExpandedCohortChart({
                 key={ck}
                 type="monotone"
                 dataKey={ck}
+                // Without `name`, Recharts falls back to `dataKey` and
+                // StackedTotalTooltip printed the raw prefixed key.
+                name={cohortDisplayString(ck)}
                 stackId="1"
                 stroke={colorForCohort(ck, i)}
                 fill={colorForCohort(ck, i)}
@@ -185,10 +192,10 @@ export function ExpandedCohortChart({
           color: 'var(--text-secondary)',
         }}
       >
-        {legend.map(({ label, color }) => (
+        {legend.map(({ key, label, color }) => (
           <span
-            key={label}
-            data-testid={`expanded-cohort-legend-${label}`}
+            key={key}
+            data-testid={`expanded-cohort-legend-${key}`}
             style={{
               display: 'inline-flex', alignItems: 'center', gap: 5,
             }}

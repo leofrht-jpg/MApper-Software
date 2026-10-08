@@ -88,6 +88,19 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **The authoring UI could not reach the backend at all.** Five client calls
+  sent `JSON.stringify(...)` with no `Content-Type: application/json`, so
+  Starlette handed FastAPI raw text and every one answered **422
+  `model_attributes_type`** — "Input should be a valid dictionary or object to
+  extract fields from", with the JSON quoted back as a string, which reads like
+  a schema bug rather than a missing header. Creating an authored database,
+  adding or updating an activity, previewing an exchange and fetching reached
+  indicators were all dead — in the dev browser as much as in the packaged
+  app, because `fetch` omits the header in both. The header is now set once,
+  where the client builds headers, for any string body that does not already
+  carry one; `FormData` is untouched so the browser still sets its multipart
+  boundary.
+
 - **Prospective single-product calculation raised `NameError` in v0.2.1 and
   v0.2.2.** Reached only when a premise database is installed — which CI does
   not have — so the Prospective tab, prospective contribution analysis, the

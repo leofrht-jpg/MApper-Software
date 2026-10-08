@@ -11532,6 +11532,40 @@ link refusals filter on is already refused in authored database names.
   `tests/test_bare_pytest_collects.py`, which runs pytest from a directory
   outside the backend.
 
+## A string body is JSON, and `fetch` will not say so
+
+`fetch` sets no `Content-Type` for a string body. Starlette then never parses
+it, and FastAPI reports **422 `model_attributes_type`** — "Input should be a
+valid dictionary or object to extract fields from" — with the JSON quoted back
+in `input` **as a string**. That error names the schema, so it reads as a model
+bug; the body never reached the model.
+
+Found walking 0.3.0 by hand: the entire authoring UI was dead — in `npm run
+dev` exactly as in the packaged app, since `fetch` omits the header in both.
+Five calls in `api/client.ts` (`createAuthoredDatabase`,
+`addAuthoredActivity`, `updateAuthoredActivity`, `fetchReachedIndicators`,
+`previewAuthoredExchange`) sent `JSON.stringify(...)` bare. They were a
+contiguous block added together, which is how five arrived at once and why the
+guard discovers sites rather than listing them.
+
+The header is set in `_withProjectHeader` — the one place this client builds
+headers, used by `request()` and by the direct `fetch` calls — for any string
+body with no Content-Type of its own.
+
+- **Don't set it at the call site.** 54 `fetch` calls, ~120 bodies; the audit
+  found exactly five missing it, and the next one added will miss it too.
+- **Don't widen it past strings.** A `FormData` body must stay unlabelled so
+  the browser can set the multipart boundary. `typeof body === 'string'` is the
+  whole condition.
+- **Don't test it with `TestClient(json=...)`.** That helper sets the header
+  for you, so the test passes while the app is unusable from a browser. The
+  backend half (`tests/test_json_body_needs_content_type.py`) posts raw bytes
+  with no header and pins the 422 as the observable symptom, for all five
+  routes.
+- **Don't mock `request()` to test it.** The frontend half drives the real
+  exported functions through the real `request()` with a spy on `fetch`;
+  mocking the thing under test asserts nothing.
+
 ## A guard that cannot fail — the project's dominant defect class
 
 Recorded as a list because it keeps recurring in new disguises, and because

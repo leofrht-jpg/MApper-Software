@@ -725,11 +725,33 @@ function _withProjectHeader(options?: RequestInit): RequestInit {
   // no-store on every API request defeats that whole stale-read class at the
   // source. Caller-supplied `cache` (none today) still wins via the spread.
   const base: RequestInit = { cache: 'no-store', ...(options ?? {}) }
-  const expected = _expectedProjectProvider()
-  if (!expected) return base
   const headers = new Headers(options?.headers || {})
-  headers.set('X-Mapper-Project', expected)
-  return { ...base, headers }
+  let touched = false
+
+  // A STRING body from this client is always JSON, and `fetch` sends no
+  // Content-Type for one unless asked. Starlette then hands FastAPI the raw
+  // text, and every model-bodied route answers 422 model_attributes_type
+  // ("Input should be a valid dictionary or object to extract fields from")
+  // with the JSON *as a string* in the error — which reads like a schema bug,
+  // not a missing header. That is what the five authored-database routes hit.
+  //
+  // Set here rather than at each call site because this is the one place the
+  // client builds headers. The `typeof === 'string'` test is load-bearing: a
+  // FormData body MUST be left alone so the browser can set the multipart
+  // boundary, and a caller that sets its own Content-Type still wins.
+  if (typeof base.body === 'string' && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json')
+    touched = true
+  }
+
+  const expected = _expectedProjectProvider()
+  if (expected) {
+    headers.set('X-Mapper-Project', expected)
+    touched = true
+  }
+  // Untouched requests keep their original options object, so a caller that
+  // passed no headers still gets none.
+  return touched ? { ...base, headers } : base
 }
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {

@@ -124,3 +124,12 @@ but the tag and the GitHub release are not cut yet.
 - Bare `pytest` works from the backend directory; it previously failed at
   collection on every file, which read as a broken branch rather than a missing
   install.
+- **Settings › Logs: "Copy all" and "Export" did nothing in the packaged app.**
+  Two causes behind one symptom. Export built a `blob:` URL and clicked a
+  hidden `<a download>`; the packaged app's webview has no download delegate on
+  a remote http origin, so the click produced no file and no error. The backend
+  now writes the file and the app reports the path it wrote. Copy treated
+  `document.execCommand('copy')` as successful whenever it did not throw — it
+  returns `false` instead — and the caller discarded even that, so neither
+  outcome was ever shown. A copy that fails now says so, and one that works
+  confirms on the button.

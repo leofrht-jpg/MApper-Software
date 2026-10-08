@@ -2506,6 +2506,42 @@ data.
 - Unhandled exceptions are routed through `logging` (both `sys.excepthook` and a FastAPI `@app.exception_handler(Exception)`).
 - Frontend captures uncaught errors (`window.onerror`, `onunhandledrejection`, React `ErrorBoundary`) and non-2xx `fetch()` responses into a Zustand `logStore` (last 50 entries).
 - Users view combined frontend + backend logs under Settings → Logs (filter, copy, export to `.txt`).
+  Both of those buttons were broken in the packaged app; see below.
+
+## The packaged app is a REMOTE http origin, not a Tauri page
+
+`mapper-tauri/src/main.rs` navigates the webview to `http://localhost:8765/index.html`
+— the backend serves the built SPA so the page is same-origin with the API. That
+one decision removes two things people assume are there:
+
+- **No Tauri IPC.** `window.__TAURI__` is never injected into a remote origin,
+  so no Tauri plugin (clipboard-manager, dialog, fs) is reachable from app code.
+  Adding the plugins does not help; the page would need an IPC grant to an http
+  origin. `isPackagedDesktop()` therefore keys on `window.location.port ===
+  '8765'`, which is the honest discriminator — it is what actually differs.
+- **No download delegate.** WKWebView ignores `<a download>` on a `blob:` URL
+  with no delegate: no file, no error, no event. Settings › Logs "Export" was a
+  blob anchor, so it was silently inert in every packaged build while working
+  perfectly in `npm run dev`. **Anything that saves a file must go through the
+  backend** (`POST /system/logs/save` writes it and returns the path), and the
+  UI must say where the file went — otherwise a success looks exactly like the
+  old no-op.
+
+The same screen carried the quieter half of the class. `document.execCommand('copy')`
+**returns `false` when it does nothing; it does not throw**, so a `try` with no
+check on the return value reports a failed copy as a success — and `handleCopy`
+discarded the return entirely, so a *successful* copy showed nothing either. A
+boolean result that nobody reads is the same defect as a swallowed exception.
+Both outcomes are now on screen: "Copied" on the button, or a visible line
+telling the reader to select the text manually.
+
+What tests can reach: which branch runs, that the packaged branch does NOT touch
+an anchor, that a backend failure propagates, and every visible outcome
+(`tests/logsCopyAndExport.test.ts`, `tests/logsPanelFeedback.test.tsx`,
+`tests/test_logs_save_route.py`). What they cannot: whether WKWebView actually
+grants clipboard access on a user gesture, and whether the real build reaches
+port 8765. Those two need the installed app.
+
 
 ## Common Error Patterns
 

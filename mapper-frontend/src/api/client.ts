@@ -4671,7 +4671,41 @@ export async function getGridIntensities(): Promise<GridIntensityResponse> {
   return request<GridIntensityResponse>('/system/grid-intensities')
 }
 
-export async function downloadSystemLogs(): Promise<void> {
+export interface LogSaveResult {
+  /** Where the file ended up, or null when the browser handled the download. */
+  path: string | null
+}
+
+/**
+ * True when this page is the packaged desktop app rather than a dev browser.
+ *
+ * The desktop webview is navigated to `http://localhost:8765/index.html` (the
+ * backend serves the SPA same-origin), while `npm run dev` serves it from Vite
+ * on 5173. The port is therefore the honest discriminator; `window.__TAURI__`
+ * is NOT, because a page on a remote http origin never receives the IPC bridge.
+ */
+export function isPackagedDesktop(): boolean {
+  return typeof window !== 'undefined' && window.location.port === '8765'
+}
+
+/**
+ * Save the backend log file.
+ *
+ * In a browser: the usual `<a download>` on a blob, which works.
+ *
+ * In the packaged app that silently does NOTHING — WKWebView needs a download
+ * delegate, and the page is on a remote http origin so it has neither the
+ * delegate nor the Tauri IPC bridge. No file, no error, no event: the button
+ * looked dead. There the backend writes the file and tells us where, which
+ * needs no new capability and no IPC grant to an http origin.
+ */
+export async function downloadSystemLogs(): Promise<LogSaveResult> {
+  if (isPackagedDesktop()) {
+    const saved = await request<{ path: string; bytes: number }>(
+      '/system/logs/save', { method: 'POST' },
+    )
+    return { path: saved.path }
+  }
   const res = await fetch(`${API_BASE}/system/logs/export`)
   if (!res.ok) throw new Error(await res.text())
   const stamp = new Date().toISOString().slice(0, 10)
@@ -4684,6 +4718,7 @@ export async function downloadSystemLogs(): Promise<void> {
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+  return { path: null }
 }
 
 // ── LCIA Method Library ──────────────────────────────────────────────────────

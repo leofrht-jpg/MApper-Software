@@ -76,6 +76,46 @@ async def get_grid_intensities() -> GridIntensityResponse:
     )
 
 
+class LogSaveResponse(BaseModel):
+    """Where the log file was written, for the UI to show the user."""
+
+    path: str
+    bytes: int
+
+
+@router.post("/logs/save", response_model=LogSaveResponse)
+async def save_logs() -> LogSaveResponse:
+    """Write the log file somewhere the user can find it, and say where.
+
+    The desktop app's webview is navigated to ``http://localhost:8765`` and has
+    no download handler, so the browser trick the UI used -- an ``<a download>``
+    pointing at a ``blob:`` URL -- silently does nothing there: no file, no
+    error, no event. WKWebView needs a download delegate, which a page on a
+    remote http origin does not get.
+
+    Rather than grant the Tauri IPC bridge to that origin just to reach the
+    dialog/fs plugins, the backend writes the file itself. It already owns the
+    log and already runs as the user, and this works identically in the browser
+    and in the packaged app.
+
+    Written to ~/Downloads when that exists, else the log's own directory, so
+    the path is always one the user can open.
+    """
+    if not LOG_FILE.is_file():
+        raise HTTPException(status_code=404, detail="Log file does not exist yet.")
+    stamp = datetime.now().strftime("%Y-%m-%d")
+    downloads = Path.home() / "Downloads"
+    target_dir = downloads if downloads.is_dir() else LOG_FILE.parent
+    target = target_dir / f"mapper_logs_{stamp}.txt"
+    try:
+        data = LOG_FILE.read_bytes()
+        target.write_bytes(data)
+    except OSError as e:
+        # Surfaced, never swallowed: a read-only or full disk must say so.
+        raise HTTPException(status_code=500, detail=f"Could not write {target}: {e}") from e
+    return LogSaveResponse(path=str(target), bytes=len(data))
+
+
 @router.get("/logs/export")
 async def export_logs() -> FileResponse:
     if not LOG_FILE.is_file():

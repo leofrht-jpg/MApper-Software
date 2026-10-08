@@ -239,20 +239,31 @@ export function LogsPanel({ version }: { version: string }) {
 
   const totalAll = unified.length + Math.max(0, backendTotal - backendLines.length)
 
+  // Single shared "just copied" key; resets after 1.5s. Parent owns it
+  // so we don't fan out per-row state — only one entry can be the
+  // "most recently copied" at a time, and the visual feedback is
+  // ephemeral anyway.
+  const [copiedKey, setCopiedKey] = useState<string | null>(null)
+
   const handleCopy = async () => {
     const text = formatExport({
       entries: unified,
       version,
       project: currentProject ?? '(none)',
     })
-    await copyToClipboard(text)
+    // The result was discarded, so a copy that silently did nothing looked
+    // exactly like one that worked. Both outcomes are now visible.
+    const ok = await copyToClipboard(text)
+    if (ok) {
+      setCopiedKey(COPY_ALL_KEY)
+      window.setTimeout(
+        () => setCopiedKey((curr) => (curr === COPY_ALL_KEY ? null : curr)), 1500,
+      )
+    } else {
+      setLoadError('Could not copy to the clipboard. Select the log text and copy it manually.')
+    }
   }
 
-  // Single shared "just copied" key; resets after 1.5s. Parent owns it
-  // so we don't fan out per-row state — only one entry can be the
-  // "most recently copied" at a time, and the visual feedback is
-  // ephemeral anyway.
-  const [copiedKey, setCopiedKey] = useState<string | null>(null)
   const handleCopyEntry = async (entry: UnifiedEntry) => {
     const ok = await copyToClipboard(formatEntry(entry))
     if (!ok) return
@@ -262,9 +273,14 @@ export function LogsPanel({ version }: { version: string }) {
     }, 1500)
   }
 
+  const [savedPath, setSavedPath] = useState<string | null>(null)
   const handleExport = async () => {
     try {
-      await downloadSystemLogs()
+      const { path } = await downloadSystemLogs()
+      // In the packaged app the backend writes the file, so say where it went —
+      // otherwise a successful save is indistinguishable from the old no-op.
+      setSavedPath(path)
+      if (path) window.setTimeout(() => setSavedPath((c) => (c === path ? null : c)), 8000)
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err))
     }
@@ -300,12 +316,22 @@ export function LogsPanel({ version }: { version: string }) {
           <option value="backend">Backend only</option>
         </select>
         <div style={{ display: 'flex', gap: 6 }}>
-          <LogButton onClick={handleCopy}>Copy all</LogButton>
+          <LogButton onClick={handleCopy}>
+            {copiedKey === COPY_ALL_KEY ? 'Copied' : 'Copy all'}
+          </LogButton>
           <LogButton onClick={handleExport}>Export</LogButton>
         </div>
       </div>
 
       <Card>
+        {savedPath && (
+          <div
+            data-testid="logs-saved-path"
+            style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}
+          >
+            Logs written to <code style={{ fontFamily: 'var(--font-mono)' }}>{savedPath}</code>
+          </div>
+        )}
         {loading && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>Loading backend logs…</div>}
         {loadError && (
           <div style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)' }}>
@@ -510,28 +536,41 @@ function formatExport({ entries, version, project }: { entries: UnifiedEntry[]; 
   return [...header, ...entries.map(formatEntry)].join('\n')
 }
 
-// Shared clipboard helper. Same fallback strategy as the top-level
-// "Copy all" button — `navigator.clipboard` isn't available in
-// non-secure contexts, so we route through a transient textarea +
-// execCommand. Returns true on best-effort success so callers can
-// flip a "Copied" indicator without distinguishing the two paths.
+// Shared clipboard helper for "Copy all" and the per-entry copy.
+// `navigator.clipboard` isn't available in non-secure contexts, so we fall
+// back to a transient textarea + execCommand. Returns whether the text
+// actually reached the clipboard — callers MUST act on the difference, since
+// reporting a failed copy as a success is what made the button look dead.
+/** `copiedKey` sentinel for the whole-log copy, distinct from any entry key. */
+const COPY_ALL_KEY = '\u0000copy-all'
+
 async function copyToClipboard(text: string): Promise<boolean> {
   try {
-    await navigator.clipboard.writeText(text)
-    return true
-  } catch {
-    const ta = document.createElement('textarea')
-    ta.value = text
-    document.body.appendChild(ta)
-    ta.select()
-    try {
-      document.execCommand('copy')
-      document.body.removeChild(ta)
+    // http://localhost IS a secure context, so this is normally available even
+    // in the packaged app. It can still reject (permission, no user gesture).
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
       return true
-    } catch {
-      document.body.removeChild(ta)
-      return false
     }
+  } catch {
+    /* fall through to the legacy path */
+  }
+  const ta = document.createElement('textarea')
+  ta.value = text
+  // Off-screen rather than in flow, so the page does not jump while copying.
+  ta.style.position = 'fixed'
+  ta.style.opacity = '0'
+  document.body.appendChild(ta)
+  ta.select()
+  try {
+    // `execCommand` RETURNS false when it does nothing — it does not throw.
+    // Ignoring that return is why this reported success while copying nothing,
+    // and why the button looked dead rather than broken.
+    return document.execCommand('copy') === true
+  } catch {
+    return false
+  } finally {
+    document.body.removeChild(ta)
   }
 }
 

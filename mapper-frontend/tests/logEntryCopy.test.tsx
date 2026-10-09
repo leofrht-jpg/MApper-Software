@@ -42,7 +42,7 @@ vi.mock('../src/api/client', async () => {
     ...actual,
     // The panel's mount fetch — correct name + return shape (`log_path`).
     getSystemLogs: vi.fn(async () => ({ lines: [], total: 0, log_path: '/tmp/mapper.log' })),
-    downloadSystemLogs: vi.fn(async () => undefined),
+    downloadSystemLogs: vi.fn(async () => ({ path: null })),
   }
 })
 

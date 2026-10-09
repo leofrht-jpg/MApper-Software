@@ -88,6 +88,15 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **The Monte Carlo export returned 500 when the impact-weighted coverage had
+  no share.** The Summary formatted `impact_share * 100`, and `impact_share` is
+  `None` in two ordinary states: an archetype whose every row is a parameter
+  expression, and one whose scoreable rows carry zero total impact under the
+  chosen indicator (an authored activity with no factor for it). Both now get a
+  sentence saying which, never a number and never 0%. The Uncertainty page's
+  coverage banner had the same conflation: it said "every row is a parameter
+  expression" in the zero-impact case too, and now distinguishes them.
+
 - **The authoring UI could not reach the backend at all.** Five client calls
   sent `JSON.stringify(...)` with no `Content-Type: application/json`, so
   Starlette handed FastAPI raw text and every one answered **422

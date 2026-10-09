@@ -905,6 +905,39 @@ def _append_basis_block(ws, notes) -> None:
         ws.append(row)
 
 
+def impact_coverage_text(coverage: PedigreeCoverage) -> str:
+    """The impact-weighted coverage, stated even when there is no share.
+
+    ``impact_share`` is ``None`` in two different situations, and neither may
+    be formatted as a number (``None * 100`` was a 500 on every export of an
+    archetype in either state):
+
+    * the archetype has no scoreable rows at all -- every row is a parameter
+      expression, so there is nothing on the material table to fix;
+    * it has scoreable rows, but their total |impact| under this indicator is
+      zero, so there is nothing to weight a share by.
+
+    Both are written out, never rendered as 0%: 0% says "something here could
+    be scored and has not been", which is true of neither.
+    """
+    if coverage.impact_share is not None:
+        return f"{coverage.impact_share * 100:.1f}% of {coverage.method_label}"
+    if coverage.archetype_materials_total == 0:
+        return (
+            f"none to weight: every row of this archetype is a parameter "
+            f"expression, so no material can carry a score and its foreground "
+            f"uncertainty comes from the parameters (not 0% of "
+            f"{coverage.method_label})"
+        )
+    return (
+        f"no share: this archetype's {coverage.archetype_materials_total} "
+        f"scoreable material(s) carry zero total {coverage.method_label}, so "
+        f"there is no impact to weight by "
+        f"({coverage.archetype_materials_scored} of "
+        f"{coverage.archetype_materials_total} scored)"
+    )
+
+
 def _build_monte_carlo_workbook(
     result: MonteCarloResult,
     coverage: PedigreeCoverage | None,
@@ -949,8 +982,7 @@ def _build_monte_carlo_workbook(
              f"{coverage.materials_scored} of {coverage.materials_total}"),
             ("Materials scored (this archetype)",
              f"{coverage.archetype_materials_scored} of {coverage.archetype_materials_total}"),
-            ("Impact-weighted coverage",
-             f"{coverage.impact_share * 100:.1f}% of {coverage.method_label}"),
+            ("Impact-weighted coverage", impact_coverage_text(coverage)),
             ("Coverage basis",
              "Weighted by impact, not row count: the share of THIS archetype's "
              "total |impact| carried by rows whose uncertainty was scored."),

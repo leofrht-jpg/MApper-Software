@@ -149,7 +149,9 @@ describe('the short list explains itself', () => {
 describe('nothing scoreable is not zero percent', () => {
   it('says so, rather than showing 0%', () => {
     // 0% implies there is something here you could score and have not.
-    render(<CoverageBanner coverage={coverage({ impact_share: null })} />)
+    render(<CoverageBanner coverage={coverage({
+      impact_share: null, archetype_materials_total: 0, archetype_materials_scored: 0,
+    })} />)
     const el = screen.getByTestId('pedigree-coverage-none-scoreable')
     expect(el.textContent).toMatch(/nothing scoreable/i)
     // The sentence deliberately says "not 0% coverage", so the check is that
@@ -157,6 +159,20 @@ describe('nothing scoreable is not zero percent', () => {
     expect(el.textContent).toMatch(/not 0% coverage/i)
     expect(screen.queryByTestId('pedigree-coverage-headline')).toBeNull()
     expect(screen.queryByTestId('pedigree-coverage-next')).toBeNull()
+  })
+
+  it('does not claim every row is an expression when the share is null for ZERO IMPACT', () => {
+    // null also arrives when the archetype HAS scoreable rows but their total
+    // impact is zero. "Every row is a parameter expression" would be false.
+    render(<CoverageBanner coverage={coverage({
+      impact_share: null, archetype_materials_total: 2, archetype_materials_scored: 0,
+      top_unscored: [],
+    })} />)
+    const el = screen.getByTestId('pedigree-coverage-zero-impact')
+    expect(el.textContent).toContain('0 of 2 materials')
+    expect(el.textContent).toMatch(/zero total climate change/i)
+    expect(screen.queryByTestId('pedigree-coverage-none-scoreable')).toBeNull()
+    expect(screen.queryByTestId('pedigree-coverage-headline')).toBeNull()
   })
 
   it('still shows 0% when there ARE scoreable rows and none is scored', () => {

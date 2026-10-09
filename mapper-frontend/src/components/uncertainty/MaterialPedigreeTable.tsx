@@ -295,8 +295,32 @@ function ScopeNote({
  */
 export function CoverageBanner({ coverage }: { coverage: PedigreeCoverage }) {
   // null is not 0%. 0% says there is something here you could score and have
-  // not; null says there is nothing to score, because every row of this
-  // archetype is a parameter expression.
+  // not. null means one of TWO things, and they need different sentences:
+  // the archetype has scoreable rows whose total |impact| under this
+  // indicator is zero (nothing to weight a share by), or every row is a
+  // parameter expression (nothing to score at all).
+  if (coverage.impact_share === null && coverage.archetype_materials_total > 0) {
+    return (
+      <div
+        data-testid="pedigree-coverage-zero-impact"
+        style={{
+          padding: 'var(--space-3)',
+          border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
+          background: 'var(--bg-elevated)',
+        }}
+      >
+        <div style={{ fontSize: 'var(--text-sm)', color: 'var(--text-primary)' }}>
+          <strong>No impact to weight coverage by.</strong>{' '}
+          {coverage.archetype_materials_scored} of {coverage.archetype_materials_total} materials
+          in this archetype scored.
+        </div>
+        <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4 }}>
+          This archetype's scoreable materials carry zero total {coverage.method_label}, so there
+          is no impact-weighted share to report for this indicator.
+        </div>
+      </div>
+    )
+  }
   if (coverage.impact_share === null) {
     return (
       <div

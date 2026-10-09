@@ -10372,6 +10372,14 @@ diagonal, so a score is a dot product of sampled factors with per-flow inventory
 totals — every method gets its own sampled CFs, rather than one being sampled
 and the rest held fixed.
 
+**The Iterations fields are `<NumberInput integerOnly min={1} max={MAX_ITERATIONS}
+emptyValue={1}>`, never a clamped `<input>`.** Clamping in `onChange`
+(`Math.max(1, Number(v) || 1)`) made the field impossible to clear: an empty
+string is falsy, so it snapped back to 1 and the next key appended to it.
+`MAX_ITERATIONS` (20 000) matches the backend's own 400 bound. A test that sets
+the whole value with `fireEvent.change` passes on the broken version;
+`monteCarloIterationsField.test.tsx` appends keystrokes to what the field shows.
+
 **The lower bound is stated in the UI, not only here.** ~12% of ecoinvent's
 non-production exchanges carry undefined uncertainty and are sampled as fixed
 (88% lognormal with pedigree retained, 0.2% normal), so any reported spread is a

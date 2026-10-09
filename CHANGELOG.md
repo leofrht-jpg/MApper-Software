@@ -88,6 +88,12 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **The Uncertainty page's Iterations field could not be cleared.** It clamped
+  to at least 1 on every keystroke, so emptying it snapped back to 1 and typing
+  a new count produced "164" for "64". Both the single-item and multi-item
+  fields now clamp on blur (to 1–20 000, the backend's own range); the default
+  of 1000 and the run payload are unchanged.
+
 - **The authoring UI could not reach the backend at all.** Five client calls
   sent `JSON.stringify(...)` with no `Content-Type: application/json`, so
   Starlette handed FastAPI raw text and every one answered **422

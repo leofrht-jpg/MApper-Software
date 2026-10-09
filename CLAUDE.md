@@ -11594,6 +11594,9 @@ link refusals filter on is already refused in authored database names.
 - **Don't add an exchange rule anywhere but `resolve_exchange`.** The AST guard
   fails; more to the point, preview would then approve what save refuses.
 - **Don't branch the UI on problem text.** Key on `codes`.
+  The text is for a person: it says "give a reason", never a request field name
+  like `floor_reason`. Changing the wording must never change a code; a test
+  pins both (`test_the_below_floor_message_speaks_to_a_person_not_a_field`).
 - **Don't default the scope, a pedigree score, or the basic variance.** Each is
   a statement about the data the user has to make.
 - **Don't use `window.confirm` for the deletes.** It is a no-op in WKWebView;

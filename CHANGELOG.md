@@ -88,6 +88,12 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **A project switch kept the previous project's archetype in Single-product
+  Impact Assessment.** After switching, the selection still held an archetype id
+  from the other project, Calculate stayed enabled, and a Prospective run failed
+  with "Archetype '…' not found"; the error then stayed on screen after picking
+  an archetype from the new project. The single-product view now starts fresh on
+  a project change, and the single-product and Multi-item stores reset with it.
 - **The Uncertainty page's Iterations field could not be cleared.** It clamped
   to at least 1 on every keystroke, so emptying it snapped back to 1 and typing
   a new count produced "164" for "64". Both the single-item and multi-item

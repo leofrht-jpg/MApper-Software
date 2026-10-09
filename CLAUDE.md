@@ -8205,6 +8205,22 @@ tests (which drive it under fake timers). That was tried and reverted — use
 `resyncAfterProjectChange` from callers that know the project changed.
 `tests/databaseExplorerProjectSwitch.test.tsx` B3 guards this.
 
+**Two more stores lacked it until 0.3.0's second walk-through:**
+`singleProductImpactStore` and `multiProductLCAStore` — both keyed by archetype
+ids that belong to one project. And the store reset is not enough on its own
+when the id ALSO lives in component state: `SingleProductImpact` held the
+selected archetype in `useState` inside an always-mounted subtree, so after a
+switch the previous project's id stayed selected. The dropdown read "Pick an
+archetype" (the id is not in the new list), Calculate stayed enabled, the run
+404'd on the stale id, and the panel's error banner — cleared only by the next
+Calculate — then sat under a freshly picked BEV-NCA, which is how it was
+reported. `SingleProductImpact` is now a wrapper keyed by `currentProject`, so
+its subtree remounts on a switch. **A project change is not a hide**: keying by
+project does not break the visibility-toggle rule, which is about tabs and
+collapses. `tests/singleProductProjectSwitch.test.tsx` drives the real panel
+through a switch and a Prospective run; reverting the key alone fails 2 of 4,
+the store resets the other 2.
+
 **Publish the project and its databases in ONE `set()`.** The first attempt set
 `currentProject` then `databases` separately; the intermediate render held the
 NEW project with the OLD database list, and the explorer's initialise effect

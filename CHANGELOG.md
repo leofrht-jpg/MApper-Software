@@ -88,6 +88,11 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **The Uncertainty page's Iterations field could not be cleared.** It clamped
+  to at least 1 on every keystroke, so emptying it snapped back to 1 and typing
+  a new count produced "164" for "64". Both the single-item and multi-item
+  fields now clamp on blur (to 1–20 000, the backend's own range); the default
+  of 1000 and the run payload are unchanged.
 - **The Monte Carlo export returned 500 when the impact-weighted coverage had
   no share.** The Summary formatted `impact_share * 100`, and `impact_share` is
   `None` in two ordinary states: an archetype whose every row is a parameter

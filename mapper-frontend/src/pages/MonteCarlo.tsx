@@ -16,6 +16,7 @@ import {
 } from '../components/charts/UncertaintyCharts'
 import { Button } from '../components/ui/Button'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
+import { NumberInput } from '../components/ui/NumberInput'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
 import {
   isUsableHandoff,
@@ -36,6 +37,8 @@ import { CoverageGapNote } from '../components/authored/CoverageMarkers'
 import { exportMonteCarlo, getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
 
 const DEFAULT_ITERATIONS = 1000
+/** The bound the old <input max> declared; kept so the run payload range is unchanged. */
+const MAX_ITERATIONS = 20000
 
 /**
  * Ratios outside this band are worth a second look. The band is wide on
@@ -204,13 +207,17 @@ export function MonteCarloPage({ onNavigate }: Props) {
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Iterations
               </span>
-              <input
+              {/* NumberInput, not a clamped <input>: clamping on every keystroke
+                  snapped an emptied field straight back to 1, so it could not
+                  be cleared to type a new count. The clamp happens on blur. */}
+              <NumberInput
                 data-testid="mc-iterations"
-                type="number"
+                integerOnly
                 min={1}
-                max={20000}
+                max={MAX_ITERATIONS}
+                emptyValue={1}
                 value={iterations}
-                onChange={(e) => setIterations(Math.max(1, Number(e.target.value) || 1))}
+                onChange={setIterations}
                 style={inputStyle}
               />
             </label>
@@ -652,10 +659,14 @@ function MultiItemMode({
           <div style={{ display: 'flex', gap: 'var(--space-4)', flexWrap: 'wrap', alignItems: 'flex-end' }}>
             <label style={{ display: 'grid', gap: 4 }}>
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Iterations</span>
-              <input
-                data-testid="mc-multi-iterations" type="number" min={1} max={20000}
+              <NumberInput
+                data-testid="mc-multi-iterations"
+                integerOnly
+                min={1}
+                max={MAX_ITERATIONS}
+                emptyValue={1}
                 value={iterations}
-                onChange={(e) => setIterations(Math.max(1, Number(e.target.value) || 1))}
+                onChange={setIterations}
                 style={inputStyle}
               />
             </label>

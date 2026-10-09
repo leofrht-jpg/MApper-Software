@@ -30,8 +30,13 @@ def _client() -> TestClient:
 def test_it_writes_the_file_and_says_where(tmp_path, monkeypatch):
     from mapper.api import system as sys_api
 
+    # BYTES, not text: `write_text` translates "\n" to os.linesep, so the same
+    # fixture is 10 bytes on posix and 11 on Windows. The route copies bytes
+    # verbatim, so the test has to speak the same units -- asserting on a text
+    # round-trip hides the difference, because reading back translates again.
+    payload = b"hello log\n"
     log = tmp_path / "mapper.log"
-    log.write_text("hello log\n", encoding="utf-8")
+    log.write_bytes(payload)
     monkeypatch.setattr(sys_api, "LOG_FILE", log)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     (tmp_path / "Downloads").mkdir()
@@ -41,8 +46,8 @@ def test_it_writes_the_file_and_says_where(tmp_path, monkeypatch):
     body = r.json()
     written = Path(body["path"])
     assert written.parent == tmp_path / "Downloads", "should land somewhere the user can open"
-    assert written.read_text(encoding="utf-8") == "hello log\n"
-    assert body["bytes"] == len("hello log\n")
+    assert written.read_bytes() == payload, "the copy must be byte-identical to the log"
+    assert body["bytes"] == len(payload)
 
 
 def test_without_a_downloads_folder_it_falls_back_beside_the_log(tmp_path, monkeypatch):
@@ -50,7 +55,7 @@ def test_without_a_downloads_folder_it_falls_back_beside_the_log(tmp_path, monke
 
     log = tmp_path / "logs" / "mapper.log"
     log.parent.mkdir()
-    log.write_text("x", encoding="utf-8")
+    log.write_bytes(b"x")
     monkeypatch.setattr(sys_api, "LOG_FILE", log)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))  # no Downloads
 
@@ -71,7 +76,7 @@ def test_an_unwritable_target_is_reported_not_swallowed(tmp_path, monkeypatch):
     from mapper.api import system as sys_api
 
     log = tmp_path / "mapper.log"
-    log.write_text("x", encoding="utf-8")
+    log.write_bytes(b"x")
     monkeypatch.setattr(sys_api, "LOG_FILE", log)
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: tmp_path))
     (tmp_path / "Downloads").mkdir()

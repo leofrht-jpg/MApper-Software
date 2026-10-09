@@ -300,7 +300,7 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
                     f"{_label(flow)}: GSD2 {gsd2:.4g} is below ecoinvent's median "
                     f"{floor:.4g} for this flow. This would report the authored value as "
                     "better constrained than ecoinvent's own data. Raise the pedigree "
-                    "scores, or give floor_reason explaining why the tighter spread is "
+                    "scores, or give a reason explaining why the tighter spread is "
                     "justified; the reason is stored on the exchange."
                 ], ["below_floor"])
             status = "below_floor_with_reason"

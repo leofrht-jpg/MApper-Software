@@ -8205,6 +8205,22 @@ tests (which drive it under fake timers). That was tried and reverted — use
 `resyncAfterProjectChange` from callers that know the project changed.
 `tests/databaseExplorerProjectSwitch.test.tsx` B3 guards this.
 
+**Two more stores lacked it until 0.3.0's second walk-through:**
+`singleProductImpactStore` and `multiProductLCAStore` — both keyed by archetype
+ids that belong to one project. And the store reset is not enough on its own
+when the id ALSO lives in component state: `SingleProductImpact` held the
+selected archetype in `useState` inside an always-mounted subtree, so after a
+switch the previous project's id stayed selected. The dropdown read "Pick an
+archetype" (the id is not in the new list), Calculate stayed enabled, the run
+404'd on the stale id, and the panel's error banner — cleared only by the next
+Calculate — then sat under a freshly picked BEV-NCA, which is how it was
+reported. `SingleProductImpact` is now a wrapper keyed by `currentProject`, so
+its subtree remounts on a switch. **A project change is not a hide**: keying by
+project does not break the visibility-toggle rule, which is about tabs and
+collapses. `tests/singleProductProjectSwitch.test.tsx` drives the real panel
+through a switch and a Prospective run; reverting the key alone fails 2 of 4,
+the store resets the other 2.
+
 **Publish the project and its databases in ONE `set()`.** The first attempt set
 `currentProject` then `databases` separately; the intermediate render held the
 NEW project with the OLD database list, and the explorer's initialise effect
@@ -10372,6 +10388,14 @@ diagonal, so a score is a dot product of sampled factors with per-flow inventory
 totals — every method gets its own sampled CFs, rather than one being sampled
 and the rest held fixed.
 
+**The Iterations fields are `<NumberInput integerOnly min={1} max={MAX_ITERATIONS}
+emptyValue={1}>`, never a clamped `<input>`.** Clamping in `onChange`
+(`Math.max(1, Number(v) || 1)`) made the field impossible to clear: an empty
+string is falsy, so it snapped back to 1 and the next key appended to it.
+`MAX_ITERATIONS` (20 000) matches the backend's own 400 bound. A test that sets
+the whole value with `fireEvent.change` passes on the broken version;
+`monteCarloIterationsField.test.tsx` appends keystrokes to what the field shows.
+
 **The lower bound is stated in the UI, not only here.** ~12% of ecoinvent's
 non-production exchanges carry undefined uncertainty and are sampled as fixed
 (88% lognormal with pedigree retained, 0.2% normal), so any reported spread is a
@@ -10971,6 +10995,20 @@ An absent sheet is ambiguous with "this build does not produce one", and a
 reader comparing two workbooks could not tell which. Ragged sample lengths pad
 with blanks rather than truncating to the shortest.
 
+**`impact_share = None` has TWO meanings, and neither is a number.**
+`get_pedigree_coverage` returns `None` when the archetype has no scoreable rows
+(every row a parameter expression) AND when its scoreable rows carry zero total
+|impact| under the indicator — measured on the 0.3.0 demo: both worked-example
+archetypes are 0.0 % under GWP100 and `None` under land use, because their
+authored activity has no land-use factor. The Summary formatted it as
+`impact_share * 100`, which was a 500 on every export in either state.
+`impact_coverage_text()` writes the right sentence for each; the frontend
+`CoverageBanner` splits on `archetype_materials_total` the same way. Tested
+through the real route, not the builder
+(`test_monte_carlo_export_no_share.py`). Audited at the same time: the
+multi-item builder reads no optional field arithmetically, and every other
+`* 100` in `api/` and `core/` is already guarded.
+
 #### What NOT to do
 
 - **Don't write a new builder or a new filename scheme.** Every Excel export
@@ -11556,6 +11594,9 @@ link refusals filter on is already refused in authored database names.
 - **Don't add an exchange rule anywhere but `resolve_exchange`.** The AST guard
   fails; more to the point, preview would then approve what save refuses.
 - **Don't branch the UI on problem text.** Key on `codes`.
+  The text is for a person: it says "give a reason", never a request field name
+  like `floor_reason`. Changing the wording must never change a code; a test
+  pins both (`test_the_below_floor_message_speaks_to_a_person_not_a_field`).
 - **Don't default the scope, a pedigree score, or the basic variance.** Each is
   a statement about the data the user has to make.
 - **Don't use `window.confirm` for the deletes.** It is a no-op in WKWebView;

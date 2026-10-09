@@ -88,6 +88,30 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- In the authored-activity editor, the exchange Amount field now looks like the
+  other fields (it rendered with no border or background and read as plain
+  text), and the below-floor message asks for "a reason" instead of naming the
+  request field `floor_reason`.
+- **A project switch kept the previous project's archetype in Single-product
+  Impact Assessment.** After switching, the selection still held an archetype id
+  from the other project, Calculate stayed enabled, and a Prospective run failed
+  with "Archetype '…' not found"; the error then stayed on screen after picking
+  an archetype from the new project. The single-product view now starts fresh on
+  a project change, and the single-product and Multi-item stores reset with it.
+- **The Uncertainty page's Iterations field could not be cleared.** It clamped
+  to at least 1 on every keystroke, so emptying it snapped back to 1 and typing
+  a new count produced "164" for "64". Both the single-item and multi-item
+  fields now clamp on blur (to 1–20 000, the backend's own range); the default
+  of 1000 and the run payload are unchanged.
+- **The Monte Carlo export returned 500 when the impact-weighted coverage had
+  no share.** The Summary formatted `impact_share * 100`, and `impact_share` is
+  `None` in two ordinary states: an archetype whose every row is a parameter
+  expression, and one whose scoreable rows carry zero total impact under the
+  chosen indicator (an authored activity with no factor for it). Both now get a
+  sentence saying which, never a number and never 0%. The Uncertainty page's
+  coverage banner had the same conflation: it said "every row is a parameter
+  expression" in the zero-impact case too, and now distinguishes them.
+
 - **The authoring UI could not reach the backend at all.** Five client calls
   sent `JSON.stringify(...)` with no `Content-Type: application/json`, so
   Starlette handed FastAPI raw text and every one answered **422

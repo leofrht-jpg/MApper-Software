@@ -191,6 +191,18 @@ def test_below_the_floor_without_a_reason_is_refused():
         eng.resolve_exchange(ex(NOX, pedigree=PED_LOW), FakeBackend())
 
 
+def test_the_below_floor_message_speaks_to_a_person_not_a_field():
+    """The UI shows this text beside a box labelled as a reason. Naming the
+    request field (floor_reason) told the reader nothing; the machine-readable
+    code stays below_floor, which is what the UI keys on."""
+    with pytest.raises(eng.AuthoredError) as err:
+        eng.resolve_exchange(ex(NOX, pedigree=PED_LOW), FakeBackend())
+    text = " ".join(err.value.problems)
+    assert "give a reason explaining why" in text
+    assert "floor_reason" not in text
+    assert err.value.codes == ["below_floor"]
+
+
 def test_below_the_floor_with_a_reason_is_stored_on_the_exchange():
     r = eng.resolve_exchange(ex(NOX, pedigree=PED_LOW, floor_reason="Measured at stack, n=40"),
                              FakeBackend())
@@ -361,7 +373,10 @@ def test_a_validation_failure_names_every_problem(client):
         exchanges=[{"flow_code": "nox-stack", "amount": 0.01, "pedigree": PED_LOW}]))
     assert r.status_code == 422
     assert r.json()["detail"]["error"] == "authored_validation_failed"
-    assert any("floor_reason" in p for p in r.json()["detail"]["problems"])
+    # The code is the contract the UI keys on; the text is for a person and
+    # asks for "a reason", not the request field name.
+    assert "below_floor" in r.json()["detail"]["codes"]
+    assert any("give a reason" in p for p in r.json()["detail"]["problems"])
 
 
 def test_an_update_keeps_the_code_so_links_survive(client):

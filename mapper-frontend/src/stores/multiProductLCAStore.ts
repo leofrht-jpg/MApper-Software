@@ -22,6 +22,7 @@
 // list.
 
 import { create } from 'zustand'
+import { useProjectStore } from './projectStore'
 import {
   type MultiProductLCAResult,
   type MultiProductRequestItem,
@@ -256,3 +257,14 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
     multiError: null,
   }),
 }))
+
+// Re-scope to the current bw2 project: every per-archetype slot here is keyed
+// by archetype ids that belong to ONE project. Without this, a switch kept the
+// previous project's selection and results. Same block every project-scoped
+// store carries (CLAUDE.md "Project-scoped stores must reset on project change").
+let _lastProject: string | null = useProjectStore.getState().currentProject
+useProjectStore.subscribe((state) => {
+  if (state.currentProject === _lastProject) return
+  _lastProject = state.currentProject
+  useMultiProductLCAStore.getState().reset()
+})

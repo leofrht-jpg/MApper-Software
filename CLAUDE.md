@@ -10971,6 +10971,20 @@ An absent sheet is ambiguous with "this build does not produce one", and a
 reader comparing two workbooks could not tell which. Ragged sample lengths pad
 with blanks rather than truncating to the shortest.
 
+**`impact_share = None` has TWO meanings, and neither is a number.**
+`get_pedigree_coverage` returns `None` when the archetype has no scoreable rows
+(every row a parameter expression) AND when its scoreable rows carry zero total
+|impact| under the indicator — measured on the 0.3.0 demo: both worked-example
+archetypes are 0.0 % under GWP100 and `None` under land use, because their
+authored activity has no land-use factor. The Summary formatted it as
+`impact_share * 100`, which was a 500 on every export in either state.
+`impact_coverage_text()` writes the right sentence for each; the frontend
+`CoverageBanner` splits on `archetype_materials_total` the same way. Tested
+through the real route, not the builder
+(`test_monte_carlo_export_no_share.py`). Audited at the same time: the
+multi-item builder reads no optional field arithmetically, and every other
+`* 100` in `api/` and `core/` is already guarded.
+
 #### What NOT to do
 
 - **Don't write a new builder or a new filename scheme.** Every Excel export

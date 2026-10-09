@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useBOMStore } from '../../stores/bomStore'
 import { useParameterStore } from '../../stores/parameterStore'
+import { useProjectStore } from '../../stores/projectStore'
 import { useProjectSettingsStore } from '../../stores/projectSettingsStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { ArchetypeSelect } from '../archetypes/ArchetypeSelect'
@@ -37,7 +38,21 @@ interface SingleProductImpactProps {
   onNavigate?: (tab: string) => void
 }
 
-export function SingleProductImpact({ onNavigate }: SingleProductImpactProps = {}) {
+/**
+ * Keyed by project, so everything held in local state -- the selected
+ * archetype id, the panels' runs and their error banners -- starts fresh when
+ * the project changes. This subtree is always mounted (visibility toggle), so
+ * without the key a switch kept the previous project's archetype id: the
+ * dropdown showed "Pick an archetype", Calculate stayed enabled, and the run
+ * 404'd on an id from the other project. A project change is not a hide, so
+ * remounting here does not break the visibility-toggle rule.
+ */
+export function SingleProductImpact(props: SingleProductImpactProps = {}) {
+  const currentProject = useProjectStore((s) => s.currentProject)
+  return <SingleProductImpactBody key={currentProject ?? ''} {...props} />
+}
+
+function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
   const archetypes = useBOMStore((s) => s.archetypes)
   const fetchArchetypes = useBOMStore((s) => s.fetchArchetypes)
   const setStageBasis = useBOMStore((s) => s.setStageBasis)

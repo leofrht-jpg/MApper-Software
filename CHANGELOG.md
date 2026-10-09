@@ -88,6 +88,13 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **A project switch kept the previous project's archetype in Single-product
+  Impact Assessment.** After switching, the selection still held an archetype id
+  from the other project, Calculate stayed enabled, and a Prospective run failed
+  with "Archetype '…' not found"; the error then stayed on screen after picking
+  an archetype from the new project. The single-product view now starts fresh on
+  a project change, and the single-product and Multi-item stores reset with it.
+
 - **The authoring UI could not reach the backend at all.** Five client calls
   sent `JSON.stringify(...)` with no `Content-Type: application/json`, so
   Starlette handed FastAPI raw text and every one answered **422

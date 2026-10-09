@@ -379,7 +379,7 @@ function ExchangeRowView({ row, complete, onChange, onRemove }: {
       <label style={{ ...label, gridTemplateColumns: 'auto 140px 1fr', alignItems: 'center', display: 'grid' }}>
         Amount
         <NumberInput data-testid={`${tid}-amount`} value={row.amount} onChange={(v) => onChange({ amount: v })}
-          style={{ height: 26, fontFamily: 'var(--font-mono)', fontSize: 'var(--text-xs)' }} />
+          style={{ ...field, fontFamily: 'var(--font-mono)' }} />
         <span style={{ color: 'var(--text-tertiary)' }}>
           {row.flow.unit} per unit of activity. Positive amounts only: negative (uptake) flows are not supported in this version.
         </span>

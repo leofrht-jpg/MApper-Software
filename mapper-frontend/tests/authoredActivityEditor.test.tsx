@@ -154,6 +154,21 @@ describe('authored activity editor', () => {
     await waitFor(() => body.getByTestId('exchange-s-floored'))
   })
 
+  it('the Amount field looks like the other fields, and stays editable', async () => {
+    ;(client.previewAuthoredExchange as any).mockResolvedValue(accepted('floored'))
+    const { body } = renderEditor()
+    await addFlow(body, 's')
+    const amount = body.getByTestId('exchange-s-amount') as HTMLInputElement
+    const name = body.getByTestId('authored-name') as HTMLInputElement
+    // It rendered with no border or background and read as plain text.
+    expect(amount.style.border).toBe(name.style.border)
+    expect(amount.style.background).toBe(name.style.background)
+    expect(amount.style.borderRadius).toBe(name.style.borderRadius)
+    expect(amount.style.border).not.toBe('')
+    fireEvent.change(amount, { target: { value: '2.5' } })
+    expect(amount.value).toBe('2.5')
+  })
+
   it('ecoinvent supplies the basic variance read-only when it has one', async () => {
     ;(client.previewAuthoredExchange as any).mockResolvedValue(accepted('floored'))
     const { body } = renderEditor()

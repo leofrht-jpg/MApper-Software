@@ -88,6 +88,11 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- In the authored-activity editor, the exchange Amount field now looks like the
+  other fields (it rendered with no border or background and read as plain
+  text), and the below-floor message asks for "a reason" instead of naming the
+  request field `floor_reason`.
+
 - **The authoring UI could not reach the backend at all.** Five client calls
   sent `JSON.stringify(...)` with no `Content-Type: application/json`, so
   Starlette handed FastAPI raw text and every one answered **422

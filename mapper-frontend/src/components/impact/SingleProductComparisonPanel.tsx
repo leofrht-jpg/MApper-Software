@@ -56,7 +56,7 @@ export function SingleProductComparisonPanel({ archetypeId }: Props) {
   const projectedRuns = useSingleProductImpactStore((s) => s.projectedRuns)
   const viewMode = useSingleProductImpactStore((s) => s.comparisonViewMode)
   const setViewMode = useSingleProductImpactStore((s) => s.setComparisonViewMode)
-  const stageAmountsByArc = useSingleProductImpactStore((s) => s.stageAmountsByArc)
+  const staticRunMeta = useSingleProductImpactStore((s) => s.staticRunMeta)
   const [expanded, setExpanded] = useState(true)
   const [chartMethodKey, setChartMethodKey] = useState<string | null>(null)
 
@@ -134,12 +134,14 @@ export function SingleProductComparisonPanel({ archetypeId }: Props) {
           ssp: r.ssp,
           result: r.result,
         })),
-        archetypeId ? stageAmountsByArc[archetypeId] : undefined,
+        // The Static run's own provenance: the workbook's "Stage amounts"
+        // row is the Static result's echo, so the meta must be from that run.
+        staticRunMeta ?? undefined,
       )
     } finally {
       setIsExporting(false)
     }
-  }, [staticResult, projectedRuns, archetypeId, stageAmountsByArc])
+  }, [staticResult, projectedRuns, staticRunMeta])
 
   if (archetypeId == null) {
     return (

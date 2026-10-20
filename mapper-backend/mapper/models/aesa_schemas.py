@@ -34,7 +34,7 @@ from mapper.core.compute_metrics import ComputeMetrics
 from mapper.models.authored_schemas import CoverageGap
 from mapper.models.bom_schemas import ImpactAssessmentResult
 from mapper.models.interpolation import interpolate_anchors
-from mapper.models.schemas import ArchetypeLCACalculateResult
+from mapper.models.schemas import ArchetypeLCACalculateResult, StageAmountsMeta
 
 
 SHARING_PRINCIPLE = Literal["EpC", "IN", "AGR", "LA", "AR"]
@@ -644,6 +644,18 @@ class AESAConfiguration(BaseModel):
     # Optional bookmark to the global preset this config was cloned from
     # (used by the UI to show "active preset"; compute ignores it).
     sharing_preset_id: str | None = None
+    # What the impact (SR numerator) of a SINGLE-PRODUCT source means.
+    #   "as_computed" (default): the result as Impact Assessment produced it,
+    #       unchanged. The adapters document the functional unit as a
+    #       single-year flow, so a BOM must already yield a per-year impact
+    #       (e.g. a 1-year run, or a BOM that divides one-off stages by its
+    #       lifetime itself) for the SR to compare like with like.
+    #   "per_year": divide the impact by the lifetime the run's stage amounts
+    #       were scaled with. Only valid for a run on the Lifetime preset whose
+    #       BOM does not already divide by that lifetime; compute refuses
+    #       otherwise rather than annualise twice.
+    # Fleet sources ignore it: a fleet's per-year impact is already per year.
+    impact_basis: Literal["as_computed", "per_year"] = "as_computed"
     carbon_budget: CarbonBudgetConfig | None = None
     method_mapping: list[MethodPBMapping] = Field(default_factory=list)
     created_at: str
@@ -725,6 +737,7 @@ class AESAConfigurationCreate(BaseModel):
     sharing_preset_id: str | None = None
     carbon_budget: CarbonBudgetConfig | None = None
     method_mapping: list[MethodPBMapping] = Field(default_factory=list)
+    impact_basis: Literal["as_computed", "per_year"] = "as_computed"
 
 
 # ── Compute / export bodies ──────────────────────────────────────────────────
@@ -765,6 +778,10 @@ class AESAComputeRequest(BaseModel):
     # intersected with SOS/budget coverage. Takes precedence over the static
     # field + impact_task_id / impact_result when non-empty.
     prospective_single_product: list[ProspectiveSingleProductPoint] | None = None
+    # Stage-amount provenance of the single-product run (preset, lifetime,
+    # the parameter it came from). Required by ``impact_basis="per_year"``,
+    # which divides by that lifetime; ignored otherwise.
+    single_product_stage_meta: StageAmountsMeta | None = None
     run_sensitivity: bool = False  # if True, also run 5 uniform-principle configs
 
 
@@ -791,11 +808,26 @@ class AESAComputeResult(BaseModel):
     #: characterised flow for the mapped method: unknown, not small. Carried
     #: from the impact result; an annotation, never changes an SR.
     coverage_gaps: list[AESACoverageGap] | None = None  # None = not recorded
+    #: The impact basis the SR numerators were computed on, and the lifetime
+    #: divided by under "per_year" (None otherwise). Echoed so every surface
+    #: that shows an impact can state its unit without re-deriving it.
+    impact_basis: Literal["as_computed", "per_year"] = "as_computed"
+    lifetime_years: float | None = None
 
 
 class AESAExportRequest(BaseModel):
     config: AESAConfiguration
     result: AESAComputeResult
+    #: Name for the file and the Summary "System" row when the run has no DSM
+    #: system: a single-product run passes its archetype name. Ignored when
+    #: ``config.mfa_system_id`` names an existing system.
+    source_name: str | None = None
+
+
+class AESAExportSaveResponse(BaseModel):
+    """Where the packaged-app export was written (see ``/export/save``)."""
+    path: str
+    bytes: int
 
 
 # ── Saved sessions (Patch 4R) ────────────────────────────────────────────────

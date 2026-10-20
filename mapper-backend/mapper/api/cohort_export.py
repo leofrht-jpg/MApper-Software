@@ -158,21 +158,37 @@ def excel_response(
     ``is_demo`` overrides the automatic check (tests, and callers that already
     know).
     """
+    data, filename = excel_bytes(wb, filename, kind=kind, is_demo=is_demo)
+    return Response(
+        content=data,
+        media_type=XLSX_MEDIA_TYPE,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def excel_bytes(
+    wb: Workbook,
+    filename: str,
+    *,
+    kind: ExportKind,
+    is_demo: bool | None = None,
+) -> tuple[bytes, str]:
+    """The stamped workbook bytes and final filename, without the HTTP wrapper.
+
+    :func:`excel_response` is this plus a ``Response``. A route that writes the
+    file itself (the packaged app's save-to-Downloads path) calls this, so the
+    demo stamping and the ``DEMO_`` prefix cannot differ between a download
+    and a saved file.
+    """
     demo = active_project_is_demo() if is_demo is None else is_demo
     if demo:
         if kind == "data":
             stamp_demo_warning(wb)
         if not filename.startswith("DEMO_"):
             filename = f"DEMO_{filename}"
-
     buf = io.BytesIO()
     wb.save(buf)
-    buf.seek(0)
-    return Response(
-        content=buf.getvalue(),
-        media_type=XLSX_MEDIA_TYPE,
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
-    )
+    return buf.getvalue(), filename
 
 
 def excel_response_from_bytes(

@@ -976,7 +976,13 @@ class StageAmountsMeta(BaseModel):
     threaded through the export request to make the run reproducible from
     the export alone."""
     preset: str = "custom"  # "1year" | "lifetime" | "custom"
+    #: Only meaningful under the "lifetime" preset -- it is the multiplier the
+    #: per-year stages were scaled by. Under "1year" and "custom" nothing reads
+    #: it, and the exports say "not used" rather than print a stale number.
     lifetime: float = 1.0
+    #: The parameter the lifetime was taken from, when the editor referenced
+    #: one (e.g. ``lifetime_yr``). ``None`` = the typed value.
+    lifetime_param: str | None = None
     amounts: dict[str, float] = {}
 
 

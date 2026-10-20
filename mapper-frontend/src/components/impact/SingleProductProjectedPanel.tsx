@@ -17,6 +17,7 @@ import {
 } from '../../api/client'
 import { usePLCAStore } from '../../stores/plcaStore'
 import {
+  toStageAmountsMeta,
   useSingleProductImpactStore,
   type ProjectedRun as StoreProjectedRun,
 } from '../../stores/singleProductImpactStore'
@@ -111,6 +112,26 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
     archetypeId ? s.staticConfigByArc[archetypeId] : null,
   )
   const currentStageAmounts = archetypeId ? stageAmountsByArc[archetypeId]?.amounts ?? null : null
+  const projectedRunMeta = useSingleProductImpactStore((s) => s.projectedRunMeta)
+  // The year range here and the product lifetime are two independent inputs
+  // that look alike: 2025-2040 is 16 background-database years, and a 15-year
+  // lifetime is how many years of use one product carries. Say so when they
+  // differ, so a "16" in one and "15" in the other is not read as a bug.
+  const stageEntry = archetypeId ? stageAmountsByArc[archetypeId] : undefined
+  const lifetimeRangeNote = useMemo(() => {
+    if (stageEntry?.preset !== 'lifetime') return null
+    const years = databases
+      .filter((d) => selectedDbs.includes(d.name) && d.year != null)
+      .map((d) => d.year as number)
+    if (years.length < 2) return null
+    const lo = Math.min(...years), hi = Math.max(...years)
+    const span = hi - lo + 1
+    if (span === stageEntry.lifetime) return null
+    return `Year range ${lo}–${hi} covers ${span} background years; the product lifetime is ` +
+      `${stageEntry.lifetime} yr. They are independent: each year is one product computed ` +
+      `against that year's background, not one year of a single product's life.`
+  }, [stageEntry, databases, selectedDbs])
+  const setProjectedRunMeta = useSingleProductImpactStore((s) => s.setProjectedRunMeta)
   const [chartMethodKey, setChartMethodKey] = useState<string | null>(null)
 
   // Patch 5AY — the full default indicator set (all-N), fetched directly so
@@ -351,6 +372,8 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
       // Sort by year ascending so the scenario tab bar reads chronologically.
       .sort((a, b) => (a.year ?? 0) - (b.year ?? 0))
 
+    // Frozen with the run: exports and AESA read this, not the live editor.
+    const runMeta = toStageAmountsMeta(stageAmountsByArc[archetypeId])
     setProgress({ done: 0, total: dbsToRun.length })
     const acc: ProjectedRun[] = []
     try {
@@ -363,6 +386,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
         acc.push({ dbName: db.name, year: db.year, iam: db.iam, ssp: db.ssp, result })
         setProgress({ done: i + 1, total: dbsToRun.length })
       }
+      setProjectedRunMeta(runMeta)
       setRuns(acc)
       setActiveRunIdx(0)
     } catch (e: unknown) {
@@ -371,7 +395,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
       setIsCalculating(false)
       setProgress(null)
     }
-  }, [archetypeId, scope, selectedMethods, selectedDbs, databases, currentStageAmounts])
+  }, [archetypeId, scope, selectedMethods, selectedDbs, databases, currentStageAmounts, stageAmountsByArc, setProjectedRunMeta])
 
   const isMulti = runs.length > 1
   const activeRun = runs[activeRunIdx]
@@ -393,12 +417,12 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
           ssp: r.ssp,
           result: r.result,
         })),
-        archetypeId ? stageAmountsByArc[archetypeId] : undefined,
+        projectedRunMeta ?? undefined,
       )
     } finally {
       setIsExporting(false)
     }
-  }, [activeRun, runs, scope, archetypeId, stageAmountsByArc])
+  }, [activeRun, runs, scope, projectedRunMeta])
   const isStale =
     runs.length > 0 &&
     runs.some((r) => !stageAmountsEqual(r.result.stage_amounts, currentStageAmounts))
@@ -601,6 +625,14 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
               />
             </div>
           </div>
+          {lifetimeRangeNote && (
+            <div
+              data-testid="single-product-projected-lifetime-vs-range"
+              style={{ fontSize: 11, color: 'var(--warning)', lineHeight: 1.4 }}
+            >
+              {lifetimeRangeNote}
+            </div>
+          )}
 
           {error && (
             <div

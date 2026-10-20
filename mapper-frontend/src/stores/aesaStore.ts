@@ -8,6 +8,7 @@
  */
 
 import { create } from 'zustand'
+import { useSingleProductImpactStore } from './singleProductImpactStore'
 import {
   type AESAComputeResult,
   type AESAConfiguration,
@@ -143,6 +144,8 @@ export interface AESAConfigDraft {
   // drafts; `ConfigSidebar` resolves it to the system's active
   // scenario id at render time).
   dsm_scenario_id: string | null
+  /** Single-product only: what the SR numerator is per. Absent = 'as_computed'. */
+  impact_basis?: 'as_computed' | 'per_year'
   /**
    * Has the user authored `sharing` / `method_mapping`, or are they still the
    * derived defaults?
@@ -350,6 +353,7 @@ function draftFromConfig(
     method_mapping: c.method_mapping,
     impact_mode: c.impact_mode,
     dsm_scenario_id: c.dsm_scenario_id ?? null,
+    impact_basis: c.impact_basis ?? 'as_computed',
     // A stored copy survived the storage-layer migration, so it is authored,
     // not derived: keep it and keep writing it.
     sharingCustomized: c.sharing != null,
@@ -571,6 +575,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       dsm_scenario_id: draft.dsm_scenario_id,
       impact_mode: draft.impact_mode,
       boundary_set_id: draft.boundary_set_id,
+      impact_basis: draft.impact_basis ?? 'as_computed',
       // Derived-by-default: a config that has not been edited is saved WITHOUT
       // a sharing snapshot or a mapping, so it resolves from the built-in
       // defaults every time it is opened and can never go stale against a
@@ -638,6 +643,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
         sharing_preset_id: draft.sharing_preset_id,
         carbon_budget: draft.carbon_budget,
         method_mapping: draft.method_mapping,
+        impact_basis: draft.impact_basis ?? 'as_computed',
         created_at: new Date().toISOString(),
       }
       // Part C1/C2 — single-LCA sources take precedence over the fleet path
@@ -655,6 +661,14 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
         single_product_result: isProspectiveSP ? null : (singleProductResult ?? null),
         reference_year: referenceYear,
         prospective_single_product: isProspectiveSP ? prospectiveSingleProduct : null,
+        // The stage amounts the consumed run was computed with (frozen at its
+        // compute time). 'per_year' divides by its lifetime and refuses
+        // anything but the Lifetime preset, so it must be the run's own.
+        single_product_stage_meta: !isSingleProduct ? null : (
+          isProspectiveSP
+            ? useSingleProductImpactStore.getState().projectedRunMeta
+            : useSingleProductImpactStore.getState().staticRunMeta
+        ),
         run_sensitivity: !!runSensitivity,
       })
       // Patch 4T — fresh result clears the display filter. Carrying a
@@ -745,6 +759,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       sharing_preset_id: draft.sharing_preset_id,
       carbon_budget: draft.carbon_budget,
       method_mapping: draft.method_mapping,
+      impact_basis: draft.impact_basis ?? 'as_computed',
       created_at: new Date().toISOString(),
     }
     try {

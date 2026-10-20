@@ -2639,8 +2639,33 @@ def _sp_stage_amount_meta_rows(meta) -> list[tuple[str, Any]]:
     per-stage amounts themselves continue to come from the result echo."""
     return [
         ("Preset", meta.preset if meta else "—"),
-        ("Lifetime (yr)", meta.lifetime if meta else "—"),
+        ("Lifetime (yr)", _sp_lifetime_cell(meta)),
     ]
+
+
+def _sp_lifetime_cell(meta) -> Any:
+    """The lifetime as the run used it, or why it was not used.
+
+    Only the Lifetime preset multiplies anything by it. Under "1year" and
+    "custom" the stored number is a leftover the calculation never read, and
+    printing it beside the stage amounts made the export contradict itself
+    (an EVS40 export read "Lifetime 15" beside "Use Phase 16")."""
+    if meta is None:
+        return "—"
+    if meta.preset != "lifetime":
+        why = "1-year preset" if meta.preset == "1year" else "custom stage amounts"
+        return f"not used ({why})"
+    lt = f"{meta.lifetime:g}"
+    return f"{lt} (from parameter {meta.lifetime_param})" if meta.lifetime_param else float(meta.lifetime)
+
+
+#: What the prospective "Year range" is, stated beside it. It is the span of the
+#: background databases each run was computed against, NOT the product's
+#: lifetime; a 2025-2040 range is 16 database years whatever the lifetime is.
+_SP_YEAR_RANGE_NOTE = (
+    "Background-database years: each year is ONE functional unit computed against "
+    "that year's background. Independent of the product lifetime."
+)
 
 
 def _sp_short_method(method: list[str], among: list | None = None) -> str:
@@ -2930,6 +2955,7 @@ def _build_single_product_prospective_workbook(
         ("Stage amounts", _sp_format_stage_amounts(primary.stage_amounts)),
         *_sp_stage_amount_meta_rows(stage_amounts_meta),
         ("Year range", f"{years[0]}–{years[-1]}" if years else "—"),
+        ("Year range means", _SP_YEAR_RANGE_NOTE),
         ("Indicators", len(method_list)),
         ("Databases", len(sorted_runs)),
         *_provenance_rows(*(primary.computed_at, primary.mapper_version)),
@@ -3153,6 +3179,7 @@ def _build_single_product_comparison_workbook(
         ("Stage amounts", _sp_format_stage_amounts(static_result.stage_amounts)),
         *_sp_stage_amount_meta_rows(stage_amounts_meta),
         ("Year range", f"{years[0]}–{years[-1]}" if years else "—"),
+        ("Year range means", _SP_YEAR_RANGE_NOTE),
         ("Indicators (Static)", len(static_result.results)),
         ("Prospective runs", len(sorted_runs)),
         ("Sign convention", "Δ = P − S (positive = worsening, negative = improvement)"),
@@ -3583,7 +3610,7 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
         for i, it in enumerate(arch_items, start=1):
             m = meta_map.get(it.item_id)
             preset = m.preset if m else "—"
-            lifetime = m.lifetime if m else "—"
+            lifetime = _sp_lifetime_cell(m)
             amounts = _item_amounts(it)
             row = [i, it.label, preset, lifetime, *[amounts.get(s, "") for s in stage_cols]]
             ws_sa.append(row)

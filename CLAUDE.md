@@ -2082,6 +2082,77 @@ per-trajectory-year SRs + precedence + static-path-unchanged).
   unmounting.** Reference Year lives inside the `display:none` static body in
   prospective mode (kept mounted).
 
+### Single-product AESA: what the impact is per (EVS40, items 1–4)
+
+The SR divides an impact by an allocated SOS that is **per year**. The
+single-product adapters document the functional unit as a single-year flow and
+never divide, so the run must already be one year of the product. Nothing on
+screen said so, and an EVS40 run compared a whole-life pLCA total (51,993.786
+kg) with a per-year SOS (543.092 kg/yr): SR 95.7.
+
+**`AESAConfiguration.impact_basis`** — `"as_computed"` (default, the previous
+behaviour, numbers unchanged) or `"per_year"`, which divides every impact
+magnitude by the lifetime the consumed run's stage amounts were scaled with
+(`core/aesa_impact_basis.annualise`). `post_compute` → `_apply_impact_basis`
+refuses `per_year`:
+- for a fleet source (a fleet's yearly impact is already per year);
+- unless the run used the **Lifetime** preset (`single_product_stage_meta`);
+- for a BOM that **already divides by the lifetime** —
+  `lifetime_division_rows` finds rows whose expression divides by the
+  referenced lifetime parameter, or by any parameter equal to the lifetime.
+
+**The third refusal is the reason the option exists in guarded form.** The
+EVS40 EV9 archetype divides Manufacturing and End of Life by `lifetime_yr`
+itself, so its 1-year run (3,249.61 kg in 2025) is already per year; dividing
+by 16 again would report 203 kg and SR 0.37. Default stays `as_computed`
+because that is the documented contract; the label makes it visible.
+
+The basis is echoed on `AESAComputeResult` (`impact_basis`, `lifetime_years`)
+and stated in ONE wording, `impact_basis_label()` (backend) ==
+`impactBasisLabel()` (`utils/aesaImpactBasis.ts`), under the zone cards, in the
+Detail table headers, in the Radar tooltip, and in the export (Summary rows +
+two columns APPENDED to "Impacts vs SOS"; existing headers unchanged because
+readers address them by name).
+
+**Stage-amount provenance is frozen at compute time.**
+`singleProductImpactStore.staticRunMeta` / `projectedRunMeta`
+(`toStageAmountsMeta`) are set when a run starts and read by the three
+single-product exports and by AESA. Reading the live editor entry instead is
+what made an export print "Lifetime 15" beside "Use Phase 16". A lifetime taken
+from a parameter (`lifetimeParam`) is re-derived when that parameter changes
+(`SingleProductImpact`), and the export's Lifetime row says "not used" under
+1-year or custom amounts.
+
+**The prospective "Year range" is not a lifetime.** It is the span of
+background databases, one functional unit per year. Nothing derives a lifetime
+or stage amounts from it; the EVS40 "16" came from `lifetime_yr = 16`, not from
+2025–2040. The workbook says so ("Year range means"), and the Prospective tab
+warns when the two differ on the Lifetime preset.
+
+**Export goes through the backend in the packaged app.** `POST
+/aesa/export/save` writes the same workbook (same `excel_bytes` stamping) to
+~/Downloads via `system.save_to_downloads`, shared with `/system/logs/save`.
+`exportAESA` takes that route when `isPackagedDesktop()`. Both export routes
+work without a DSM system (`source_name` names the file). Tested along the
+real path: `test_aesa_export_real_path.py` starts uvicorn and POSTs real bytes
+with the real header, then opens the file the server wrote.
+
+**One budget-basis control.** The CO₂ / CO₂-eq toggle above the result views
+was removed; the Configuration panel's is the only one. `setBudgetBasis` (store)
+is now unused by the UI and kept only because its tests document the
+re-compute contract.
+
+#### What NOT to do
+
+- **Don't default `impact_basis` to `per_year`**, and don't divide without the
+  three refusals. A BOM that annualises itself is indistinguishable from a
+  whole-life one by its numbers alone.
+- **Don't read the live stage-amount editor in an export or in AESA.** Read the
+  run's frozen meta.
+- **Don't rename the "Impacts vs SOS" headers.** Append.
+- **Don't add a third download mechanism.** Browser: blob; packaged: backend
+  writes to ~/Downloads and returns the path.
+
 ### AESA Compute Source cascade (Patch 4O)
 
 AESA is a **downstream consumer** — `POST /aesa/compute` takes an

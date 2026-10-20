@@ -87,7 +87,42 @@ def test_static_default_one_year_exports_validly():
         archetype_name="A", scope="all", scenarios=[("Base", res)], stage_amounts_meta=meta,
     ))
     assert cfg["Preset"] == "1year"
-    assert cfg["Lifetime (yr)"] == 15
+    # Was 15: the stored lifetime printed beside amounts it never produced.
+    # Under 1year nothing reads the lifetime, so the export says so.
+    assert cfg["Lifetime (yr)"] == "not used (1-year preset)"
+
+
+def test_custom_amounts_say_the_lifetime_was_not_used():
+    # The EVS40 shape: amounts typed by hand (Use Phase 16) while the stored
+    # lifetime was still the 15 default. The export read "Lifetime 15" beside
+    # "Use Phase 16"; the 15 was never applied.
+    meta = StageAmountsMeta(preset="custom", lifetime=15,
+                            amounts={"Manufacturing": 1, "Use Phase": 16, "End of Life": 1})
+    res = _result()
+    res.stage_amounts = dict(meta.amounts)
+    cfg = _cfg(impact_api._build_single_product_static_workbook(
+        archetype_name="A", scope="all", scenarios=[("Base", res)], stage_amounts_meta=meta,
+    ))
+    assert cfg["Lifetime (yr)"] == "not used (custom stage amounts)"
+    assert "Use Phase 16" in cfg["Stage amounts"]
+
+
+def test_a_parameter_sourced_lifetime_names_the_parameter():
+    meta = StageAmountsMeta(preset="lifetime", lifetime=16, lifetime_param="lifetime_yr",
+                            amounts={"Manufacturing": 1, "Use Phase": 16})
+    res = _result()
+    res.stage_amounts = dict(meta.amounts)
+    cfg = _cfg(impact_api._build_single_product_static_workbook(
+        archetype_name="A", scope="all", scenarios=[("Base", res)], stage_amounts_meta=meta,
+    ))
+    assert cfg["Lifetime (yr)"] == "16 (from parameter lifetime_yr)"
+
+
+def test_prospective_states_what_the_year_range_is():
+    cfg = _cfg(impact_api._build_single_product_prospective_workbook(
+        archetype_name="A", scope="all", runs=[_run()], stage_amounts_meta=META,
+    ))
+    assert "Independent of the product lifetime" in cfg["Year range means"]
 
 
 def test_static_no_meta_falls_back_to_dash():

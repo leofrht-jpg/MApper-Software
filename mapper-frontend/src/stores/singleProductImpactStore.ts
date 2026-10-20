@@ -9,7 +9,7 @@
 
 import { create } from 'zustand'
 import { useProjectStore } from './projectStore'
-import type { ArchetypeLCACalculateResult } from '../api/client'
+import type { ArchetypeLCACalculateResult, StageAmountsMeta } from '../api/client'
 
 // Cross-panel store for Impact Assessment → Single product mode (Patch 3, M6).
 // The Static and Projected panels keep their own input state and per-call
@@ -54,6 +54,17 @@ export interface ArchetypeStageAmounts {
   amounts: Record<string, number>
 }
 
+/** The editor entry as the export / AESA meta shape (snake_case, one place). */
+export function toStageAmountsMeta(entry: ArchetypeStageAmounts | null | undefined): StageAmountsMeta | null {
+  if (!entry) return null
+  return {
+    preset: entry.preset,
+    lifetime: entry.lifetime,
+    lifetime_param: entry.lifetimeParam ?? null,
+    amounts: { ...entry.amounts },
+  }
+}
+
 // Patch 4D — inherit-on-first-visit (Static → Projected). Both panels'
 // configurations (scope, methods, plus Projected's selectedDbs) persist
 // per-archetype so switching archetypes round-trips cleanly. Projected's
@@ -77,6 +88,12 @@ interface SingleProductImpactStore {
   archetypeId: string | null
   staticResult: ArchetypeLCACalculateResult | null
   projectedRuns: ProjectedRun[]
+  /** Stage-amount provenance AS IT WAS when each result was computed. Exports
+   *  and AESA read these, never the live editor entry: the editor can change
+   *  after a run, and reading it then made an export print a lifetime the
+   *  numbers beside it were not computed with. */
+  staticRunMeta: StageAmountsMeta | null
+  projectedRunMeta: StageAmountsMeta | null
   projectedViewMode: ViewMode
   comparisonViewMode: ViewMode
   // Per-archetype stage amounts. Keyed by archetype id so switching
@@ -89,6 +106,8 @@ interface SingleProductImpactStore {
   setArchetypeId: (id: string | null) => void
   setStaticResult: (result: ArchetypeLCACalculateResult | null) => void
   setProjectedRuns: (runs: ProjectedRun[]) => void
+  setStaticRunMeta: (meta: StageAmountsMeta | null) => void
+  setProjectedRunMeta: (meta: StageAmountsMeta | null) => void
   setProjectedViewMode: (mode: ViewMode) => void
   setComparisonViewMode: (mode: ViewMode) => void
   setStageAmountsForArc: (arcId: string, value: ArchetypeStageAmounts) => void
@@ -102,6 +121,8 @@ export const useSingleProductImpactStore = create<SingleProductImpactStore>((set
   archetypeId: null,
   staticResult: null,
   projectedRuns: [],
+  staticRunMeta: null,
+  projectedRunMeta: null,
   projectedViewMode: 'chart',
   comparisonViewMode: 'chart',
   stageAmountsByArc: {},
@@ -110,11 +131,13 @@ export const useSingleProductImpactStore = create<SingleProductImpactStore>((set
   projectedCustomizedByArc: {},
   setArchetypeId: (id) => {
     if (get().archetypeId !== id) {
-      set({ archetypeId: id, staticResult: null, projectedRuns: [] })
+      set({ archetypeId: id, staticResult: null, projectedRuns: [], staticRunMeta: null, projectedRunMeta: null })
     }
   },
   setStaticResult: (result) => set({ staticResult: result }),
   setProjectedRuns: (runs) => set({ projectedRuns: runs }),
+  setStaticRunMeta: (meta) => set({ staticRunMeta: meta }),
+  setProjectedRunMeta: (meta) => set({ projectedRunMeta: meta }),
   setProjectedViewMode: (mode) => set({ projectedViewMode: mode }),
   setComparisonViewMode: (mode) => set({ comparisonViewMode: mode }),
   setStageAmountsForArc: (arcId, value) => set((state) => ({
@@ -137,6 +160,8 @@ export const useSingleProductImpactStore = create<SingleProductImpactStore>((set
     archetypeId: null,
     staticResult: null,
     projectedRuns: [],
+    staticRunMeta: null,
+    projectedRunMeta: null,
     stageAmountsByArc: {},
     staticConfigByArc: {},
     projectedConfigByArc: {},

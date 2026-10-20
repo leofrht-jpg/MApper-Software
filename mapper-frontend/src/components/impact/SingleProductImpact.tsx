@@ -17,7 +17,7 @@ import { ArchetypeSelect } from '../archetypes/ArchetypeSelect'
 import { SingleProductStaticPanel } from './SingleProductStaticPanel'
 import { SingleProductProjectedPanel } from './SingleProductProjectedPanel'
 import { SingleProductComparisonPanel } from './SingleProductComparisonPanel'
-import { StageAmountsEditor, defaultStageAmounts, stageAmountsSummary } from './StageAmountsEditor'
+import { StageAmountsEditor, defaultStageAmounts, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { MultiProductLCA } from './MultiProductLCA'
 
@@ -105,6 +105,26 @@ function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
     if (stageAmountsByArc[activeArchetype.id]) return
     setStageAmountsForArc(activeArchetype.id, defaultStageAmounts(activeArchetype))
   }, [activeArchetype, stageAmountsByArc, setStageAmountsForArc])
+
+  // A lifetime taken from a parameter follows that parameter. The editor's
+  // label and box show the parameter's CURRENT value, but the stored lifetime
+  // and amounts were fixed when it was picked; editing the parameter table
+  // afterwards left the UI saying one lifetime while the next run computed
+  // with another. Re-derive whenever they disagree. Results already on screen
+  // are not touched: the panels' stale-result banner says they predate it.
+  useEffect(() => {
+    if (!activeArchetype || !stageAmountsEntry) return
+    if (stageAmountsEntry.preset !== 'lifetime' || !stageAmountsEntry.lifetimeParam) return
+    const v = lifetimeParams.find((p) => p.name === stageAmountsEntry.lifetimeParam)?.value
+    if (v == null) return
+    const lt = Math.max(1, Math.round(v))
+    if (lt === stageAmountsEntry.lifetime) return
+    setStageAmountsForArc(activeArchetype.id, {
+      ...stageAmountsEntry,
+      lifetime: lt,
+      amounts: stageAmountsForPreset(activeArchetype, 'lifetime', lt, stageAmountsEntry.amounts, projectBasis),
+    })
+  }, [activeArchetype, stageAmountsEntry, lifetimeParams, projectBasis, setStageAmountsForArc])
 
   useEffect(() => {
     if (archetypes.length === 0) fetchArchetypes()

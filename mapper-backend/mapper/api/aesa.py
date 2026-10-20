@@ -57,6 +57,7 @@ from mapper.models.aesa_schemas import (
     AESAConfiguration,
     AESAConfigurationCreate,
     AESAExportRequest,
+    AESAExportSaveResponse,
     AESASession,
     AESASessionCreate,
     AESASessionRename,
@@ -202,6 +203,7 @@ async def post_configuration(body: AESAConfigurationCreate) -> AESAConfiguration
         multi_d=body.multi_d,
         carbon_budget=body.carbon_budget,
         method_mapping=body.method_mapping,
+        impact_basis=body.impact_basis,
         created_at=datetime.now(timezone.utc).isoformat(),
     )
     aesa_storage.save(project, config.model_dump())
@@ -226,6 +228,7 @@ async def put_configuration(
         multi_d=body.multi_d,
         carbon_budget=body.carbon_budget,
         method_mapping=body.method_mapping,
+        impact_basis=body.impact_basis,
         created_at=existing.get("created_at") or datetime.now(timezone.utc).isoformat(),
     )
     aesa_storage.save(project, updated.model_dump())
@@ -370,6 +373,7 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
         )
     else:
         impact = _resolve_impact(body.impact_task_id, body.impact_result)
+    impact, lifetime_years = _apply_impact_basis(config, body, impact)
     # The system-match check fires only when BOTH the impact and the config
     # carry a system id (fleet path, unchanged). A single-LCA source has no DSM
     # system (meta.mfa_system_id is None) → the check is skipped.
@@ -421,8 +425,62 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
     result.coverage_gaps = aesa_coverage_gaps(
         impact.coverage_gaps, resolve_method_mapping(config, impact.results, bset)
     )
+    result.impact_basis = config.impact_basis
+    result.lifetime_years = lifetime_years
     result.compute_metrics = meter.build()
     return result
+
+
+def _apply_impact_basis(
+    config: AESAConfiguration, body: AESAComputeRequest, impact: ImpactAssessmentResult,
+) -> tuple[ImpactAssessmentResult, float | None]:
+    """``as_computed`` passes the impact through; ``per_year`` divides it by the
+    run's lifetime, after refusing every case where that would be wrong.
+
+    The refusals are the point. Dividing a per-year impact by the lifetime
+    under-reports it by that factor and still produces a plausible SR, so each
+    case where the division would be meaningless says so instead of computing.
+    """
+    if config.impact_basis != "per_year":
+        return impact, None
+    sp = body.single_product_result
+    if sp is None and body.prospective_single_product:
+        sp = body.prospective_single_product[0].result
+    if sp is None:
+        raise HTTPException(status_code=400, detail=(
+            "Functional unit 'per year' applies to single-product runs. A fleet's "
+            "yearly impact is already per year; use 'as computed'."
+        ))
+    meta = body.single_product_stage_meta
+    if meta is None or meta.preset != "lifetime":
+        used = meta.preset if meta is not None else "not recorded"
+        raise HTTPException(status_code=400, detail=(
+            "Functional unit 'per year' divides a whole-life impact by its lifetime, "
+            "so the run must use the Lifetime stage-amount preset. This run used "
+            f"'{used}': its use phase is not scaled by a lifetime, so dividing it "
+            "would be wrong. Recompute on the Lifetime preset, or use 'as computed'."
+        ))
+    lifetime = float(meta.lifetime)
+    if lifetime < 1:
+        raise HTTPException(status_code=400, detail=f"Lifetime must be at least 1 year, got {lifetime:g}.")
+    from mapper.api.lca import _load_and_splice_archetype
+    from mapper.api.parameters import _table_for
+    from mapper.core.aesa_impact_basis import annualise, lifetime_division_rows
+
+    arc = _load_and_splice_archetype(sp.archetype_id)
+    try:
+        values = _table_for(_current_project()).resolve_all(sp.parameter_scenario)
+    except Exception:
+        values = {}
+    rows = lifetime_division_rows(arc.bom, lifetime, meta.lifetime_param, values)
+    if rows:
+        shown = ", ".join(rows[:5]) + (f" and {len(rows) - 5} more" if len(rows) > 5 else "")
+        raise HTTPException(status_code=400, detail=(
+            f"'{arc.name}' already divides by the lifetime ({lifetime:g} yr) in its own "
+            f"BOM ({shown}), so its impact is per year already. Dividing again would "
+            "under-report it. Use 'as computed' with a 1-year run."
+        ))
+    return annualise(impact, lifetime), lifetime
 
 
 # ─── Sharing Presets (global) ────────────────────────────────────────────────
@@ -665,28 +723,70 @@ async def post_config_import(
 # ─── Export ──────────────────────────────────────────────────────────────────
 
 
-@router.post("/export")
-async def post_export(body: AESAExportRequest) -> Response:
-    config = body.config
-    sys_def = _get_system(config.mfa_system_id)
+def _aesa_export_workbook(body: AESAExportRequest) -> tuple["Workbook", str]:
+    """The AESA workbook and its filename, shared by both export routes.
 
-    wb = _build_aesa_workbook(config, body.result, sys_def.name)
-    buf = io.BytesIO()
-    wb.save(buf)
-    buf.seek(0)
+    A single-product run has no DSM system (``mfa_system_id`` empty), so the
+    system is looked up only when one is named. Requiring it made every
+    single-product export a 404.
+    """
+    config = body.config
+    from mapper.api.bom import build_export_filename, contributing_subsystem_names
+
+    sys_def = None
+    if config.mfa_system_id:
+        try:
+            sys_def = _get_system(config.mfa_system_id)
+        except HTTPException:
+            sys_def = None
+    name = sys_def.name if sys_def is not None else (body.source_name or "single-product")
+    wb = _build_aesa_workbook(config, body.result, name)
 
     # Shared scheme. Each SR row carries the aggregated ``impact_by_cohort``
     # (the Sala numerator is ``yr.total_impact``, which SUMS primary + every
     # subsystem), so a contributing dependent subsystem is present as a
     # ``<sub_id>::`` cohort key. Route those keys through the SAME gatherer LCA
     # and pLCA use, so all three filenames name the subsystem identically.
-    from mapper.api.bom import build_export_filename, contributing_subsystem_names
-    _sub_names = contributing_subsystem_names(
-        (ck for sr in body.result.results for ck in sr.impact_by_cohort),
-        config.mfa_system_id, _current_project(),
-    )
-    filename = build_export_filename(sys_def.name, _sub_names, "AESA")
+    sub_names: list[str] = []
+    if sys_def is not None:
+        sub_names = contributing_subsystem_names(
+            (ck for sr in body.result.results for ck in sr.impact_by_cohort),
+            config.mfa_system_id, _current_project(),
+        )
+    return wb, build_export_filename(name, sub_names, "AESA")
+
+
+@router.post("/export")
+async def post_export(body: AESAExportRequest) -> Response:
+    wb, filename = _aesa_export_workbook(body)
     return excel_response(wb, filename, kind="data")
+
+
+@router.post("/export/save", response_model=AESAExportSaveResponse)
+async def post_export_save(body: AESAExportRequest) -> AESAExportSaveResponse:
+    """Build the same workbook and WRITE it to ~/Downloads, returning the path.
+
+    The packaged app's webview is a remote http origin with no download
+    delegate, so the ``blob:`` download ``/export`` relies on does nothing
+    there -- no file, no error. Same mechanism as ``/system/logs/save``: the
+    backend writes the file and the UI says where it went.
+    """
+    from mapper.api.cohort_export import excel_bytes
+    from mapper.api.system import save_to_downloads
+    from mapper.core.log_config import LOG_DIR
+
+    wb, filename = _aesa_export_workbook(body)
+    data, filename = excel_bytes(wb, filename, kind="data")
+    target = save_to_downloads(data, filename, fallback_dir=LOG_DIR)
+    return AESAExportSaveResponse(path=str(target), bytes=len(data))
+
+
+def impact_basis_label(result: AESAComputeResult) -> str:
+    """What one impact value in this result is per. Shared by every export
+    surface so the wording cannot drift between sheets."""
+    if result.impact_basis == "per_year" and result.lifetime_years:
+        return f"per year: whole-life impact / {result.lifetime_years:g} yr"
+    return "per functional unit, as computed (not annualised)"
 
 
 def _build_aesa_workbook(
@@ -740,6 +840,10 @@ def _build_aesa_workbook(
     ws.append(["AESA Configuration", config.name])
     ws.append(["Boundary Set", config.boundary_set_id])
     ws.append(["Impact Mode", config.impact_mode])
+    # What the impact (SR numerator) is per, beside what the SOS is per. They
+    # must match for the SR to mean anything, so the export states both.
+    ws.append(["Impact basis (functional unit)", impact_basis_label(result)])
+    ws.append(["Allocated SOS basis", "per year"])
     # Patch 5AS — metadata header so an exported workbook is self-describing.
     ws.append(["DSM scenario", config.dsm_scenario_id or "(active)"])
     # Patch 5AT — modern sharing-preset configs have multi_d=None; only emit
@@ -807,7 +911,12 @@ def _build_aesa_workbook(
         "Impact", "Allocated SOS", "SR", "Zone",
         "Principle", "L1 Factor", "L2 Factor", "Boundary Type", "Unit",
         "System Share", _rem_lbl, _alloc_lbl,
+        # Appended, never inserted: readers address these columns by header
+        # AND by position. What each number is per, so a per-FU impact beside
+        # a per-year SOS cannot pass unnoticed.
+        "Impact basis", "SOS basis",
     ])
+    _impact_basis = impact_basis_label(result)
     _style_header(ws)
     for r in result.results:
         ws.append([
@@ -816,6 +925,7 @@ def _build_aesa_workbook(
             r.sharing_principle, r.sharing_factor_l1, r.sharing_factor_l2,
             r.boundary_type, r.unit,
             r.total_sharing_factor, r.remaining_budget_gt, r.global_allocation_gt,
+            _impact_basis, "per year",
         ])
     for row in ws.iter_rows(min_row=2, min_col=6, max_col=7):
         for cell in row:

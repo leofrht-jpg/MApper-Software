@@ -3725,6 +3725,8 @@ async function _downloadXlsx(url: string, body: unknown, fallbackName: string): 
 export interface StageAmountsMeta {
   preset: string
   lifetime: number
+  /** The parameter the lifetime came from, when one was referenced. */
+  lifetime_param?: string | null
   amounts: Record<string, number>
 }
 
@@ -4242,6 +4244,8 @@ export interface AESAConfiguration {
   carbon_budget: CarbonBudgetConfig | null
   method_mapping: MethodPBMapping[]
   created_at: string
+  /** Single-product only: 'as_computed' (default) or 'per_year' (divide by the run's lifetime). */
+  impact_basis?: 'as_computed' | 'per_year'
 }
 
 export interface AESAConfigurationCreate {
@@ -4255,6 +4259,7 @@ export interface AESAConfigurationCreate {
   sharing_preset_id?: string | null
   carbon_budget?: CarbonBudgetConfig | null
   method_mapping?: MethodPBMapping[]
+  impact_basis?: 'as_computed' | 'per_year'
 }
 
 export interface SustainabilityRatioResult {
@@ -4315,6 +4320,10 @@ export interface AESAComputeResult {
   missing_categories: string[]
   sensitivity?: Partial<Record<SharingPrincipleId, SustainabilityRatioResult[]>> | null
   compute_metrics?: ComputeMetrics | null
+  /** What each impact is per (SR numerator). Echoed by compute. */
+  impact_basis?: 'as_computed' | 'per_year'
+  /** The lifetime divided by under 'per_year'; null otherwise. */
+  lifetime_years?: number | null
 }
 
 export interface MultiDDefault {
@@ -4504,6 +4513,8 @@ export interface AESAComputeBody {
   single_product_result?: ArchetypeLCACalculateResult | null
   reference_year?: number
   prospective_single_product?: ProspectiveSingleProductPoint[] | null
+  /** Stage amounts of the consumed single-product run (for 'per_year'). */
+  single_product_stage_meta?: StageAmountsMeta | null
 }
 
 export async function computeAESA(body: AESAComputeBody): Promise<AESAComputeResult> {
@@ -4520,12 +4531,21 @@ export async function computeAESA(body: AESAComputeBody): Promise<AESAComputeRes
   return res
 }
 
+/**
+ * Export the AESA result. Returns where the file went when the backend wrote it.
+ *
+ * In the packaged app a `blob:` download does nothing (no download delegate on
+ * a remote http origin; see `downloadSystemLogs`), so there the backend writes
+ * the workbook to ~/Downloads and returns the path, which the UI shows. In a
+ * browser the usual download runs and `path` is null.
+ */
 export async function exportAESA(
   config: AESAConfiguration,
   result: AESAComputeResult,
   filename: string,
   displayedIndicators?: string[] | null,
-): Promise<void> {
+  sourceName?: string | null,
+): Promise<{ path: string | null }> {
   // Patch 4T — when `displayedIndicators` is provided, subset the
   // result CLIENT-SIDE before posting. Filtering on the wire keeps
   // the backend export route untouched and makes the export shape
@@ -4570,10 +4590,17 @@ export async function exportAESA(
       sensitivity: filteredSensitivity,
     }
   }
+  const body = { config, result: payloadResult, source_name: sourceName ?? null }
+  if (isPackagedDesktop()) {
+    const saved = await request<{ path: string; bytes: number }>(
+      '/aesa/export/save', { method: 'POST', body: JSON.stringify(body) },
+    )
+    return { path: saved.path }
+  }
   const res = await fetch(`${API_BASE}/aesa/export`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ config, result: payloadResult }),
+    body: JSON.stringify(body),
   })
   if (!res.ok) throw new Error(`POST /aesa/export failed: ${res.status} ${await res.text()}`)
   // Prefer the backend's Content-Disposition filename — it names any
@@ -4591,6 +4618,7 @@ export async function exportAESA(
   a.click()
   document.body.removeChild(a)
   URL.revokeObjectURL(url)
+  return { path: null }
 }
 
 // ── Sharing preset management (N-layer downscaling) ──────────────────────────

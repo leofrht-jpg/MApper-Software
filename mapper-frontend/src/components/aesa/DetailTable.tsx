@@ -10,18 +10,21 @@
 import { Fragment, useMemo, useState } from 'react'
 import { cohortDisplayString } from '../../utils/dsmCohortColors'
 import { ChevronDown, ChevronRight } from 'lucide-react'
-import type { AESACoverageGap, SustainabilityRatioResult } from '../../api/client'
+import type { AESAComputeResult, AESACoverageGap, SustainabilityRatioResult } from '../../api/client'
+import { SOS_BASIS_SHORT, impactBasisLabel, impactBasisShort, quantityUnit } from '../../utils/aesaImpactBasis'
 import { NotSpecifiedMarker, gapsForPb } from '../authored/CoverageMarkers'
 import { ZONE_COLOR, ZONE_LABEL, fmt, fmtSR, srOrInf } from './zones'
 
 interface Props {
   results: SustainabilityRatioResult[]
   coverageGaps?: AESACoverageGap[] | null
+  /** The result's impact basis, so the headers say what each number is per. */
+  basis?: Pick<AESAComputeResult, 'impact_basis' | 'lifetime_years'> | null
 }
 
 type SortKey = 'year' | 'pb_name' | 'sr' | 'impact' | 'allocated_sos' | 'zone' | 'principle'
 
-export function DetailTable({ results, coverageGaps }: Props) {
+export function DetailTable({ results, coverageGaps, basis }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('sr')
   const [sortDesc, setSortDesc] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -59,8 +62,8 @@ export function DetailTable({ results, coverageGaps }: Props) {
     { key: 'year', label: 'Year' },
     { key: 'pb_name', label: 'Boundary' },
     { key: 'principle', label: 'SP-I' },
-    { key: 'impact', label: 'Impact', align: 'right' },
-    { key: 'allocated_sos', label: 'Allocated SOS', align: 'right' },
+    { key: 'impact', label: `Impact (${impactBasisShort(basis)})`, align: 'right' },
+    { key: 'allocated_sos', label: `Allocated SOS (${SOS_BASIS_SHORT})`, align: 'right' },
     { key: 'sr', label: 'SR', align: 'right' },
     { key: 'zone', label: 'Zone' },
   ]
@@ -86,7 +89,12 @@ export function DetailTable({ results, coverageGaps }: Props) {
                   color: sortKey === h.key ? 'var(--text-primary)' : undefined,
                 }}
               >
-                {h.label}{sortKey === h.key ? (sortDesc ? ' ↓' : ' ↑') : ''}
+                <span
+                  data-testid={h.key === 'impact' ? 'aesa-detail-impact-header' : h.key === 'allocated_sos' ? 'aesa-detail-sos-header' : undefined}
+                  title={h.key === 'impact' ? `Impact ${impactBasisLabel(basis)}` : h.key === 'allocated_sos' ? 'Allocated SOS per year' : undefined}
+                >
+                  {h.label}
+                </span>{sortKey === h.key ? (sortDesc ? ' ↓' : ' ↑') : ''}
               </th>
             ))}
             <th style={{ ...thStyle, textAlign: 'left' }}>Unit</th>
@@ -154,7 +162,8 @@ export function DetailTable({ results, coverageGaps }: Props) {
                       {ZONE_LABEL[r.zone]}
                     </span>
                   </td>
-                  <td style={{ ...td, color: 'var(--text-tertiary)' }}>{r.unit}</td>
+                  {/* The quantity only: what each number is per is in its header. */}
+                  <td style={{ ...td, color: 'var(--text-tertiary)' }}>{quantityUnit(r.unit)}</td>
                 </tr>
                 {open && cohorts.length > 0 && (
                   <tr key={`${k}-exp`} style={{ background: 'var(--bg-elevated)' }}>

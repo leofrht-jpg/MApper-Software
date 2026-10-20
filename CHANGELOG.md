@@ -88,6 +88,44 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **The AESA tab had two CO₂ / CO₂-eq budget toggles; the one above the result
+  views is gone.** It re-ran the compute on click and could disagree with the
+  Configuration panel about which basis a result was computed on. The
+  Configuration panel's Carbon budget section is now the only control, and the
+  basis is still stated, read-only, in the export's Summary and Carbon Budget
+  sheets.
+- **The AESA export did nothing on a single-product run.** Three causes, all
+  silent: the button returned early when no DSM system was active (always, for
+  a single-product run); the export route 404'd for the same reason; and any
+  error went only to the browser console. In the packaged app a working route
+  would still have produced nothing, because the webview cannot download a
+  `blob:` URL. The export now runs without a DSM system, and in the packaged app
+  the backend writes the workbook to `~/Downloads` and the tab shows the path
+  for 8 seconds (the same mechanism as Settings › Logs). A failure is shown in
+  the tab.
+- **AESA now states what each impact is per, and can annualise a whole-life
+  run.** The Sustainability Ratio divides an impact by a per-year allocated
+  SOS, but nothing on screen said what the impact was per, so a whole-life
+  pLCA total was compared with a per-year SOS unnoticed (EVS40: impact
+  51,993.786 kg against 543.092 kg/yr, SR 95.7). A new **Functional unit**
+  option in the Configuration panel chooses *As computed* (the default and the
+  previous behaviour, unchanged numbers) or *Per year*, which divides by the
+  lifetime the run's stage amounts were scaled with. *Per year* is refused for a
+  run not on the Lifetime preset, for a fleet source, and for a BOM that already
+  divides by its lifetime (the EV9 archetype does), where it would divide twice.
+  The basis is shown under the zone cards, in the Detail table headers, in the
+  Radar tooltip, in the export, and is saved with configurations and sessions.
+- **A single-product export could print a lifetime its numbers were not
+  computed with.** The "Lifetime (yr)" row was read from the stage-amount
+  editor at export time, not from the run, and a lifetime taken from a
+  parameter did not follow later edits of that parameter. An EVS40 export read
+  "Lifetime 15" beside "Use Phase 16". Exports now carry the run's own stage
+  amounts, frozen at compute time; the row says "not used" under the 1-year
+  preset or custom amounts, names the parameter when one was used, and the
+  Prospective workbook states that its year range is the background-database
+  years, not the product lifetime. The Prospective tab says so too when the
+  two differ.
+
 - In the authored-activity editor, the exchange Amount field now looks like the
   other fields (it rendered with no border or background and read as plain
   text), and the below-floor message asks for "a reason" instead of naming the

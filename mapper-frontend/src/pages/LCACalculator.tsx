@@ -7,6 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { CollapsibleBlock } from '../components/ui/CollapsibleBlock'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Download } from 'lucide-react'
 import { NumberInput } from '../components/ui/NumberInput'
@@ -1231,7 +1232,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
             <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 8 }}>
               LCIA Method
             </label>
-            <MethodPicker onChange={setSelectedMethods} defaultAllSelected />
+            <MethodPicker onChange={setSelectedMethods} defaultAllSelected collapseKey="lca-calculator.methods" />
           </div>
         </div>
 
@@ -1636,6 +1637,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                         All indicators
                       </h4>
                       <div style={{ overflow: 'auto', maxHeight: 400 }}>
+                        <CollapsibleBlock storageKey="lca-calculator.activity-results" testId="lca-activity-results-table" title="Impact categories" summary={`${actResult.results.length} indicators`}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                           <thead>
                             <tr>
@@ -1664,6 +1666,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                             })}
                           </tbody>
                         </table>
+                        </CollapsibleBlock>
                       </div>
                     </div>
                   )}
@@ -1815,6 +1818,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                             All indicators
                           </h4>
                           <div style={{ overflow: 'auto', maxHeight: 400 }}>
+                            <CollapsibleBlock storageKey="lca-calculator.archetype-results" testId="lca-archetype-results-table" title="Impact categories" summary={`${arcResult.results.length} indicators`}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                               <thead>
                                 <tr>
@@ -1843,6 +1847,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                                 })}
                               </tbody>
                             </table>
+                            </CollapsibleBlock>
                           </div>
                         </div>
                       )}
@@ -1921,6 +1926,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                             All indicators
                           </h4>
                           <div style={{ overflow: 'auto', maxHeight: 500 }}>
+                            <CollapsibleBlock storageKey="lca-calculator.compare" testId="lca-compare-table" title="Impact categories" summary={`${arcResult.results.length} indicators`}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                               <thead>
                                 <tr>
@@ -1971,6 +1977,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                                 })}
                               </tbody>
                             </table>
+                            </CollapsibleBlock>
                           </div>
                           <div style={{ marginTop: 8, display: 'flex', gap: 16, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
                             <span><span style={{ color: 'var(--success, #10b981)', fontWeight: 600 }}>Green</span> = lowest (best)</span>

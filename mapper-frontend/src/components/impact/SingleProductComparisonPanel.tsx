@@ -7,6 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { CollapsibleBlock } from '../ui/CollapsibleBlock'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Download, Loader2 } from 'lucide-react'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
@@ -288,6 +289,7 @@ export function SingleProductComparisonPanel({ archetypeId }: Props) {
             data-testid="single-product-compare-view-table"
             style={{ display: viewMode === 'table' ? 'block' : 'none' }}
           >
+          <CollapsibleBlock storageKey="single-compare.results" testId="single-compare-results-table" title="Impact categories" summary={`${methodDeltas.length} indicators`}>
           <table
             data-testid="single-product-compare-table"
             style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}
@@ -345,6 +347,7 @@ export function SingleProductComparisonPanel({ archetypeId }: Props) {
               ))}
             </tbody>
           </table>
+          </CollapsibleBlock>
           </div>
         </div>
       </CollapsibleCard>

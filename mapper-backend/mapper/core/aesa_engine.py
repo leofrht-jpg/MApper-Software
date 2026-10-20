@@ -1088,6 +1088,7 @@ class AESAEngine:
         impact_results: list[DSMLCAResult],
         config: AESAConfiguration,
         boundary_set: BoundarySet,
+        principles: list[str] | None = None,
     ) -> AESAComputeResult:
         """Run compute() once with the configured chain, then run one variant
         per principle in the active preset — each variant flips every
@@ -1103,6 +1104,10 @@ class AESAEngine:
         cat_layers = [ly for ly in preset.chain.layers
                       if ly.principle_mode == "category_specific"]
         for principle in preset.principles:
+            # ``principles`` narrows the sweep to the cases picked in the case
+            # window; None keeps every testable principle (pre-window behaviour).
+            if principles is not None and principle.id not in principles:
+                continue
             if cat_layers and not all(principle.id in ly.data for ly in cat_layers):
                 continue
             variant_assignments = [

@@ -27,6 +27,7 @@
 //   - Archetype feed reads `useBOMStore.archetypes` synchronously
 //     (already loaded when the LCA module is entered).
 
+import { CollapsibleBlock } from '../ui/CollapsibleBlock'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Calculator, Download, Loader2 } from 'lucide-react'
 import { Button } from '../ui/Button'
@@ -628,6 +629,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
           <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
             <span style={labelStyle}>Impact methods</span>
             <MethodPicker
+                collapseKey="multi-item.methods"
               onChange={setMethods}
               accent="var(--mod-lca)"
               defaultAllSelected
@@ -1119,6 +1121,7 @@ function ResultsTable({ result }: { result: import('../../api/client').MultiProd
 
   return (
     <div data-testid="multi-product-results-table" style={{ overflowX: 'auto' }}>
+        <CollapsibleBlock storageKey="multi-item.results" testId="multi-item-results-table" title="Impact categories" summary={`${allMethodCols.length} indicators · ${result.items.length} items`}>
         <table
           style={{
             width: '100%',
@@ -1142,6 +1145,7 @@ function ResultsTable({ result }: { result: import('../../api/client').MultiProd
             ))}
           </tbody>
         </table>
+        </CollapsibleBlock>
     </div>
   )
 }

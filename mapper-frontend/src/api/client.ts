@@ -4311,6 +4311,15 @@ export interface AESAYearSummary {
   total_assessed: number
 }
 
+/** One sensitivity case beside the base (backend `AESACase`). */
+export interface AESACase {
+  id: string
+  kind: 'sharing' | 'parameter'
+  label: string
+  definition: string[]
+  results: SustainabilityRatioResult[]
+}
+
 export interface AESAComputeResult {
   /** PB axes whose SR rests on a partial authored activity: unknown, not small. */
   coverage_gaps?: AESACoverageGap[] | null
@@ -4324,6 +4333,8 @@ export interface AESAComputeResult {
   impact_basis?: 'as_computed' | 'per_year'
   /** The lifetime divided by under 'per_year'; null otherwise. */
   lifetime_years?: number | null
+  /** Selected sensitivity cases, in selection order. Absent on old results. */
+  cases?: AESACase[]
 }
 
 export interface MultiDDefault {
@@ -4515,6 +4526,10 @@ export interface AESAComputeBody {
   prospective_single_product?: ProspectiveSingleProductPoint[] | null
   /** Stage amounts of the consumed single-product run (for 'per_year'). */
   single_product_stage_meta?: StageAmountsMeta | null
+  /** Principle ids to sweep (null = every testable one). */
+  sharing_cases?: string[] | null
+  /** Parameter sensitivity cases, recomputed through the single-product LCA. */
+  parameter_cases?: string[]
 }
 
 export async function computeAESA(body: AESAComputeBody): Promise<AESAComputeResult> {

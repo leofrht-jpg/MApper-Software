@@ -1061,7 +1061,7 @@ function ProjectedImpactPanelImpl() {
             </span>
           </div>
           {indicatorExpanded && (
-            <IndicatorChecklist selection={methodSelection} accent="var(--mod-plca)" maxHeight={320} />
+            <IndicatorChecklist selection={methodSelection} accent="var(--mod-plca)" maxHeight={320} collapseKey="system-prospective.methods" />
           )}
         </div>
 

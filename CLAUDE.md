@@ -2153,6 +2153,67 @@ re-compute contract.
 - **Don't add a third download mechanism.** Browser: blob; packaged: backend
   writes to ~/Downloads and returns the path.
 
+### AESA sensitivity cases: chosen, computed, shown, exported
+
+Two kinds of case beside the base, both offered by the case window
+(`CaseSelectionModal`, opened by Compute when `availableCases()` is non-empty):
+
+- **sharing** — the existing per-principle sweep
+  (`compute_with_sensitivity`, now narrowed by `principles=`). Testable
+  principles follow ONE rule on both sides: every category-specific layer has
+  data for it (`sharingCaseOptions` mirrors the engine).
+- **parameter** — the project's parameter sensitivity cases. Before this they
+  never reached AESA (it consumes one impact result; single-product Prospective
+  never computed cases at all). `_parameter_cases` re-runs
+  `calculate_archetype_lca` with `parameter_scenario=case` for the static result
+  or every prospective year, applies the impact basis (and its refusals), and
+  computes the SR. Single-product sources only: a fleet case is a full DSM × LCA
+  run and is refused with a 400, not approximated.
+
+Request: `sharing_cases` (None = old behaviour, every testable principle;
+`[]` = none), `parameter_cases`. Response: `AESAComputeResult.cases`
+(`AESACase`: id `sharing:EpC` / `parameter:v1g`, label, definition lines,
+results). `sensitivity` stays for the box plot. The selection is remembered for
+the session (`aesaStore.caseSelection`) and cleared on project change;
+`activeCaseId` drives the switcher and resets on every new result or session.
+
+Export: "Sensitivity" is now WIDE (Year, PB ID, Impact category, Abbreviation,
+Base SR/zone, then SR / ΔSR / zone per case); the old long sheet is
+"Sensitivity (long)"; case definitions are rows in Summary. A result saved
+before `cases` existed is read from `sensitivity` as sharing cases.
+
+The Cases view (`CaseComparisonView`) labels categories with the boundary's
+`conventional_acronym` (GWP100, ETP-fw, ADP-mm, LU …), an exception to the
+"never an acronym on a label" rule in `aesaBoundaryLabels.ts`, made for this
+figure on request; full names stay in tooltips.
+
+#### What NOT to do
+
+- **Don't compute parameter cases for a fleet source by reusing the base
+  simulation.** A case can change the inventory AND (via scaling rules) the
+  stock; refuse rather than half-apply it.
+- **Don't let the window and the engine disagree on testable principles.**
+- **Don't feed the switcher's case rows to the export.** The export always
+  sends the full result with every computed case.
+
+### Impact-category lists collapse through ONE component
+
+`components/ui/CollapsibleBlock` wraps every picker and table that lists
+impact categories: `IndicatorChecklist` (all pickers, `collapseKey` per page)
+and the single-product Static / Projected / Comparison, Multi-item, LCA
+Calculator (3), Monte Carlo distributions and AESA Detail tables. Body hidden
+with `display: none` (never unmounted), summary always visible, state in
+localStorage under `mapper.collapse.<key>` inside try/catch (renders expanded
+without storage). Not wrapped, deliberately: the system-level DSM / Prospective
+year-detail tables (rows are cohorts) and the Monte Carlo pairwise view (one
+indicator at a time). `tests/collapsibleImpactCategories.test.tsx` lists the
+surfaces; add a new category list there.
+
+The picker's category headers are NOT sticky: a sticky header inside its own
+section hid a one-row category's only row (EF v3.1 acidification). Chips use
+`disambiguatedLabels`, because two EF v3.1 indicators are both "accumulated
+exceedance (AE)".
+
 ### AESA Compute Source cascade (Patch 4O)
 
 AESA is a **downstream consumer** — `POST /aesa/compute` takes an

@@ -760,7 +760,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
             </span>
           </div>
           {indicatorExpanded && (
-            <IndicatorChecklist selection={methodSelection} accent="var(--mod-lca)" maxHeight={320} />
+            <IndicatorChecklist selection={methodSelection} accent="var(--mod-lca)" maxHeight={320} collapseKey="system-static.methods" />
           )}
         </div>
 

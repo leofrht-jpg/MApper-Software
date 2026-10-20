@@ -17,6 +17,27 @@ but the tag and the GitHub release are not cut yet.
 
 ### Added
 
+- **Impact-category lists and tables collapse.** Every card or table that
+  lists impact categories (the indicator picker on every Impact Assessment
+  page and the LCA Calculator, the single-product and Multi-item result
+  tables, the LCA Calculator result tables, the Monte Carlo distributions
+  table, the AESA Detail table) now has a chevron like the Results header,
+  through one shared component. Expanded by default; a collapsed block keeps a
+  one-line summary ("25 of 25 selected"); the state is remembered per page
+  when the browser allows it.
+- **AESA sensitivity cases you can see and choose.** With "Sharing
+  sensitivity" ticked or parameter sensitivity cases in the project, Compute
+  first opens a window listing each case and what it changes; only the ticked
+  ones are computed (the base always is). Parameter cases, which never reached
+  AESA before, are now recomputed through the single-product LCA under each
+  case, including every year of a prospective run. A case switcher shows the
+  base or any case in Radar, Timeline and Detail, and a new Cases view plots
+  each case's SR difference from the base per impact category, with zone
+  changes marked. The export's Sensitivity sheet now has one row per impact
+  category and a column group per case (SR, difference from the base, zone);
+  the case definitions are in the Summary, and the previous long-format sheet
+  is kept as "Sensitivity (long)".
+
 - **Authored databases.** Create your own Brightway database inside MApper and
   author activities in it from biosphere flows — for a process whose impact is
   its direct emissions, or a supplier's cradle-to-gate figure entered as one
@@ -87,6 +108,14 @@ but the tag and the GitHub release are not cut yet.
   single-year basis actually used. No Sustainability Ratio values move.
 
 ### Fixed
+
+- **A one-row impact category looked empty in the indicator picker.** The
+  category headers were sticky inside their own sections, so EF v3.1
+  acidification scrolled its only row ("accumulated exceedance (AE)") under its
+  own header while it was listed and selected. The headers no longer stick.
+  The selected-indicator chips also named only the indicator, and EF v3.1 has
+  two "accumulated exceedance (AE)"; they now use the same disambiguated label
+  as the result tables.
 
 - **The AESA tab had two CO₂ / CO₂-eq budget toggles; the one above the result
   views is gone.** It re-ran the compute on click and could disagree with the

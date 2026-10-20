@@ -10,13 +10,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildExportFilename } from '../utils/exportFilename'
 import { createPortal } from 'react-dom'
-import { ArrowLeft, ChevronDown, Download, Save, Activity, BarChart3, Info, List, Radar as RadarIcon } from 'lucide-react'
+import { ArrowLeft, ChevronDown, Download, Save, Activity, BarChart3, GitCompare, Info, List, Radar as RadarIcon } from 'lucide-react'
 import { Button } from '../components/ui/Button'
 import { ConfigSidebar } from '../components/aesa/ConfigSidebar'
 import { ConfigurationsDropdown } from '../components/aesa/ConfigurationsDropdown'
 import { RadarView } from '../components/aesa/RadarView'
 import { TimelineView } from '../components/aesa/TimelineView'
 import { DetailTable } from '../components/aesa/DetailTable'
+import { CaseComparisonView } from '../components/aesa/CaseComparisonView'
 import { BoxPlotView } from '../components/aesa/BoxPlotView'
 import { IndicatorDisplayFilter } from '../components/aesa/IndicatorDisplayFilter'
 import { BoundaryGlossary } from '../components/aesa/BoundaryGlossary'
@@ -37,13 +38,14 @@ import {
   type AESAConfiguration,
 } from '../api/client'
 
-type ViewId = 'radar' | 'timeline' | 'detail' | 'boxplot'
+type ViewId = 'radar' | 'timeline' | 'detail' | 'boxplot' | 'cases'
 
 const VIEWS: { id: ViewId; label: string; icon: typeof RadarIcon }[] = [
   { id: 'radar',    label: 'Radar',    icon: RadarIcon },
   { id: 'timeline', label: 'Timeline', icon: Activity },
   { id: 'detail',   label: 'Detail',   icon: List },
   { id: 'boxplot',  label: 'Box Plot', icon: BarChart3 },
+  { id: 'cases',    label: 'Cases',    icon: GitCompare },
 ]
 
 export function AESADashboard() {
@@ -54,6 +56,7 @@ export function AESADashboard() {
     clearActiveSession,
     displayedIndicators, toggleDisplayedIndicator,
     selectAllDisplayedIndicators, clearDisplayedIndicators,
+    activeCaseId, setActiveCaseId,
     source, singleProductBasis,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
@@ -109,6 +112,16 @@ export function AESADashboard() {
     [defaults, draft?.boundary_set_id],
   )
 
+  // Conventional abbreviations (GWP100, ETP-fw, ADP-mm, LU ...) for the case
+  // comparison figure, from the boundary record. Full names stay in tooltips.
+  const caseAcronyms = useMemo(() => {
+    const out: Record<string, string> = {}
+    for (const [id, b] of Object.entries(glossaryBoundarySet?.boundaries ?? {})) {
+      if (b.conventional_acronym) out[id] = b.conventional_acronym
+    }
+    return out
+  }, [glossaryBoundarySet])
+
   const systemConfigs = useMemo(
     () => activeSystem ? configurations.filter((c) => c.mfa_system_id === activeSystem.id) : [],
     [configurations, activeSystem],
@@ -124,10 +137,22 @@ export function AESADashboard() {
     if (year === null || !years.includes(year)) setYear(years[years.length - 1])
   }, [years, year])
 
+  // The result the views show: the base, or the case picked in the switcher.
+  // A case carries only its SR rows, so its zone counts are recomputed here;
+  // everything else (sensitivity, coverage, basis) is the run's.
+  const activeCase = useMemo(
+    () => (activeCaseId ? result?.cases?.find((c) => c.id === activeCaseId) ?? null : null),
+    [result, activeCaseId],
+  )
+  const shown = useMemo<AESAComputeResult | null>(() => {
+    if (!result || !activeCase) return result
+    return { ...result, results: activeCase.results, summary_by_year: summariseByYear(activeCase.results) }
+  }, [result, activeCase])
+
   const yearSummary = useMemo(() => {
-    if (!result || year === null) return null
-    return result.summary_by_year.find((s) => s.year === year) ?? null
-  }, [result, year])
+    if (!shown || year === null) return null
+    return shown.summary_by_year.find((s) => s.year === year) ?? null
+  }, [shown, year])
 
   // Patch 4T — display filter machinery. Operates on the indicator
   // dimension (`pb_id`); the filter is view-state only, never
@@ -169,6 +194,7 @@ export function AESADashboard() {
   )
 
   const filteredResult = useMemo<AESAComputeResult | null>(() => {
+    const result = shown
     if (!result) return null
     if (displayedIndicators === null) return result
     const allow = new Set(effectiveDisplayed)
@@ -202,7 +228,7 @@ export function AESADashboard() {
       summary_by_year: filteredSummary,
       sensitivity: filteredSensitivity,
     }
-  }, [result, displayedIndicators, effectiveDisplayed])
+  }, [shown, displayedIndicators, effectiveDisplayed])
 
   const yearSummaryFiltered = useMemo(() => {
     if (!filteredResult || year === null) return null
@@ -578,6 +604,37 @@ export function AESADashboard() {
                   and could disagree with the panel about which basis a result
                   was computed on. It stays visible read-only in the export. */}
 
+              {/* Case switcher: which result Radar, Timeline and Detail show.
+                  Only when the run computed sensitivity cases. */}
+              {(result.cases?.length ?? 0) > 0 && (
+                <div data-testid="aesa-case-switcher" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', marginRight: 4 }}>
+                    Case
+                  </span>
+                  {[{ id: null as string | null, label: 'Base' }, ...(result.cases ?? []).map((c) => ({ id: c.id as string | null, label: c.label }))].map((c) => {
+                    const active = activeCaseId === c.id
+                    return (
+                      <button
+                        key={c.id ?? 'base'}
+                        type="button"
+                        data-testid={`aesa-case-switch-${c.id ?? 'base'}`}
+                        aria-pressed={active}
+                        onClick={() => setActiveCaseId(c.id)}
+                        style={{
+                          padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
+                          border: '1px solid ' + (active ? 'var(--mod-aesa)' : 'var(--border-default)'),
+                          background: active ? 'color-mix(in srgb, var(--mod-aesa) 14%, transparent)' : 'var(--bg-elevated)',
+                          color: active ? 'var(--mod-aesa)' : 'var(--text-primary)',
+                          fontSize: 12, fontWeight: active ? 600 : 500,
+                        }}
+                      >
+                        {c.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+
               {/* View selector */}
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                 {VIEWS.map((v) => {
@@ -633,6 +690,14 @@ export function AESADashboard() {
                     {view === 'timeline' && <TimelineView results={filteredResult.results} carbonBudget={draft?.carbon_budget ?? null} sharing={draft?.sharing ?? null} coverageGaps={result?.coverage_gaps} />}
                     {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
                     {view === 'boxplot'  && <BoxPlotView result={filteredResult} />}
+                    {view === 'cases'    && year !== null && result && (
+                      <CaseComparisonView
+                        base={result.results.filter((r) => effectiveDisplayed.includes(r.pb_id))}
+                        cases={result.cases ?? []}
+                        year={year}
+                        acronyms={caseAcronyms}
+                      />
+                    )}
                   </>
                 )}
               </section>
@@ -961,4 +1026,18 @@ function EmptyFilterState({ onSelectAll }: { onSelectAll: () => void }) {
       </Button>
     </div>
   )
+}
+
+/** Zone counts per year for a set of SR rows (a case's own summary). */
+function summariseByYear(rows: AESAComputeResult['results']): AESAComputeResult['summary_by_year'] {
+  const m = new Map<number, AESAComputeResult['summary_by_year'][number]>()
+  for (const r of rows) {
+    const cur = m.get(r.year) ?? { year: r.year, safe: 0, zone_of_uncertainty: 0, high_risk: 0, total_assessed: 0 }
+    cur.total_assessed += 1
+    if (r.zone === 'safe') cur.safe += 1
+    else if (r.zone === 'zone_of_uncertainty') cur.zone_of_uncertainty += 1
+    else if (r.zone === 'high_risk') cur.high_risk += 1
+    m.set(r.year, cur)
+  }
+  return Array.from(m.values()).sort((a, b) => a.year - b.year)
 }

@@ -7,6 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { CollapsibleBlock } from '../ui/CollapsibleBlock'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Layers, Loader2 } from 'lucide-react'
 import {
@@ -573,6 +574,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
                   seeds all-N via initialSelected (one echo, absorbed by the
                   skip ref) — non-customizing, mirror stays live. */}
               <MethodPicker
+                collapseKey="single-projected.methods"
                 key={pickerSeed}
                 onChange={handleMethodsChange}
                 accent="var(--mod-plca)"
@@ -789,6 +791,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
                 }}>
                   LCI: {activeRun.dbName}
                 </div>
+                <CollapsibleBlock storageKey="single-projected.results" testId="single-projected-results-table" title="Impact categories" summary={`${activeRun.result.results.length} indicators`}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
@@ -812,6 +815,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
                     ))}
                   </tbody>
                 </table>
+                </CollapsibleBlock>
               </div>
             </div>
           </div>

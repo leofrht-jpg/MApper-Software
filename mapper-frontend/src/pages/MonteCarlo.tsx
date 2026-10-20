@@ -7,6 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { CollapsibleBlock } from '../components/ui/CollapsibleBlock'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, Dice5, Download, Play } from 'lucide-react'
 import {
@@ -450,6 +451,7 @@ function DistributionTable({ distributions }: { distributions: Array<{ method_la
   const num = (v: number) => (Math.abs(v) >= 1e4 || (v !== 0 && Math.abs(v) < 1e-3) ? v.toExponential(3) : v.toFixed(3))
   return (
     <div style={{ overflowX: 'auto' }}>
+      <CollapsibleBlock storageKey="monte-carlo.distributions" testId="mc-distributions-table" title="Impact categories" summary={`${distributions.length} indicators`}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
         <thead>
           <tr>
@@ -486,6 +488,7 @@ function DistributionTable({ distributions }: { distributions: Array<{ method_la
           })}
         </tbody>
       </table>
+      </CollapsibleBlock>
     </div>
   )
 }

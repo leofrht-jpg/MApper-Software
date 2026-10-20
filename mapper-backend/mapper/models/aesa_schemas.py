@@ -782,7 +782,15 @@ class AESAComputeRequest(BaseModel):
     # the parameter it came from). Required by ``impact_basis="per_year"``,
     # which divides by that lifetime; ignored otherwise.
     single_product_stage_meta: StageAmountsMeta | None = None
-    run_sensitivity: bool = False  # if True, also run 5 uniform-principle configs
+    run_sensitivity: bool = False
+    # Which sensitivity cases to compute beside the base, chosen in the case
+    # window. ``sharing_cases``: principle ids for the sharing sweep; None keeps
+    # the pre-window behaviour (every testable principle when run_sensitivity).
+    # ``parameter_cases``: parameter sensitivity case names. Each is computed by
+    # re-running the single-product LCA under that case, so it needs a
+    # single-product source.
+    sharing_cases: list[str] | None = None
+    parameter_cases: list[str] = Field(default_factory=list)  # if True, also run 5 uniform-principle configs
 
 
 class AESAYearSummary(BaseModel):
@@ -795,6 +803,16 @@ class AESAYearSummary(BaseModel):
 
 class AESACoverageGap(CoverageGap):
     pb_id: str
+
+
+class AESACase(BaseModel):
+    """One sensitivity case beside the base: what differs, and its SRs."""
+    id: str                                   # "sharing:EpC" | "parameter:v1g"
+    kind: Literal["sharing", "parameter"]
+    label: str
+    #: What differs from the base, one human-readable line per difference.
+    definition: list[str] = Field(default_factory=list)
+    results: list[SustainabilityRatioResult] = Field(default_factory=list)
 
 
 class AESAComputeResult(BaseModel):
@@ -813,6 +831,10 @@ class AESAComputeResult(BaseModel):
     #: that shows an impact can state its unit without re-deriving it.
     impact_basis: Literal["as_computed", "per_year"] = "as_computed"
     lifetime_years: float | None = None
+    #: The selected sensitivity cases, in selection order: sharing first, then
+    #: parameter. The base is ``results``; ``sensitivity`` keeps the sharing
+    #: variants keyed by principle for the box plot.
+    cases: list[AESACase] = Field(default_factory=list)
 
 
 class AESAExportRequest(BaseModel):

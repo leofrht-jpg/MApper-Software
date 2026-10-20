@@ -7,6 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { CollapsibleBlock } from '../ui/CollapsibleBlock'
 import { methodKey } from '../../utils/methodLabels'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Loader2, Dice5 } from 'lucide-react'
@@ -342,6 +343,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
             <label style={topLabel}>Impact methods</label>
             <div style={{ marginTop: 6 }}>
               <MethodPicker
+                collapseKey="single-static.methods"
                 key={pickerSeed}
                 onChange={handleMethodsChange}
                 accent="var(--mod-lca)"
@@ -530,6 +532,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
               </div>
             )}
             <CoverageGapNote gaps={activeResult.coverage_gaps} testId="single-product-static-coverage-note" />
+            <CollapsibleBlock storageKey="single-static.results" testId="single-static-results-table" title="Impact categories" summary={`${activeResult.results.length} indicators`}>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-sm)' }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border-default)' }}>
@@ -562,6 +565,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
                 ))}
               </tbody>
             </table>
+            </CollapsibleBlock>
           </div>
         </CollapsibleCard>
       )}

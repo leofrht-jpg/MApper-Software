@@ -2129,10 +2129,13 @@ or stage amounts from it; the EVS40 "16" came from `lifetime_yr = 16`, not from
 2025–2040. The workbook says so ("Year range means"), and the Prospective tab
 warns when the two differ on the Lifetime preset.
 
-**Export goes through the backend in the packaged app.** `POST
+**The AESA export saves server-side in the packaged app.** `POST
 /aesa/export/save` writes the same workbook (same `excel_bytes` stamping) to
 ~/Downloads via `system.save_to_downloads`, shared with `/system/logs/save`.
-`exportAESA` takes that route when `isPackagedDesktop()`. Both export routes
+`exportAESA` takes that route when `isPackagedDesktop()`. That is not because a
+blob download cannot work there (most exports use one, successfully; see "The
+packaged app is a REMOTE http origin"): the export's failures were the early
+return and the 404, and the saved path is shown to the user. Both export routes
 work without a DSM system (`source_name` names the file). Tested along the
 real path: `test_aesa_export_real_path.py` starts uvicorn and POSTs real bytes
 with the real header, then opens the file the server wrote.
@@ -2150,8 +2153,9 @@ re-compute contract.
 - **Don't read the live stage-amount editor in an export or in AESA.** Read the
   run's frozen meta.
 - **Don't rename the "Impacts vs SOS" headers.** Append.
-- **Don't add a third download mechanism.** Browser: blob; packaged: backend
-  writes to ~/Downloads and returns the path.
+- **Don't add a third download mechanism.** Two exist: the blob download
+  (everything, both environments) and the server-side save (Logs and AESA, in
+  the packaged app only).
 
 ### AESA sensitivity cases: chosen, computed, shown, exported
 
@@ -2195,6 +2199,23 @@ figure on request; full names stay in tooltips.
 - **Don't let the window and the engine disagree on testable principles.**
 - **Don't feed the switcher's case rows to the export.** The export always
   sends the full result with every computed case.
+
+### AESA configuration save: one builder, single-product allowed
+
+`post_configuration` / `put_configuration` build the model with
+`_config_from_body` (the body's fields wholesale) and check the system with
+`_check_system` (only when one is named). Listing fields by hand had dropped
+`sharing`, `sharing_preset_id` and `dsm_scenario_id` on every save, and looking
+up `None` made every single-product save a 404. The builder sets
+`derived_defaults_migrated=True`: the storage layer's one-time migration clears
+`sharing` on any configuration WITHOUT that flag, so without it a custom chain
+saved here would be wiped on its first load. `test_aesa_config_save_single_product.py`
+reads back through both load routes for that reason. The dashboard dropdown
+lists configurations with no `mfa_system_id` when the source is single-product.
+
+The "Impacts vs SOS" **Unit** column states the IMPACT's unit under its basis
+(`impact_unit`: "… per functional unit" or "…/yr"); "SOS basis" carries the
+SOS's per-year unit. Positions unchanged.
 
 ### Impact-category lists collapse through ONE component
 
@@ -2651,13 +2672,27 @@ one decision removes two things people assume are there:
   Adding the plugins does not help; the page would need an IPC grant to an http
   origin. `isPackagedDesktop()` therefore keys on `window.location.port ===
   '8765'`, which is the honest discriminator — it is what actually differs.
-- **No download delegate.** WKWebView ignores `<a download>` on a `blob:` URL
-  with no delegate: no file, no error, no event. Settings › Logs "Export" was a
-  blob anchor, so it was silently inert in every packaged build while working
-  perfectly in `npm run dev`. **Anything that saves a file must go through the
-  backend** (`POST /system/logs/save` writes it and returns the path), and the
-  UI must say where the file went — otherwise a success looks exactly like the
-  old no-op.
+- **Downloads: `blob:` downloads DO work in the packaged app.** Almost every
+  export is a `blob:` URL clicked through a hidden `<a download>`: 30 of the 32
+  file-saving functions in `client.ts` (13 of them xlsx workbooks), plus every
+  chart image export (`chartExport.ts`). The 0.3.0 walkthrough (October 2026)
+  downloaded the pLCA, LCA and Monte Carlo workbooks from the INSTALLED app
+  through exactly that path. An earlier version of this section said WKWebView
+  ignores such a download with no delegate; that was inferred from the Settings
+  › Logs "Export" no-op and never checked against an export that worked. Of the
+  two no-ops it was used to explain, the AESA one had code causes, proven in
+  #170 (the button returned early with no DSM system and the route 404'd); the
+  Logs one was never isolated.
+
+  **Two exports save server-side in the packaged app**, and only those two:
+  Settings › Logs (`POST /system/logs/save`) and AESA (`POST /aesa/export/save`),
+  both through `system.save_to_downloads`, writing to `~/Downloads` (else a
+  fallback folder) and showing the path for 8 s. In a browser both use the
+  blob download like everything else. They are kept because they work and
+  tell the user where the file went; the other exports are left on the blob
+  path because THEY work. Whichever mechanism a button uses, the UI must show
+  a failure rather than log it to the console, because a silent failure looks
+  exactly like the old no-op.
 
 The same screen carried the quieter half of the class. `document.execCommand('copy')`
 **returns `false` when it does nothing; it does not throw**, so a `try` with no

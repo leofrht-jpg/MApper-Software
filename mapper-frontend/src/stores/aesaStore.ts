@@ -270,7 +270,8 @@ interface AESAStore {
   updateCarbonBudget: (patch: Partial<CarbonBudgetConfig> | null) => void
   resetDraftToDefaults: () => void
   suggestMapping: (methods: string[][]) => Promise<void>
-  saveConfig: (mfaSystemId: string) => Promise<AESAConfiguration | null>
+  /** null for a single-product configuration (no DSM system). */
+  saveConfig: (mfaSystemId: string | null) => Promise<AESAConfiguration | null>
 
   // Patch 4R — session lifecycle.
   loadSessions: () => Promise<void>

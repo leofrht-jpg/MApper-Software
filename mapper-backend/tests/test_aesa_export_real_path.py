@@ -3,9 +3,9 @@
 
 The export button did nothing on a single-product run, for two reasons that
 TestClient-only tests could not see together: the UI returned early because no
-DSM system was active, and the route 404'd because it required one. In the
-packaged app a working route would still have produced nothing, because a
-``blob:`` download is inert in that webview.
+DSM system was active, and the route 404'd because it required one. The
+packaged app now saves it server-side (``/aesa/export/save``) and shows the
+path.
 
 So these tests start a REAL uvicorn server, POST a serialised body over a real
 socket with the same headers the client sends, and read the REAL file the
@@ -113,7 +113,7 @@ def test_the_saved_workbook_carries_configuration_and_every_year(server, home):
     assert {d["Year"] for d in data} == set(YEARS), "every selected year is exported"
     for d in data:
         assert d["Zone"] in ("safe", "zone_of_uncertainty", "high_risk")
-        assert d["SOS basis"] == "per year"
+        assert d["SOS basis"].startswith("per year (") and d["SOS basis"].endswith("/yr)")
     assert "Carbon Budget" in wb.sheetnames
 
 
@@ -132,3 +132,24 @@ def test_a_write_failure_is_reported_not_swallowed(server, home):
     finally:
         (home / "Downloads").chmod(0o700)
     assert status == 500 and b"Could not write" in raw
+
+
+def test_the_unit_column_follows_the_impact_basis(server, home):
+    """The Unit column used to print the boundary's per-year unit beside a
+    whole-life (as computed) impact. It now describes the impact; the SOS
+    states its own per-year unit in "SOS basis". Columns stay in place."""
+    body = _export_body()
+    status, raw, _ = _post(f"{server}/aesa/export/save", body)
+    assert status == 200, raw
+    rows = list(load_workbook(Path(json.loads(raw)["path"]))["Impacts vs SOS"].iter_rows(values_only=True))
+    head = rows[0]
+    assert head.index("Unit") == 13, "existing columns stay where readers expect them"
+    units = {dict(zip(head, r))["Unit"] for r in rows[1:]}
+    assert units and all(u.endswith(" per functional unit") and "/yr" not in u for u in units)
+
+    body["result"]["impact_basis"] = "per_year"
+    body["result"]["lifetime_years"] = 16
+    status, raw, _ = _post(f"{server}/aesa/export/save", body)
+    rows = list(load_workbook(Path(json.loads(raw)["path"]))["Impacts vs SOS"].iter_rows(values_only=True))
+    units = {dict(zip(rows[0], r))["Unit"] for r in rows[1:]}
+    assert all(u.endswith("/yr") for u in units)

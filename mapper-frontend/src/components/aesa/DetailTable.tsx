@@ -7,6 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { CollapsibleBlock } from '../ui/CollapsibleBlock'
 import { Fragment, useMemo, useState } from 'react'
 import { cohortDisplayString } from '../../utils/dsmCohortColors'
 import { ChevronDown, ChevronRight } from 'lucide-react'
@@ -70,6 +71,7 @@ export function DetailTable({ results, coverageGaps, basis }: Props) {
 
   return (
     <div style={{ overflow: 'auto', maxHeight: 480 }}>
+      <CollapsibleBlock storageKey="aesa.detail" testId="aesa-detail-table" title="Impact categories" summary={`${new Set(results.map((r) => r.pb_id)).size} boundaries · ${results.length} rows`}>
       <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'var(--text-xs)', fontVariantNumeric: 'tabular-nums' }}>
         <thead style={{ position: 'sticky', top: 0, background: 'var(--bg-surface)', zIndex: 1 }}>
           <tr style={{ textAlign: 'left', color: 'var(--text-tertiary)' }}>
@@ -213,6 +215,7 @@ export function DetailTable({ results, coverageGaps, basis }: Props) {
           })}
         </tbody>
       </table>
+      </CollapsibleBlock>
     </div>
   )
 }

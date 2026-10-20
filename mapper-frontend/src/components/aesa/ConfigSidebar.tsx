@@ -36,6 +36,9 @@ import type {
   SSPTrajectory,
 } from '../../api/client'
 import type { StageAmountsMeta } from '../../api/client'
+import { CaseSelectionModal } from './CaseSelectionModal'
+import { availableCases, selectionPayload, type CaseOption } from '../../utils/aesaCases'
+import { useParameterStore } from '../../stores/parameterStore'
 import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
 // ── Part C1 — source-agnostic compute helpers (pure, exported for tests) ──────
@@ -162,7 +165,18 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
     configLoadError, dismissConfigLoadError,
     source, setSource, referenceYear, setReferenceYear,
     singleProductBasis, setSingleProductBasis,
+    caseSelection, setCaseSelection,
   } = useAESAStore()
+  const paramTable = useParameterStore((st) => st.table)
+  const fetchParamTable = useParameterStore((st) => st.fetchTable)
+  // The case window lists the project's parameter cases from this table.
+  useEffect(() => { if (!paramTable) fetchParamTable().catch(() => undefined) }, [paramTable, fetchParamTable])
+  // The case window: open with the options it offers and the compute args it
+  // will run once the user confirms.
+  const [casePrompt, setCasePrompt] = useState<{
+    options: CaseOption[]
+    args: NonNullable<ReturnType<typeof buildAESAComputeArgs>>
+  } | null>(null)
 
   // Patch 5AM — re-run just the config load that failed (the network-level
   // first-paint race already self-retries inside the store; this is the manual
@@ -401,7 +415,25 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
       prospectiveSingleProduct: prospectivePoints,
     })
     if (!args) return
-    await compute(args)
+    // Sensitivity cases active (sharing sweep ticked, or the project has
+    // parameter cases and the source can recompute them): ask which first.
+    const options = availableCases({
+      runSensitivity, sharing: draft.sharing, paramTable,
+      singleProduct: source === 'single_product',
+    })
+    if (options.length === 0) {
+      await compute(args)
+      return
+    }
+    setCasePrompt({ options, args })
+  }
+
+  const runCases = async (picked: Set<string>) => {
+    if (!casePrompt) return
+    const { options, args } = casePrompt
+    setCasePrompt(null)
+    setCaseSelection(Array.from(picked))
+    await compute({ ...args, cases: selectionPayload(options, picked) })
   }
 
   const staticSubtitle = staticResult ? describeStatic(staticResult, dsmScenarioName) : '(not yet computed)'
@@ -441,6 +473,15 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
       data-testid="aesa-config-sidebar"
       style={{ ...sidebarStyle, width: sidebarWidth }}
     >
+      {casePrompt && (
+        <CaseSelectionModal
+          options={casePrompt.options}
+          // The session's last choice, else everything ticked.
+          initial={new Set(caseSelection ?? casePrompt.options.map((o) => o.id))}
+          onRun={(picked) => { void runCases(picked) }}
+          onCancel={() => setCasePrompt(null)}
+        />
+      )}
       {/* Patch 4Y — drag-to-resize handle on the right edge.
           4px wide, full sidebar height, faintly visible on hover.
           The sidebar's own `position: sticky` (set inline above)

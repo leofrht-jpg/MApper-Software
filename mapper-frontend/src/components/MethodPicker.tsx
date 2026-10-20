@@ -7,6 +7,8 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { CollapsibleBlock } from './ui/CollapsibleBlock'
+import { disambiguatedLabels, methodKey } from '../utils/methodLabels'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckSquare, Square } from 'lucide-react'
 import { getMethods, type MethodFamily } from '../api/client'
@@ -218,14 +220,22 @@ export function MethodFamilySelect({ selection, style }: { selection: MethodSele
 }
 
 export function IndicatorChecklist({
-  selection, accent = 'var(--accent)', maxHeight = 260,
+  selection, accent = 'var(--accent)', maxHeight = 260, collapseKey = 'methods',
 }: {
   selection: MethodSelection
   accent?: string
   maxHeight?: number | string
+  /** Per-page key for the remembered open/closed state. */
+  collapseKey?: string
 }) {
   const { selected, toggle, selectAll, clearAll, selectRecommended, allCategories, totalIndicators, count } = selection
   return (
+    <CollapsibleBlock
+      storageKey={collapseKey}
+      testId="indicator-checklist"
+      title="Impact categories"
+      summary={`${count} of ${totalIndicators} selected`}
+    >
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minHeight: 0 }}>
       {/* Header actions */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
@@ -238,9 +248,6 @@ export function IndicatorChecklist({
         <button type="button" onClick={selectRecommended} style={{ ...actionBtn(accent), fontWeight: 500 }}>
           Recommended set
         </button>
-        <span style={{ marginLeft: 'auto', fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', fontFamily: 'var(--font-mono)' }}>
-          {count} of {totalIndicators} selected
-        </span>
       </div>
 
       {/* Checklist */}
@@ -251,12 +258,15 @@ export function IndicatorChecklist({
       }}>
         {allCategories.map((cat) => (
           <div key={cat.category}>
-            <div style={{
+            {/* Not sticky. Each header was sticky inside its own section, so a
+                one-row category (EF v3.1 acidification) scrolled its only row
+                underneath its own header: the header showed with nothing below
+                it while the indicator was in fact listed and selected. */}
+            <div data-testid={`indicator-category-${cat.category}`} style={{
               padding: '6px 10px', fontSize: 'var(--text-xs)', fontWeight: 600,
               color: 'var(--text-tertiary)', textTransform: 'uppercase',
               letterSpacing: 'var(--tracking-wide)',
               backgroundColor: 'var(--bg-surface)',
-              position: 'sticky', top: 0, zIndex: 1,
             }}>
               {cat.category}
             </div>
@@ -288,6 +298,7 @@ export function IndicatorChecklist({
         )}
       </div>
     </div>
+    </CollapsibleBlock>
   )
 }
 
@@ -311,11 +322,17 @@ interface MethodPickerProps {
   // when there's no `initialSelected` seed, deferring to the seed/inheritance
   // otherwise. Off by default.
   defaultAllSelected?: boolean
+  /** Per-page key for the checklist's remembered open/closed state. */
+  collapseKey?: string
 }
 
-export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelected, defaultAllSelected }: MethodPickerProps) {
+export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelected, defaultAllSelected, collapseKey }: MethodPickerProps) {
   const selection = useMethodSelection(onChange, initialSelected, defaultAllSelected)
   const { selected, count } = selection
+  // Chip text: the same disambiguated label the result tables use. The bare
+  // indicator name is not unique (EF v3.1 has two "accumulated exceedance
+  // (AE)": acidification and terrestrial eutrophication).
+  const chipLabels = disambiguatedLabels(Object.values(selected))
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <MethodFamilySelect selection={selection} style={{ width: '100%' }} />
@@ -336,7 +353,7 @@ export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelect
           {selection.droppedSeed.length > 3 && ` (and ${selection.droppedSeed.length - 3} more)`}
         </div>
       )}
-      <IndicatorChecklist selection={selection} accent={accent} maxHeight={300} />
+      <IndicatorChecklist selection={selection} accent={accent} maxHeight={300} collapseKey={collapseKey} />
       {count > 0 && (
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
           {Object.entries(selected).slice(0, 5).map(([k, tuple]) => (
@@ -346,8 +363,8 @@ export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelect
               color: accent, borderRadius: 'var(--radius-sm)',
               border: `1px solid color-mix(in srgb, ${accent} 20%, transparent)`,
               maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }}>
-              {tuple[tuple.length - 1]}
+            }} title={tuple.join(' › ')} data-testid="method-chip">
+              {chipLabels.get(methodKey(tuple)) ?? tuple[tuple.length - 1]}
             </span>
           ))}
           {count > 5 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', padding: '2px 4px' }}>+{count - 5} more</span>}

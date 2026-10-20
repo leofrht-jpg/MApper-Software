@@ -56,6 +56,7 @@ from mapper.models.aesa_schemas import (
     AESAConfigBundle,
     AESAConfiguration,
     AESAConfigurationCreate,
+    AESACase,
     AESAExportRequest,
     AESAExportSaveResponse,
     AESASession,
@@ -418,8 +419,11 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
                 "or use the CO2 basis."
             ),
         )
-    if body.run_sensitivity:
-        result = AESAEngine.compute_with_sensitivity(impact.results, config, bset)
+    run_sharing = body.run_sensitivity and body.sharing_cases != []
+    if run_sharing:
+        result = AESAEngine.compute_with_sensitivity(
+            impact.results, config, bset, principles=body.sharing_cases,
+        )
     else:
         result = AESAEngine.compute(impact.results, config, bset)
     result.coverage_gaps = aesa_coverage_gaps(
@@ -427,8 +431,84 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
     )
     result.impact_basis = config.impact_basis
     result.lifetime_years = lifetime_years
+
+    # ── Sensitivity cases ────────────────────────────────────────────────
+    cases: list[AESACase] = []
+    if run_sharing and result.sensitivity:
+        preset = resolve_sharing(config)
+        names = {p.id: p.name for p in preset.principles}
+        for pid, rows in result.sensitivity.items():
+            cases.append(AESACase(
+                id=f"sharing:{pid}", kind="sharing", label=f"Sharing: {names.get(pid, pid)}",
+                definition=[
+                    f"Every category-specific layer uses {pid} ({names.get(pid, pid)}); "
+                    f"fixed layers use it where they hold {pid} data, else their own principle."
+                ],
+                results=rows,
+            ))
+    if body.parameter_cases:
+        cases += await _parameter_cases(body, config, bset)
+    result.cases = cases
     result.compute_metrics = meter.build()
     return result
+
+
+async def _parameter_cases(
+    body: AESAComputeRequest, config: AESAConfiguration, bset,
+) -> list[AESACase]:
+    """One AESA per parameter sensitivity case, each on its own LCA.
+
+    A parameter case changes the inventory, so the SR needs the impact
+    recomputed under that case: the single-product LCA is re-run with
+    ``parameter_scenario=case`` for the static result, or for every year of the
+    prospective trajectory, through the same handler Impact Assessment uses.
+    The impact basis (and its refusals) applies to each case exactly as to the
+    base. A fleet source would need a full DSM x LCA run per case and is
+    refused rather than approximated.
+    """
+    from mapper.api.lca import calculate_archetype_lca
+    from mapper.api.parameters import _table_for, validate_parameter_scenarios
+    from mapper.models.schemas import ArchetypeLCACalculateRequest
+
+    if body.single_product_result is None and not body.prospective_single_product:
+        raise HTTPException(status_code=400, detail=(
+            "Parameter sensitivity cases in AESA need a single-product source. A fleet "
+            "case needs a full DSM x LCA run per case; run those in Impact Assessment."
+        ))
+    validate_parameter_scenarios(body.parameter_cases)
+    table = _table_for(_current_project())
+
+    async def rerun(sp, case: str):
+        return await calculate_archetype_lca(ArchetypeLCACalculateRequest(
+            archetype_id=sp.archetype_id, scope=sp.scope, amount=sp.amount,
+            stage_amounts=sp.stage_amounts or None,
+            methods=[list(r.method) for r in sp.results],
+            compute_database=sp.compute_database, parameter_scenario=case,
+        ))
+
+    out: list[AESACase] = []
+    for case in body.parameter_cases:
+        if body.prospective_single_product:
+            points = [(p.year, await rerun(p.result, case)) for p in body.prospective_single_product]
+            impact = prospective_single_product_to_impact_result(points, system_id=config.mfa_system_id)
+        else:
+            impact = single_product_to_impact_result(
+                await rerun(body.single_product_result, case),
+                reference_year=body.reference_year, system_id=config.mfa_system_id,
+            )
+        impact, _ = _apply_impact_basis(config, body, impact)
+        res = AESAEngine.compute(impact.results, config, bset)
+        definition = []
+        for name in table.parameters:
+            base_v, case_v = table.resolve(name, None), table.resolve(name, case)
+            if abs(case_v - base_v) > 1e-12 * max(1.0, abs(base_v)):
+                definition.append(f"{name} = {case_v:g} (base {base_v:g})")
+        out.append(AESACase(
+            id=f"parameter:{case}", kind="parameter", label=f"Case: {case}",
+            definition=definition or ["no parameter differs from the base"],
+            results=res.results,
+        ))
+    return out
 
 
 def _apply_impact_basis(
@@ -856,7 +936,16 @@ def _build_aesa_workbook(
         ws.append(["Budget basis", config.carbon_budget.budget_basis])
         ws.append(["SSP scenario", _cb.ssp_scenario])
         ws.append(["Budget horizon", f"{_cb.start_year}–{_cb.end_year}"])
-    ws.append(["Sensitivity", "all 5 principles" if getattr(result, "sensitivity", None) else "primary only"])
+    _cases = list(result.cases) or [
+        AESACase(id=f"sharing:{p}", kind="sharing", label=f"Sharing: {p}")
+        for p in (result.sensitivity or {})
+    ]
+    ws.append(["Sensitivity", f"{len(_cases)} case(s) beside the base" if _cases else "base only"])
+    if _cases:
+        # The case definitions: what each case changes from the base.
+        ws.append(["SENSITIVITY CASES", "What differs from the base"])
+        for c in _cases:
+            ws.append([c.label, " · ".join(c.definition) if c.definition else ""])
     ws.append([])
     hdr_row = ws.max_row + 1
     ws.append(["Year", "Safe", "Zone of Uncertainty", "High Risk", "Assessed"])
@@ -1043,20 +1132,50 @@ def _build_aesa_workbook(
         _autosize(ws)
 
     # ── Sensitivity (if run) ──
-    if result.sensitivity:
+    # Only the cases selected in the case window are in ``result.cases``. A
+    # result saved before the window existed has only ``sensitivity``; it is
+    # read as sharing cases so old sessions still export their spread.
+    cases = list(result.cases) or [
+        AESACase(id=f"sharing:{p}", kind="sharing", label=f"Sharing: {p}", results=rows)
+        for p, rows in (result.sensitivity or {}).items()
+    ]
+    if cases:
+        acr: dict[str, str] = {}
+        bset = load_boundary_sets().get(config.boundary_set_id)
+        if bset is not None:
+            acr = {k: (b.conventional_acronym or "") for k, b in bset.boundaries.items()}
+        base = {(r.year, r.pb_id): r for r in result.results}
         ws = wb.create_sheet("Sensitivity")
+        head = ["Year", "PB ID", "Impact category", "Abbreviation", "Base SR", "Base zone"]
+        for c in cases:
+            head += [f"{c.label} SR", f"{c.label} ΔSR vs base", f"{c.label} zone"]
+        ws.append(head)
+        _style_header(ws)
+        by_case = [{(r.year, r.pb_id): r for r in c.results} for c in cases]
+        for key in sorted(base):
+            b = base[key]
+            row = [b.year, b.pb_id, b.pb_name, acr.get(b.pb_id, ""), b.sr, b.zone]
+            for m in by_case:
+                v = m.get(key)
+                sr = v.sr if v else None
+                delta = (sr - b.sr) if (sr is not None and b.sr is not None) else None
+                row += [sr, delta, v.zone if v else None]
+            ws.append(row)
+        for row in ws.iter_rows(min_row=2, min_col=5):
+            for cell in row:
+                if isinstance(cell.value, float):
+                    cell.number_format = "0.000"
+        ws.freeze_panes = "C2"
+        _autosize(ws)
+
+        ws = wb.create_sheet("Sensitivity (long)")
         ws.append(["Scenario", "Year", "PB", "SR", "Zone", "Allocated SOS"])
         _style_header(ws)
-        # Baseline Multi-D first, then each uniform principle
         for r in result.results:
-            ws.append([
-                "Multi-D", r.year, r.pb_name, r.sr, r.zone, r.allocated_sos,
-            ])
-        for principle, rows in result.sensitivity.items():
-            for r in rows:
-                ws.append([
-                    principle, r.year, r.pb_name, r.sr, r.zone, r.allocated_sos,
-                ])
+            ws.append(["Base", r.year, r.pb_name, r.sr, r.zone, r.allocated_sos])
+        for c in cases:
+            for r in c.results:
+                ws.append([c.label, r.year, r.pb_name, r.sr, r.zone, r.allocated_sos])
         for row in ws.iter_rows(min_row=2, min_col=4, max_col=4):
             for cell in row:
                 cell.number_format = "0.000"

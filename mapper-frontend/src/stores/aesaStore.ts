@@ -9,6 +9,7 @@
 
 import { create } from 'zustand'
 import { useSingleProductImpactStore } from './singleProductImpactStore'
+import type { CaseSelection } from '../utils/aesaCases'
 import {
   type AESAComputeResult,
   type AESAConfiguration,
@@ -237,6 +238,7 @@ interface AESAStore {
     singleProductResult?: ArchetypeLCACalculateResult | null
     referenceYear?: number
     prospectiveSingleProduct?: ProspectiveSingleProductPoint[] | null
+    cases?: CaseSelection | null
   } | null
 
   // Patch 5AM — mount-time config-panel load failures live in their OWN slot
@@ -291,8 +293,19 @@ interface AESAStore {
     singleProductResult?: ArchetypeLCACalculateResult | null
     referenceYear?: number
     prospectiveSingleProduct?: ProspectiveSingleProductPoint[] | null
+    /** Cases picked in the case window; absent = no window (base, plus the
+     *  full sharing sweep when runSensitivity, as before the window). */
+    cases?: CaseSelection | null
   }) => Promise<void>
   clearResult: () => void
+  /** The case window's last choice, remembered for the session and cleared
+   *  when the project changes (case names belong to one project). Ids, as in
+   *  `CaseOption.id`. null = not chosen yet: the window ticks everything. */
+  caseSelection: string[] | null
+  setCaseSelection: (ids: string[]) => void
+  /** Which result the views show: null = base, else an `AESACase.id`. */
+  activeCaseId: string | null
+  setActiveCaseId: (id: string | null) => void
   // Set the carbon-budget basis ("CO2" budget vs "CO2e_GHG" budget) on the
   // draft and, if a result is already on screen, re-run the last compute so the
   // climate SR reflects the new basis. Only the climate-change SR responds; the
@@ -624,13 +637,13 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   setReferenceYear: (referenceYear) => set({ referenceYear }),
   setSingleProductBasis: (singleProductBasis) => set({ singleProductBasis }),
 
-  compute: async ({ mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear, prospectiveSingleProduct }) => {
+  compute: async ({ mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear, prospectiveSingleProduct, cases }) => {
     const { draft } = get()
     if (!draft) {
       set({ error: 'No configuration loaded' })
       return
     }
-    set({ running: true, error: null, lastComputeArgs: { mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear, prospectiveSingleProduct } })
+    set({ running: true, error: null, lastComputeArgs: { mfaSystemId, impactTaskId, impactInline, runSensitivity, singleProductResult, referenceYear, prospectiveSingleProduct, cases } })
     try {
       const inlineConfig: AESAConfiguration = {
         id: get().activeConfigId ?? 'draft',
@@ -670,6 +683,8 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
             : useSingleProductImpactStore.getState().staticRunMeta
         ),
         run_sensitivity: !!runSensitivity,
+        sharing_cases: cases ? cases.sharing : null,
+        parameter_cases: cases ? cases.parameter : [],
       })
       // Patch 4T — fresh result clears the display filter. Carrying a
       // stale filter forward would silently hide newly-computed
@@ -679,13 +694,19 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
         running: false,
         lastRunAt: new Date().toISOString(),
         displayedIndicators: null,
+        activeCaseId: null,
       })
     } catch (e) {
       set({ running: false, error: e instanceof Error ? e.message : String(e) })
     }
   },
 
-  clearResult: () => set({ result: null, lastRunAt: null, displayedIndicators: null }),
+  clearResult: () => set({ result: null, lastRunAt: null, displayedIndicators: null, activeCaseId: null }),
+
+  caseSelection: null,
+  setCaseSelection: (ids) => set({ caseSelection: ids }),
+  activeCaseId: null,
+  setActiveCaseId: (id) => set({ activeCaseId: id }),
 
   setBudgetBasis: (basis) => {
     const { draft } = get()
@@ -842,6 +863,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       // sessions don't carry the field; ``displayed_indicators ??
       // null`` keeps them on "show all".
       displayedIndicators: session.displayed_indicators ?? null,
+      activeCaseId: null,
     })
   },
 
@@ -876,6 +898,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     result: null,
     lastRunAt: null,
     displayedIndicators: null,
+    activeCaseId: null,
   }),
 
   reset: () => set((s) => ({
@@ -898,6 +921,8 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     running: false,
     error: null,
     displayedIndicators: null,
+    caseSelection: null,
+    activeCaseId: null,
   })),
 
   // ── Preset / chain editing ────────────────────────────────────────────────

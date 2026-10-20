@@ -35,6 +35,7 @@ import type {
   ProspectiveSingleProductPoint,
   SSPTrajectory,
 } from '../../api/client'
+import type { StageAmountsMeta } from '../../api/client'
 import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
 // ── Part C1 — source-agnostic compute helpers (pure, exported for tests) ──────
@@ -1175,6 +1176,80 @@ function ResetDefaultsModal({ onCancel, onConfirm }: {
 // Persisted on the draft as ``dsm_scenario_id`` + ``impact_mode``;
 // ``mfa_system_id`` is captured at save time from ``activeSystem.id``.
 
+/** Why "per year" cannot apply to the consumed run, or null when it can.
+ *
+ *  "Per year" divides a whole-life impact by its lifetime. That is only a
+ *  whole-life impact on the Lifetime preset; on "1 year" or custom amounts the
+ *  division has no meaning. The backend refuses the same cases (and, in
+ *  addition, a BOM that already divides by the lifetime, which only it can
+ *  see), so this is the early, visible half of one rule. */
+export function perYearBlockedReason(meta: StageAmountsMeta | null): string | null {
+  if (!meta) return 'Compute the single-product run first; its stage amounts decide whether per year applies.'
+  if (meta.preset !== 'lifetime') {
+    const used = meta.preset === '1year' ? '1 year' : 'custom'
+    return `The run used the "${used}" stage amounts, not Lifetime, so it is not a whole-life impact to divide. ` +
+      'Recompute on the Lifetime preset, or keep "as computed".'
+  }
+  return null
+}
+
+function FunctionalUnitControl({ draft, updateDraft, singleProductBasis }: {
+  draft: import('../../stores/aesaStore').AESAConfigDraft
+  updateDraft: (patch: Partial<import('../../stores/aesaStore').AESAConfigDraft>) => void
+  singleProductBasis: SingleProductBasis
+}) {
+  const meta = useSingleProductImpactStore((st) =>
+    singleProductBasis === 'prospective' ? st.projectedRunMeta : st.staticRunMeta)
+  const basis = draft.impact_basis ?? 'as_computed'
+  const blocked = perYearBlockedReason(meta)
+  return (
+    <CascadeRow label="Functional unit">
+      <div data-testid="aesa-functional-unit" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <div style={{ display: 'flex', gap: 4 }}>
+          {([
+            { value: 'as_computed', label: 'As computed' },
+            { value: 'per_year', label: 'Per year (÷ lifetime)' },
+          ] as const).map((o) => {
+            const active = basis === o.value
+            const disabled = o.value === 'per_year' && !!blocked && !active
+            return (
+              <button
+                key={o.value}
+                type="button"
+                data-testid={`aesa-functional-unit-${o.value}`}
+                aria-pressed={active}
+                disabled={disabled}
+                title={disabled ? blocked ?? undefined : undefined}
+                onClick={() => updateDraft({ impact_basis: o.value })}
+                style={{
+                  padding: '5px 10px', borderRadius: 'var(--radius-sm)',
+                  cursor: disabled ? 'not-allowed' : 'pointer', opacity: disabled ? 0.5 : 1,
+                  border: '1px solid ' + (active ? 'var(--mod-aesa)' : 'var(--border-default)'),
+                  background: active ? 'color-mix(in srgb, var(--mod-aesa) 14%, transparent)' : 'var(--bg-elevated)',
+                  color: active ? 'var(--mod-aesa)' : 'var(--text-primary)',
+                  fontSize: 12, fontWeight: active ? 600 : 500,
+                }}
+              >
+                {o.label}
+              </button>
+            )
+          })}
+        </div>
+        <div data-testid="aesa-functional-unit-note" style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
+          {basis === 'per_year'
+            ? `Impact divided by the run's lifetime${meta?.preset === 'lifetime' ? ` (${meta.lifetime} yr)` : ''}, to compare with the per-year SOS.`
+            : 'Impact used as Impact Assessment computed it. The SOS is per year, so the run must already be one year of the product (a 1-year run, or a BOM that divides one-off stages by its lifetime).'}
+        </div>
+        {basis === 'per_year' && blocked && (
+          <div data-testid="aesa-functional-unit-blocked" style={{ fontSize: 11, color: 'var(--warning)', lineHeight: 1.4 }}>
+            {blocked}
+          </div>
+        )}
+      </div>
+    </CascadeRow>
+  )
+}
+
 function ComputeSourceCascade({
   draft, updateDraft,
   dsmScenarioName,
@@ -1577,6 +1652,7 @@ function ComputeSourceCascade({
           )}
         </CascadeRow>
         </div>
+        <FunctionalUnitControl draft={draft} updateDraft={updateDraft} singleProductBasis={singleProductBasis} />
       </div>
     </div>
   )
@@ -1704,7 +1780,8 @@ function CarbonBudgetEditor({
       {/* Budget basis — CO₂ vs CO₂-eq. Pre-compute setting: it sets
           budget_basis on the draft and is applied on the next Compute (no
           re-run from here). Default CO₂-eq. Visible upfront, no results
-          required. The SR-view toggle stays in sync (same draft field). */}
+          required. This is the ONLY basis control: the copy above the result
+          views was removed so the panel is the single source of truth. */}
       <label style={labelStyle}>Budget basis</label>
       <div style={{ display: 'flex', gap: 4 }} data-testid="aesa-config-budget-basis">
         {([

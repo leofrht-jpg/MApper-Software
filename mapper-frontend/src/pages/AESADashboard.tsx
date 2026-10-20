@@ -28,6 +28,7 @@ import { useImpactStore } from '../stores/impactStore'
 import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
 import { buildIndicatorColorMap } from '../utils/aesaIndicatorColors'
 import { resolveBoundarySet } from '../utils/aesaBoundaryLabels'
+import { impactBasisLabel } from '../utils/aesaImpactBasis'
 import { CoverageGapNote } from '../components/authored/CoverageMarkers'
 import {
   exportAESA,
@@ -53,7 +54,7 @@ export function AESADashboard() {
     clearActiveSession,
     displayedIndicators, toggleDisplayedIndicator,
     selectAllDisplayedIndicators, clearDisplayedIndicators,
-    setBudgetBasis, running, source, singleProductBasis,
+    source, singleProductBasis,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
   const { staticResult, projectedResult } = useImpactStore()
@@ -247,27 +248,40 @@ export function AESADashboard() {
     return session
   }
 
+  // The export's outcome, on screen: where the file went (packaged app) or why
+  // it failed. Both used to be invisible -- a failure went to console.error
+  // and a single-product run returned before exporting anything.
+  const [exportNote, setExportNote] = useState<{ kind: 'saved' | 'error'; text: string } | null>(null)
+  const spExportName = useSingleProductImpactStore(
+    (s) => s.staticResult?.archetype_name ?? s.projectedRuns[0]?.result.archetype_name ?? null,
+  )
+
   const handleExport = async () => {
     if (!result) return
     setExporting(true)
+    setExportNote(null)
     try {
-      // Use active saved config if present, otherwise synthesize from draft
+      // Use the active saved config if present, otherwise synthesise one from
+      // the draft. The synthesis used to require an active DSM system, so a
+      // single-product run (no system) silently exported nothing.
       const cfg: AESAConfiguration | null = configurations.find((c) => c.id === activeConfigId) ?? (
-        draft && activeSystem?.id ? {
+        draft ? {
           id: 'draft',
           name: draft.name,
-          mfa_system_id: activeSystem.id,
+          mfa_system_id: source === 'single_product' ? '' : (activeSystem?.id ?? ''),
           impact_mode: draft.impact_mode,
           boundary_set_id: draft.boundary_set_id,
           sharing: draft.sharing,
           sharing_preset_id: draft.sharing_preset_id,
           carbon_budget: draft.carbon_budget,
           method_mapping: draft.method_mapping,
+          impact_basis: draft.impact_basis ?? 'as_computed',
           created_at: new Date().toISOString(),
         } : null
       )
-      if (!cfg) return
-      const sysName = (activeSystem?.name ?? 'system').replace(/[^\w.-]+/g, '_')
+      if (!cfg) throw new Error('No AESA configuration to export. Create or load one first.')
+      const name = source === 'single_product' ? (spExportName ?? 'single-product') : (activeSystem?.name ?? 'system')
+      const sysName = name.replace(/[^\w.-]+/g, '_')
       // Patch 4T — by default the export honours the active display
       // filter (mirrors what the user sees on screen). The "Export
       // all computed indicators" override sets `exportAllIndicators`
@@ -276,9 +290,13 @@ export function AESADashboard() {
       // list narrows server-bound payload to the visible indicators.
       const filterIds = exportAllIndicators.current ? null : effectiveDisplayed
       exportAllIndicators.current = false
-      await exportAESA(cfg, result, buildExportFilename(sysName, [], 'AESA'), filterIds)
+      const { path } = await exportAESA(cfg, result, buildExportFilename(sysName, [], 'AESA'), filterIds, name)
+      if (path) {
+        setExportNote({ kind: 'saved', text: path })
+        window.setTimeout(() => setExportNote((c) => (c?.text === path ? null : c)), 8000)
+      }
     } catch (e) {
-      console.error('AESA export failed', e)
+      setExportNote({ kind: 'error', text: e instanceof Error ? e.message : String(e) })
     } finally {
       setExporting(false)
     }
@@ -391,6 +409,23 @@ export function AESADashboard() {
         </div>
       </div>
 
+      {exportNote && (
+        <div
+          data-testid={exportNote.kind === 'saved' ? 'aesa-export-saved' : 'aesa-export-error'}
+          role={exportNote.kind === 'error' ? 'alert' : 'status'}
+          style={{
+            fontSize: 'var(--text-xs)', padding: '6px 10px', borderRadius: 'var(--radius-md)',
+            color: exportNote.kind === 'error' ? 'var(--danger)' : 'var(--text-secondary)',
+            border: `1px solid ${exportNote.kind === 'error' ? 'var(--danger)' : 'var(--border-default)'}`,
+            background: 'var(--bg-elevated)',
+          }}
+        >
+          {exportNote.kind === 'saved'
+            ? <>AESA export written to <code style={{ fontFamily: 'var(--font-mono)' }}>{exportNote.text}</code></>
+            : <>Export failed: {exportNote.text}</>}
+        </div>
+      )}
+
       {/* Body: sidebar + main. `alignItems: flex-start` is what makes
           the sidebar's `position: sticky` actually stick — without it
           the flex container stretches the sidebar to content height
@@ -455,6 +490,16 @@ export function AESADashboard() {
                   filtered yearSummary is null; we fall back to the
                   unfiltered counts to keep the cards stable, and
                   the chart pane below shows the empty state. */}
+              {/* What the impact and the SOS are each per. The SR divides one
+                  by the other, so a mismatch must be visible before reading
+                  any zone. */}
+              <div
+                data-testid="aesa-impact-basis-strip"
+                style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'flex', gap: 16, flexWrap: 'wrap' }}
+              >
+                <span>Impact: <strong>{impactBasisLabel(result)}</strong></span>
+                <span>Allocated SOS: <strong>per year</strong></span>
+              </div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr) auto', gap: 10, flexShrink: 0 }}>
                 <ZoneCard zone="safe" count={(yearSummaryFiltered ?? yearSummary).safe} total={(yearSummaryFiltered ?? yearSummary).total_assessed} />
                 <ZoneCard zone="zone_of_uncertainty" count={(yearSummaryFiltered ?? yearSummary).zone_of_uncertainty} total={(yearSummaryFiltered ?? yearSummary).total_assessed} />
@@ -527,54 +572,11 @@ export function AESADashboard() {
                 )}
               </div>
 
-              {/* Carbon-budget basis toggle (climate SR only). Live mode only —
-                  a loaded session is an immutable snapshot, so re-running the
-                  compute under a different basis would break it. */}
-              {!inSessionMode && draft?.carbon_budget && (
-                <div
-                  data-testid="aesa-budget-basis-toggle"
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, flexWrap: 'wrap' }}
-                >
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-                    Budget basis
-                  </span>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    {([
-                      { value: 'CO2', label: 'CO₂ budget' },
-                      { value: 'CO2e_GHG', label: 'CO₂-eq budget' },
-                    ] as const).map((b) => {
-                      const active = (draft.carbon_budget?.budget_basis ?? 'CO2') === b.value
-                      return (
-                        <button
-                          key={b.value}
-                          type="button"
-                          data-testid={`aesa-budget-basis-${b.value}`}
-                          disabled={running}
-                          aria-pressed={active}
-                          onClick={() => setBudgetBasis(b.value)}
-                          style={{
-                            padding: '5px 10px', borderRadius: 'var(--radius-sm)',
-                            cursor: running ? 'wait' : 'pointer',
-                            border: '1px solid ' + (active ? 'var(--mod-aesa)' : 'var(--border-default)'),
-                            background: active ? 'color-mix(in srgb, var(--mod-aesa) 14%, transparent)' : 'var(--bg-elevated)',
-                            color: active ? 'var(--mod-aesa)' : 'var(--text-primary)',
-                            fontSize: 12, fontWeight: active ? 600 : 500,
-                          }}
-                        >
-                          {b.label}
-                        </button>
-                      )
-                    })}
-                  </div>
-                  <span
-                    data-testid="aesa-budget-basis-note"
-                    title="The impact (numerator) is always all-GHG (EF v3.1 GWP100). This toggle only changes which budget it's measured against: CO₂-only vs all-GHG (CO₂-eq). Only the climate-change SR responds."
-                    style={{ fontSize: 11, color: 'var(--text-tertiary)', cursor: 'help' }}
-                  >
-                    Impact is always all-GHG; this sets the budget it's measured against (climate SR only).
-                  </span>
-                </div>
-              )}
+              {/* The budget basis (CO₂ vs CO₂-eq) is set in ONE place: the
+                  Configuration panel's Carbon budget section, applied on the
+                  next Compute. A second copy here re-ran the compute on click
+                  and could disagree with the panel about which basis a result
+                  was computed on. It stays visible read-only in the export. */}
 
               {/* View selector */}
               <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
@@ -627,9 +629,9 @@ export function AESADashboard() {
                       gaps={(result?.coverage_gaps ?? []).filter((g) => filteredResult.results.some((r) => r.pb_id === g.pb_id))}
                       testId="aesa-coverage-note"
                     />
-                    {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} />}
+                    {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
                     {view === 'timeline' && <TimelineView results={filteredResult.results} carbonBudget={draft?.carbon_budget ?? null} sharing={draft?.sharing ?? null} coverageGaps={result?.coverage_gaps} />}
-                    {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} />}
+                    {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
                     {view === 'boxplot'  && <BoxPlotView result={filteredResult} />}
                   </>
                 )}

@@ -104,16 +104,31 @@ async def save_logs() -> LogSaveResponse:
     if not LOG_FILE.is_file():
         raise HTTPException(status_code=404, detail="Log file does not exist yet.")
     stamp = datetime.now().strftime("%Y-%m-%d")
-    downloads = Path.home() / "Downloads"
-    target_dir = downloads if downloads.is_dir() else LOG_FILE.parent
-    target = target_dir / f"mapper_logs_{stamp}.txt"
     try:
         data = LOG_FILE.read_bytes()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not read {LOG_FILE}: {e}") from e
+    target = save_to_downloads(data, f"mapper_logs_{stamp}.txt", fallback_dir=LOG_FILE.parent)
+    return LogSaveResponse(path=str(target), bytes=len(data))
+
+
+def save_to_downloads(data: bytes, filename: str, *, fallback_dir: Path) -> Path:
+    """Write ``data`` to ~/Downloads (else ``fallback_dir``) and return the path.
+
+    The one mechanism every "save a file" button uses in the packaged app,
+    where the webview cannot download (see :func:`save_logs`). A write failure
+    is raised as a 500 naming the path, never swallowed: a read-only or full
+    disk must say so.
+    """
+    downloads = Path.home() / "Downloads"
+    target_dir = downloads if downloads.is_dir() else fallback_dir
+    target_dir.mkdir(parents=True, exist_ok=True)
+    target = target_dir / filename
+    try:
         target.write_bytes(data)
     except OSError as e:
-        # Surfaced, never swallowed: a read-only or full disk must say so.
         raise HTTPException(status_code=500, detail=f"Could not write {target}: {e}") from e
-    return LogSaveResponse(path=str(target), bytes=len(data))
+    return target
 
 
 @router.get("/logs/export")

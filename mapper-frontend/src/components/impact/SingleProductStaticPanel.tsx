@@ -16,7 +16,7 @@ import {
   BASE_SCENARIO,
   type ArchetypeLCACalculateResult,
 } from '../../api/client'
-import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
+import { toStageAmountsMeta, useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { useParameterStore } from '../../stores/parameterStore'
 import { SensitivityCases, hasVaryingParameters, varyingCases } from './SensitivityCases'
 import { SensitivityRangeChart } from '../charts/SensitivityRangeChart'
@@ -106,6 +106,8 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   const staticConfigByArc = useSingleProductImpactStore((s) => s.staticConfigByArc)
   const setStaticConfigForArc = useSingleProductImpactStore((s) => s.setStaticConfigForArc)
   const currentStageAmounts = archetypeId ? stageAmountsByArc[archetypeId]?.amounts ?? null : null
+  const staticRunMeta = useSingleProductImpactStore((s) => s.staticRunMeta)
+  const setStaticRunMeta = useSingleProductImpactStore((s) => s.setStaticRunMeta)
 
   // Publish the active-scenario result to the cross-panel store so the
   // Comparison tab can read it. We publish per active scenario rather than
@@ -168,6 +170,9 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
     // orchestrator uses. Only meaningful since ab0c533: before that fix
     // single-product ignored parameters and every case returned the same number.
     const scenariosToRun = [BASE_SCENARIO, ...effectiveCases]
+    // What this run is computed with, frozen now: the editor can change
+    // before the export or the AESA run reads it.
+    const runMeta = toStageAmountsMeta(stageAmountsByArc[archetypeId])
     setProgress({ done: 0, total: scenariosToRun.length })
     const acc: Record<string, ArchetypeLCACalculateResult> = {}
     try {
@@ -180,6 +185,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
         acc[sc] = result
         setProgress({ done: i + 1, total: scenariosToRun.length })
       }
+      setStaticRunMeta(runMeta)
       setResultsByScenario(acc)
       setScenarioOrder(scenariosToRun)
       setActiveScenario(scenariosToRun[0])
@@ -189,7 +195,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
       setIsCalculating(false)
       setProgress(null)
     }
-  }, [archetypeId, scope, selectedMethods, currentStageAmounts])
+  }, [archetypeId, scope, selectedMethods, currentStageAmounts, stageAmountsByArc, setStaticRunMeta])
 
   const isMulti = scenarioOrder.length > 1
   // Same derivation the Sensitivity cases checklist uses, so a case marked
@@ -240,12 +246,12 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
         activeResult.archetype_name,
         scope,
         scenarios,
-        archetypeId ? stageAmountsByArc[archetypeId] : undefined,
+        staticRunMeta ?? undefined,
       )
     } finally {
       setIsExporting(false)
     }
-  }, [activeResult, scenarioOrder, resultsByScenario, scope, archetypeId, stageAmountsByArc])
+  }, [activeResult, scenarioOrder, resultsByScenario, scope, staticRunMeta])
   const hasStageBreakdown =
     !!activeResult?.stage_breakdown &&
     activeResult.stage_breakdown.length > 0

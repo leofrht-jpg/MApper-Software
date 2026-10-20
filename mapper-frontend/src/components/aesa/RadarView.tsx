@@ -8,9 +8,10 @@
  */
 
 import { useMemo, useRef, useState } from 'react'
-import type { AESACoverageGap, SustainabilityRatioResult } from '../../api/client'
+import type { AESAComputeResult, AESACoverageGap, SustainabilityRatioResult } from '../../api/client'
+import { impactBasisLabel, impactBasisShort, quantityUnit } from '../../utils/aesaImpactBasis'
 import { NOT_SPECIFIED_HATCH, gapsForPb, notSpecifiedTitle } from '../authored/CoverageMarkers'
-import { ZONE_COLOR, srOrInf } from './zones'
+import { ZONE_COLOR, fmt, srOrInf } from './zones'
 import { boundaryLabel, radarLabelLayout } from '../../utils/aesaBoundaryLabels'
 import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
@@ -24,11 +25,12 @@ interface Props {
   /** Axes whose SR rests on a partial authored activity: drawn hatched, the
    *  vertex hollow -- the SR is a lower bound, not a value to read. */
   coverageGaps?: AESACoverageGap[] | null
+  basis?: Pick<AESAComputeResult, 'impact_basis' | 'lifetime_years'> | null
 }
 
 const MAX_DISPLAY_SR = 3.0
 
-export function RadarView({ results, size = 480, coverageGaps }: Props) {
+export function RadarView({ results, size = 480, coverageGaps, basis }: Props) {
   const years = useMemo(() => {
     const s = new Set<number>()
     for (const r of results) s.add(r.year)
@@ -152,11 +154,14 @@ export function RadarView({ results, size = 480, coverageGaps }: Props) {
               {g.length ? (
                 // Hollow: a lower bound, not a value.
                 <circle cx={p.x} cy={p.y} r={5} fill="none" stroke={NOT_SPECIFIED_HATCH} strokeWidth={2} strokeDasharray="2 2">
-                  <title>{`${r.pb_name}: SR ≥ ${fmtSRDisplay(r.sr)} (not specified)\n\n${notSpecifiedTitle(g)}`}</title>
+                  <title>{`${r.pb_name}: SR ≥ ${fmtSRDisplay(r.sr)} (not specified)\n` +
+                    `Impact: ${fmt(r.impact)} ${quantityUnit(r.unit)} ${impactBasisShort(basis)} · Allocated SOS: ${fmt(r.allocated_sos)} ${quantityUnit(r.unit)} per yr\n\n${notSpecifiedTitle(g)}`}</title>
                 </circle>
               ) : (
                 <circle cx={p.x} cy={p.y} r={5} fill={ZONE_COLOR[r.zone]} stroke="var(--bg-surface)" strokeWidth={1.5}>
-                  <title>{`${r.pb_name}: SR=${fmtSRDisplay(r.sr)} (${r.zone})`}</title>
+                  <title>{`${r.pb_name}: SR=${fmtSRDisplay(r.sr)} (${r.zone})\n` +
+                    `Impact: ${fmt(r.impact)} ${quantityUnit(r.unit)} ${impactBasisShort(basis)} (${impactBasisLabel(basis)})\n` +
+                    `Allocated SOS: ${fmt(r.allocated_sos)} ${quantityUnit(r.unit)} per yr`}</title>
                 </circle>
               )}
             </g>

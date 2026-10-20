@@ -126,14 +126,20 @@ describe('Single-product Export buttons (Patch 4G)', () => {
     expect(btn.disabled).toBe(false)
   })
 
-  it('export request carries the selected archetype stage-amount meta (Patch 5K+)', async () => {
+  it('export request carries the RUN\'s stage-amount meta, not the live editor (EVS40)', async () => {
     useSingleProductImpactStore.getState().setArchetypeId('arc-1')
     useSingleProductImpactStore.getState().setStaticResult(STATIC_RESULT)
     useSingleProductImpactStore.getState().setProjectedRuns([{
       dbName: 'ei310-remind-ssp2-2030', year: 2030, iam: 'remind', ssp: 'SSP2-PkBudg1150',
       result: { ...STATIC_RESULT, compute_database: 'ei310-remind-ssp2-2030' },
     }])
-    // Selected archetype's stage amounts (preset/lifetime/amounts).
+    // What the Static run was computed with, frozen at its compute time.
+    useSingleProductImpactStore.getState().setStaticRunMeta({
+      preset: 'lifetime', lifetime: 16, lifetime_param: 'lifetime_yr',
+      amounts: { Manufacturing: 1, 'Use Phase': 16, Maintenance: 16, 'End of Life': 1 },
+    })
+    // The editor changed AFTER the run. Reading it at export time is how an
+    // EVS40 export printed "Lifetime 15" beside "Use Phase 16".
     useSingleProductImpactStore.getState().setStageAmountsForArc('arc-1', {
       preset: 'lifetime', lifetime: 15,
       amounts: { Manufacturing: 1, 'Use Phase': 15, Maintenance: 15, 'End of Life': 1 },
@@ -144,10 +150,9 @@ describe('Single-product Export buttons (Patch 4G)', () => {
     })
     const spy = vi.mocked(exportSingleProductComparison)
     expect(spy).toHaveBeenCalledTimes(1)
-    // 5th arg is the StageAmountsMeta threaded from the store.
     expect(spy.mock.calls[0][4]).toEqual({
-      preset: 'lifetime', lifetime: 15,
-      amounts: { Manufacturing: 1, 'Use Phase': 15, Maintenance: 15, 'End of Life': 1 },
+      preset: 'lifetime', lifetime: 16, lifetime_param: 'lifetime_yr',
+      amounts: { Manufacturing: 1, 'Use Phase': 16, Maintenance: 16, 'End of Life': 1 },
     })
   })
 })

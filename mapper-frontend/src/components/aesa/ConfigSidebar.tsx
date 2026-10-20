@@ -439,10 +439,14 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
   const staticSubtitle = staticResult ? describeStatic(staticResult, dsmScenarioName) : '(not yet computed)'
   const projectedSubtitle = projectedResult ? describeProjected(projectedResult, dsmScenarioName) : '(not yet computed)'
 
+  // A single-product configuration has no DSM system; saving it used to be
+  // impossible (this returned early, and the route 404'd on a null system).
+  const saveSystemId = source === 'single_product' ? null : (activeSystem?.id ?? null)
+  const canSave = !!draft && (source === 'single_product' || !!activeSystem)
   const handleSave = async () => {
-    if (!activeSystem?.id) return
+    if (!canSave) return
     setSaving(true)
-    try { await saveConfig(activeSystem.id) } finally { setSaving(false) }
+    try { await saveConfig(saveSystemId) } finally { setSaving(false) }
   }
 
   if (collapsed) {
@@ -573,7 +577,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
               <Button
                 variant="secondary"
                 onClick={handleSave}
-                disabled={!draft || !activeSystem || saving}
+                disabled={!canSave || saving}
                 data-testid="aesa-save-config"
                 title="Save configuration template (reusable)"
                 aria-label="Save configuration template"

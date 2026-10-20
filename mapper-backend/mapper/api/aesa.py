@@ -15,6 +15,7 @@ compute endpoint, and xlsx export.
 from __future__ import annotations
 
 import io
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -187,25 +188,45 @@ async def get_configuration(config_id: str) -> AESAConfiguration:
     return AESAConfiguration(**raw)
 
 
+def _check_system(mfa_system_id: str | None) -> None:
+    """404 on a NAMED system that does not exist. A single-product
+    configuration names none, and used to 404 here because the route looked
+    up whatever it was given, ``None`` included."""
+    if mfa_system_id:
+        _get_system(mfa_system_id)
+
+
+def _config_from_body(
+    body: AESAConfigurationCreate, config_id: str, created_at: str,
+) -> AESAConfiguration:
+    """Every client-settable field, in one place for create AND update.
+
+    Both routes used to list fields by hand and both left out ``sharing``,
+    ``sharing_preset_id`` and ``dsm_scenario_id``: a customised sharing chain,
+    the preset bookmark and the cascade's scenario pick were silently dropped
+    on every save. Copying the body's fields wholesale is what stops the next
+    added field going the same way."""
+    return AESAConfiguration(
+        id=config_id, created_at=created_at,
+        # Written by the current model, so the storage layer's one-time
+        # "drop derived copies" migration must never run on it. Without the
+        # flag, a customised sharing chain saved here would be cleared on its
+        # first load -- saving would look fixed and still lose it.
+        derived_defaults_migrated=True,
+        **body.model_dump(exclude_unset=False),
+    )
+
+
 @router.post(
     "/configurations",
     response_model=AESAConfiguration,
     dependencies=[Depends(verify_project_state)],
 )
 async def post_configuration(body: AESAConfigurationCreate) -> AESAConfiguration:
-    _get_system(body.mfa_system_id)  # 404 if system missing
+    _check_system(body.mfa_system_id)
     project = _current_project()
-    config = AESAConfiguration(
-        id=uuid.uuid4().hex,
-        name=body.name,
-        mfa_system_id=body.mfa_system_id,
-        impact_mode=body.impact_mode,
-        boundary_set_id=body.boundary_set_id,
-        multi_d=body.multi_d,
-        carbon_budget=body.carbon_budget,
-        method_mapping=body.method_mapping,
-        impact_basis=body.impact_basis,
-        created_at=datetime.now(timezone.utc).isoformat(),
+    config = _config_from_body(
+        body, uuid.uuid4().hex, datetime.now(timezone.utc).isoformat(),
     )
     aesa_storage.save(project, config.model_dump())
     return config
@@ -219,18 +240,9 @@ async def put_configuration(
     existing = aesa_storage.load(project, config_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="AESA configuration not found")
-    _get_system(body.mfa_system_id)
-    updated = AESAConfiguration(
-        id=config_id,
-        name=body.name,
-        mfa_system_id=body.mfa_system_id,
-        impact_mode=body.impact_mode,
-        boundary_set_id=body.boundary_set_id,
-        multi_d=body.multi_d,
-        carbon_budget=body.carbon_budget,
-        method_mapping=body.method_mapping,
-        impact_basis=body.impact_basis,
-        created_at=existing.get("created_at") or datetime.now(timezone.utc).isoformat(),
+    _check_system(body.mfa_system_id)
+    updated = _config_from_body(
+        body, config_id, existing.get("created_at") or datetime.now(timezone.utc).isoformat(),
     )
     aesa_storage.save(project, updated.model_dump())
     return updated
@@ -846,10 +858,10 @@ async def post_export(body: AESAExportRequest) -> Response:
 async def post_export_save(body: AESAExportRequest) -> AESAExportSaveResponse:
     """Build the same workbook and WRITE it to ~/Downloads, returning the path.
 
-    The packaged app's webview is a remote http origin with no download
-    delegate, so the ``blob:`` download ``/export`` relies on does nothing
-    there -- no file, no error. Same mechanism as ``/system/logs/save``: the
-    backend writes the file and the UI says where it went.
+    Used by the packaged app. Same mechanism as ``/system/logs/save``: the
+    backend writes the file and the UI says where it went. (The export's
+    no-op was the UI's early return and the 404 on a missing DSM system, not
+    the blob download, which works there for other exports.)
     """
     from mapper.api.cohort_export import excel_bytes
     from mapper.api.system import save_to_downloads
@@ -859,6 +871,22 @@ async def post_export_save(body: AESAExportRequest) -> AESAExportSaveResponse:
     data, filename = excel_bytes(wb, filename, kind="data")
     target = save_to_downloads(data, filename, fallback_dir=LOG_DIR)
     return AESAExportSaveResponse(path=str(target), bytes=len(data))
+
+
+def quantity_unit(unit: str | None) -> str:
+    """A boundary unit without its per-year suffix: "kg CO2 eq/yr" -> "kg CO2 eq".
+    Same rule as the frontend's ``quantityUnit``."""
+    return re.sub(r"\s*/\s*(yr|year|a)\s*$", "", unit or "", flags=re.IGNORECASE).strip()
+
+
+def impact_unit(unit: str | None, result: AESAComputeResult) -> str:
+    """The unit of an IMPACT under the result's basis. SR rows carry the
+    boundary's unit, which is per year; printed beside a whole-life impact it
+    claimed a per-year figure the number is not."""
+    q = quantity_unit(unit)
+    if result.impact_basis == "per_year" and result.lifetime_years:
+        return f"{q}/yr"
+    return f"{q} per functional unit"
 
 
 def impact_basis_label(result: AESAComputeResult) -> str:
@@ -1012,9 +1040,9 @@ def _build_aesa_workbook(
             r.year, r.pb_id, r.pb_name, r.ef_indicator, r.method_label,
             r.impact, r.allocated_sos, r.sr, r.zone,
             r.sharing_principle, r.sharing_factor_l1, r.sharing_factor_l2,
-            r.boundary_type, r.unit,
+            r.boundary_type, impact_unit(r.unit, result),
             r.total_sharing_factor, r.remaining_budget_gt, r.global_allocation_gt,
-            _impact_basis, "per year",
+            _impact_basis, f"per year ({quantity_unit(r.unit)}/yr)",
         ])
     for row in ws.iter_rows(min_row=2, min_col=6, max_col=7):
         for cell in row:

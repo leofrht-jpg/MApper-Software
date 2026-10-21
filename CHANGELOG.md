@@ -87,6 +87,19 @@ but the tag and the GitHub release are not cut yet.
 
 ### Changed
 
+- **No Lifetime preset; the years are always entered.** Stage amounts offered
+  "1 year | Lifetime (15yr) | Custom", but not every product lives 15 years.
+  The preset is gone from Single item, Multi-item and the LCA Calculator, and
+  so is the default of 15. Under Custom a Years box starts empty; entering N
+  sets every per-year stage to N and every per-unit stage to 1. It stays locked
+  until each stage declares its basis, Manufacturing and End of Life included.
+  Editing a stage by hand clears the years, because they no longer describe the
+  run. The exports' "Lifetime (yr)" row prints the years entered, or "not used",
+  and AESA's per-year functional unit divides by them. A result computed before
+  this change, on the Lifetime preset, still exports and still divides. The LCA
+  Calculator also stops scaling stages by the scope-derived "annual" hint and
+  uses the declared basis, like the other two.
+
 - **Results are addressed by the full method tuple; the indicator label is
   display only.** An LCIA method's last tuple element is not unique: EF v3.1's
   25 indicators share only 14 distinct ones, and four are called "global warming

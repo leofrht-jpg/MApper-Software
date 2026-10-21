@@ -114,7 +114,7 @@ function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
   // are not touched: the panels' stale-result banner says they predate it.
   useEffect(() => {
     if (!activeArchetype || !stageAmountsEntry) return
-    if (stageAmountsEntry.preset !== 'lifetime' || !stageAmountsEntry.lifetimeParam) return
+    if (stageAmountsEntry.preset !== 'custom' || !stageAmountsEntry.lifetimeParam) return
     const v = lifetimeParams.find((p) => p.name === stageAmountsEntry.lifetimeParam)?.value
     if (v == null) return
     const lt = Math.max(1, Math.round(v))
@@ -122,7 +122,7 @@ function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
     setStageAmountsForArc(activeArchetype.id, {
       ...stageAmountsEntry,
       lifetime: lt,
-      amounts: stageAmountsForPreset(activeArchetype, 'lifetime', lt, stageAmountsEntry.amounts, projectBasis),
+      amounts: stageAmountsForPreset(activeArchetype, 'custom', lt, stageAmountsEntry.amounts, projectBasis),
     })
   }, [activeArchetype, stageAmountsEntry, lifetimeParams, projectBasis, setStageAmountsForArc])
 

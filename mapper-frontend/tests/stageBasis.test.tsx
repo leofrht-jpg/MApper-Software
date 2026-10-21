@@ -112,7 +112,7 @@ describe('lifetime availability', () => {
 })
 
 describe('declaring a basis in-app', () => {
-  const value = { preset: '1year' as const, lifetime: 15, amounts: {} }
+  const value = { preset: '1year' as const, lifetime: null, amounts: {} }
 
   it('renders a per-stage control and reports the stage + choice', () => {
     const onDeclareBasis = vi.fn()
@@ -135,11 +135,12 @@ describe('declaring a basis in-app', () => {
   })
 
   it('states the reason in the panel, not only on hover', () => {
+    // The reason sits beside the Years box it locks (Custom).
     const { getByTestId } = render(
-      <StageAmountsEditor archetype={UNSET} value={value} onChange={() => {}} />,
+      <StageAmountsEditor archetype={UNSET} value={{ ...value, preset: 'custom', lifetime: null }} onChange={() => {}} />,
     )
-    expect(getByTestId('stage-amounts-lifetime-blocked').textContent).toMatch(/declare a basis/i)
-    expect((getByTestId('stage-amounts-preset-lifetime') as HTMLButtonElement).disabled).toBe(true)
+    expect(getByTestId('stage-amounts-years-note').textContent).toMatch(/declare a basis/i)
+    expect((getByTestId('stage-amounts-lifetime') as HTMLInputElement).disabled).toBe(true)
   })
 
   it('falls back to a read-only label when no declare handler is wired', () => {
@@ -157,7 +158,7 @@ describe('lifetime can reference a parameter', () => {
     const { getByTestId } = render(
       <StageAmountsEditor
         archetype={WP5}
-        value={{ preset: 'lifetime', lifetime: 15, amounts: {} }}
+        value={{ preset: 'custom', lifetime: 15, amounts: {} }}
         onChange={onChange}
         parameters={[{ name: 'bess_lifetime_years', value: 15 }, { name: 'other', value: 8 }]}
       />,

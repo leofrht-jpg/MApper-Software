@@ -1595,7 +1595,7 @@ export async function exportMultiProductComparison(
     // Patch 5J — per-item stage-amount provenance, keyed by item_id
     // (archetype_id for archetype items). Captures preset + lifetime +
     // resolved amounts so the export's "Stage amounts" sheet reproduces the run.
-    stageAmountsMeta?: Record<string, { preset: string; lifetime: number; amounts: Record<string, number> }>
+    stageAmountsMeta?: Record<string, { preset: string; lifetime: number | null; amounts: Record<string, number> }>
     // Per-item vintage provenance (activity mode), keyed by item_id
     // ("{database}|{code}"). Records which DB/SSP/year each activity item used.
     activityVintageMeta?: Record<string, {
@@ -3723,8 +3723,10 @@ async function _downloadXlsx(url: string, body: unknown, fallbackName: string): 
 // the multi-item export). Threaded into the single-product export requests so
 // the Configuration block can record preset/lifetime alongside the amounts.
 export interface StageAmountsMeta {
+  /** '1year' | 'custom' ('lifetime' only on results made before it was removed). */
   preset: string
-  lifetime: number
+  /** The years entered under Custom; null when none were entered. */
+  lifetime: number | null
   /** The parameter the lifetime came from, when one was referenced. */
   lifetime_param?: string | null
   amounts: Record<string, number>

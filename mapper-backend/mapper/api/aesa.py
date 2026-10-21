@@ -544,17 +544,19 @@ def _apply_impact_basis(
             "yearly impact is already per year; use 'as computed'."
         ))
     meta = body.single_product_stage_meta
-    if meta is None or meta.preset != "lifetime":
-        used = meta.preset if meta is not None else "not recorded"
+    years = meta.entered_years() if meta is not None else None
+    if years is None:
+        used = ("1 year" if meta.preset == "1year" else "custom amounts without years") if meta is not None else "not recorded"
         raise HTTPException(status_code=400, detail=(
-            "Functional unit 'per year' divides a whole-life impact by its lifetime, "
-            "so the run must use the Lifetime stage-amount preset. This run used "
-            f"'{used}': its use phase is not scaled by a lifetime, so dividing it "
-            "would be wrong. Recompute on the Lifetime preset, or use 'as computed'."
+            "Functional unit 'per year' divides a whole-life impact by the years the "
+            "run was scaled to, so the run needs years entered (Stage amounts, Custom, "
+            f"Years). This run used '{used}': its use phase is not scaled by a number "
+            "of years, so dividing it would be wrong. Enter the years and recompute, "
+            "or use 'as computed'."
         ))
-    lifetime = float(meta.lifetime)
+    lifetime = years
     if lifetime < 1:
-        raise HTTPException(status_code=400, detail=f"Lifetime must be at least 1 year, got {lifetime:g}.")
+        raise HTTPException(status_code=400, detail=f"The years must be at least 1, got {lifetime:g}.")
     from mapper.api.lca import _load_and_splice_archetype
     from mapper.api.parameters import _table_for
     from mapper.core.aesa_impact_basis import annualise, lifetime_division_rows

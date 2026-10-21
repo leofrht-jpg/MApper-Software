@@ -23,6 +23,8 @@ import {
   YAxis,
 } from 'recharts'
 import { useBOMStore } from '../stores/bomStore'
+import { useProjectSettingsStore } from '../stores/projectSettingsStore'
+import { YearsInput, canApplyLifetime, lifetimeBlockedReason, stageAmountsForPreset, stageBasis } from '../components/impact/StageAmountsEditor'
 import { Button } from '../components/ui/Button'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { Badge } from '../components/ui/Badge'
@@ -85,7 +87,9 @@ function stageToScope(stageName: string): 'inflows' | 'stock' | 'outflows' {
   return 'inflows'
 }
 
-type AmountPreset = '1year' | 'lifetime' | 'custom'
+// "1 year" or "Custom". There is no Lifetime preset: not every product lives
+// 15 years, so the years are always entered (Custom › Years).
+type AmountPreset = '1year' | 'custom'
 
 const fmt = (n: number) => {
   if (n === 0) return '0'
@@ -114,7 +118,8 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   const [scope, setScope] = useState<Scope>('all')
 
   // Per-archetype stage amounts (keyed by archetype ID)
-  interface PerArchetypeAmounts { preset: AmountPreset; lifetime: number; amounts: Record<string, number> }
+  interface PerArchetypeAmounts { preset: AmountPreset; lifetime: number | null; amounts: Record<string, number> }
+  const projectBasis = useProjectSettingsStore((st) => st.settings)?.use_phase_basis ?? 'one_year'
   const [arcAmountsMap, setArcAmountsMap] = useState<Record<string, PerArchetypeAmounts>>({})
   const [selectedMethods, setSelectedMethods] = useState<string[][]>([])
 
@@ -297,7 +302,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   const initArcAmounts = useCallback((arc: ArchetypeSummary): PerArchetypeAmounts => {
     const amounts: Record<string, number> = {}
     for (const s of arc.stages ?? []) amounts[s] = 1
-    return { preset: '1year', lifetime: 15, amounts }
+    return { preset: '1year', lifetime: null, amounts }
   }, [])
 
   // Ensure every selected archetype has an entry in arcAmountsMap
@@ -316,20 +321,18 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
     })
   }, [selectedArchetypes, initArcAmounts])
 
-  // Recalculate amounts for a specific archetype when preset/lifetime changes
-  const applyPreset = useCallback((arcId: string, preset: AmountPreset, lifetime: number, arc: ArchetypeSummary) => {
+  // Recalculate amounts for a specific archetype when the preset or the years
+  // change. The shared helper scales only stages DECLARED per year, and the
+  // years are refused until every stage declares a basis -- the same rule as
+  // Impact Assessment. (This page used the scope-derived ``stage_annual`` hint
+  // before, which must never decide a multiplier.)
+  const applyPreset = useCallback((arcId: string, preset: AmountPreset, years: number | null, arc: ArchetypeSummary) => {
     setArcAmountsMap((prev) => {
       const entry = prev[arcId] ?? initArcAmounts(arc)
-      const amounts: Record<string, number> = {}
-      for (const s of arc.stages ?? []) {
-        const annual = arc.stage_annual?.[s] ?? false
-        if (preset === '1year') amounts[s] = 1
-        else if (preset === 'lifetime') amounts[s] = annual ? lifetime : 1
-        else amounts[s] = entry.amounts[s] ?? 1
-      }
-      return { ...prev, [arcId]: { preset, lifetime, amounts } }
+      const y = preset === 'custom' && years != null && canApplyLifetime(arc, projectBasis) ? years : null
+      return { ...prev, [arcId]: { preset, lifetime: y, amounts: stageAmountsForPreset(arc, preset, y, entry.amounts, projectBasis) } }
     })
-  }, [initArcAmounts])
+  }, [initArcAmounts, projectBasis])
 
   const stageInScope = useCallback((stage: string) => {
     if (scope === 'all') return true
@@ -1046,7 +1049,6 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                           <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
                             {([
                               { key: '1year' as AmountPreset, label: '1 year' },
-                              { key: 'lifetime' as AmountPreset, label: `Lifetime (${entry.lifetime}yr)` },
                               { key: 'custom' as AmountPreset, label: 'Custom' },
                             ]).map((p) => (
                               <button
@@ -1064,24 +1066,27 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                               </button>
                             ))}
                           </div>
-                          {entry.preset === 'lifetime' && (
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-                              <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Lifetime:</span>
-                              <NumberInput
+                          {entry.preset === 'custom' && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                              <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Years:</span>
+                              <YearsInput
                                 value={entry.lifetime}
-                                onChange={(lt) => applyPreset(arc.id, 'lifetime', lt, arc)}
-                                integerOnly
-                                min={1}
-                                emptyValue={1}
-                                style={{ width: 50, height: 22, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', outline: 'none', textAlign: 'right' }}
+                                onChange={(y) => applyPreset(arc.id, 'custom', y, arc)}
+                                disabled={!canApplyLifetime(arc, projectBasis)}
+                                testId={`lca-years-${arc.id}`}
                               />
-                              <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>years</span>
+                              <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                                {lifetimeBlockedReason(arc, projectBasis)
+                                  ?? (entry.lifetime == null
+                                    ? 'Enter the years for this product; per-year stages are multiplied by it.'
+                                    : `= 1 unit over ${entry.lifetime} year${entry.lifetime !== 1 ? 's' : ''}`)}
+                              </span>
                             </div>
                           )}
                           <div style={{ border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
                             {stages.map((stage) => {
                               const inScope = stageInScope(stage)
-                              const annual = arc.stage_annual?.[stage] ?? false
+                              const annual = stageBasis(arc, stage, projectBasis) === 'per_year'
                               return (
                                 <div
                                   key={stage}
@@ -1108,6 +1113,8 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                                         [arc.id]: {
                                           ...entry,
                                           preset: 'custom',
+                                          // Hand edit: the years no longer describe the amounts.
+                                          lifetime: null,
                                           amounts: { ...entry.amounts, [stage]: v },
                                         },
                                       }))
@@ -1129,11 +1136,6 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                               )
                             })}
                           </div>
-                          {entry.preset === 'lifetime' && (
-                            <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4, textAlign: 'right' }}>
-                              = 1 unit over {entry.lifetime} year{entry.lifetime !== 1 ? 's' : ''}
-                            </div>
-                          )}
                         </div>
                       )
                     })}

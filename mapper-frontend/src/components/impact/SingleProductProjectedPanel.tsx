@@ -120,7 +120,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
   // differ, so a "16" in one and "15" in the other is not read as a bug.
   const stageEntry = archetypeId ? stageAmountsByArc[archetypeId] : undefined
   const lifetimeRangeNote = useMemo(() => {
-    if (stageEntry?.preset !== 'lifetime') return null
+    if (stageEntry?.preset !== 'custom' || stageEntry.lifetime == null) return null
     const years = databases
       .filter((d) => selectedDbs.includes(d.name) && d.year != null)
       .map((d) => d.year as number)

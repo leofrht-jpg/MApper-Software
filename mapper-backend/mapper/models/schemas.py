@@ -975,15 +975,29 @@ class StageAmountsMeta(BaseModel):
     ``lifetime`` are frontend-only concepts the user picked, so they're
     threaded through the export request to make the run reproducible from
     the export alone."""
-    preset: str = "custom"  # "1year" | "lifetime" | "custom"
-    #: Only meaningful under the "lifetime" preset -- it is the multiplier the
-    #: per-year stages were scaled by. Under "1year" and "custom" nothing reads
-    #: it, and the exports say "not used" rather than print a stale number.
-    lifetime: float = 1.0
+    #: "1year" | "custom". ("lifetime" was a preset until it was removed: not
+    #: every product lives 15 years, so the years are now always entered under
+    #: Custom. A meta carrying it is a result made before that, and still reads.)
+    preset: str = "custom"
+    #: The YEARS the per-year stages were set to: entered under Custom (or the
+    #: lifetime of a legacy "lifetime" result). ``None`` when none were entered,
+    #: or under "1year" -- and then the exports say "not used" rather than
+    #: print a number the calculation never read.
+    lifetime: float | None = None
     #: The parameter the lifetime was taken from, when the editor referenced
     #: one (e.g. ``lifetime_yr``). ``None`` = the typed value.
     lifetime_param: str | None = None
     amounts: dict[str, float] = {}
+
+    def entered_years(self) -> float | None:
+        """The years this run's per-year stages were set to, or None.
+
+        The one reading of ``preset`` + ``lifetime`` the exports and AESA's
+        per-year basis share, so the two cannot disagree on whether a run
+        carries a lifetime."""
+        if self.preset == "1year" or self.lifetime is None:
+            return None
+        return float(self.lifetime)
 
 
 class ActivityVintageMeta(BaseModel):

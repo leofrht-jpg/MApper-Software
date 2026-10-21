@@ -57,7 +57,9 @@ from mapper.models.aesa_schemas import (
     AESAConfigBundle,
     AESAConfiguration,
     AESAConfigurationCreate,
+    AESAAxisEntry,
     AESACase,
+    AESACell,
     AESAExportRequest,
     AESAExportSaveResponse,
     AESASession,
@@ -444,31 +446,64 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
     result.impact_basis = config.impact_basis
     result.lifetime_years = lifetime_years
 
-    # ── Sensitivity cases ────────────────────────────────────────────────
+    # ── Sensitivity cases: a case x sharing matrix ───────────────────────
+    #
+    # Two axes. A parameter CASE changes the inventory and costs one LCA rerun
+    # (``_parameter_cases``). A SHARING choice changes only the SOS, so it is
+    # an engine recompute on an impact already in hand: every case, Base
+    # included, is evaluated under every chosen sharing without another LCA.
+    preset = resolve_sharing(config)
+    names = {p.id: p.name for p in preset.principles}
+    sharing_ids = list(result.sensitivity) if (run_sharing and result.sensitivity) else []
+
+    case_axis = [AESAAxisEntry(id="base", label="Base",
+                               definition=["the parameter values as they stand"])]
+    sharing_axis = [AESAAxisEntry(id="base", label=f"Base chain ({preset.name})",
+                                  definition=["the configured sharing chain"])]
+    for pid in sharing_ids:
+        sharing_axis.append(AESAAxisEntry(
+            id=pid, label=f"{names.get(pid, pid)} ({pid})", definition=[_sharing_definition(pid, names)],
+        ))
+    matrix: list[AESACell] = [
+        AESACell(case="base", sharing=pid, results=result.sensitivity[pid]) for pid in sharing_ids
+    ]
+
     cases: list[AESACase] = []
-    if run_sharing and result.sensitivity:
-        preset = resolve_sharing(config)
-        names = {p.id: p.name for p in preset.principles}
-        for pid, rows in result.sensitivity.items():
-            cases.append(AESACase(
-                id=f"sharing:{pid}", kind="sharing", label=f"Sharing: {names.get(pid, pid)}",
-                definition=[
-                    f"Every category-specific layer uses {pid} ({names.get(pid, pid)}); "
-                    f"fixed layers use it where they hold {pid} data, else their own principle."
-                ],
-                results=rows,
-            ))
+    for pid in sharing_ids:
+        cases.append(AESACase(
+            id=f"sharing:{pid}", kind="sharing", label=f"Sharing: {names.get(pid, pid)}",
+            definition=[_sharing_definition(pid, names)], results=result.sensitivity[pid],
+        ))
     if body.parameter_cases:
-        cases += await _parameter_cases(body, config, bset)
+        for case, definition, case_impact in await _parameter_cases(body, config, bset):
+            if sharing_ids:
+                res = AESAEngine.compute_with_sensitivity(
+                    case_impact.results, config, bset, principles=sharing_ids,
+                )
+            else:
+                res = AESAEngine.compute(case_impact.results, config, bset)
+            case_axis.append(AESAAxisEntry(id=case, label=case, definition=definition))
+            matrix.append(AESACell(case=case, sharing="base", results=res.results))
+            for pid in sharing_ids:
+                matrix.append(AESACell(case=case, sharing=pid, results=(res.sensitivity or {}).get(pid, [])))
+            cases.append(AESACase(
+                id=f"parameter:{case}", kind="parameter", label=f"Case: {case}",
+                definition=definition, results=res.results,
+            ))
     result.cases = cases
+    if matrix:
+        result.case_axis, result.sharing_axis, result.matrix = case_axis, sharing_axis, matrix
     result.compute_metrics = meter.build()
     return result
 
 
 async def _parameter_cases(
     body: AESAComputeRequest, config: AESAConfiguration, bset,
-) -> list[AESACase]:
-    """One AESA per parameter sensitivity case, each on its own LCA.
+) -> list[tuple[str, list[str], ImpactAssessmentResult]]:
+    """The impact of each parameter sensitivity case, each on its own LCA.
+
+    Returns ``(case, definition, impact)``; the caller evaluates each impact
+    under every chosen sharing (no further LCA).
 
     A parameter case changes the inventory, so the SR needs the impact
     recomputed under that case: the single-product LCA is re-run with
@@ -498,7 +533,7 @@ async def _parameter_cases(
             compute_database=sp.compute_database, parameter_scenario=case,
         ))
 
-    out: list[AESACase] = []
+    out: list[tuple[str, list[str], ImpactAssessmentResult]] = []
     for case in body.parameter_cases:
         if body.prospective_single_product:
             points = [(p.year, await rerun(p.result, case)) for p in body.prospective_single_product]
@@ -509,18 +544,51 @@ async def _parameter_cases(
                 reference_year=body.reference_year, system_id=config.mfa_system_id,
             )
         impact, _ = _apply_impact_basis(config, body, impact)
-        res = AESAEngine.compute(impact.results, config, bset)
         definition = []
         for name in table.parameters:
             base_v, case_v = table.resolve(name, None), table.resolve(name, case)
             if abs(case_v - base_v) > 1e-12 * max(1.0, abs(base_v)):
                 definition.append(f"{name} = {case_v:g} (base {base_v:g})")
-        out.append(AESACase(
-            id=f"parameter:{case}", kind="parameter", label=f"Case: {case}",
-            definition=definition or ["no parameter differs from the base"],
-            results=res.results,
-        ))
+        out.append((case, definition or ["no parameter differs from the base"], impact))
     return out
+
+
+def _sensitivity_cells(result: AESAComputeResult) -> list[dict]:
+    """Every (case, sharing) cell, (Base, base chain) first, for the export.
+
+    From the matrix when the result has one; otherwise from the pre-matrix
+    shapes -- ``cases`` (sharing cases are (Base, P), parameter cases are
+    (case, base chain)) or, older still, ``sensitivity`` alone."""
+    if result.matrix:
+        c_lab = {a.id: a.label for a in result.case_axis}
+        s_lab = {a.id: ("Base chain" if a.id == "base" else a.id) for a in result.sharing_axis}
+        cells = [{"case": "base", "sharing": "base", "case_label": "Base", "sharing_label": "Base chain",
+                  "results": result.results}]
+        for m in result.matrix:
+            cells.append({"case": m.case, "sharing": m.sharing,
+                          "case_label": c_lab.get(m.case, m.case), "sharing_label": s_lab.get(m.sharing, m.sharing),
+                          "results": m.results})
+        return cells
+    cells = [{"case": "base", "sharing": "base", "case_label": "Base", "sharing_label": "Base chain",
+              "results": result.results}]
+    legacy = list(result.cases) or [
+        AESACase(id=f"sharing:{p}", kind="sharing", label=f"Sharing: {p}", results=rows)
+        for p, rows in (result.sensitivity or {}).items()
+    ]
+    for c in legacy:
+        key = c.id.split(":", 1)[1] if ":" in c.id else c.id
+        if c.kind == "sharing":
+            cells.append({"case": "base", "sharing": key, "case_label": "Base", "sharing_label": key,
+                          "results": c.results})
+        else:
+            cells.append({"case": key, "sharing": "base", "case_label": key, "sharing_label": "Base chain",
+                          "results": c.results})
+    return cells
+
+
+def _sharing_definition(pid: str, names: dict[str, str]) -> str:
+    return (f"Every category-specific layer uses {pid} ({names.get(pid, pid)}); "
+            f"fixed layers use it where they hold {pid} data, else their own principle.")
 
 
 def _apply_impact_basis(
@@ -966,16 +1034,28 @@ def _build_aesa_workbook(
         ws.append(["Budget basis", config.carbon_budget.budget_basis])
         ws.append(["SSP scenario", _cb.ssp_scenario])
         ws.append(["Budget horizon", f"{_cb.start_year}–{_cb.end_year}"])
-    _cases = list(result.cases) or [
-        AESACase(id=f"sharing:{p}", kind="sharing", label=f"Sharing: {p}")
-        for p in (result.sensitivity or {})
-    ]
-    ws.append(["Sensitivity", f"{len(_cases)} case(s) beside the base" if _cases else "base only"])
-    if _cases:
-        # The case definitions: what each case changes from the base.
-        ws.append(["SENSITIVITY CASES", "What differs from the base"])
-        for c in _cases:
-            ws.append([c.label, " · ".join(c.definition) if c.definition else ""])
+    if result.matrix:
+        ws.append(["Sensitivity",
+                   f"{len(result.case_axis)} case(s) x {len(result.sharing_axis)} sharing choice(s); "
+                   "each SR difference is against Base under the same sharing "
+                   "(Base's own sharing variants against the base chain)"])
+        ws.append(["CASES", "What differs from Base (parameter values; one LCA rerun each)"])
+        for a in result.case_axis:
+            ws.append([f"Case: {a.label}", " · ".join(a.definition)])
+        ws.append(["SHARING", "What differs from the base chain (no LCA rerun)"])
+        for a in result.sharing_axis:
+            ws.append([f"Sharing: {a.label}", " · ".join(a.definition)])
+    else:
+        _cases = list(result.cases) or [
+            AESACase(id=f"sharing:{p}", kind="sharing", label=f"Sharing: {p}")
+            for p in (result.sensitivity or {})
+        ]
+        ws.append(["Sensitivity", f"{len(_cases)} case(s) beside the base" if _cases else "base only"])
+        if _cases:
+            # The case definitions: what each case changes from the base.
+            ws.append(["SENSITIVITY CASES", "What differs from the base"])
+            for c in _cases:
+                ws.append([c.label, " · ".join(c.definition) if c.definition else ""])
     ws.append([])
     hdr_row = ws.max_row + 1
     ws.append(["Year", "Safe", "Zone of Uncertainty", "High Risk", "Assessed"])
@@ -1162,33 +1242,43 @@ def _build_aesa_workbook(
         _autosize(ws)
 
     # ── Sensitivity (if run) ──
-    # Only the cases selected in the case window are in ``result.cases``. A
-    # result saved before the window existed has only ``sensitivity``; it is
-    # read as sharing cases so old sessions still export their spread.
-    cases = list(result.cases) or [
-        AESACase(id=f"sharing:{p}", kind="sharing", label=f"Sharing: {p}", results=rows)
-        for p, rows in (result.sensitivity or {}).items()
-    ]
-    if cases:
+    # The case x sharing matrix when present: one column group per cell, each
+    # header naming its case AND its sharing, the difference taken against Base
+    # under the SAME sharing (Base's own sharing variants: against the base
+    # chain). A result made before the matrix (only ``cases``, or only
+    # ``sensitivity``) is read as its cases so old sessions still export.
+    cells = _sensitivity_cells(result)
+    if len(cells) > 1:
         acr: dict[str, str] = {}
         bset = load_boundary_sets().get(config.boundary_set_id)
         if bset is not None:
             acr = {k: (b.conventional_acronym or "") for k, b in bset.boundaries.items()}
-        base = {(r.year, r.pb_id): r for r in result.results}
+        by_cell = {(c["case"], c["sharing"]): {(r.year, r.pb_id): r for r in c["results"]} for c in cells}
+        base = by_cell[("base", "base")]
+        others = [c for c in cells if (c["case"], c["sharing"]) != ("base", "base")]
+
+        def _ref(c: dict) -> tuple[str, str]:
+            return ("base", c["sharing"]) if c["case"] != "base" else ("base", "base")
+
+        def _name(case_label: str, sharing_label: str) -> str:
+            return f"Case {case_label} × Sharing {sharing_label}"
+
+        labels = {(c["case"], c["sharing"]): _name(c["case_label"], c["sharing_label"]) for c in cells}
         ws = wb.create_sheet("Sensitivity")
         head = ["Year", "PB ID", "Impact category", "Abbreviation", "Base SR", "Base zone"]
-        for c in cases:
-            head += [f"{c.label} SR", f"{c.label} ΔSR vs base", f"{c.label} zone"]
+        for c in others:
+            name = labels[(c["case"], c["sharing"])]
+            head += [f"{name}: SR", f"{name}: ΔSR vs {labels[_ref(c)]}", f"{name}: zone"]
         ws.append(head)
         _style_header(ws)
-        by_case = [{(r.year, r.pb_id): r for r in c.results} for c in cases]
         for key in sorted(base):
             b = base[key]
             row = [b.year, b.pb_id, b.pb_name, acr.get(b.pb_id, ""), b.sr, b.zone]
-            for m in by_case:
-                v = m.get(key)
+            for c in others:
+                v = by_cell[(c["case"], c["sharing"])].get(key)
+                ref = by_cell.get(_ref(c), {}).get(key)
                 sr = v.sr if v else None
-                delta = (sr - b.sr) if (sr is not None and b.sr is not None) else None
+                delta = (sr - ref.sr) if (sr is not None and ref is not None and ref.sr is not None) else None
                 row += [sr, delta, v.zone if v else None]
             ws.append(row)
         for row in ws.iter_rows(min_row=2, min_col=5):
@@ -1199,17 +1289,26 @@ def _build_aesa_workbook(
         _autosize(ws)
 
         ws = wb.create_sheet("Sensitivity (long)")
-        ws.append(["Scenario", "Year", "PB", "SR", "Zone", "Allocated SOS"])
+        ws.append(["Case", "Sharing", "Year", "PB", "SR", "Zone", "Allocated SOS",
+                   "Difference against", "ΔSR"])
         _style_header(ws)
-        for r in result.results:
-            ws.append(["Base", r.year, r.pb_name, r.sr, r.zone, r.allocated_sos])
-        for c in cases:
-            for r in c.results:
-                ws.append([c.label, r.year, r.pb_name, r.sr, r.zone, r.allocated_sos])
-        for row in ws.iter_rows(min_row=2, min_col=4, max_col=4):
+        for c in cells:
+            ref_key = _ref(c)
+            refs = by_cell.get(ref_key, {})
+            is_base = (c["case"], c["sharing"]) == ("base", "base")
+            for r in c["results"]:
+                ref = refs.get((r.year, r.pb_id))
+                delta = (None if is_base or r.sr is None or ref is None or ref.sr is None
+                         else r.sr - ref.sr)
+                ws.append([c["case_label"], c["sharing_label"], r.year, r.pb_name, r.sr, r.zone,
+                           r.allocated_sos, "" if is_base else labels[ref_key], delta])
+        for row in ws.iter_rows(min_row=2, min_col=5, max_col=5):
             for cell in row:
                 cell.number_format = "0.000"
-        for row in ws.iter_rows(min_row=2, min_col=6, max_col=6):
+        for row in ws.iter_rows(min_row=2, min_col=9, max_col=9):
+            for cell in row:
+                cell.number_format = "0.000"
+        for row in ws.iter_rows(min_row=2, min_col=7, max_col=7):
             for cell in row:
                 cell.number_format = num_fmt
         ws.freeze_panes = "A2"

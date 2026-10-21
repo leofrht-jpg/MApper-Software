@@ -4322,6 +4322,12 @@ export interface AESACase {
   results: SustainabilityRatioResult[]
 }
 
+/** One choice on an axis of the case x sharing matrix. */
+export interface AESAAxisEntry { id: string; label: string; definition: string[] }
+
+/** The SRs of one (case, sharing) pair; (base, base) is ``results``. */
+export interface AESACell { case: string; sharing: string; results: SustainabilityRatioResult[] }
+
 export interface AESAComputeResult {
   /** PB axes whose SR rests on a partial authored activity: unknown, not small. */
   coverage_gaps?: AESACoverageGap[] | null
@@ -4337,6 +4343,11 @@ export interface AESAComputeResult {
   lifetime_years?: number | null
   /** Selected sensitivity cases, in selection order. Absent on old results. */
   cases?: AESACase[]
+  /** Case x sharing matrix: Base + parameter cases, base chain + principles.
+   *  Absent on results made before it existed (read ``cases`` then). */
+  case_axis?: AESAAxisEntry[]
+  sharing_axis?: AESAAxisEntry[]
+  matrix?: AESACell[]
 }
 
 export interface MultiDDefault {

@@ -87,6 +87,20 @@ but the tag and the GitHub release are not cut yet.
 
 ### Changed
 
+- **AESA cases and sharing as a matrix.** The case switcher mixed parameter
+  cases (v1g, v2h_credit…) and sharing choices (Equal per Capita, Industrial
+  Output…) in one row, so a case could only be seen under the base chain. There
+  are now two selectors, Case (Base and the parameter cases) and Sharing (the
+  base chain, EpC, IN, AGR, LA, AR), and any case can be read under any sharing.
+  A parameter case reruns the LCA once. A sharing choice changes only the SOS,
+  so every case is also evaluated under every ticked sharing without another
+  LCA. The compute window lists the two groups separately and says which one
+  reruns the LCA. The Cases view and the export's Sensitivity sheets take each
+  difference against Base under the same sharing. Base's own sharing variants
+  are taken against the base chain. Every column and row names its case and its
+  sharing, and the Summary lists both axes with their definitions. Results saved
+  before this still switch and export.
+
 - **No Lifetime preset; the years are always entered.** Stage amounts offered
   "1 year | Lifetime (15yr) | Custom", but not every product lives 15 years.
   The preset is gone from Single item, Multi-item and the LCA Calculator, and

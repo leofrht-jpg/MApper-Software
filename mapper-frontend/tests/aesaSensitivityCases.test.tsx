@@ -66,6 +66,8 @@ const sr = (pb_id: string, srv: number, zone: string): SustainabilityRatioResult
   confidence: 'high', unit: 'kg CO2 eq', impact_by_cohort: {}, method_label: '',
 } as any)
 
+// A result from BEFORE the matrix: only ``cases``. Still switches and still
+// compares, so saved sessions keep working.
 const RESULT_WITH_CASES: AESAComputeResult = {
   config_id: null,
   results: [sr('climate_change', 0.8, 'safe'), sr('land_use', 0.5, 'safe')],
@@ -94,7 +96,7 @@ function seed(over: Record<string, unknown> = {}) {
     draft: { name: 'EVS40', boundary_set_id: 'Sala2020_EF', sharing: SHARING, sharing_preset_id: 'p1',
       carbon_budget: null, method_mapping: [], impact_mode: 'static', dsm_scenario_id: null },
     result: null, lastRunAt: null, running: false, error: null, displayedIndicators: null,
-    caseSelection: null, activeCaseId: null, ...over,
+    caseSelection: null, activeCase: 'base', activeSharing: 'base', ...over,
   } as any)
 }
 
@@ -160,10 +162,11 @@ describe('the case window', () => {
   })
 
   it('a project change forgets the selection', () => {
-    useAESAStore.setState({ caseSelection: ['sharing:EpC'], activeCaseId: 'sharing:AR' } as any)
+    useAESAStore.setState({ caseSelection: ['sharing:EpC'], activeCase: 'v1g', activeSharing: 'AR' } as any)
     act(() => { useProjectStore.setState({ currentProject: `other-${Math.random()}` }) })
     expect(useAESAStore.getState().caseSelection).toBeNull()
-    expect(useAESAStore.getState().activeCaseId).toBeNull()
+    expect(useAESAStore.getState().activeCase).toBe('base')
+    expect(useAESAStore.getState().activeSharing).toBe('base')
   })
 })
 
@@ -174,9 +177,19 @@ describe('showing the cases', () => {
     fireEvent.click(screen.getByText('Detail'))
     const detail = () => screen.getByRole('table').textContent!
     expect(detail()).toContain('0.80')
-    fireEvent.click(screen.getByTestId('aesa-case-switch-sharing:AR'))
+    fireEvent.click(screen.getByTestId('aesa-sharing-switch-AR'))
     expect(detail()).toContain('3.00')
     expect(detail()).not.toContain('0.80')
+  })
+
+  it('an old result has two selectors, and a pair it never computed is disabled', () => {
+    seed({ result: RESULT_WITH_CASES, lastRunAt: 'x' })
+    render(<AESADashboard />)
+    expect(screen.getByTestId('aesa-case-selector')).toBeTruthy()
+    expect(screen.getByTestId('aesa-sharing-selector')).toBeTruthy()
+    fireEvent.click(screen.getByTestId('aesa-case-switch-v1g'))
+    // (v1g, AR) does not exist in a pre-matrix result.
+    expect((screen.getByTestId('aesa-sharing-switch-AR') as HTMLButtonElement).disabled).toBe(true)
   })
 
   it('the Cases view compares each case with the base, by abbreviation', () => {
@@ -187,14 +200,15 @@ describe('showing the cases', () => {
     expect(svg.textContent).toContain('GWP100')
     expect(svg.textContent).toContain('LU')
     // A zone change is a diamond; no change is a circle.
-    expect(screen.getByTestId('aesa-cases-mark-climate_change-sharing:AR').tagName).toBe('polygon')
+    // Parameter cases against Base under the chosen sharing (the base chain).
     expect(screen.getByTestId('aesa-cases-mark-climate_change-parameter:v1g').tagName).toBe('circle')
+    expect(svg.textContent).toContain('ΔSR vs Base under the base chain')
     // Figure rules: dashed edge, legend after the plot, no caption text inside.
     const frame = container.querySelector('.aesa-cases-frame') as HTMLElement
     expect(frame.style.border).toContain('dashed')
     const legend = screen.getByTestId('aesa-cases-legend')
     expect(svg.compareDocumentPosition(legend) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(legend.textContent).toContain('Case: v1g')
+    expect(legend.textContent).toContain('v1g')
   })
 
   it('without cases there is no switcher and the view says why', () => {
@@ -203,6 +217,63 @@ describe('showing the cases', () => {
     expect(screen.queryByTestId('aesa-case-switcher')).toBeNull()
     fireEvent.click(screen.getByText('Cases'))
     expect(screen.getByTestId('aesa-cases-empty')).toBeTruthy()
+  })
+})
+
+// ── the case x sharing matrix ────────────────────────────────────────────────
+
+const MATRIX_RESULT: AESAComputeResult = {
+  config_id: null,
+  results: [sr('climate_change', 0.8, 'safe'), sr('land_use', 0.5, 'safe')],
+  summary_by_year: [{ year: 2025, safe: 2, zone_of_uncertainty: 0, high_risk: 0, total_assessed: 2 }],
+  missing_categories: [], sensitivity: null, cases: [],
+  case_axis: [{ id: 'base', label: 'Base', definition: [] }, { id: 'v1g', label: 'v1g', definition: ['ev_use = 5136.4 (base 5820.5)'] }],
+  sharing_axis: [{ id: 'base', label: 'Base chain (p1)', definition: [] }, { id: 'AR', label: 'Acquired Rights (AR)', definition: ['x'] }],
+  matrix: [
+    { case: 'base', sharing: 'AR', results: [sr('climate_change', 3.0, 'high_risk'), sr('land_use', 0.6, 'safe')] },
+    { case: 'v1g', sharing: 'base', results: [sr('climate_change', 0.7, 'safe'), sr('land_use', 0.5, 'safe')] },
+    { case: 'v1g', sharing: 'AR', results: [sr('climate_change', 1.5, 'zone_of_uncertainty'), sr('land_use', 0.55, 'safe')] },
+  ],
+} as any
+
+describe('cases and sharing as a matrix', () => {
+  it('any case can be read under any sharing', () => {
+    seed({ result: MATRIX_RESULT, lastRunAt: 'x' })
+    render(<AESADashboard />)
+    fireEvent.click(screen.getByText('Detail'))
+    const detail = () => screen.getByRole('table').textContent!
+    fireEvent.click(screen.getByTestId('aesa-case-switch-v1g'))
+    expect(detail()).toContain('0.70')
+    fireEvent.click(screen.getByTestId('aesa-sharing-switch-AR'))
+    expect(detail()).toContain('1.50')                     // (v1g, AR)
+    fireEvent.click(screen.getByTestId('aesa-case-switch-base'))
+    expect(detail()).toContain('3.00')                     // (Base, AR)
+  })
+
+  it('the Cases view takes the difference against Base under the CHOSEN sharing', () => {
+    seed({ result: MATRIX_RESULT, lastRunAt: 'x' })
+    render(<AESADashboard />)
+    fireEvent.click(screen.getByText('Cases'))
+    const mark = () => screen.getByTestId('aesa-cases-mark-climate_change-parameter:v1g')
+    // Base chain: v1g 0.7 vs Base 0.8, no zone change.
+    expect(mark().tagName).toBe('circle')
+    expect(mark().textContent).toContain('vs Base under the base chain 0.8')
+    fireEvent.click(screen.getByTestId('aesa-sharing-switch-AR'))
+    // Under AR: v1g 1.5 (uncertainty) vs Base 3.0 (high risk) -- a zone change.
+    expect(mark().tagName).toBe('polygon')
+    expect(mark().textContent).toContain('vs Base under Acquired Rights (AR) 3')
+    expect(screen.getByTestId('aesa-cases-svg').textContent).toContain('ΔSR vs Base under Acquired Rights (AR)')
+  })
+
+  it('a sharing-only run compares its sharing choices with the base chain', () => {
+    seed({ result: { ...MATRIX_RESULT,
+      case_axis: [{ id: 'base', label: 'Base', definition: [] }],
+      matrix: [MATRIX_RESULT.matrix![0]] }, lastRunAt: 'x' })
+    render(<AESADashboard />)
+    expect(screen.queryByTestId('aesa-case-selector')).toBeNull()      // one case: no selector
+    fireEvent.click(screen.getByText('Cases'))
+    expect(screen.getByTestId('aesa-cases-mark-climate_change-sharing:AR').tagName).toBe('polygon')
+    expect(screen.getByTestId('aesa-cases-svg').textContent).toContain('ΔSR vs the base chain')
   })
 })
 
@@ -230,5 +301,24 @@ describe('item C: single-product configurations save and list', () => {
     const menu = screen.getByTestId('aesa-configurations-menu').textContent!
     expect(menu).toContain('single product cfg')
     expect(menu).not.toContain('fleet cfg')
+  })
+})
+
+describe('the compute window lists cases and sharing apart', () => {
+  it('two groups, each with its fixed Base, and the run counts cases x sharing', async () => {
+    const { CaseSelectionModal } = await import('../src/components/aesa/CaseSelectionModal')
+    const { availableCases } = await import('../src/utils/aesaCases')
+    const options = availableCases({ runSensitivity: true, sharing: SHARING, paramTable: PARAMS, singleProduct: true })
+    render(<CaseSelectionModal options={options} initial={new Set(options.map((o) => o.id))} onRun={() => {}} onCancel={() => {}} />)
+    const cases = screen.getByTestId('aesa-case-group-case')
+    const sharing = screen.getByTestId('aesa-case-group-sharing')
+    expect(cases.textContent).toContain('reruns the LCA')
+    expect(sharing.textContent).toContain('No LCA rerun')
+    expect(cases.querySelector('[data-testid="aesa-case-base"]')).not.toBeNull()
+    expect(sharing.querySelector('[data-testid="aesa-sharing-base"]')).not.toBeNull()
+    expect(cases.querySelector('[data-testid="aesa-case-parameter:v1g"]')).not.toBeNull()
+    expect(sharing.querySelector('[data-testid="aesa-case-sharing:AR"]')).not.toBeNull()
+    // Base + v1g = 2 cases; base chain + EpC + AR = 3 sharing.
+    expect(screen.getByTestId('aesa-case-run').textContent).toContain('2 cases × 3 sharing')
   })
 })

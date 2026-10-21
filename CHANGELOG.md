@@ -109,6 +109,25 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **Multi-item Monte Carlo across two authored databases.** A paired run whose
+  items live in databases that do not reach each other (the polycarbonate
+  enclosure in "Supplier PCFs (worked example)" with the flare in "Flaring
+  (worked example)") stopped on its first iteration with
+  `OutsideTechnosphere`: the sampled matrices were built from the first item's
+  databases only. They now hold the databases every item reaches. When all
+  items share one background, as with ecoinvent archetypes, nothing changes:
+  the same seed gives identical samples before and after.
+- **One header per impact-category list.** The system-level Static and
+  Prospective panels wrapped the picker in a second collapsible ("Indicator
+  selection · 25 of 25 selected") around the shared one ("Impact categories ·
+  25 of 25 selected"), and the LCA Calculator put an "All indicators" heading
+  above each of its three results tables. Each list now has the single
+  "Impact categories" header with its summary.
+- **`guard-db` in the database list.** A test wrote an empty database called
+  `guard-db` into whichever Brightway project was current on the machine
+  running the tests (found in default, Battery Circularity and EVS40). The test
+  now uses a stand-in backend, and the test suite fails any test that adds a
+  database to a real Brightway project.
 - **The "Unit" column of the AESA export's "Impacts vs SOS" sheet now follows
   the impact basis.** It printed the boundary's per-year unit (`kg CO2 eq/yr`)
   beside impacts that were per functional unit. It now reads e.g.

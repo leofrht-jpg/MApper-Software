@@ -9,7 +9,7 @@
 
 import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { buildExportFilename } from '../../utils/exportFilename'
-import { Calculator, AlertCircle, ChevronDown, ChevronRight, Loader2, Download, Layers } from 'lucide-react'
+import { Calculator, AlertCircle, Loader2, Download, Layers } from 'lucide-react'
 import { BASE_SCENARIO, exportImpact, type MultiParamImpactResult } from '../../api/client'
 import {
   Area,
@@ -100,7 +100,6 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
 
   const { archetypes, fetchArchetypes } = useBOMStore()
 
-  const [indicatorExpanded, setIndicatorExpanded] = useState(false)
   const [configExpanded, setConfigExpanded] = useState(true)
   const [resultsExpanded, setResultsExpanded] = useState(true)
   const [scope, setScope] = useState<'inflows' | 'outflows' | 'stock' | 'all'>('all')
@@ -745,23 +744,12 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
           </div>
         </div>
 
-        {/* Middle: indicator selection (collapsible) */}
+        {/* Middle: impact categories. ONE header: the shared CollapsibleBlock
+            inside IndicatorChecklist ("Impact categories · x of y selected").
+            An outer "Indicator selection" header used to wrap it, giving two
+            headers and two summaries for one list. */}
         <div style={{ marginBottom: 'var(--space-4)' }}>
-          <div
-            onClick={() => setIndicatorExpanded((v) => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', marginBottom: indicatorExpanded ? 8 : 0 }}
-          >
-            <span style={{ color: 'var(--text-tertiary)', display: 'flex' }}>
-              {indicatorExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </span>
-            <label style={{ ...topLabel, margin: 0, cursor: 'pointer' }}>Indicator selection</label>
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-              · {methodSelection.count} of {methodSelection.totalIndicators} selected
-            </span>
-          </div>
-          {indicatorExpanded && (
-            <IndicatorChecklist selection={methodSelection} accent="var(--mod-lca)" maxHeight={320} collapseKey="system-static.methods" />
-          )}
+          <IndicatorChecklist selection={methodSelection} accent="var(--mod-lca)" maxHeight={320} collapseKey="system-static.methods" />
         </div>
 
         {/* Bottom: Calculate pinned right. Static is Base-only — the

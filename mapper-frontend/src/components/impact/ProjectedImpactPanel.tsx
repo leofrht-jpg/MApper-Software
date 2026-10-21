@@ -137,7 +137,6 @@ function ProjectedImpactPanelImpl() {
   // appears for the single-LCI by-cohort chart.
   const projLegendRef = useRef<HTMLDivElement>(null)
   const projMaterialBarsRef = useRef<HTMLDivElement>(null)
-  const [indicatorExpanded, setIndicatorExpanded] = useState(false)
   const [configExpanded, setConfigExpanded] = useState(true)
   // Patch 5AE — the Year → Database mapping is a long per-year list; default
   // collapsed so it doesn't eat vertical space. Visibility-toggle (state kept).
@@ -1046,23 +1045,12 @@ function ProjectedImpactPanelImpl() {
         </div>
         )}
 
-        {/* Middle: indicator selection (collapsible) */}
+        {/* Middle: impact categories. ONE header: the shared CollapsibleBlock
+            inside IndicatorChecklist ("Impact categories · x of y selected").
+            An outer "Indicator selection" header used to wrap it, giving two
+            headers and two summaries for one list. */}
         <div style={{ marginBottom: 'var(--space-4)' }}>
-          <div
-            onClick={() => setIndicatorExpanded((v) => !v)}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', userSelect: 'none', marginBottom: indicatorExpanded ? 8 : 0 }}
-          >
-            <span style={{ color: 'var(--text-tertiary)', display: 'flex' }}>
-              {indicatorExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-            </span>
-            <label style={{ ...labelS, margin: 0, cursor: 'pointer' }}>Indicator selection</label>
-            <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', fontFamily: 'var(--font-mono)' }}>
-              · {methodSelection.count} of {methodSelection.totalIndicators} selected
-            </span>
-          </div>
-          {indicatorExpanded && (
-            <IndicatorChecklist selection={methodSelection} accent="var(--mod-plca)" maxHeight={320} collapseKey="system-prospective.methods" />
-          )}
+          <IndicatorChecklist selection={methodSelection} accent="var(--mod-plca)" maxHeight={320} collapseKey="system-prospective.methods" />
         </div>
 
         {/* Preflight stacks full-width above; the Sensitivity-cases box is

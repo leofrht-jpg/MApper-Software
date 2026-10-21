@@ -122,6 +122,20 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **Cohort colours on the by-cohort charts match the cohort mapping.** On the
+  Prospective chart (system level, MAp-test), the charger subsystems' colours
+  differed from the cohort mapping table. With a Stack-by set, a band and its
+  legend swatch took their colours from different places. The band used the
+  cohort's mapping colour; the legend used a group colour from a map that knew
+  only the primary system's dimension labels. A subsystem group such as "Public
+  AC Charger" was missing from that map, so its swatch, and the band of any
+  uncoloured subsystem cohort, fell back to a palette slot chosen by position,
+  with one position for the legend and another for the band. Every group the
+  chart shows now has its own colour, and a group's legend swatch is the
+  mapping colour when its cohorts share one. The bands, legend, facets and
+  tooltip use that one source, and the AESA Detail table now shows each cohort
+  in the same colour.
+
 - **The "Unit" column of the AESA export's "Impacts vs SOS" sheet now follows
   the impact basis.** It printed the boundary's per-year unit (`kg CO2 eq/yr`)
   beside impacts that were per functional unit. It now reads e.g.

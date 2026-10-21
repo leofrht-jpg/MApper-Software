@@ -33,7 +33,6 @@ import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { DSMScenariosChip } from '../dsm/DSMScenariosChip'
 import { IndicatorChecklist, MethodFamilySelect, useMethodSelection } from '../MethodPicker'
-import { colorFor } from '../../utils/chartColors'
 import { useDSMSystemColors, buildCombinedRowColorOverrides, subsystemMappingCounts, cohortDisplayLabel, materialDisplayString } from '../../utils/dsmCohortColors'
 import { TruncatedAxisTick } from '../charts/TruncatedAxisTick'
 import { useSubsystemStore } from '../../stores/subsystemStore'
@@ -626,6 +625,7 @@ function ProjectedImpactPanelImpl() {
   })
   const dsmColors = useDSMSystemColors(activeSystem ?? null, stackByDimension, {
     rowColorOverrides: combinedRowColors,
+    cohortKeys: cohortStackKeys,
   })
   // Patch 5AG — the multi-scenario "By cohort" facets consume a cohort-key →
   // color map as a prop. Resolve it through the SHARED cohort resolver
@@ -1737,9 +1737,10 @@ function ProjectedImpactPanelImpl() {
                         // previous version carried one string for both, which
                         // is why it needed to find a representative cohort by
                         // REVERSE-LOOKING-UP its colour. That hack is gone.
-                        const swatchColor = stackByDimension
-                          ? colorFor(dsmColors.colorMap, key)
-                          : dsmColors.colorForCohort(key, idx)
+                        // One source with the bands: the cohort-mapping colour
+                        // when the group's cohorts share one (subsystem chargers
+                        // included), else the group's colour.
+                        const swatchColor = dsmColors.legendColorFor(key, cohortStackKeys, idx)
                         return (
                           <span
                             key={key}

@@ -536,6 +536,15 @@ export interface DSMSystemColors {
    *  use; the LABEL is for display and never carries the owner prefix. Returning
    *  a bare string here is what let the raw key reach the legend. */
   projectLegendLabels: (cohortKeys: readonly string[]) => { key: string; label: string }[]
+  /**
+   * The legend swatch for one entry of `projectLegendLabels`. With no Stack-by
+   * the entry IS a cohort, so it is `colorForCohort`. With one, the entry is a
+   * group: when every cohort of that group in `cohortKeys` carries the SAME
+   * cohort-mapping colour, the swatch is that colour -- the colour the bands
+   * are painted with -- otherwise the group's colour from `colorMap`, which is
+   * what the uncoloured bands of that group use.
+   */
+  legendColorFor: (entryKey: string, cohortKeys: readonly string[], index?: number) => string
 }
 
 /**
@@ -559,18 +568,30 @@ export interface DSMSystemColors {
 export function useDSMSystemColors(
   activeSystem: SystemDefinition | null,
   stackByDimension: string | null,
-  options: { rowColorOverrides?: Record<string, string> } = {},
+  options: { rowColorOverrides?: Record<string, string>; cohortKeys?: readonly string[] } = {},
 ): DSMSystemColors {
   const rowColorOverrides = options.rowColorOverrides ?? {}
+  const cohortKeys = options.cohortKeys
   const stackKeys = useMemo(
     () => buildStackKeys(activeSystem, stackByDimension),
     [activeSystem, stackByDimension],
   )
 
-  const chartLabels = useMemo(
-    () => buildDSMChartLabels(activeSystem, stackKeys),
-    [activeSystem, stackKeys],
-  )
+  // The labels the colour map knows. A dependent SUBSYSTEM's cohorts (charging
+  // stations under a car fleet) group under values that are not the PRIMARY
+  // system's dimension labels, so they were absent from the map: their bands
+  // took a palette slot by POSITION among the cohorts and their legend swatch
+  // a different slot by position among the legend entries -- the "charger
+  // colours differ from the cohort mapping" report. Every group the chart
+  // actually shows is now a label, so it gets one colour by name.
+  const chartLabels = useMemo(() => {
+    const set = buildDSMChartLabels(activeSystem, stackKeys)
+    if (cohortKeys && stackByDimension) {
+      const dims = activeSystem?.dimensions ?? []
+      for (const ck of cohortKeys) set.add(groupKeyForDim(ck, dims, stackByDimension))
+    }
+    return set
+  }, [activeSystem, stackKeys, cohortKeys, stackByDimension])
 
   const rawColorMap = useChartColors(chartLabels)
   const currentProject = useProjectStore((s) => s.currentProject)
@@ -666,7 +687,22 @@ export function useDSMSystemColors(
       return order.map((v) => ({ key: v, label: v }))
     }
 
-    return { stackKeys, colorMap, colorForCohort, projectLegendLabels }
+    const legendColorFor = (entryKey: string, keys: readonly string[], index = 0): string => {
+      if (!stackByDimension) return colorForCohort(entryKey, index)
+      const assigned = new Set<string>()
+      let members = 0
+      for (const ck of keys) {
+        if (groupKeyForDim(ck, dims, stackByDimension) !== entryKey) continue
+        members += 1
+        const row = rowColorOverrides[ck]
+        if (!row) return colorFor(colorMap, entryKey, index)   // an uncoloured band
+        assigned.add(row.toLowerCase())
+      }
+      if (members > 0 && assigned.size === 1) return Array.from(assigned)[0]
+      return colorFor(colorMap, entryKey, index)
+    }
+
+    return { stackKeys, colorMap, colorForCohort, projectLegendLabels, legendColorFor }
     // rowColorOverrides intentionally a stable reference at the call
     // site (zustand selector); listed in deps for correctness.
   }, [activeSystem, stackByDimension, stackKeys, colorMap, rowColorOverrides])

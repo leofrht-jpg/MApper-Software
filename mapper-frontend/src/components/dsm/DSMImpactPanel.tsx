@@ -550,6 +550,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
   })
   const dsmColors = useDSMSystemColors(activeSystem ?? null, stackByDimension, {
     rowColorOverrides: combinedRowColors,
+    cohortKeys: cohortStackKeys,
   })
   const cohortColorMap = useMemo(() => {
     const m: Record<string, string> = {}

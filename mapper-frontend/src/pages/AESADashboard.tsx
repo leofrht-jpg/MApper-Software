@@ -25,6 +25,8 @@ import { YearSlider } from '../components/ui/YearSlider'
 import { ZONE_COLOR, ZONE_LABEL } from '../components/aesa/zones'
 import { useAESAStore } from '../stores/aesaStore'
 import { useDSMStore } from '../stores/dsmStore'
+import { useSubsystemStore } from '../stores/subsystemStore'
+import { buildCombinedRowColorOverrides, useDSMSystemColors } from '../utils/dsmCohortColors'
 import { useImpactStore } from '../stores/impactStore'
 import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
 import { buildIndicatorColorMap } from '../utils/aesaIndicatorColors'
@@ -60,6 +62,18 @@ export function AESADashboard() {
     source, singleProductBasis,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
+  // Cohort colours for the Detail table's per-cohort rows: the SAME resolver
+  // the Impact Assessment by-cohort charts use, fed the cohort-mapping colours
+  // (primary + dependent subsystems), so a cohort reads in one colour across
+  // the cohort mapping table, the impact charts and AESA.
+  const cohortRowColors = useDSMStore((s) => s.cohortRowColors)
+  const stackByDimension = useDSMStore((s) => s.stackByDimension)
+  const allSubsystems = useSubsystemStore((s) => s.subsystems)
+  const dependentSubsystems = useMemo(() => allSubsystems.filter((x) => x.type === 'dependent'), [allSubsystems])
+  const combinedRowColors = useMemo(
+    () => buildCombinedRowColorOverrides(activeSystem?.id, cohortRowColors, dependentSubsystems),
+    [activeSystem?.id, cohortRowColors, dependentSubsystems],
+  )
   const { staticResult, projectedResult } = useImpactStore()
   const spStaticResult = useSingleProductImpactStore((s) => s.staticResult)
   const spHasProspective = useSingleProductImpactStore((s) => s.projectedRuns.some((r) => r.year != null))
@@ -233,6 +247,19 @@ export function AESADashboard() {
       sensitivity: filteredSensitivity,
     }
   }, [shown, displayedIndicators, effectiveDisplayed])
+
+  const detailCohortKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const r of filteredResult?.results ?? []) for (const k of Object.keys(r.impact_by_cohort ?? {})) keys.add(k)
+    return Array.from(keys)
+  }, [filteredResult])
+  const detailColors = useDSMSystemColors(source === 'single_product' ? null : (activeSystem ?? null), stackByDimension, {
+    rowColorOverrides: combinedRowColors,
+    cohortKeys: detailCohortKeys,
+  })
+  const detailCohortColor = source === 'single_product'
+    ? undefined
+    : (key: string) => detailColors.colorForCohort(key, detailCohortKeys.indexOf(key))
 
   const yearSummaryFiltered = useMemo(() => {
     if (!filteredResult || year === null) return null
@@ -692,7 +719,7 @@ export function AESADashboard() {
                     />
                     {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
                     {view === 'timeline' && <TimelineView results={filteredResult.results} carbonBudget={draft?.carbon_budget ?? null} sharing={draft?.sharing ?? null} coverageGaps={result?.coverage_gaps} />}
-                    {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
+                    {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} cohortColor={detailCohortColor} />}
                     {view === 'boxplot'  && <BoxPlotView result={filteredResult} />}
                     {view === 'cases'    && year !== null && result && (
                       <CaseComparisonView

@@ -122,9 +122,13 @@ export function AESADashboard() {
     return out
   }, [glossaryBoundarySet])
 
+  // The dropdown lists the configurations for the current source: the active
+  // DSM system's, or -- for a single-product run -- those saved with none.
   const systemConfigs = useMemo(
-    () => activeSystem ? configurations.filter((c) => c.mfa_system_id === activeSystem.id) : [],
-    [configurations, activeSystem],
+    () => source === 'single_product'
+      ? configurations.filter((c) => !c.mfa_system_id)
+      : activeSystem ? configurations.filter((c) => c.mfa_system_id === activeSystem.id) : [],
+    [configurations, activeSystem, source],
   )
 
   const years = useMemo(() => {
@@ -422,7 +426,7 @@ export function AESADashboard() {
               all configuration management lives in one surface.
               First-config path remains the sidebar's Patch 4Q empty
               state (the dropdown is hidden when 0 configs exist). */}
-          {activeSystem && systemConfigs.length > 0 && (
+          {(activeSystem || source === 'single_product') && systemConfigs.length > 0 && (
             <ConfigurationsDropdown
               configurations={systemConfigs}
               activeConfigId={activeConfigId}

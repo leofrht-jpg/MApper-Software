@@ -109,6 +109,20 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **The "Unit" column of the AESA export's "Impacts vs SOS" sheet now follows
+  the impact basis.** It printed the boundary's per-year unit (`kg CO2 eq/yr`)
+  beside impacts that were per functional unit. It now reads e.g.
+  `kg CO2 eq per functional unit` (as computed) or `kg CO2 eq/yr` (per year),
+  and the "SOS basis" column states the SOS's own per-year unit. No column
+  moved.
+- **AESA configurations for single-product runs could not be saved, and every
+  save dropped three fields.** Saving returned 404 because the routes required
+  a DSM system, and both create and update left out the sharing chain, the
+  preset it came from and the scenario pick, so a customised chain was never
+  stored. Both routes now build the configuration from one shared function, a
+  single-product configuration saves without a system and appears in the
+  configurations list, and a newly saved custom chain survives its first load.
+
 - **A one-row impact category looked empty in the indicator picker.** The
   category headers were sticky inside their own sections, so EF v3.1
   acidification scrolled its only row ("accumulated exceedance (AE)") under its
@@ -126,12 +140,10 @@ but the tag and the GitHub release are not cut yet.
 - **The AESA export did nothing on a single-product run.** Three causes, all
   silent: the button returned early when no DSM system was active (always, for
   a single-product run); the export route 404'd for the same reason; and any
-  error went only to the browser console. In the packaged app a working route
-  would still have produced nothing, because the webview cannot download a
-  `blob:` URL. The export now runs without a DSM system, and in the packaged app
-  the backend writes the workbook to `~/Downloads` and the tab shows the path
-  for 8 seconds (the same mechanism as Settings › Logs). A failure is shown in
-  the tab.
+  error went only to the browser console. The export now runs without a DSM
+  system, and in the packaged app the backend writes the workbook to
+  `~/Downloads` and the tab shows the path for 8 seconds (the same mechanism as
+  Settings › Logs). A failure is shown in the tab.
 - **AESA now states what each impact is per, and can annualise a whole-life
   run.** The Sustainability Ratio divides an impact by a per-year allocated
   SOS, but nothing on screen said what the impact was per, so a whole-life

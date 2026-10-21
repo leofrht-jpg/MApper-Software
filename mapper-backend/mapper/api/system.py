@@ -87,14 +87,14 @@ class LogSaveResponse(BaseModel):
 async def save_logs() -> LogSaveResponse:
     """Write the log file somewhere the user can find it, and say where.
 
-    The desktop app's webview is navigated to ``http://localhost:8765`` and has
-    no download handler, so the browser trick the UI used -- an ``<a download>``
-    pointing at a ``blob:`` URL -- silently does nothing there: no file, no
-    error, no event. WKWebView needs a download delegate, which a page on a
-    remote http origin does not get.
+    The packaged app's Logs "Export" (an ``<a download>`` on a ``blob:`` URL)
+    was a silent no-op. It was attributed to the webview lacking a download
+    handler, but blob downloads of other workbooks work in the installed app,
+    so the cause is unconfirmed. Writing the file here, and telling the UI
+    where, works in both environments and shows the user the path.
 
-    Rather than grant the Tauri IPC bridge to that origin just to reach the
-    dialog/fs plugins, the backend writes the file itself. It already owns the
+    Rather than grant the Tauri IPC bridge to the page's http origin just to
+    reach the dialog/fs plugins, the backend writes the file itself. It already owns the
     log and already runs as the user, and this works identically in the browser
     and in the packaged app.
 
@@ -115,8 +115,9 @@ async def save_logs() -> LogSaveResponse:
 def save_to_downloads(data: bytes, filename: str, *, fallback_dir: Path) -> Path:
     """Write ``data`` to ~/Downloads (else ``fallback_dir``) and return the path.
 
-    The one mechanism every "save a file" button uses in the packaged app,
-    where the webview cannot download (see :func:`save_logs`). A write failure
+    The server-side save used by Settings › Logs and the AESA export in the
+    packaged app (every other export uses a blob download, which works there
+    too). A write failure
     is raised as a 500 naming the path, never swallowed: a read-only or full
     disk must say so.
     """

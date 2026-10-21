@@ -205,3 +205,30 @@ describe('showing the cases', () => {
     expect(screen.getByTestId('aesa-cases-empty')).toBeTruthy()
   })
 })
+
+describe('item C: single-product configurations save and list', () => {
+  it('Save is enabled with no DSM system and sends mfa_system_id null', async () => {
+    const spy = vi.spyOn(client, 'createAESAConfiguration').mockResolvedValue({ id: 'c1', name: 'EVS40', mfa_system_id: null } as any)
+    render(<AESADashboard />)
+    const save = screen.getByTestId('aesa-save-config') as HTMLButtonElement
+    expect(save.disabled).toBe(false)
+    await act(async () => { fireEvent.click(save) })
+    expect(spy).toHaveBeenCalledTimes(1)
+    expect(spy.mock.calls[0][0].mfa_system_id).toBeNull()
+  })
+
+  it('the configurations dropdown lists configurations saved without a system', () => {
+    seed({
+      configurations: [
+        { id: 'sp', name: 'single product cfg', mfa_system_id: null } as any,
+        { id: 'fl', name: 'fleet cfg', mfa_system_id: 'sys-1' } as any,
+      ],
+      result: RESULT_WITH_CASES, lastRunAt: 'x',
+    })
+    render(<AESADashboard />)
+    fireEvent.click(screen.getByTestId('aesa-configurations-toggle'))
+    const menu = screen.getByTestId('aesa-configurations-menu').textContent!
+    expect(menu).toContain('single product cfg')
+    expect(menu).not.toContain('fleet cfg')
+  })
+})

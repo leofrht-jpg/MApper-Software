@@ -4226,7 +4226,7 @@ export interface MethodPBMapping {
 export interface AESAConfiguration {
   id: string
   name: string
-  mfa_system_id: string
+  mfa_system_id: string | null  // null for a single-product configuration
   /**
    * Patch 4O — explicit DSM scenario id. ``null`` means "use whatever's
    * active when this config is loaded" (backward-compat default for
@@ -4250,7 +4250,7 @@ export interface AESAConfiguration {
 
 export interface AESAConfigurationCreate {
   name: string
-  mfa_system_id: string
+  mfa_system_id: string | null  // null for a single-product configuration
   dsm_scenario_id?: string | null
   impact_mode?: 'static' | 'projected'
   boundary_set_id?: string
@@ -4549,10 +4549,11 @@ export async function computeAESA(body: AESAComputeBody): Promise<AESAComputeRes
 /**
  * Export the AESA result. Returns where the file went when the backend wrote it.
  *
- * In the packaged app a `blob:` download does nothing (no download delegate on
- * a remote http origin; see `downloadSystemLogs`), so there the backend writes
- * the workbook to ~/Downloads and returns the path, which the UI shows. In a
- * browser the usual download runs and `path` is null.
+ * In the packaged app the backend writes the workbook to ~/Downloads and
+ * returns the path, which the UI shows; in a browser the usual blob download
+ * runs and `path` is null. (Blob downloads work in the packaged app too -- most
+ * exports use one. This export's failure was an early return and a 404, see
+ * #170; the server-side save is kept because it says where the file went.)
  */
 export async function exportAESA(
   config: AESAConfiguration,
@@ -4758,11 +4759,11 @@ export function isPackagedDesktop(): boolean {
  *
  * In a browser: the usual `<a download>` on a blob, which works.
  *
- * In the packaged app that silently does NOTHING — WKWebView needs a download
- * delegate, and the page is on a remote http origin so it has neither the
- * delegate nor the Tauri IPC bridge. No file, no error, no event: the button
- * looked dead. There the backend writes the file and tells us where, which
- * needs no new capability and no IPC grant to an http origin.
+ * In the packaged app the backend writes the file and tells us where. Logs
+ * "Export" was a silent no-op there; the cause was attributed to the blob
+ * download, but blob downloads of the pLCA, LCA and Monte Carlo workbooks work
+ * in the installed app, so that attribution is unconfirmed. The server-side
+ * save works and shows the path, so it stays.
  */
 export async function downloadSystemLogs(): Promise<LogSaveResult> {
   if (isPackagedDesktop()) {

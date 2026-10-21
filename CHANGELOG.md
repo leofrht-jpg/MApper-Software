@@ -87,6 +87,22 @@ but the tag and the GitHub release are not cut yet.
 
 ### Changed
 
+- **Loading cards, checked against measured times.** Every calculation entry
+  point was timed on a sidecar against EVS40 and MAp-test. Five take more than
+  10 s, and each shows the shared loading card (what is running, elapsed time;
+  the page stays usable):
+  - AESA with four parameter cases × all sharing, 77 s;
+  - Monte Carlo, 1000 iterations, 69 s;
+  - system-level Prospective, 63 s;
+  - single-product Prospective over four years, 19 s;
+  - system-level Static with 25 indicators, 11 s.
+
+  DSM simulation, subsystem compute, material flows and every export finished
+  in under a second. The AESA card now says what it is running ("5 cases ×
+  6 sharing · 4 LCA reruns"). It also appears on the dashboard when the
+  Configuration panel is collapsed, which used to hide it during a minute-long
+  case run.
+
 - **AESA cases and sharing as a matrix.** The case switcher mixed parameter
   cases (v1g, v2h_credit…) and sharing choices (Equal per Capita, Industrial
   Output…) in one row, so a case could only be seen under the base chain. There

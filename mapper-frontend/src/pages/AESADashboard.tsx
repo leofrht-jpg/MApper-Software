@@ -26,7 +26,8 @@ import { ZONE_COLOR, ZONE_LABEL } from '../components/aesa/zones'
 import { useAESAStore } from '../stores/aesaStore'
 import { useDSMStore } from '../stores/dsmStore'
 import { useSubsystemStore } from '../stores/subsystemStore'
-import { cellResults, resultAxes } from '../utils/aesaCases'
+import { cellResults, computeLabel, resultAxes } from '../utils/aesaCases'
+import { ComputeProgress } from '../components/ui/ComputeProgress'
 import { buildCombinedRowColorOverrides, useDSMSystemColors } from '../utils/dsmCohortColors'
 import { useImpactStore } from '../stores/impactStore'
 import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
@@ -61,6 +62,7 @@ export function AESADashboard() {
     selectAllDisplayedIndicators, clearDisplayedIndicators,
     activeCase: activeCaseKey, activeSharing, setActiveCase, setActiveSharing,
     source, singleProductBasis,
+    running: aesaRunning, lastComputeArgs,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
   // Cohort colours for the Detail table's per-cohort rows: the SAME resolver
@@ -519,6 +521,18 @@ export function AESADashboard() {
         <ConfigSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* The progress card lives in the Configuration panel, under Compute.
+              Collapsed, that panel shows no card -- and a case run takes over a
+              minute -- so the card moves here. */}
+          {sidebarCollapsed && (
+            <ComputeProgress
+              active={aesaRunning}
+              label={computeLabel(lastComputeArgs)}
+              bar="none"
+              statusColor="var(--mod-aesa)"
+              data-testid="aesa-compute-progress-main"
+            />
+          )}
           {/* Part C1 — source-aware empty states. Single-product (LCA) source
               has no DSM system; it needs a static single-product result. */}
           {source === 'single_product' ? (

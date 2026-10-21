@@ -113,3 +113,18 @@ export function cellResults(
   if (sharingId === 'base') return result.cases?.find((c) => c.id === `parameter:${caseId}`)?.results ?? null
   return null
 }
+
+/** What a running AESA compute is doing, for its progress card. With cases it
+ *  names the matrix and the LCA reruns -- the part that takes the time (about
+ *  a minute for EVS40's four cases x all sharing, measured on a sidecar). */
+export function computeLabel(args: { runSensitivity?: boolean; cases?: CaseSelection | null } | null | undefined): string {
+  const cases = args?.cases
+  if (cases && (cases.parameter.length > 0 || cases.sharing.length > 0)) {
+    const nc = 1 + cases.parameter.length, ns = 1 + cases.sharing.length
+    const lca = cases.parameter.length > 0
+      ? ` · ${cases.parameter.length} LCA rerun${cases.parameter.length === 1 ? '' : 's'}`
+      : ''
+    return `Computing AESA: ${nc} case${nc === 1 ? '' : 's'} × ${ns} sharing${lca}`
+  }
+  return args?.runSensitivity ? 'Computing AESA with sharing sensitivity…' : 'Computing AESA…'
+}

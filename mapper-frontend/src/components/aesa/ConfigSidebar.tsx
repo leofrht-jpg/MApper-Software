@@ -37,7 +37,7 @@ import type {
 } from '../../api/client'
 import type { StageAmountsMeta } from '../../api/client'
 import { CaseSelectionModal } from './CaseSelectionModal'
-import { availableCases, selectionPayload, type CaseOption } from '../../utils/aesaCases'
+import { availableCases, computeLabel, selectionPayload, type CaseOption } from '../../utils/aesaCases'
 import { useParameterStore } from '../../stores/parameterStore'
 import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
@@ -157,7 +157,7 @@ const CONFIG_LOAD_LABELS: Record<AESAConfigLoadKind, string> = {
 
 export function ConfigSidebar({ collapsed, onToggle }: Props) {
   const {
-    defaults, defaultsLoading, draft, running, error,
+    defaults, defaultsLoading, draft, running, error, lastComputeArgs,
     loadDefaults, loadConfigurations, loadPresets, loadSessions, updateDraft,
     updateCarbonBudget, resetDraftToDefaults, suggestMapping, saveConfig, compute,
     configurations, activeConfigId, creatingNewConfig, startNewConfig,
@@ -767,7 +767,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
       {!showEmptyState && !inSessionMode && (
         <ComputeProgress
           active={running}
-          label="Computing AESA…"
+          label={computeLabel(lastComputeArgs)}
           bar="none"
           statusColor="var(--mod-aesa)"
           data-testid="aesa-compute-progress"

@@ -122,6 +122,11 @@ but the tag and the GitHub release are not cut yet.
 
 ### Fixed
 
+- **One selected year in AESA.** The "Selected year" card at the top right
+  and the slider under the Radar and Box plot views each kept their own year,
+  so the card could read 2030 while the chart showed 2040. The dashboard's
+  year is now the only one; both controls set it, and switching views keeps it.
+
 - **Cohort colours on the by-cohort charts match the cohort mapping.** On the
   Prospective chart (system level, MAp-test), the charger subsystems' colours
   differed from the cohort mapping table. With a Stack-by set, a band and its

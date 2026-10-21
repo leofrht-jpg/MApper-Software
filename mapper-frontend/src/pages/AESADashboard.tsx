@@ -717,10 +717,10 @@ export function AESADashboard() {
                       gaps={(result?.coverage_gaps ?? []).filter((g) => filteredResult.results.some((r) => r.pb_id === g.pb_id))}
                       testId="aesa-coverage-note"
                     />
-                    {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
+                    {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} year={year} onYearChange={setYear} />}
                     {view === 'timeline' && <TimelineView results={filteredResult.results} carbonBudget={draft?.carbon_budget ?? null} sharing={draft?.sharing ?? null} coverageGaps={result?.coverage_gaps} />}
                     {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} cohortColor={detailCohortColor} />}
-                    {view === 'boxplot'  && <BoxPlotView result={filteredResult} />}
+                    {view === 'boxplot'  && <BoxPlotView result={filteredResult} year={year} onYearChange={setYear} />}
                     {view === 'cases'    && year !== null && result && (
                       <CaseComparisonView
                         base={result.results.filter((r) => effectiveDisplayed.includes(r.pb_id))}

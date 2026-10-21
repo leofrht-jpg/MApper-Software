@@ -26,18 +26,24 @@ interface Props {
    *  vertex hollow -- the SR is a lower bound, not a value to read. */
   coverageGaps?: AESACoverageGap[] | null
   basis?: Pick<AESAComputeResult, 'impact_basis' | 'lifetime_years'> | null
+  /** The dashboard's selected year. When given, this view's slider and the
+   *  dashboard's "Selected year" card are ONE control: both write it. */
+  year?: number | null
+  onYearChange?: (year: number) => void
 }
 
 const MAX_DISPLAY_SR = 3.0
 
-export function RadarView({ results, size = 480, coverageGaps, basis }: Props) {
+export function RadarView({ results, size = 480, coverageGaps, basis, year: yearProp, onYearChange }: Props) {
   const years = useMemo(() => {
     const s = new Set<number>()
     for (const r of results) s.add(r.year)
     return Array.from(s).sort((a, b) => a - b)
   }, [results])
 
-  const [year, setYear] = useState(() => years[years.length - 1] ?? 0)
+  const [localYear, setLocalYear] = useState(() => years[years.length - 1] ?? 0)
+  const year = yearProp ?? localYear
+  const setYear = (y: number) => { if (onYearChange) onYearChange(y); else setLocalYear(y) }
   const radarRef = useRef<HTMLDivElement>(null)
   // SR values cluster around 1.0 (sustainability ratio). Scientific/SI
   // notation makes no sense — restrict to Fixed only.

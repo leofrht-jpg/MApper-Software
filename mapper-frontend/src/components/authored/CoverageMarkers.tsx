@@ -16,6 +16,7 @@
  */
 
 import type { CoverageGap } from '../../api/client'
+import { disambiguatedLabels, methodKey as tupleKey } from '../../utils/methodLabels'
 
 export const methodKey = (m: readonly string[]) => m.join('|')
 
@@ -68,8 +69,14 @@ export function CoverageGapNote({ gaps, labelFor, testId = 'coverage-gap-note' }
   testId?: string
 }) {
   if (!gaps?.length) return null
-  const label = labelFor ?? ((m: string[]) => m[m.length - 1] ?? '')
-  const indicators = [...new Set(gaps.map((g) => label(g.method)))]
+  // Count INDICATORS, i.e. distinct method tuples. Counting distinct labels
+  // collapsed EF v3.1's 25 indicators onto their 14 distinct last elements, so
+  // the note said 14 while the table marked 23. Labels are disambiguated over
+  // the gapped set, so no two named indicators read the same.
+  const methods = [...new Map(gaps.map((g) => [tupleKey(g.method), g.method])).values()]
+  const auto = disambiguatedLabels(methods)
+  const label = labelFor ?? ((m: string[]) => auto.get(tupleKey(m)) ?? m[m.length - 1] ?? '')
+  const indicators = methods.map((m) => label(m))
   const acts = [...new Map(gaps.map((g) => [`${g.database}|${g.code}`, g])).values()]
   return (
     <div data-testid={testId} role="note" style={{

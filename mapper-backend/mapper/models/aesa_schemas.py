@@ -101,7 +101,7 @@ class PlanetaryBoundary(BaseModel):
     # boundary set that omits it (Ryberg's scaffold) still renders.
     short_name: str | None = None
     # PURELY INFORMATIONAL, for the glossary. The abbreviation LCA readers will
-    # recognise (AP, HTP-c, ODP …). These come from CML / ILCD convention, NOT
+    # recognise (AP, HTPc, ODP …). These come from CML / ILCD convention, NOT
     # from EF, which is why MApper never uses them as a label — displaying one
     # would assert a naming EF does not define. The glossary shows it as
     # "commonly written AP" so the familiar handle is available without the
@@ -860,6 +860,13 @@ class AESAComputeResult(BaseModel):
     case_axis: list[AESAAxisEntry] = Field(default_factory=list)
     sharing_axis: list[AESAAxisEntry] = Field(default_factory=list)
     matrix: list[AESACell] = Field(default_factory=list)
+    #: What fed the SR numerators, stamped at compute time. ``config.impact_mode``
+    #: is the fleet Background radio and says nothing about a single-product
+    #: source, so the export used to read "static" for a Prospective one.
+    #: None on results made before this was recorded.
+    impact_source: Literal[
+        "single_product_static", "single_product_prospective", "fleet_static", "fleet_projected",
+    ] | None = None
 
 
 class AESAExportRequest(BaseModel):

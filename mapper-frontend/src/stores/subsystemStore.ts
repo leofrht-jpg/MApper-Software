@@ -172,9 +172,10 @@ export const useSubsystemStore = create<SubsystemStore>((set, get) => ({
     if (!sysId) return
     try {
       const result = await getSubsystemResult(sysId, id)
-      set({ subsystemResults: { ...get().subsystemResults, [id]: result } })
+      // null before the first compute: leave the cache untouched.
+      if (result) set({ subsystemResults: { ...get().subsystemResults, [id]: result } })
     } catch {
-      // 404 is expected before first compute — leave cache untouched.
+      // A real failure is already in Settings › Logs; the view stays empty.
     }
   },
 

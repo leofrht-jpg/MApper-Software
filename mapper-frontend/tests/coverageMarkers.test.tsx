@@ -75,7 +75,7 @@ describe('the lookup and the marker', () => {
     const { getByTestId } = render(<CoverageGapNote gaps={[GAP]} />)
     const t = getByTestId('coverage-gap-note').textContent!
     expect(t).toContain('Not specified for 1 indicator')
-    expect(t).toContain('accumulated exceedance (AE)')
+    expect(t).toContain('acidification')   // the disambiguated label; "accumulated exceedance (AE)" also names eutrophication: terrestrial
     expect(t).toContain('unknown size, not a zero one')
     expect(t).toContain('Boiler: CO2 only')
   })

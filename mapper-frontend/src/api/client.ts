@@ -2468,8 +2468,9 @@ export async function computeAllSubsystems(
 export async function getSubsystemResult(
   systemId: string,
   subsystemId: string,
-): Promise<SimulationResult> {
-  return request<SimulationResult>(
+): Promise<SimulationResult | null> {
+  // null = not computed yet (an ordinary state, not an error).
+  return request<SimulationResult | null>(
     `/dsm/systems/${systemId}/subsystems/${subsystemId}/results`,
   )
 }
@@ -4106,7 +4107,7 @@ export interface PlanetaryBoundary {
    *  `name` is already EF's short category name — a duplicate string would be
    *  two copies that can drift. Consumers fall back to `name`. */
   short_name?: string | null
-  /** GLOSSARY ONLY — the abbreviation LCA readers recognise (AP, HTP-c…),
+  /** GLOSSARY ONLY — the abbreviation LCA readers recognise (AP, HTPc…),
    *  from CML/ILCD convention. EF defines no per-category acronyms, so MApper
    *  never renders this as a label; the glossary shows it as
    *  "commonly written AP". */
@@ -4348,6 +4349,8 @@ export interface AESAComputeResult {
   case_axis?: AESAAxisEntry[]
   sharing_axis?: AESAAxisEntry[]
   matrix?: AESACell[]
+  /** What fed the SR numerators, stamped at compute time (null on older results). */
+  impact_source?: 'single_product_static' | 'single_product_prospective' | 'fleet_static' | 'fleet_projected' | null
 }
 
 export interface MultiDDefault {
@@ -4778,6 +4781,18 @@ export function isPackagedDesktop(): boolean {
  * in the installed app, so that attribution is unconfirmed. The server-side
  * save works and shows the path, so it stays.
  */
+/**
+ * Show a file the backend saved (Logs or AESA export) in Finder / Explorer.
+ * Packaged app only: there is no Tauri IPC on the http origin, so the backend,
+ * which wrote the file, asks the OS. It refuses any path outside the folders
+ * it saves to.
+ */
+export async function revealSavedFile(path: string): Promise<void> {
+  await request<{ revealed: string }>('/system/reveal', {
+    method: 'POST', body: JSON.stringify({ path }),
+  })
+}
+
 export async function downloadSystemLogs(): Promise<LogSaveResult> {
   if (isPackagedDesktop()) {
     const saved = await request<{ path: string; bytes: number }>(

@@ -43,7 +43,7 @@
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
           "provisional": true,
-          "conventional_acronym": "ETP-fw"
+          "conventional_acronym": "ETfw"
         },
         "resource_use_fossils": {
           "id": "resource_use_fossils",
@@ -56,7 +56,7 @@
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
           "provisional": true,
-          "conventional_acronym": "ADP-f"
+          "conventional_acronym": "ADPf"
         },
         "eutrophication_freshwater": {
           "id": "eutrophication_freshwater",
@@ -69,7 +69,7 @@
           "boundary_type": "flow",
           "status_2023": "exceeded",
           "provisional": true,
-          "conventional_acronym": "EP-f"
+          "conventional_acronym": "EPf"
         },
         "eutrophication_marine": {
           "id": "eutrophication_marine",
@@ -82,7 +82,7 @@
           "boundary_type": "flow",
           "status_2023": "exceeded",
           "provisional": true,
-          "conventional_acronym": "EP-m"
+          "conventional_acronym": "EPm"
         },
         "eutrophication_terrestrial": {
           "id": "eutrophication_terrestrial",
@@ -95,7 +95,7 @@
           "boundary_type": "flow",
           "status_2023": "regional",
           "provisional": true,
-          "conventional_acronym": "EP-t"
+          "conventional_acronym": "EPt"
         },
         "human_toxicity_cancer": {
           "id": "human_toxicity_cancer",
@@ -108,7 +108,7 @@
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
           "provisional": true,
-          "conventional_acronym": "HTP-c"
+          "conventional_acronym": "HTPc"
         },
         "human_toxicity_non_cancer": {
           "id": "human_toxicity_non_cancer",
@@ -121,7 +121,7 @@
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
           "provisional": true,
-          "conventional_acronym": "HTP-nc"
+          "conventional_acronym": "HTPnc"
         },
         "ionising_radiation": {
           "id": "ionising_radiation",
@@ -160,7 +160,7 @@
           "boundary_type": "flow",
           "status_2023": "increasing_risk",
           "provisional": true,
-          "conventional_acronym": "ADP-mm"
+          "conventional_acronym": "ADPmm"
         },
         "ozone_depletion": {
           "id": "ozone_depletion",

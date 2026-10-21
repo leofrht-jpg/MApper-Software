@@ -16,6 +16,7 @@ import {
   getHealth,
   getSystemLogs,
   downloadSystemLogs,
+  revealSavedFile,
   getGridIntensities,
   type HealthResponse,
 } from '../api/client'
@@ -279,8 +280,9 @@ export function LogsPanel({ version }: { version: string }) {
       const { path } = await downloadSystemLogs()
       // In the packaged app the backend writes the file, so say where it went —
       // otherwise a successful save is indistinguishable from the old no-op.
+      // Kept until the next export: it now carries the Reveal button, and a
+      // control that vanishes after 8 s cannot be relied on.
       setSavedPath(path)
-      if (path) window.setTimeout(() => setSavedPath((c) => (c === path ? null : c)), 8000)
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : String(err))
     }
@@ -330,6 +332,16 @@ export function LogsPanel({ version }: { version: string }) {
             style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-2)' }}
           >
             Logs written to <code style={{ fontFamily: 'var(--font-mono)' }}>{savedPath}</code>
+            {' '}
+            <LogButton
+              data-testid="logs-reveal"
+              onClick={() => {
+                revealSavedFile(savedPath).catch((err) =>
+                  setLoadError(err instanceof Error ? err.message : String(err)))
+              }}
+            >
+              {/win/i.test(navigator.userAgent) ? 'Show in folder' : 'Reveal in Finder'}
+            </LogButton>
           </div>
         )}
         {loading && <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>Loading backend logs…</div>}
@@ -468,9 +480,10 @@ function LogRow({ entry, expanded, onToggle, justCopied, onCopy }: {
   )
 }
 
-function LogButton({ children, onClick }: { children: React.ReactNode; onClick: () => void }) {
+function LogButton({ children, onClick, 'data-testid': testId }: { children: React.ReactNode; onClick: () => void; 'data-testid'?: string }) {
   return (
     <button
+      data-testid={testId}
       onClick={onClick}
       style={{
         padding: '4px 10px',

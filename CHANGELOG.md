@@ -85,7 +85,30 @@ but the tag and the GitHub release are not cut yet.
   ship silent.
 - `CHANGELOG.md` — this file.
 
+- **Reveal in Finder for a saved log.** In the desktop app, Settings › Logs ›
+  Export now shows a "Reveal in Finder" button ("Show in folder" on Windows)
+  beside the path it wrote. The backend, which saved the file, asks the system
+  to show it, and it refuses any path outside the folders it saves to. "Copy
+  all" writes no file, so it has nothing to reveal.
+- **A warning when every AESA ratio is below 0.001.** A single-product run
+  under a downscaling chain that stops at a sector divides one product's impact
+  by a whole sector's share of each boundary, and every ratio reads as safe. The
+  AESA page now says that the chain probably does not reach a single product.
+  No value changes.
+
 ### Changed
+
+- **Impact-category abbreviations follow one convention**: AP, GWP100, ETfw,
+  EPf, EPm, EPt, HTPc, HTPnc, IRP, LU, ODP, PM, POCP, ADPf, ADPmm, WU, on screen
+  and in the export's Abbreviation column. Eight changed (for example ETP-fw
+  became ETfw, ADP-mm became ADPmm). No other place used the old forms.
+- **Authored-editor messages use the names on screen.** A refusal said
+  "basic_variance_reason" or "floor_reason"; it now names the Basic variance
+  box, the reason under it, and the Partial inventory note.
+- **Settings › Logs is no longer flooded by Brightway.** bw2calc wrote "Switching
+  LCIA method" and "Redoing LCIA" at INFO on every characterisation, thousands of
+  lines per run. Its INFO lines are dropped; its warnings and errors still come
+  through.
 
 - **Loading cards, checked against measured times.** Every calculation entry
   point was timed on a sidecar against EVS40 and MAp-test. Five take more than
@@ -151,6 +174,19 @@ but the tag and the GitHub release are not cut yet.
   single-year basis actually used. No Sustainability Ratio values move.
 
 ### Fixed
+
+- **The not-specified note counted labels, not indicators.** It said "Not
+  specified for 14 indicators" beside a table marking 23, because EF v3.1's 25
+  indicators share 14 short names and the note counted the names. It now counts
+  indicators and names each one unambiguously ("climate change: fossil").
+- **The AESA export said "Impact Mode: static" for a Prospective single-product
+  run.** It printed the configuration's fleet Background setting. The result now
+  records what fed it, and the Summary row is "Impact source" (for example
+  "Single product (LCA), Prospective"). Results saved before this say "not
+  recorded" rather than guess.
+- **Opening a dependent subsystem before computing it logged an ERROR.** The
+  view asks for the result on open, and "not computed yet" came back as a 404.
+  It is now an ordinary empty answer; an unknown subsystem is still an error.
 
 - **One selected year in AESA.** The "Selected year" card at the top right
   and the slider under the Radar and Box plot views each kept their own year,

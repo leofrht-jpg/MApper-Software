@@ -26,7 +26,7 @@ import { relPosix } from './helpers/relPosix'
 // wrong rules. `shortPbName` was one such copy — a hand-written truncation
 // living in zones.ts, invisible to anyone changing the data file.
 //
-// The conventional acronyms (AP, HTP-c, ODP…) are the sharper risk. They are
+// The conventional acronyms (AP, HTPc, ODP…) are the sharper risk. They are
 // CML/ILCD convention, not EF: Zampori & Pant (2019), EUR 29682 EN, Table 2
 // gives category names, indicators and units, and defines no per-category
 // acronyms. MApper therefore never labels with them — a label would assert a
@@ -89,7 +89,7 @@ describe('boundary naming has one source', () => {
   it('reads the acronyms from the shipped data (not an empty sweep)', () => {
     expect(ACRONYMS.length).toBeGreaterThanOrEqual(16)
     expect(ACRONYMS).toContain('AP')
-    expect(ACRONYMS).toContain('HTP-nc')
+    expect(ACRONYMS).toContain('HTPnc')
     expect(files.length).toBeGreaterThan(50)
   })
 

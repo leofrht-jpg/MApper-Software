@@ -493,8 +493,39 @@ async def post_compute(body: AESAComputeRequest) -> AESAComputeResult:
     result.cases = cases
     if matrix:
         result.case_axis, result.sharing_axis, result.matrix = case_axis, sharing_axis, matrix
+    result.impact_source = _impact_source(body, impact)
     result.compute_metrics = meter.build()
     return result
+
+
+_IMPACT_SOURCE_LABELS = {
+    "single_product_static": "Single product (LCA), Static",
+    "single_product_prospective": "Single product (LCA), Prospective",
+    "fleet_static": "System-level (DSM), Static Background",
+    "fleet_projected": "System-level (DSM), Prospective Background",
+}
+
+
+def _impact_source(body, impact) -> str:
+    """Which source fed this run, from the same precedence ``post_compute``
+    applies. A fleet run reads the impact's own mode, not the config's radio."""
+    if body.prospective_single_product:
+        return "single_product_prospective"
+    if body.single_product_result is not None:
+        return "single_product_static"
+    return "fleet_projected" if impact.meta.mode == "projected" else "fleet_static"
+
+
+def impact_source_label(config, result) -> str:
+    """The Summary's "Impact source" text. An older result without a stamp
+    falls back to the config's radio only for a fleet config; a config with no
+    DSM system cannot say, so it says that."""
+    if result.impact_source:
+        return _IMPACT_SOURCE_LABELS[result.impact_source]
+    if config.mfa_system_id:
+        return f"System-level (DSM), {config.impact_mode} (from the configuration; not recorded on the result)"
+    return "not recorded"
+
 
 
 async def _parameter_cases(
@@ -1017,7 +1048,7 @@ def _build_aesa_workbook(
     ws.append(["System", system_name])
     ws.append(["AESA Configuration", config.name])
     ws.append(["Boundary Set", config.boundary_set_id])
-    ws.append(["Impact Mode", config.impact_mode])
+    ws.append(["Impact source", impact_source_label(config, result)])
     # What the impact (SR numerator) is per, beside what the SOS is per. They
     # must match for the SR to mean anything, so the export states both.
     ws.append(["Impact basis (functional unit)", impact_basis_label(result)])
@@ -1320,7 +1351,7 @@ def _build_aesa_workbook(
     _style_header(ws)
     ws.append(["Configuration", config.name])
     ws.append(["Boundary set", config.boundary_set_id])
-    ws.append(["Impact mode", config.impact_mode])
+    ws.append(["Impact source", impact_source_label(config, result)])
     # Patch 5AT — legacy Multi-D rows only when multi_d is present (None for
     # sharing-preset configs).
     if config.multi_d is not None:

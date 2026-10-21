@@ -129,7 +129,7 @@ export function AESADashboard() {
     [defaults, draft?.boundary_set_id],
   )
 
-  // Conventional abbreviations (GWP100, ETP-fw, ADP-mm, LU ...) for the case
+  // Conventional abbreviations (GWP100, ETfw, ADPmm, LU ...) for the case
   // comparison figure, from the boundary record. Full names stay in tooltips.
   const caseAcronyms = useMemo(() => {
     const out: Record<string, string> = {}
@@ -766,6 +766,7 @@ export function AESADashboard() {
                   />
                 ) : (
                   <>
+                    <ChainReachBanner results={result?.results ?? []} />
                     <CoverageGapNote
                       gaps={(result?.coverage_gaps ?? []).filter((g) => filteredResult.results.some((r) => r.pb_id === g.pb_id))}
                       testId="aesa-coverage-note"
@@ -1089,6 +1090,33 @@ const menuItemStyle: React.CSSProperties = {
 // Recoverable via Select all; the chart slot is otherwise blank to
 // avoid rendering a misleading "no data" message that could be
 // confused with a compute failure.
+/** Every SR below this reads as a chain that never narrowed to one product. */
+export const CHAIN_REACH_SR = 1e-3
+
+/**
+ * The default-configuration trap. A single-product run under a chain built for
+ * a fleet or a sector (the default allocates down to a sector, not to one
+ * product) divides one product's impact by a whole sector's share of the
+ * planetary boundary, so every SR comes out tiny and reads as "safe".
+ * Says so, and changes no number.
+ */
+export function ChainReachBanner({ results }: { results: { sr: number | null }[] }) {
+  const srs = results.map((r) => r.sr).filter((v): v is number => v != null && Number.isFinite(v))
+  if (!srs.length || !srs.every((v) => Math.abs(v) < CHAIN_REACH_SR)) return null
+  return (
+    <div data-testid="aesa-chain-reach-banner" role="note" style={{
+      fontSize: 'var(--text-xs)', color: 'var(--warning)', border: '1px solid var(--warning)',
+      borderRadius: 'var(--radius-md)', padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)',
+    }}>
+      <strong>Every Sustainability Ratio is below 0.001.</strong>{' '}
+      The downscaling chain probably does not reach a single product: its last layer still
+      allocates a whole sector's or country's share of each boundary, so one product's impact
+      looks negligible against it. Check the chain under Sharing before reading these as safe.
+      The values shown are unchanged.
+    </div>
+  )
+}
+
 function EmptyFilterState({ onSelectAll }: { onSelectAll: () => void }) {
   return (
     <div

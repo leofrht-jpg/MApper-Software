@@ -174,6 +174,17 @@ Released 2026-10-22.
 
 ### Fixed
 
+- **No more tailpipe warnings on prospective runs.** A system-level
+  prospective run logged two warnings per year saying the `mapper-tailpipe`
+  activities were "not found" in the premise database and "fell back". Keeping
+  them on their own database is correct (premise makes no variant of them);
+  the warning came from the run not knowing which base database its premise
+  databases were generated from. It now does, and logs one INFO line per run
+  with the number of such links. A base ecoinvent activity that premise really
+  dropped still produces a warning. Also fixed: importing premise silently
+  disabled MApper's own loggers created before it (premise reconfigures
+  logging at import), so depending on import order some warnings never
+  reached the log; they are re-enabled once the app has loaded.
 - **The backend test suite no longer writes into your data.** It logged
   into the real `mapper.log` (thousands of test lines, some of them planted
   "errors"), and test runs on older branches recreated an empty `guard-db`

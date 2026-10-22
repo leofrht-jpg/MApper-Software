@@ -51,6 +51,24 @@ def quiet_chatty_libraries() -> None:
         logging.getLogger(name).setLevel(logging.WARNING)
 
 
+def reenable_mapper_loggers() -> list[str]:
+    """Re-enable every ``mapper.*`` logger a third-party library disabled.
+
+    ``premise/transformation.py`` calls ``logging.config.dictConfig(...)`` at
+    import with the default ``disable_existing_loggers=True``, which silently
+    disables every logger that existed before it -- including MApper's own
+    (``mapper.core.dsm_lca_engine`` among them, so its warnings and the
+    prospective-run summary never reached mapper.log in a process that imported
+    premise after it). Returns the names it re-enabled.
+    """
+    out = []
+    for name, lg in list(logging.root.manager.loggerDict.items()):
+        if (name == "mapper" or name.startswith("mapper.")) and isinstance(lg, logging.Logger) and lg.disabled:
+            lg.disabled = False
+            out.append(name)
+    return out
+
+
 def configure_logging() -> Path:
     """Install a rotating file handler on the root logger.
 
@@ -59,6 +77,8 @@ def configure_logging() -> Path:
     """
     global _configured
     quiet_chatty_libraries()
+    # The app's routers (and with them premise) are imported before this runs.
+    reenable_mapper_loggers()
     if _configured:
         return LOG_FILE
 

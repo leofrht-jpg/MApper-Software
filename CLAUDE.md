@@ -8890,6 +8890,26 @@ warning is logged at WARNING level — reaching `mapper.log` and Settings → Lo
 — and collected on the pipeline. Adding a field is a schema change with
 frontend implications; it was left, deliberately.
 
+**The fleet pipeline must actually KNOW its base (walkthrough 4).** The UI
+never sets `ImpactAssessmentRequest.base_db` — the base travels inside each
+`lci_scenarios` entry — and `_prospective_base_db()`'s registry fallback read
+`prospective_dbs[0].get("name")` while `prospective_dbs` is a list of
+`(name, year)` tuples. So the base was always `None`, rule 2 never applied, and
+every system-level prospective run warned "mapper-tailpipe/… not found … fell
+back" twice per anchor year for a pin that is correct. The route now passes
+each scenario's own `base_db`, the fallback reads the tuple, and intentional
+pins are summarised in ONE INFO line per run with the count
+(`tests/test_prospective_tailpipe_pinning.py`). A base-db code that fails to
+carry over still warns.
+
+**premise disables loggers at import.** `premise/transformation.py` calls
+`logging.config.dictConfig(...)` with the default
+`disable_existing_loggers=True`, which silently disables every logger created
+before it — `mapper.core.dsm_lca_engine` included, in a dev process. So a
+missing log line is not proof a code path did not run. `configure_logging()`
+calls `reenable_mapper_loggers()` after the routers (and premise) are imported;
+locked by `test_premise_does_not_silence_mappers_own_loggers`.
+
 #### What NOT to do
 
 - **Don't rewrite a link's database without checking its SOURCE.** A BOM may

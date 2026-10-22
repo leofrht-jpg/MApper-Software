@@ -22,6 +22,7 @@ import {
   useSingleProductImpactStore,
   type ProjectedRun as StoreProjectedRun,
 } from '../../stores/singleProductImpactStore'
+import { useSessionState } from '../../stores/sessionStateStore'
 import { MethodPicker } from '../MethodPicker'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { NumberFormatControl } from '../charts/NumberFormatControl'
@@ -94,8 +95,11 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
   const [isCalculating, setIsCalculating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [runs, setRuns] = useState<ProjectedRun[]>([])
-  const [activeRunIdx, setActiveRunIdx] = useState<number>(0)
+  // Runs outlive the panel (App mounts one page at a time), keyed per
+  // archetype like the Static panel's. See sessionStateStore.
+  const runKey = `singleProduct.projected.${archetypeId ?? ''}`
+  const [runs, setRuns] = useSessionState<ProjectedRun[]>(`${runKey}.runs`, [])
+  const [activeRunIdx, setActiveRunIdx] = useSessionState<number>(`${runKey}.active`, 0)
 
   const valueFormat = useNumberFormatter()
   const setStoreProjectedRuns = useSingleProductImpactStore((s) => s.setProjectedRuns)
@@ -396,7 +400,8 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
       setIsCalculating(false)
       setProgress(null)
     }
-  }, [archetypeId, scope, selectedMethods, selectedDbs, databases, currentStageAmounts, stageAmountsByArc, setProjectedRunMeta])
+  }, [archetypeId, scope, selectedMethods, selectedDbs, databases, currentStageAmounts, stageAmountsByArc, setProjectedRunMeta,
+      setRuns, setActiveRunIdx])
 
   const isMulti = runs.length > 1
   const activeRun = runs[activeRunIdx]

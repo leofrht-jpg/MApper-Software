@@ -13,6 +13,7 @@ import { useParameterStore } from '../../stores/parameterStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { useProjectSettingsStore } from '../../stores/projectSettingsStore'
 import { useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
+import { useSessionState } from '../../stores/sessionStateStore'
 import { ArchetypeSelect } from '../archetypes/ArchetypeSelect'
 import { SingleProductStaticPanel } from './SingleProductStaticPanel'
 import { SingleProductProjectedPanel } from './SingleProductProjectedPanel'
@@ -76,8 +77,14 @@ function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
   const setStoreArchetypeId = useSingleProductImpactStore((s) => s.setArchetypeId)
   const stageAmountsByArc = useSingleProductImpactStore((s) => s.stageAmountsByArc)
   const setStageAmountsForArc = useSingleProductImpactStore((s) => s.setStageAmountsForArc)
-  const [archetypeId, setArchetypeId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<TabKey>('static')
+  // The selected archetype lives in the store, not in local state. App mounts
+  // one page at a time, so a local id restarted at null every time the user
+  // came back to Impact Assessment, and mirroring that null into the store
+  // cleared the results that had just been computed. The store's setter still
+  // clears results when the id genuinely changes.
+  const archetypeId = useSingleProductImpactStore((s) => s.archetypeId)
+  const setArchetypeId = setStoreArchetypeId
+  const [activeTab, setActiveTab] = useSessionState<TabKey>('singleProduct.activeTab', 'static')
   // Patch 4AG.3 — Single item vs Multi-item comparison sub-mode.
   // Default 'single' preserves existing UX. Switching to 'multi'
   // hides the single-item sub-tabs (Static/Projected/Compare) and
@@ -85,7 +92,7 @@ function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
   // switches via the visibility-toggle pattern (display: none on
   // the inactive subtree) so the user's selections / results
   // don't reset when toggling back and forth.
-  const [viewMode, setViewMode] = useState<ViewMode>('single')
+  const [viewMode, setViewMode] = useSessionState<ViewMode>('singleProduct.viewMode', 'single')
   // Stage amounts is an advanced tweak — most users keep Lifetime defaults.
   // Default collapsed; user can expand to edit per-stage amounts.
   const [stageAmountsExpanded, setStageAmountsExpanded] = useState(false)
@@ -129,13 +136,6 @@ function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
   useEffect(() => {
     if (archetypes.length === 0) fetchArchetypes()
   }, [archetypes.length, fetchArchetypes])
-
-  // Mirror archetype selection into the cross-panel store. The store's
-  // setter clears both static and projected results when the id changes,
-  // which prevents the Comparison panel from reading mismatched slots.
-  useEffect(() => {
-    setStoreArchetypeId(archetypeId)
-  }, [archetypeId, setStoreArchetypeId])
 
   // Auto-pick the first archetype with no validation errors when none is
   // selected and the list lands. Avoids an empty-state flash on first paint.

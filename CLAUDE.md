@@ -4284,6 +4284,43 @@ same rhythm (scale token, never hardcoded px).
   idx) must survive a tab switch. The wrapper uses `display:
   block|none` per pane, not conditional render.
 
+### Pages unmount on tab switch; results live in `useSessionState` (walkthrough 5)
+
+`App.tsx` renders ONE page at a time, so leaving a top-level tab unmounts the
+whole page and every `useState` in it. That is how a finished single-product
+result vanished when the user glanced at another tab: Impact Assessment kept
+the selected archetype in local state, which restarted at `null` on remount
+and was mirrored into `singleProductImpactStore`, whose setter clears the
+results; the Static/Prospective panels and the LCA Architect calculator held
+their runs locally too.
+
+- **The selected archetype is the store's `archetypeId`**, read directly; no
+  local copy, no mirror effect.
+- **Anything computed, and the selection that produced it, goes through
+  `useSessionState(key, initial)`** (`stores/sessionStateStore.ts`): a drop-in
+  for `useState` backed by a project-scoped store (reset on project change,
+  session only, never persisted). Single-product panels key it per archetype
+  (`singleProduct.static.<arcId>.*`), so a run in flight lands under its own
+  archetype even if the user picks another.
+- `tests/setup.ts` resets it after every test through a hook the store puts on
+  `globalThis`; without that, one test's kept state is on screen in the next.
+- Locked by `tests/resultsSurviveTabSwitch.test.tsx` (compute, UNMOUNT,
+  remount, result back), reverted-source break-checked.
+- **Each tab also has its own `ErrorBoundary`** in `App.tsx`, keyed by tab:
+  a page that throws shows the error in the content area and the sidebar keeps
+  working, instead of the root boundary replacing the app.
+
+#### What NOT to do
+
+- **Don't hold a result, or the selection it belongs to, in `useState` in a
+  page.** It is gone the next time the user opens another tab. Form-only
+  values (an expanded card, a search box) can stay local.
+- **Don't key `useSessionState` without the identity it belongs to** (the
+  archetype for single-product runs). A shared key shows one archetype's
+  result under another.
+- **Don't persist it.** Session only; a stored result outliving its inputs is
+  the stale-number class the provenance work exists to prevent.
+
 ### Visibility-toggle vs. conditional mount (general UI rule)
 
 **General rule.** Any UI element that hides and reappears — tab panel,

@@ -8,6 +8,14 @@
  */
 
 import '@testing-library/jest-dom/vitest'
+import { afterEach } from 'vitest'
+
+// Panel state kept across unmounts (src/stores/sessionStateStore.ts) lives in a
+// module-level store, so one test's kept result would otherwise be on screen in
+// the next. Registered on globalThis by the store, so this setup imports nothing.
+afterEach(() => {
+  (globalThis as { __mapperResetSessionState?: () => void }).__mapperResetSessionState?.()
+})
 
 // No unit test should perform real network I/O. Several components fire
 // fire-and-forget API calls from mount effects (getHealth, getGridIntensities,

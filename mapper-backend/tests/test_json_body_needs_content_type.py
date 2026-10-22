@@ -31,9 +31,26 @@ import pytest
 from fastapi.testclient import TestClient
 
 
-def _client() -> TestClient:
-    from mapper.main import app
+@pytest.fixture()
+def client(monkeypatch) -> TestClient:
+    """The app, with the authored routes on the FAKE Brightway backend.
 
+    Without this the labelled-body case reached the real one: ``POST
+    /authored-databases`` wrote an empty ``guard-db`` into whichever Brightway
+    project was current on the developer's machine (found in default,
+    Battery Circularity and EVS40). The storage roots were redirected by the
+    conftest; Brightway itself never was, and this test is about a header, not
+    about writing anything.
+    """
+    from mapper.api import authored as api
+    from mapper.api import bom
+    from mapper.main import app
+    from tests.test_authored_databases import FakeBackend
+
+    backend = FakeBackend(installed=["biosphere3", "ecoinvent-3.10-cutoff"])
+    monkeypatch.setattr(api, "_project", lambda: "P")
+    monkeypatch.setattr(api, "get_backend", lambda project: backend)
+    monkeypatch.setattr(bom, "_archetypes", {"P": {}})
     return TestClient(app)
 
 
@@ -54,9 +71,9 @@ IDS = [f"{m} {p}" for m, p, _ in ROUTES]
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ROUTES, ids=IDS)
-def test_a_bare_string_body_is_refused_as_unparsed_text(method, path, body):
+def test_a_bare_string_body_is_refused_as_unparsed_text(client, method, path, body):
     """The failure the field saw. Pinned so the error stays recognisable."""
-    c = _client()
+    c = client
     r = c.request(method, path, content=json.dumps(body))  # no Content-Type
     assert r.status_code == 422, (
         f"{method} {path} accepted an unlabelled body; this test no longer "
@@ -73,11 +90,11 @@ def test_a_bare_string_body_is_refused_as_unparsed_text(method, path, body):
 
 
 @pytest.mark.parametrize(("method", "path", "body"), ROUTES, ids=IDS)
-def test_the_same_body_parses_once_it_is_labelled(method, path, body):
+def test_the_same_body_parses_once_it_is_labelled(client, method, path, body):
     """With the header, the body is parsed — the route may then fail on its own
     merits (404 for a missing database, 422 on a FIELD), but never again with
     `model_attributes_type` on the whole body."""
-    c = _client()
+    c = client
     r = c.request(method, path, content=json.dumps(body),
                   headers={"Content-Type": "application/json"})
     assert r.status_code != 415

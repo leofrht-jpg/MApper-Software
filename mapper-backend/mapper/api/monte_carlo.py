@@ -538,6 +538,38 @@ async def get_pedigree_table() -> PedigreeTableResponse:
 # ── Paired multi-item ─────────────────────────────────────────────────────────
 
 
+def _union_database_filepaths(mc: Any, demands: list[dict]) -> None:
+    """Make ``mc`` load the databases reached by EVERY item's demand.
+
+    ``bw2calc.MonteCarloLCA`` decides which databases to load from the demand
+    it is constructed with (``get_database_filepath(demand)``: the graph
+    dependents of the demand's databases). The paired run constructs it from
+    item 0, so an item whose database item 0 never reaches -- two authored
+    databases share nothing but biosphere -- was outside the technosphere and
+    the run died with ``OutsideTechnosphere`` on its first iteration.
+
+    Item 0's list is kept as it is, in its order, and only databases it does
+    not already carry are APPENDED. When the union adds nothing (every item over
+    the same ecoinvent background, the ordinary case) ``database_filepath`` is
+    not touched at all, so the matrices -- and every sampled number -- are
+    exactly what they were before this function existed.
+    """
+    from bw2calc.utils import get_database_filepath
+
+    keys = {k: 1.0 for d in demands for k in d}
+    current = getattr(mc, "database_filepath", None)
+    if not keys or current is None:
+        # A stand-in chain (the unit tests' fakes) has no file list to extend.
+        # The real bw2calc 1.x object always does; the behaviour on it is
+        # pinned against a real Brightway project in
+        # tests/test_monte_carlo_multi_two_databases.py.
+        return
+    have = list(current)
+    extra = [p for p in get_database_filepath(keys) if p not in have]
+    if extra:
+        mc.database_filepath = have + extra
+
+
 def _run_monte_carlo_multi(
     body: MonteCarloMultiRequest,
     task: _TaskState,
@@ -659,6 +691,10 @@ def _run_monte_carlo_multi(
     foreground_varies = bool(param_draws) or any(it["row_draws"] for it in items)
 
     mc = bw2calc.MonteCarloLCA(items[0]["demand"], method_tuples[0], seed=seed)
+    # The matrices must hold EVERY item, not just item 0: see
+    # ``_union_database_filepaths``. Before the first ``next``, which is what
+    # loads them.
+    _union_database_filepaths(mc, [it["demand"] for it in items])
     next(mc)
     cf_samplers = _method_cf_samplers(mc, method_tuples, seed)
 

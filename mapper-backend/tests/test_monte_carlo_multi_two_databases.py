@@ -21,10 +21,21 @@ multi-item test either mocked the run or used items over one database. So this
 builds a real (tiny) Brightway world -- one biosphere, one method, two
 single-activity databases -- in a TEMPORARY project, deleted afterwards, and
 drives the real route.
+
+The world lives in a THROWAWAY Brightway base directory
+(``projects._use_temp_directory``), never in the developer's real one, and the
+directory is removed tolerantly. On Windows a plain ``delete_project(...,
+delete_dir=True)`` failed with WinError 32 on ``lci/databases.db``: bw2data's
+peewee ``SqliteDatabase`` keeps one connection PER THREAD, and switching
+projects closes only the calling thread's. The Monte Carlo worker and the
+TestClient threads had their own open handles, and Windows will not unlink an
+open file. A leftover temp file is not a test failure.
 """
 from __future__ import annotations
 
+import gc
 import math
+import shutil
 import time
 import uuid
 
@@ -58,10 +69,13 @@ def two_databases():
     from mapper.api import bom
     from mapper.models.bom_schemas import Archetype, BOMNode, EcoinventLink
 
-    original = bw2data.projects.current
+    projects = bw2data.projects
+    original = projects.current
     project = f"pytest-mc-two-dbs-{uuid.uuid4().hex[:8]}"
-    bw2data.projects.set_current(project)
+    temp_dir = projects._use_temp_directory()      # throwaway base dir, not the real one
+    saved = None
     try:
+        projects.set_current(project)
         bw2data.Database(BIO).write({
             (BIO, "co2"): {"name": "Carbon dioxide, fossil", "unit": "kilogram",
                            "type": "emission", "categories": ("air",)},
@@ -87,8 +101,13 @@ def two_databases():
         bom._archetypes.pop(project, None)
         if saved is not None:
             bom._archetypes[project] = saved
-        bw2data.projects.set_current(original)
-        bw2data.projects.delete_project(project, delete_dir=True)
+        # Back to the real base dir and the project the test started on; this
+        # closes this thread's handles on the temp sqlite files.
+        projects._restore_orig_directory()
+        projects.set_current(original, update=False)
+        # Handles held by finished worker threads go with their thread-locals.
+        gc.collect()
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
 
 def _run(ids, n=12, seed=7):

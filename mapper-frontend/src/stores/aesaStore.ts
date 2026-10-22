@@ -425,6 +425,9 @@ function draftFromDefaults(
 }
 
 
+/** Compute source last chosen in each project (this session only). */
+const _sourceByProject = new Map<string, 'fleet' | 'single_product'>()
+
 export const useAESAStore = create<AESAStore>((set, get) => ({
   defaults: null,
   defaultsLoading: false,
@@ -494,8 +497,12 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   },
 
   loadConfigurations: async () => {
+    const project = useProjectStore.getState().currentProject
     try {
       const configs = await withTransientRetry(() => getAESAConfigurations())
+      // A switch while the request was in flight: this list belongs to the
+      // project we LEFT, and must not be shown as the current one's.
+      if (useProjectStore.getState().currentProject !== project) return
       set((s) => ({ configurations: configs, configLoadError: s.configLoadError?.kind === 'configurations' ? null : s.configLoadError }))
     } catch (e) {
       set({ configLoadError: { kind: 'configurations', message: e instanceof Error ? e.message : String(e) } })
@@ -638,7 +645,13 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     }
   },
 
-  setSource: (source) => set({ source }),
+  setSource: (source) => {
+    // Remembered per project, so switching away and back returns to the
+    // source the user picked there (see the project subscription below).
+    const project = useProjectStore.getState().currentProject
+    if (project) _sourceByProject.set(project, source)
+    set({ source })
+  },
   setReferenceYear: (referenceYear) => set({ referenceYear }),
   setSingleProductBasis: (singleProductBasis) => set({ singleProductBasis }),
 
@@ -757,9 +770,11 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
   // ── Sessions (Patch 4R) ────────────────────────────────────────────────────
 
   loadSessions: async () => {
+    const project = useProjectStore.getState().currentProject
     set({ sessionsLoading: true })
     try {
       const sessions = await withTransientRetry(() => getAESASessions())
+      if (useProjectStore.getState().currentProject !== project) return
       set((s) => ({ sessions, sessionsLoading: false, configLoadError: s.configLoadError?.kind === 'sessions' ? null : s.configLoadError }))
     } catch (e) {
       set({ sessionsLoading: false, configLoadError: { kind: 'sessions', message: e instanceof Error ? e.message : String(e) } })
@@ -1028,5 +1043,16 @@ let _lastProject: string | null = useProjectStore.getState().currentProject
 useProjectStore.subscribe((state) => {
   if (state.currentProject === _lastProject) return
   _lastProject = state.currentProject
-  useAESAStore.getState().reset()
+  const store = useAESAStore.getState()
+  store.reset()
+  // The compute source is a per-project choice, not project data: return to
+  // the one picked in this project, or the fleet default for a new one.
+  const remembered = state.currentProject ? _sourceByProject.get(state.currentProject) : undefined
+  if (remembered) useAESAStore.setState({ source: remembered })
+  // reset() emptied the lists. The sidebar loads them only on mount, and the
+  // AESA page stays mounted across a project switch, so without this the
+  // Configurations pill and the saved sessions stayed empty until the user
+  // left the page and came back.
+  void store.loadConfigurations()
+  void store.loadSessions()
 })

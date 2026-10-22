@@ -174,6 +174,16 @@ Released 2026-10-22.
 
 ### Fixed
 
+- **AESA Configurations pill after a project switch.** The pill now shows on
+  every state of the AESA page, including a project with no DSM system and one
+  with no templates yet, and lists every saved template of the current project
+  with what each was saved for. Switching project while on AESA used to empty
+  the list until you left the page: the list is now reloaded on the switch.
+  AESA requests also now carry the project header and `no-store`, like every
+  other request; without them a webview could answer the template list from
+  cache with the previous project's templates. The compute source (single
+  product or system-level) is remembered per project for the session instead
+  of falling back to system-level on every switch.
 - **The not-specified note counted labels, not indicators.** It said "Not
   specified for 14 indicators" beside a table marking 23, because EF v3.1's 25
   indicators share 14 short names and the note counted the names. It now counts

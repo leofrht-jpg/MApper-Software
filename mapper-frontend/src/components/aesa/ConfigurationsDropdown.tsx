@@ -32,10 +32,14 @@ interface Props {
   onNew: () => void
   /** Disable the trigger entirely (e.g. session-loaded mode). */
   disabled?: boolean
+  /** Second line under each template's name: what it was saved for (a DSM
+   *  system, or single product). Templates of the whole project are listed,
+   *  so this is what tells two of them apart. */
+  describe?: (c: AESAConfiguration) => string | null
 }
 
 export function ConfigurationsDropdown({
-  configurations, activeConfigId, onSelect, onDelete, onNew, disabled = false,
+  configurations, activeConfigId, onSelect, onDelete, onNew, disabled = false, describe,
 }: Props) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement | null>(null)
@@ -49,7 +53,8 @@ export function ConfigurationsDropdown({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
 
-  if (configurations.length === 0) return null
+  // Rendered with zero templates too: the pill is where configurations live,
+  // and a pill that disappears reads as "this project lost its templates".
 
   const active = configurations.find((c) => c.id === activeConfigId) ?? null
   const N = configurations.length
@@ -109,6 +114,14 @@ export function ConfigurationsDropdown({
           >
             <Plus size={12} /> New configuration
           </button>
+          {N === 0 && (
+            <div
+              data-testid="aesa-configurations-empty"
+              style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-tertiary)' }}
+            >
+              No saved templates in this project yet.
+            </div>
+          )}
           {configurations.map((c) => {
             const isActive = c.id === activeConfigId
             return (
@@ -148,6 +161,11 @@ export function ConfigurationsDropdown({
                   }}
                 >
                   {c.name}
+                  {describe?.(c) && (
+                    <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)' }}>
+                      {describe(c)}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"

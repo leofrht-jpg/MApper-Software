@@ -6390,9 +6390,17 @@ Consolidation rationale:
   in one place rather than scanning the page header for related
   buttons.
 - **The first-config path stays in the sidebar empty state**
-  (Patch 4Q). The dropdown hides entirely when zero configurations
-  exist; "+ Create your first configuration" remains the
-  affordance.
+  (Patch 4Q). Since walkthrough 4 the dropdown ALSO renders with zero
+  configurations ("Configurations (0)", "No saved templates in this
+  project yet") — a pill that vanishes read as "this project lost its
+  templates".
+- **It lists every template of the CURRENT project**, each row saying
+  what it was saved for (a DSM system, or single product). It used to
+  list only the active DSM system's and to hide without one, so after
+  a project switch, or in a project with no DSM system, templates
+  looked lost. The list is reloaded on a project switch (the AESA page
+  stays mounted, so the sidebar's mount effect does not re-run), and
+  AESA requests go through `_withProjectHeader` like every other call.
 - **The action remains methodologically necessary** even when
   hidden in a menu. `saveConfig` UPDATES the loaded configuration
   in place (calls `updateAESAConfiguration` when `activeConfigId`
@@ -6411,10 +6419,9 @@ Consolidation rationale:
 - **Don't add a separate page-header "+ New" button back.** Two
   surfaces compete and confuse — the dropdown is the consolidated
   home.
-- **Don't make the dropdown render when zero configurations
-  exist.** Patch 4Q's empty-state ("+ Create your first
-  configuration") handles the first-config path; rendering the
-  dropdown trigger with N=0 would duplicate the affordance.
+- **Don't hide the dropdown** — not with zero templates, not without a
+  DSM system, not after a project switch. Locked by
+  `tests/aesaConfigurationsPillProjectSwitch.test.tsx`.
 
 ### AESA Configuration sidebar is drag-resizable (Patch 4Y)
 

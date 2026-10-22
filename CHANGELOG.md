@@ -12,8 +12,7 @@ at 0.3.0 and is kept from here on.
 
 ## [0.3.0] — 2026-10-22
 
-The version is bumped at every site and the desktop build is made and walked,
-but the tag and the GitHub release are not cut yet.
+Released 2026-10-22.
 
 ### Added
 

@@ -5,14 +5,14 @@ All notable changes to MApper are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and MApper adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases before 0.3.0 are on the
+Releases before 0.3.1 are on the
 [Releases page](https://github.com/leofrht-jpg/MApper-Software/releases) and
 archived on [Zenodo](https://doi.org/10.5281/zenodo.22246255); this file starts
-at 0.3.0 and is kept from here on.
+at 0.3.1 and is kept from here on.
 
-## [0.3.0] — 2026-10-22
+## [0.3.1] — 2026-10-22
 
-Released 2026-10-22.
+0.3.0 was prepared but never tagged or released; its entries are included here.
 
 ### Added
 

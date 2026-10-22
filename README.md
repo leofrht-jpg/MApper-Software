@@ -8,7 +8,7 @@
 
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL_2.0-brightgreen.svg)](LICENSE)
 [![Build](https://github.com/leofrht-jpg/MApper-Software/actions/workflows/ci.yml/badge.svg)](https://github.com/leofrht-jpg/MApper-Software/actions/workflows/ci.yml)
-[![Version](https://img.shields.io/badge/version-0.3.0-blue.svg)](https://github.com/leofrht-jpg/MApper-Software/releases)
+[![Version](https://img.shields.io/badge/version-0.3.1-blue.svg)](https://github.com/leofrht-jpg/MApper-Software/releases)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.22246255.svg)](https://doi.org/10.5281/zenodo.22246255)
 
 MApper is a desktop application that integrates **Life Cycle Assessment (LCA)**, **Dynamic Stock Modelling / Material Flow Analysis (DSM/MFA)**, **prospective LCA (pLCA)**, and **Absolute Environmental Sustainability Assessment (AESA)** in one workflow. It is built for researchers who need to evaluate the environmental impact of evolving material systems over time and against planetary boundaries.
@@ -52,7 +52,7 @@ MApper couples all four in one **cohort-preserving** pipeline: a time-resolved m
   systems independently can report "not distinguishable" where the paired run
   finds a consistent difference.
 
-- **Authored databases** *(new in 0.3.0)* — Create your own Brightway database
+- **Authored databases** *(new in 0.3.1)* — Create your own Brightway database
   inside MApper and author activities in it from **biosphere flows**: a process
   whose impact is its direct emissions, or a supplier's cradle-to-gate figure
   entered as one characterised value. Authored activities link into a Bill of

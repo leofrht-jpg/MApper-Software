@@ -30,7 +30,7 @@ abstract: >-
   IAM scenario data are separately licensed and are not distributed with
   MApper.
 type: software
-version: 0.3.0
+version: 0.3.1
 date-released: "2026-10-22"
 license: MPL-2.0
 repository-code: "https://github.com/leofrht-jpg/MApper-Software"

@@ -174,6 +174,14 @@ Released 2026-10-22.
 
 ### Fixed
 
+- **macOS asks for Downloads access as "MApper".** The first export showed
+  "mapper-tauri would like to access files in your Downloads folder." The app
+  is ad-hoc signed without its Info.plist bound, so macOS named it after the
+  executable, which was the Rust package name. The executable is now `MApper`
+  (`mainBinaryName`), and the Info.plist carries a Downloads usage string.
+  Windows installs `MApper.exe` in place of `mapper-tauri.exe`; the installer
+  name is unchanged. macOS asks once more after updating, because the renamed
+  executable is a new identity to it.
 - **No more tailpipe warnings on prospective runs.** A system-level
   prospective run logged two warnings per year saying the `mapper-tailpipe`
   activities were "not found" in the premise database and "fell back". Keeping

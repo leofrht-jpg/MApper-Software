@@ -15,6 +15,7 @@ the repo.
 from __future__ import annotations
 
 import logging
+import os
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -22,7 +23,11 @@ from pathlib import Path
 import platformdirs
 
 
-LOG_DIR = Path(platformdirs.user_log_dir("mapper"))
+#: ``MAPPER_LOG_DIR`` overrides the platform log directory. The test suite sets
+#: it so a run never writes into the user's real mapper.log -- it used to, about
+#: 6,000 lines of fake requests and planted "a real error" lines that then
+#: showed up in Settings > Logs and in exported logs.
+LOG_DIR = Path(os.environ.get("MAPPER_LOG_DIR") or platformdirs.user_log_dir("mapper"))
 LOG_FILE = LOG_DIR / "mapper.log"
 
 _FILE_FORMAT = "[%(asctime)s] [%(levelname)s] [%(name)s] %(message)s"

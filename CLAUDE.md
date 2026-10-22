@@ -8974,6 +8974,29 @@ is not project data and not ours to police.
 Verified load-bearing by pointing `test_dsm_scenarios.py` back at the live
 store — the guard fires immediately on both offending tests, naming each.
 
+### The log file and every real Brightway project are guarded too (walkthrough 4)
+
+`mapper.main` calls `configure_logging()` at import, so every test that
+imported the app wrote into the user's real `mapper.log` — about 2,400 lines
+across the four rotations by 2026-10-22, including planted lines ("a real
+error", "index exploded") that then showed in Settings › Logs and in exported
+logs. `log_config.LOG_DIR` now honours `MAPPER_LOG_DIR`; the conftest sets it
+to a temp dir AT IMPORT (the app is imported during collection, and
+`api/system.py` binds `LOG_FILE` by value) and refuses any `FileHandler` opened
+inside the real log directory (`RealLogWriteError`, raised before the file is
+opened).
+
+Brightway: the per-test guard checks only the project current at the start of
+a test. The backstop fingerprints every real project's `databases.json` and
+`methods.json` (read-only, no project switch) at conftest import and again at
+`pytest_sessionfinish`, and fails the run naming each project and database
+that was added, removed or rewritten. If the MApper app is open on the same
+data during a run, its own writes show up there too; the message says so.
+
+**Never run the backend suite on a branch whose conftest lacks these guards.**
+Runs on branches cut before #174 recreated `guard-db` in default and Battery
+Circularity on 2026-10-21/22.
+
 #### What NOT to do
 
 - **Don't add a storage module without adding its root to `_STORAGE_ROOTS`.**

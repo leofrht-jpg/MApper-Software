@@ -26,7 +26,158 @@ the signal to revisit.
 """
 from __future__ import annotations
 
+import json
+import logging
+import os
+import tempfile
+from pathlib import Path
+
+import platformdirs
 import pytest
+
+
+# ── The real log file ─────────────────────────────────────────────────────
+#
+# ``mapper.main`` calls ``configure_logging()`` at IMPORT, which attaches a
+# RotatingFileHandler on ~/Library/Logs/mapper/mapper.log (the platform log
+# dir). Every test that imports the app therefore wrote into the user's real
+# log: measured on 2026-10-22, ~2,400 lines across four rotations, including
+# planted lines ("a real error", "index exploded", "Unhandled exception on POST
+# /api/authored-databases/mine/activities") that then appeared in Settings ›
+# Logs and in exported logs as if the app had produced them.
+#
+# Redirect at CONFTEST IMPORT, not in a fixture: the app is imported while
+# test modules are collected, before any fixture runs. ``api/system.py`` also
+# binds ``LOG_FILE`` by value at import, so the environment variable has to be
+# in place before the first ``import mapper``.
+_REAL_LOG_DIR = Path(platformdirs.user_log_dir("mapper")).resolve()
+_TEST_LOG_DIR = Path(tempfile.mkdtemp(prefix="mapper-test-logs-"))
+os.environ["MAPPER_LOG_DIR"] = str(_TEST_LOG_DIR)
+
+
+class RealLogWriteError(AssertionError):
+    """A test opened a log handler on the user's real mapper log directory."""
+
+
+_real_filehandler_init = logging.FileHandler.__init__
+
+
+def _guarded_filehandler_init(self, filename, *args, **kwargs):
+    target = Path(os.fspath(filename)).expanduser().resolve()
+    if target == _REAL_LOG_DIR or _REAL_LOG_DIR in target.parents:
+        raise RealLogWriteError(
+            f"a log handler was opened on {target}, inside the REAL log directory "
+            f"{_REAL_LOG_DIR}. Tests log to MAPPER_LOG_DIR={_TEST_LOG_DIR}; "
+            "something bypassed it (imported log_config before this conftest, or "
+            "built a FileHandler on platformdirs.user_log_dir directly)."
+        )
+    _real_filehandler_init(self, filename, *args, **kwargs)
+
+
+# RotatingFileHandler subclasses FileHandler, so this covers mapper.log too.
+logging.FileHandler.__init__ = _guarded_filehandler_init
+
+
+# ── Every real Brightway project ──────────────────────────────────────────
+#
+# The per-test guard further down checks only the project that is CURRENT
+# when a test starts, and deliberately ignores a test that switches away. This
+# one is the backstop: it reads each real project's database and method
+# registries (``databases.json``, ``methods.json`` -- plain files, read only,
+# no project switch) at conftest import and again at the end of the run, and
+# fails the run if any of them changed. A new database (guard-db), a removed
+# one, a rewritten one (its ``modified`` stamp) or an installed method all
+# change these files.
+#
+# The MApper app, if it is running against the same data while the suite runs,
+# can also change them; the message says so.
+def _real_bw2_dir() -> Path | None:
+    env = os.environ.get("BRIGHTWAY2_DIR")
+    if env:
+        # CI points this at a scratch directory; nothing real to protect.
+        return None
+    base = Path(platformdirs.user_data_dir("Brightway3", "pylca"))
+    alt = Path(platformdirs.user_data_dir("Brightway3"))
+    for cand in (base, alt):
+        if cand.is_dir():
+            return cand
+    return None
+
+
+def _bw2_registry_fingerprint() -> dict[str, object]:
+    root = _real_bw2_dir()
+    if root is None:
+        return {}
+    out: dict[str, object] = {}
+    for proj in sorted(p for p in root.iterdir() if p.is_dir()):
+        entry: dict[str, object] = {}
+        dbf = proj / "databases.json"
+        if dbf.is_file():
+            try:
+                data = json.loads(dbf.read_text(encoding="utf-8"))
+                entry["databases"] = {k: (v or {}).get("modified") for k, v in data.items()}
+            except (OSError, ValueError):
+                entry["databases"] = "unreadable"
+        mf = proj / "methods.json"
+        if mf.is_file():
+            try:
+                entry["methods"] = len(json.loads(mf.read_text(encoding="utf-8")))
+            except (OSError, ValueError):
+                entry["methods"] = "unreadable"
+        out[proj.name] = entry
+    return out
+
+
+_BW2_AT_START = _bw2_registry_fingerprint()
+
+
+def _bw2_changes(before: dict, after: dict) -> list[str]:
+    lines = []
+    for proj in sorted(set(before) | set(after)):
+        b, a = before.get(proj, {}), after.get(proj, {})
+        if b == a:
+            continue
+        if proj not in before:
+            # A NEW project directory: tests that build a temporary project
+            # delete it again; one left behind is still a write.
+            lines.append(f"  {proj}: new project directory left behind")
+            continue
+        if proj not in after:
+            lines.append(f"  {proj}: project directory removed")
+            continue
+        bd, ad = b.get("databases", {}), a.get("databases", {})
+        if isinstance(bd, dict) and isinstance(ad, dict):
+            for name in sorted(set(ad) - set(bd)):
+                lines.append(f"  {proj}: database ADDED {name!r}")
+            for name in sorted(set(bd) - set(ad)):
+                lines.append(f"  {proj}: database REMOVED {name!r}")
+            for name in sorted(set(bd) & set(ad)):
+                if bd[name] != ad[name]:
+                    lines.append(f"  {proj}: database REWRITTEN {name!r}")
+        elif bd != ad:
+            lines.append(f"  {proj}: database registry changed")
+        if b.get("methods") != a.get("methods"):
+            lines.append(f"  {proj}: LCIA methods {b.get('methods')} -> {a.get('methods')}")
+    return lines
+
+
+def pytest_sessionfinish(session, exitstatus):
+    changes = _bw2_changes(_BW2_AT_START, _bw2_registry_fingerprint())
+    if changes:
+        session.config._mapper_bw2_changes = changes  # for the terminal summary
+        session.exitstatus = 1
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    changes = getattr(config, "_mapper_bw2_changes", None)
+    if changes:
+        terminalreporter.section("REAL BRIGHTWAY PROJECTS WERE WRITTEN", sep="!", red=True)
+        terminalreporter.line(
+            "The test run changed the developer's real Brightway projects "
+            "(or the MApper app was writing to them while the suite ran):"
+        )
+        for line in changes:
+            terminalreporter.line(line)
 
 
 @pytest.fixture(autouse=True)

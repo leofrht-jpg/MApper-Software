@@ -174,6 +174,13 @@ Released 2026-10-22.
 
 ### Fixed
 
+- **The backend test suite no longer writes into your data.** It logged
+  into the real `mapper.log` (thousands of test lines, some of them planted
+  "errors"), and test runs on older branches recreated an empty `guard-db`
+  database in real projects. Tests now log to a temporary directory, and the
+  suite fails if anything opens the real log or changes the database or method
+  registry of any real Brightway project. `MAPPER_LOG_DIR` overrides the log
+  directory.
 - **Long calculations show a full-screen card.** AESA compute, Impact
   Assessment Calculate (system-level Static and Prospective, single-product
   Static and Prospective, Multi-item), Monte Carlo (single and paired), DSM

@@ -103,3 +103,19 @@ describe('AESA Configurations pill', () => {
     expect(useAESAStore.getState().source).toBe('single_product')
   })
 })
+
+describe('deleting a template', () => {
+  // window.confirm returns false in WKWebView, so the old confirm() made
+  // deletion impossible in the packaged app. Two clicks, in place.
+  it('asks with a second click and only then deletes', async () => {
+    const del = vi.fn(async () => undefined)
+    useAESAStore.setState({ deleteConfig: del } as any)
+    render(<AESADashboard />)
+    await waitFor(() => expect(pillText()).toContain('Configurations (1)'))
+    fireEvent.click(screen.getByTestId('aesa-configurations-toggle'))
+    fireEvent.click(screen.getByTestId('aesa-configurations-delete-c-evs'))
+    expect(del).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTestId('aesa-configurations-delete-confirm-c-evs'))
+    expect(del).toHaveBeenCalledWith('c-evs')
+  })
+})

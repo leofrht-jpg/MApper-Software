@@ -606,10 +606,10 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 disabled={!draft}
                 data-testid="aesa-reset-defaults"
                 title={
-                  'Reset to built-in defaults. Replaces the downscaling chain, '
-                  + 'sharing principles, category assignments and carbon budget '
-                  + 'with the shipped Multi-D defaults. Your saved configurations '
-                  + 'are not touched.'
+                  'Reset the configuration to the default template (asks first). '
+                  + 'Replaces the name, boundary set, downscaling chain, sharing '
+                  + 'principles, category assignments, carbon budget, method mapping '
+                  + 'and LCI background in the editor. Saved templates are not touched.'
                 }
                 aria-label="Reset configuration to built-in defaults"
                 style={{ padding: '0 10px', height: 28 }}
@@ -1136,6 +1136,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
 
       {confirmReset && (
         <ResetDefaultsModal
+          loadedName={configurations.find((c) => c.id === activeConfigId)?.name ?? null}
           onCancel={() => setConfirmReset(false)}
           onConfirm={() => { setConfirmReset(false); resetDraftToDefaults() }}
         />
@@ -1158,9 +1159,11 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
  * sidebar is `position: sticky`, whose stacking context traps a modal
  * rendered inside it.
  */
-function ResetDefaultsModal({ onCancel, onConfirm }: {
+function ResetDefaultsModal({ onCancel, onConfirm, loadedName }: {
   onCancel: () => void
   onConfirm: () => void
+  /** Name of the saved template currently loaded, if any. */
+  loadedName: string | null
 }) {
   return createPortal(
     <div
@@ -1177,17 +1180,33 @@ function ResetDefaultsModal({ onCancel, onConfirm }: {
         borderRadius: 'var(--radius-md)', maxWidth: 420, width: '100%', padding: 16,
       }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginBottom: 6 }}>
-          Reset to built-in defaults?
+          Reset the configuration to the default template? Unsaved changes are lost.
         </div>
         <div style={{ fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}>
-          This replaces the <strong>downscaling chain</strong>,{' '}
-          <strong>sharing principles</strong>, <strong>category assignments</strong>{' '}
-          and <strong>carbon budget</strong> in the editor with the shipped
-          Multi-D defaults. Unsaved edits to them are lost.
-          <div style={{ marginTop: 6, color: 'var(--text-tertiary)' }}>
-            Saved configurations are not touched. This only affects what is
-            currently in the editor.
-          </div>
+          The editor goes back to the shipped default template. This replaces:
+          {/* Everything draftFromDefaults() writes -- the old text named four of
+              these, and a reset that silently changes the other four reads as
+              data loss when it is noticed later. */}
+          <ul data-testid="aesa-reset-what" style={{ margin: '6px 0 0 16px', padding: 0 }}>
+            <li>the template name</li>
+            <li>the planetary boundary set</li>
+            <li>the downscaling chain and its layers</li>
+            <li>the sharing principles and category assignments</li>
+            <li>the carbon budget (temperature target, SSP pathway, basis)</li>
+            <li>the method to boundary mapping</li>
+            <li>the LCI background (back to Static)</li>
+          </ul>
+          {loadedName ? (
+            <div data-testid="aesa-reset-overwrite-warning" style={{ marginTop: 8, color: 'var(--warning)' }}>
+              The saved template <strong>{loadedName}</strong> is not changed by
+              the reset, but it stays selected: pressing Save afterwards
+              overwrites it with the defaults. Use New configuration to keep it.
+            </div>
+          ) : (
+            <div style={{ marginTop: 6, color: 'var(--text-tertiary)' }}>
+              Saved templates are not touched.
+            </div>
+          )}
         </div>
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 14 }}>
           <Button variant="secondary" onClick={onCancel} data-testid="aesa-reset-cancel">

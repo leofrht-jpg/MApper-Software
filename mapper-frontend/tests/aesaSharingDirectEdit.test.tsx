@@ -213,7 +213,7 @@ describe('Reset names what it restores and asks first', () => {
     await waitFor(() => expect(queryByTestId('aesa-reset-defaults')).not.toBeNull())
   })
 
-  it('names the four things it replaces, not just "Reset"', async () => {
+  it('names the things it replaces, not just "Reset"', async () => {
     const { getByTestId, queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
     await waitFor(() => expect(queryByTestId('aesa-reset-defaults')).not.toBeNull())
     const title = getByTestId('aesa-reset-defaults').getAttribute('title') ?? ''
@@ -251,6 +251,30 @@ describe('Reset names what it restores and asks first', () => {
     fireEvent.click(getByTestId('aesa-reset-defaults'))
     fireEvent.click(screen.getByTestId('aesa-reset-confirm-btn'))
     expect(useAESAStore.getState().draft?.name).not.toBe('edited by hand')
+  })
+  // Walkthrough 4: a reset lost an EVS40 4-layer configuration. The dialog
+  // named four things while the reset replaces eight, and never said that the
+  // loaded template stays selected -- so the next Save overwrites it.
+  it('asks in the agreed words and lists everything the reset replaces', async () => {
+    const { getByTestId, queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    await waitFor(() => expect(queryByTestId('aesa-reset-defaults')).not.toBeNull())
+    fireEvent.click(getByTestId('aesa-reset-defaults'))
+    const dialog = screen.getByTestId('aesa-reset-confirm').textContent ?? ''
+    expect(dialog).toContain('Reset the configuration to the default template? Unsaved changes are lost.')
+    const listed = screen.getByTestId('aesa-reset-what').textContent ?? ''
+    for (const item of ['name', 'boundary set', 'downscaling chain', 'principles', 'carbon budget', 'mapping', 'LCI background']) {
+      expect(listed, `the dialog should say it replaces the ${item}`).toContain(item)
+    }
+  })
+
+  it('warns that Save afterwards overwrites the loaded template', async () => {
+    const evs = { id: 'evs', name: 'EVS40 4-layer', mfa_system_id: null } as any
+    vi.spyOn(client, 'getAESAConfigurations').mockResolvedValue([evs])
+    useAESAStore.setState({ configurations: [evs], activeConfigId: 'evs' })
+    const { getByTestId, queryByTestId } = render(<ConfigSidebar collapsed={false} onToggle={() => {}} />)
+    await waitFor(() => expect(queryByTestId('aesa-reset-defaults')).not.toBeNull())
+    fireEvent.click(getByTestId('aesa-reset-defaults'))
+    expect(screen.getByTestId('aesa-reset-overwrite-warning').textContent).toContain('EVS40 4-layer')
   })
 })
 

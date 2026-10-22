@@ -42,6 +42,9 @@ export function ConfigurationsDropdown({
   configurations, activeConfigId, onSelect, onDelete, onNew, disabled = false, describe,
 }: Props) {
   const [open, setOpen] = useState(false)
+  // Template awaiting a second click to delete. window.confirm is a no-op in
+  // the packaged app's WKWebView (returns false), so deletion could never run.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -175,19 +178,27 @@ export function ConfigurationsDropdown({
                 >
                   <Pencil size={11} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(`Delete configuration "${c.name}"?`)) {
-                      onDelete(c.id)
-                    }
-                  }}
-                  data-testid={`aesa-configurations-delete-${c.id}`}
-                  title="Delete configuration"
-                  style={iconBtn}
-                >
-                  <Trash2 size={11} />
-                </button>
+                {pendingDelete === c.id ? (
+                  <button
+                    type="button"
+                    onClick={() => { setPendingDelete(null); onDelete(c.id) }}
+                    data-testid={`aesa-configurations-delete-confirm-${c.id}`}
+                    title={`Delete the template "${c.name}"`}
+                    style={{ ...iconBtn, color: 'var(--danger)', borderColor: 'var(--danger)', fontSize: 10, padding: '2px 6px' }}
+                  >
+                    Delete?
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPendingDelete(c.id)}
+                    data-testid={`aesa-configurations-delete-${c.id}`}
+                    title="Delete configuration"
+                    style={iconBtn}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
               </div>
             )
           })}

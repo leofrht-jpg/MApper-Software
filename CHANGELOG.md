@@ -174,6 +174,16 @@ Released 2026-10-22.
 
 ### Fixed
 
+- **AESA reset says what it resets.** The confirmation now reads "Reset the
+  configuration to the default template? Unsaved changes are lost." and lists
+  everything it replaces: the name, boundary set, downscaling chain, sharing
+  principles and assignments, carbon budget, method mapping and LCI
+  background (it used to name four of these). When a saved template is loaded
+  it warns that the template stays selected, so pressing Save afterwards
+  overwrites it with the defaults. Deleting a template from the
+  Configurations menu now asks with a second click in place; it used
+  `window.confirm`, which does nothing in the packaged app, so deletion never
+  happened there.
 - **AESA Configurations pill after a project switch.** The pill now shows on
   every state of the AESA page, including a project with no DSM system and one
   with no templates yet, and lists every saved template of the current project

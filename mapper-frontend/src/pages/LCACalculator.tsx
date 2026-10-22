@@ -1635,9 +1635,6 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                   {/* All indicators summary */}
                   {actResult.results.length > 1 && (
                     <div style={cardStyle}>
-                      <h4 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-3)' }}>
-                        All indicators
-                      </h4>
                       <div style={{ overflow: 'auto', maxHeight: 400 }}>
                         <CollapsibleBlock storageKey="lca-calculator.activity-results" testId="lca-activity-results-table" title="Impact categories" summary={`${actResult.results.length} indicators`}>
                         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1816,9 +1813,6 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                       {/* All indicators summary table */}
                       {arcResult.results.length > 1 && (
                         <div style={cardStyle}>
-                          <h4 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-3)' }}>
-                            All indicators
-                          </h4>
                           <div style={{ overflow: 'auto', maxHeight: 400 }}>
                             <CollapsibleBlock storageKey="lca-calculator.archetype-results" testId="lca-archetype-results-table" title="Impact categories" summary={`${arcResult.results.length} indicators`}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1924,9 +1918,6 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                       {/* Comparison table: archetype × indicators with min/max highlight */}
                       {comparisonTable && arcResult.results.length > 0 && (
                         <div style={cardStyle}>
-                          <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', marginBottom: 'var(--space-3)' }}>
-                            All indicators
-                          </h4>
                           <div style={{ overflow: 'auto', maxHeight: 500 }}>
                             <CollapsibleBlock storageKey="lca-calculator.compare" testId="lca-compare-table" title="Impact categories" summary={`${arcResult.results.length} indicators`}>
                             <table style={{ width: '100%', borderCollapse: 'collapse' }}>

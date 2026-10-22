@@ -203,3 +203,50 @@ def _forbid_live_store_writes():
     finally:
         pathlib.Path.mkdir = real_mkdir
         pathlib.Path.write_text = real_write_text
+
+
+# ── Brightway is live data too ───────────────────────────────────────────────
+#
+# The storage roots above are redirected; Brightway's own directory is NOT, and
+# cannot be cheaply (bw2data binds its project directory at import). So a test
+# that reaches a real ``Database.write()`` writes into whichever bw2 project is
+# current on the developer's machine. One did: the labelled-body case of
+# ``test_json_body_needs_content_type.py`` created an empty ``guard-db`` in
+# default, Battery Circularity and EVS40, where it sat in the database dropdown.
+#
+# bw2 writes through sqlite, not ``Path.write_text``, so the write guard above
+# never saw it. This one compares the CURRENT project's database names before
+# and after every test and fails naming the test. A test that needs real
+# databases must build them in a temporary project of its own (switching away
+# and back is not flagged: only growth of the project it started in is).
+
+
+class LiveBrightwayWriteError(AssertionError):
+    """A test created a database in the developer's real Brightway project."""
+
+
+def _bw2_snapshot():
+    try:
+        import bw2data
+
+        return bw2data.projects.current, set(bw2data.databases)
+    except Exception:
+        return None, None
+
+
+@pytest.fixture(autouse=True)
+def _forbid_live_bw2_databases(request):
+    project, before = _bw2_snapshot()
+    yield
+    if project is None:
+        return
+    now_project, after = _bw2_snapshot()
+    if now_project != project or after is None:
+        return
+    added = sorted(after - before)
+    if added:
+        raise LiveBrightwayWriteError(
+            f"{request.node.nodeid} created database(s) {added} in the LIVE "
+            f"Brightway project {project!r}. Use the fake backend, or build the "
+            "databases in a temporary project and delete it afterwards."
+        )

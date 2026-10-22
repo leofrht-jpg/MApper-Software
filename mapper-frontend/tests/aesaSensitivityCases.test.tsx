@@ -288,6 +288,9 @@ describe('item C: single-product configurations save and list', () => {
     expect(spy.mock.calls[0][0].mfa_system_id).toBeNull()
   })
 
+  // Walkthrough 4: the dropdown lists EVERY template of the current project
+  // (it used to list only the current source's, which hid templates after a
+  // project switch). Each row says what it was saved for.
   it('the configurations dropdown lists configurations saved without a system', () => {
     seed({
       configurations: [
@@ -300,7 +303,8 @@ describe('item C: single-product configurations save and list', () => {
     fireEvent.click(screen.getByTestId('aesa-configurations-toggle'))
     const menu = screen.getByTestId('aesa-configurations-menu').textContent!
     expect(menu).toContain('single product cfg')
-    expect(menu).not.toContain('fleet cfg')
+    expect(menu).toContain('Single product')
+    expect(menu).toContain('fleet cfg')
   })
 })
 

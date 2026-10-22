@@ -32,12 +32,19 @@ interface Props {
   onNew: () => void
   /** Disable the trigger entirely (e.g. session-loaded mode). */
   disabled?: boolean
+  /** Second line under each template's name: what it was saved for (a DSM
+   *  system, or single product). Templates of the whole project are listed,
+   *  so this is what tells two of them apart. */
+  describe?: (c: AESAConfiguration) => string | null
 }
 
 export function ConfigurationsDropdown({
-  configurations, activeConfigId, onSelect, onDelete, onNew, disabled = false,
+  configurations, activeConfigId, onSelect, onDelete, onNew, disabled = false, describe,
 }: Props) {
   const [open, setOpen] = useState(false)
+  // Template awaiting a second click to delete. window.confirm is a no-op in
+  // the packaged app's WKWebView (returns false), so deletion could never run.
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const ref = useRef<HTMLDivElement | null>(null)
 
   useEffect(() => {
@@ -49,7 +56,8 @@ export function ConfigurationsDropdown({
     return () => document.removeEventListener('mousedown', onDoc)
   }, [open])
 
-  if (configurations.length === 0) return null
+  // Rendered with zero templates too: the pill is where configurations live,
+  // and a pill that disappears reads as "this project lost its templates".
 
   const active = configurations.find((c) => c.id === activeConfigId) ?? null
   const N = configurations.length
@@ -109,6 +117,14 @@ export function ConfigurationsDropdown({
           >
             <Plus size={12} /> New configuration
           </button>
+          {N === 0 && (
+            <div
+              data-testid="aesa-configurations-empty"
+              style={{ padding: '6px 8px', fontSize: 11, color: 'var(--text-tertiary)' }}
+            >
+              No saved templates in this project yet.
+            </div>
+          )}
           {configurations.map((c) => {
             const isActive = c.id === activeConfigId
             return (
@@ -148,6 +164,11 @@ export function ConfigurationsDropdown({
                   }}
                 >
                   {c.name}
+                  {describe?.(c) && (
+                    <span style={{ display: 'block', fontSize: 10, fontWeight: 400, color: 'var(--text-tertiary)' }}>
+                      {describe(c)}
+                    </span>
+                  )}
                 </button>
                 <button
                   type="button"
@@ -157,19 +178,27 @@ export function ConfigurationsDropdown({
                 >
                   <Pencil size={11} />
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(`Delete configuration "${c.name}"?`)) {
-                      onDelete(c.id)
-                    }
-                  }}
-                  data-testid={`aesa-configurations-delete-${c.id}`}
-                  title="Delete configuration"
-                  style={iconBtn}
-                >
-                  <Trash2 size={11} />
-                </button>
+                {pendingDelete === c.id ? (
+                  <button
+                    type="button"
+                    onClick={() => { setPendingDelete(null); onDelete(c.id) }}
+                    data-testid={`aesa-configurations-delete-confirm-${c.id}`}
+                    title={`Delete the template "${c.name}"`}
+                    style={{ ...iconBtn, color: 'var(--danger)', borderColor: 'var(--danger)', fontSize: 10, padding: '2px 6px' }}
+                  >
+                    Delete?
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPendingDelete(c.id)}
+                    data-testid={`aesa-configurations-delete-${c.id}`}
+                    title="Delete configuration"
+                    style={iconBtn}
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                )}
               </div>
             )
           })}

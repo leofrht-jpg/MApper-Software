@@ -559,7 +559,9 @@ async def post_calculate(body: ImpactAssessmentRequest) -> dict[str, str]:
                             parameter_table=param_table,
                             parameter_scenario=param_scenario,
                             prospective_dbs=prosp,
-                            fallback_base_db=body.base_db,
+                            # The UI sends the base inside each LCI scenario,
+                            # not as body.base_db.
+                            fallback_base_db=body.base_db or (scenario.base_db if scenario else None),
                             temporal_mode=body.temporal_mode,
                         )
                     return DSMLCAPipeline(

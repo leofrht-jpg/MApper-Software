@@ -2411,6 +2411,43 @@ draft" from "user has decided to create a new config".
   fix when Patch 4Q landed; future cascade-rendering tests
   should mirror the pattern.
 
+### Long calculations: the full-screen `<ComputeOverlay>` (walkthrough 4)
+
+Every calculation that can take more than ~10 s shows
+`components/ui/ComputeOverlay.tsx`: a dimmed full screen with a centred card in
+the desktop startup screen's style (the `LOADING_DATA_URL` page in
+`mapper-tauri/src/main.rs`): spinner, what is running (title), what it is doing
+(detail, e.g. "5 cases × 6 sharing · 4 LCA reruns"), elapsed M:SS, a % bar only
+from a REAL pct, and Stop when the run can be stopped (the Stop button behind
+the card is unreachable). Clicks are swallowed by the backdrop (and its
+`stopPropagation` keeps portal events from reaching the owning panel's React
+handlers); `inert` on `#root` blocks the keyboard. Portalled into
+`document.body`. The card is revealed after `OVERLAY_REVEAL_MS` (250 ms) so a
+sub-second run never flashes one; clicks are blocked from the first frame.
+
+Entry points (measured on EVS40 / MAp-test, 2026-10-21): AESA compute with
+cases (77 s; owned by `AESADashboard`, not the sidebar, whose collapsed variant
+has no body), system-level Prospective (63 s) and Static (11 s with 25
+indicators), single-product Prospective (19 s for 4 years) and Static (4 s),
+Multi-item comparison, Monte Carlo single (69 s) and paired, DSM simulate, and
+project export/import (`ProjectSwitcher`; a full export streams the whole
+Brightway project). Locked by `tests/computeProgressCoverage.test.tsx` and
+`tests/computeOverlay.test.tsx`.
+
+**Why Prospective Calculate showed nothing (the first version).** Not the
+request: `POST /impact/calculate` answers with a task id in ~0.01 s (measured,
+MAp-test Car Fleet). `ProjectedImpactPanel`'s running flag was a ternary —
+`scenarioProgress ? done < total : projectedJob running || …` — and a
+single-scenario `run()` never clears `projectedScenarioOrder`. After one
+Sensitivity-cases run on that tab, every later plain Calculate read "not
+running", and `requestStop` only collected the finished fan-out tasks. Each
+slot now counts on its own (`tests/projectedProgressAfterSensitivityRun.test.tsx`).
+Both system-level panels also hold a `submitting` flag from the click until
+the request returns, so the card never waits on the network.
+
+`<ComputeProgress>` (below) remains for the inline cases not on this list:
+pLCA generation, contribution analysis, and the LCA Calculator.
+
 ### Compute-progress unification — `<ComputeProgress>` (Patch 5AL)
 
 All live compute-progress is the shared
@@ -2438,7 +2475,7 @@ Ns" pill is **deleted** — button morphs to spinner-only), `SingleProductStatic
 retired (DSM keeps `completedElapsed` for the post-result line only). Locked by
 `tests/computeProgress.test.tsx` + `tests/computeProgressMigration.test.tsx`.
 
-> **All live compute-progress uses <ComputeProgress> fed by useElapsedSeconds (M:SS via formatElapsed); never a bespoke setInterval timer, an in-button elapsed label, or a fabricated progress bar — the bar is determinate only from real pct, else 'none'.**
+> **All live compute-progress uses <ComputeOverlay> (long runs) or <ComputeProgress> (inline), both fed by useElapsedSeconds (M:SS via formatElapsed); never a bespoke setInterval timer, an in-button elapsed label, or a fabricated progress bar — the bar is determinate only from real pct, else 'none'.**
 
 **Sole documented exception: `MethodLibrary`.** Its install rows interleave the
 elapsed with a stateful `<StopButton>` and render a separate determinate bar —
@@ -6390,9 +6427,17 @@ Consolidation rationale:
   in one place rather than scanning the page header for related
   buttons.
 - **The first-config path stays in the sidebar empty state**
-  (Patch 4Q). The dropdown hides entirely when zero configurations
-  exist; "+ Create your first configuration" remains the
-  affordance.
+  (Patch 4Q). Since walkthrough 4 the dropdown ALSO renders with zero
+  configurations ("Configurations (0)", "No saved templates in this
+  project yet") — a pill that vanishes read as "this project lost its
+  templates".
+- **It lists every template of the CURRENT project**, each row saying
+  what it was saved for (a DSM system, or single product). It used to
+  list only the active DSM system's and to hide without one, so after
+  a project switch, or in a project with no DSM system, templates
+  looked lost. The list is reloaded on a project switch (the AESA page
+  stays mounted, so the sidebar's mount effect does not re-run), and
+  AESA requests go through `_withProjectHeader` like every other call.
 - **The action remains methodologically necessary** even when
   hidden in a menu. `saveConfig` UPDATES the loaded configuration
   in place (calls `updateAESAConfiguration` when `activeConfigId`
@@ -6411,10 +6456,9 @@ Consolidation rationale:
 - **Don't add a separate page-header "+ New" button back.** Two
   surfaces compete and confuse — the dropdown is the consolidated
   home.
-- **Don't make the dropdown render when zero configurations
-  exist.** Patch 4Q's empty-state ("+ Create your first
-  configuration") handles the first-config path; rendering the
-  dropdown trigger with N=0 would duplicate the affordance.
+- **Don't hide the dropdown** — not with zero templates, not without a
+  DSM system, not after a project switch. Locked by
+  `tests/aesaConfigurationsPillProjectSwitch.test.tsx`.
 
 ### AESA Configuration sidebar is drag-resizable (Patch 4Y)
 
@@ -8846,6 +8890,26 @@ warning is logged at WARNING level — reaching `mapper.log` and Settings → Lo
 — and collected on the pipeline. Adding a field is a schema change with
 frontend implications; it was left, deliberately.
 
+**The fleet pipeline must actually KNOW its base (walkthrough 4).** The UI
+never sets `ImpactAssessmentRequest.base_db` — the base travels inside each
+`lci_scenarios` entry — and `_prospective_base_db()`'s registry fallback read
+`prospective_dbs[0].get("name")` while `prospective_dbs` is a list of
+`(name, year)` tuples. So the base was always `None`, rule 2 never applied, and
+every system-level prospective run warned "mapper-tailpipe/… not found … fell
+back" twice per anchor year for a pin that is correct. The route now passes
+each scenario's own `base_db`, the fallback reads the tuple, and intentional
+pins are summarised in ONE INFO line per run with the count
+(`tests/test_prospective_tailpipe_pinning.py`). A base-db code that fails to
+carry over still warns.
+
+**premise disables loggers at import.** `premise/transformation.py` calls
+`logging.config.dictConfig(...)` with the default
+`disable_existing_loggers=True`, which silently disables every logger created
+before it — `mapper.core.dsm_lca_engine` included, in a dev process. So a
+missing log line is not proof a code path did not run. `configure_logging()`
+calls `reenable_mapper_loggers()` after the routers (and premise) are imported;
+locked by `test_premise_does_not_silence_mappers_own_loggers`.
+
 #### What NOT to do
 
 - **Don't rewrite a link's database without checking its SOURCE.** A BOM may
@@ -8929,6 +8993,29 @@ is not project data and not ours to police.
 
 Verified load-bearing by pointing `test_dsm_scenarios.py` back at the live
 store — the guard fires immediately on both offending tests, naming each.
+
+### The log file and every real Brightway project are guarded too (walkthrough 4)
+
+`mapper.main` calls `configure_logging()` at import, so every test that
+imported the app wrote into the user's real `mapper.log` — about 2,400 lines
+across the four rotations by 2026-10-22, including planted lines ("a real
+error", "index exploded") that then showed in Settings › Logs and in exported
+logs. `log_config.LOG_DIR` now honours `MAPPER_LOG_DIR`; the conftest sets it
+to a temp dir AT IMPORT (the app is imported during collection, and
+`api/system.py` binds `LOG_FILE` by value) and refuses any `FileHandler` opened
+inside the real log directory (`RealLogWriteError`, raised before the file is
+opened).
+
+Brightway: the per-test guard checks only the project current at the start of
+a test. The backstop fingerprints every real project's `databases.json` and
+`methods.json` (read-only, no project switch) at conftest import and again at
+`pytest_sessionfinish`, and fails the run naming each project and database
+that was added, removed or rewritten. If the MApper app is open on the same
+data during a run, its own writes show up there too; the message says so.
+
+**Never run the backend suite on a branch whose conftest lacks these guards.**
+Runs on branches cut before #174 recreated `guard-db` in default and Battery
+Circularity on 2026-10-21/22.
 
 #### What NOT to do
 

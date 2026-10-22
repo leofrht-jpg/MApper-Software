@@ -18,6 +18,17 @@
 -->
 <plist version="1.0">
 <dict>
+    <!--
+      Purpose string for the macOS Downloads-folder prompt. The backend sidecar
+      writes Settings > Logs and AESA exports to ~/Downloads (POST
+      /system/logs/save, /aesa/export/save); macOS charges that access to the
+      app and asks once. The NAME in that prompt comes from the main
+      executable, because the bundle is ad-hoc linker-signed and its
+      Info.plist is not bound to the signature: it read "mapper-tauri" (the
+      Cargo package name) until tauri.conf.json set "mainBinaryName": "MApper".
+    -->
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>MApper saves the files you export (results workbooks and logs) to your Downloads folder.</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsLocalNetworking</key>

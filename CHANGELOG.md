@@ -5,14 +5,14 @@ All notable changes to MApper are recorded here.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and MApper adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Releases before 0.3.0 are on the
+Releases before 0.3.1 are on the
 [Releases page](https://github.com/leofrht-jpg/MApper-Software/releases) and
 archived on [Zenodo](https://doi.org/10.5281/zenodo.22246255); this file starts
-at 0.3.0 and is kept from here on.
+at 0.3.1 and is kept from here on.
 
-## [0.3.0] — 2026-10-22
+## [0.3.1] — 2026-10-22
 
-Released 2026-10-22.
+0.3.0 was prepared but never tagged or released; its entries are included here.
 
 ### Added
 
@@ -174,6 +174,66 @@ Released 2026-10-22.
 
 ### Fixed
 
+- **macOS asks for Downloads access as "MApper".** The first export showed
+  "mapper-tauri would like to access files in your Downloads folder." The app
+  is ad-hoc signed without its Info.plist bound, so macOS named it after the
+  executable, which was the Rust package name. The executable is now `MApper`
+  (`mainBinaryName`), and the Info.plist carries a Downloads usage string.
+  Windows installs `MApper.exe` in place of `mapper-tauri.exe`; the installer
+  name is unchanged. macOS asks once more after updating, because the renamed
+  executable is a new identity to it.
+- **No more tailpipe warnings on prospective runs.** A system-level
+  prospective run logged two warnings per year saying the `mapper-tailpipe`
+  activities were "not found" in the premise database and "fell back". Keeping
+  them on their own database is correct (premise makes no variant of them);
+  the warning came from the run not knowing which base database its premise
+  databases were generated from. It now does, and logs one INFO line per run
+  with the number of such links. A base ecoinvent activity that premise really
+  dropped still produces a warning. Also fixed: importing premise silently
+  disabled MApper's own loggers created before it (premise reconfigures
+  logging at import), so depending on import order some warnings never
+  reached the log; they are re-enabled once the app has loaded.
+- **The backend test suite no longer writes into your data.** It logged
+  into the real `mapper.log` (thousands of test lines, some of them planted
+  "errors"), and test runs on older branches recreated an empty `guard-db`
+  database in real projects. Tests now log to a temporary directory, and the
+  suite fails if anything opens the real log or changes the database or method
+  registry of any real Brightway project. `MAPPER_LOG_DIR` overrides the log
+  directory.
+- **Long calculations show a full-screen card.** AESA compute, Impact
+  Assessment Calculate (system-level Static and Prospective, single-product
+  Static and Prospective, Multi-item), Monte Carlo (single and paired), DSM
+  simulate and project export/import now dim the screen and show a centred
+  card in the style of the startup screen: what is running, what it is doing
+  (for example "5 cases × 6 sharing · 4 LCA reruns"), the elapsed time, and
+  Stop where the run can be stopped. The rest of the app cannot be clicked
+  while it runs. It replaces the small inline status lines. With the AESA
+  Configuration panel collapsed, the AESA card now shows too.
+- **System-level Prospective Calculate showed no progress after a
+  Sensitivity-cases run.** The panel decided "running" from the finished
+  sensitivity runs left in memory and ignored the new calculation, so neither
+  the progress card nor Stop appeared, and Stop could not have cancelled it.
+  Both now look at every kind of run.
+- **AESA reset says what it resets.** The confirmation now reads "Reset the
+  configuration to the default template? Unsaved changes are lost." and lists
+  everything it replaces: the name, boundary set, downscaling chain, sharing
+  principles and assignments, carbon budget, method mapping and LCI
+  background (it used to name four of these). When a saved template is loaded
+  it warns that the template stays selected, so pressing Save afterwards
+  overwrites it with the defaults. Deleting a template from the
+  Configurations menu now asks with a second click in place; it used
+  `window.confirm`, which does nothing in the packaged app, so deletion never
+  happened there.
+- **AESA Configurations pill after a project switch.** The pill now shows on
+  every state of the AESA page, including a project with no DSM system and one
+  with no templates yet, and lists every saved template of the current project
+  with what each was saved for. Switching project while on AESA used to empty
+  the list until you left the page: the list is now reloaded on the switch.
+  AESA requests also now carry the project header and `no-store`, like every
+  other request; without them a webview could answer the template list from
+  cache with the previous project's templates. The compute source (single
+  product or system-level) is remembered per project for the session instead
+  of falling back to system-level on every switch.
 - **The not-specified note counted labels, not indicators.** It said "Not
   specified for 14 indicators" beside a table marking 23, because EF v3.1's 25
   indicators share 14 short names and the note counted the names. It now counts

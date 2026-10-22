@@ -32,7 +32,7 @@ afterEach(() => { vi.unstubAllGlobals() })
 describe('Reveal in Finder', () => {
   it('appears beside the saved path in the packaged app and reveals THAT file', async () => {
     const calls = serve('8765')
-    render(<LogsPanel version="0.3.0" />)
+    render(<LogsPanel version="0.3.1" />)
     await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /^export$/i })) })
     await waitFor(() => expect(screen.getByTestId('logs-saved-path').textContent).toContain(SAVED))
     await act(async () => { fireEvent.click(screen.getByTestId('logs-reveal')) })
@@ -45,7 +45,7 @@ describe('Reveal in Finder', () => {
     serve('5173')
     URL.createObjectURL = vi.fn(() => 'blob:x')
     URL.revokeObjectURL = vi.fn()
-    render(<LogsPanel version="0.3.0" />)
+    render(<LogsPanel version="0.3.1" />)
     await act(async () => { fireEvent.click(await screen.findByRole('button', { name: /^export$/i })) })
     expect(screen.queryByTestId('logs-reveal')).toBeNull()
   })

@@ -29,7 +29,7 @@ import { ProjectedTimeSeriesChart } from '../charts/ProjectedTimeSeriesChart'
 import { ScenarioYearPicker } from './ScenarioYearPicker'
 import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
-import { ComputeProgress } from '../ui/ComputeProgress'
+import { ComputeOverlay } from '../ui/ComputeOverlay'
 import { ViewToggle } from './ViewToggle'
 import { MethodSelector } from './MethodSelector'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
@@ -653,12 +653,12 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
         </div>
       </CollapsibleCard>
 
-      <ComputeProgress
+      <ComputeOverlay
         active={isCalculating}
-        label={progress ? `Calculating ${progress.done}/${progress.total}` : 'Calculating…'}
-        bar={progress && progress.total > 0 ? 'determinate' : 'none'}
-        pct={progress && progress.total > 0 ? progress.done / progress.total : undefined}
-        statusColor="var(--mod-plca)"
+        title="Calculating Prospective impact"
+        detail={`${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`
+          + (progress ? ` · background database ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : '')}
+        pct={progress && progress.total > 0 ? progress.done / progress.total : null}
         data-testid="single-product-projected-progress"
       />
 

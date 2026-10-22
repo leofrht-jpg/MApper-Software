@@ -670,6 +670,12 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         # module-level: bw2 project state is mutable.
         self._exists_cache: dict[tuple[str, str], bool | None] = {}
         self._link_warnings: list[str] = []
+        # Links from a non-base database (mapper-tailpipe, an authored
+        # database) that stay on their source in every prospective year: the
+        # correct model, not a gap, so they are summarised ONCE per run at INFO
+        # rather than warned per year.
+        self._pinned_links: set[tuple[str, str]] = set()
+        self._pinned_logged = False
         # Patch — "block" (default, per-year nearest-earlier anchor, step) vs
         # "interpolate" (blend the two bracketing-anchor solves, smooth).
         self.temporal_mode = temporal_mode
@@ -677,6 +683,26 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
         # the stage filter depends on the sub-scope, AND interpolation rewrites
         # the same year's flat to two different bracketing dbs.
         self._flat_cache_year: dict[tuple[str, int, str, str | None], list] = {}
+
+    def calculate(self, scope: str) -> list[DSMLCAResult]:
+        out = super().calculate(scope)
+        self._log_pinned_links()
+        return out
+
+    def _log_pinned_links(self) -> None:
+        """One INFO line per run for links kept on their own database."""
+        if self._pinned_logged or not self._pinned_links:
+            return
+        self._pinned_logged = True
+        by_db: dict[str, int] = {}
+        for src, _code in self._pinned_links:
+            by_db[src] = by_db.get(src, 0) + 1
+        detail = ", ".join(f"{db}: {n}" for db, n in sorted(by_db.items()))
+        _log.info(
+            "Prospective run: %d link(s) from non-base databases kept their own "
+            "database in every year (%s); premise generates no variant of them.",
+            len(self._pinned_links), detail,
+        )
 
     def _rewrite_db(self, flat: list, year: int, db: str | None = None) -> list:
         if db is None:
@@ -719,6 +745,8 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
             if warning and warning not in self._link_warnings:
                 self._link_warnings.append(warning)
                 _log.warning("_rewrite_db(year=%d): %s", year, warning)
+            if use_db == src_db and not warning and target_db and src_db != target_db:
+                self._pinned_links.add((src_db, m.ecoinvent_activity.code))
             if use_db == src_db:
                 rewritten.append(m)
                 continue
@@ -745,8 +773,18 @@ class ProjectedDSMLCAPipeline(DSMLCAPipeline):
 
             from mapper.core.prospective_links import base_db_for
 
-            first = (self.prospective_dbs or [{}])[0]
-            name = first.get("name") if isinstance(first, dict) else None
+            # ``prospective_dbs`` is a list of ``(name, year)`` tuples (see
+            # resolve_database_for_year). This read ``first.get("name")``, which
+            # is None for a tuple -- so the base was never found, the shared
+            # rule degraded to the existence probe, and every mapper-tailpipe
+            # link was reported as "not found ... fell back" in every year.
+            first = (self.prospective_dbs or [None])[0]
+            if isinstance(first, (tuple, list)) and first:
+                name = first[0]
+            elif isinstance(first, dict):
+                name = first.get("name")
+            else:
+                name = None
             resolved = base_db_for(bw2data.projects.current, name)
         except Exception:
             resolved = None

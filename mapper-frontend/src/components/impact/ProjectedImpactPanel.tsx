@@ -30,7 +30,7 @@ import {
 import { StopButton } from '../ui/StopButton'
 import { YearSlider } from '../ui/YearSlider'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
-import { ComputeProgress } from '../ui/ComputeProgress'
+import { ComputeOverlay } from '../ui/ComputeOverlay'
 import { DSMScenariosChip } from '../dsm/DSMScenariosChip'
 import { IndicatorChecklist, MethodFamilySelect, useMethodSelection } from '../MethodPicker'
 import { useDSMSystemColors, buildCombinedRowColorOverrides, subsystemMappingCounts, cohortDisplayLabel, materialDisplayString } from '../../utils/dsmCohortColors'
@@ -184,9 +184,13 @@ function ProjectedImpactPanelImpl() {
       const j = pairedScenarioRuns[k]?.job
       return j && !j.done
     })
-  const isRunning = scenarioProgress
-    ? scenarioProgress.done < scenarioProgress.total
-    : (!!projectedJob && !projectedJob.done) || dsmCalcRunning || pairedCalcRunning
+  // Each slot counts on its own. This was a ternary on scenarioProgress, and a
+  // plain (single-scenario) run() never clears projectedScenarioOrder -- so
+  // after one Sensitivity-cases run on this tab, every later Calculate read
+  // "not running": no progress card and no Stop (walkthrough 4).
+  const scenarioRunning = !!scenarioProgress && scenarioProgress.done < scenarioProgress.total
+  const isRunning = scenarioRunning
+    || (!!projectedJob && !projectedJob.done) || dsmCalcRunning || pairedCalcRunning
 
   // Stop control: cancels every in-flight projected task. Single-run mode has
   // one task on ``projectedJob.taskId``; scenario mode fans out N concurrent
@@ -196,18 +200,19 @@ function ProjectedImpactPanelImpl() {
   const [isStopping, setIsStopping] = useState(false)
   useEffect(() => { if (!isRunning) setIsStopping(false) }, [isRunning])
   const stopState = isStopping ? 'stopping' : isRunning ? 'running' : 'idle'
-  const stopTaskId = scenarioProgress
+  const stopTaskId = scenarioRunning && scenarioProgress
     ? (scenarioProgress.active.job.taskId || null)
     : (projectedJob?.taskId ?? null)
   const requestStop = async () => {
     setIsStopping(true)
     const ids: string[] = []
-    if (projectedScenarioOrder.length > 0) {
-      for (const s of projectedScenarioOrder) {
-        const r = projectedScenarioRuns[s]
-        if (r && !r.job.done && r.job.taskId) ids.push(r.job.taskId)
-      }
-    } else if (projectedJob && !projectedJob.done && projectedJob.taskId) {
+    // Both slots: a finished fan-out left in the store must not hide the
+    // live single-run task (the same stale-order trap as isRunning).
+    for (const s of projectedScenarioOrder) {
+      const r = projectedScenarioRuns[s]
+      if (r && !r.job.done && r.job.taskId) ids.push(r.job.taskId)
+    }
+    if (projectedJob && !projectedJob.done && projectedJob.taskId && !ids.includes(projectedJob.taskId)) {
       ids.push(projectedJob.taskId)
     }
     await Promise.all(ids.map((id) => cancelTask(id).catch(() => null)))
@@ -353,7 +358,7 @@ function ProjectedImpactPanelImpl() {
     }
   }, [scenarios, scenarioKeys])
 
-  // Patch 5AL — the live elapsed counter is owned by <ComputeProgress> (fed by
+  // Patch 5AL — the live elapsed counter is owned by <ComputeOverlay> (fed by
   // useElapsedSeconds); no bespoke interval timer here. Post-result time comes
   // from projectedResult.elapsed_seconds.
 
@@ -473,7 +478,17 @@ function ProjectedImpactPanelImpl() {
 
   const canRun = preflightIssues.length === 0
 
+  // Set from the click until the request returns. isRunning keys on the
+  // store's projectedJob, which exists only once POST /impact/calculate has
+  // answered with a task id -- so during the request itself (database
+  // pre-resolution, the DSM simulation) nothing showed, which is why Calculate
+  // on this tab looked like it did nothing.
+  const [submitting, setSubmitting] = useState(false)
   const handleRun = async () => {
+    setSubmitting(true)
+    try { await handleRunInner() } finally { setSubmitting(false) }
+  }
+  const handleRunInner = async () => {
     console.log('[Projected LCI] Calculate clicked', {
       canRun, preflightIssues,
       activeSystemId: activeSystem?.id, hasSimulation: !!simulationResult,
@@ -1164,28 +1179,22 @@ function ProjectedImpactPanelImpl() {
           </div>
         </div>
 
-        <ComputeProgress
-          active={isRunning}
-          label={
-            scenarioProgress ? (
-              <>
-                Scenario {Math.min(scenarioProgress.done + 1, scenarioProgress.total)}/{scenarioProgress.total}:{' '}
-                <span style={{ color: 'var(--mod-plca)', fontWeight: 600 }}>{scenarioProgress.active.scenario}</span>
-                {' · '}{scenarioProgress.active.job.stage || 'running…'}
-              </>
-            ) : (
-              <>{projectedJob?.stage || 'running…'}{methods.length > 0 ? ` × ${methods.length} indicator${methods.length === 1 ? '' : 's'}` : ''}</>
-            )
+        <ComputeOverlay
+          active={isRunning || submitting}
+          title="Calculating Prospective impact"
+          detail={
+            scenarioRunning && scenarioProgress
+              ? `Scenario ${Math.min(scenarioProgress.done + 1, scenarioProgress.total)} of ${scenarioProgress.total}: ${scenarioProgress.active.scenario} · ${scenarioProgress.active.job.stage || 'running'}`
+              : `${projectedJob?.stage || (submitting ? 'starting' : 'running')} · ${methods.length} indicator${methods.length === 1 ? '' : 's'}`
+                + (selectedScenarioObjs.length > 1 ? ` · ${selectedScenarioObjs.length} LCI scenarios` : '')
           }
-          bar="determinate"
           pct={
-            scenarioProgress
+            scenarioRunning && scenarioProgress
               ? (scenarioProgress.done + scenarioProgress.active.job.pct) / scenarioProgress.total
-              : (projectedJob?.pct ?? 0)
+              : (projectedJob && !projectedJob.done ? projectedJob.pct : null)
           }
-          statusColor="var(--mod-plca)"
+          onCancel={isRunning && stopState === 'running' ? () => { void requestStop() } : undefined}
           data-testid="projected-impact-progress"
-          style={{ marginTop: 'var(--space-3)' }}
         />
         {/* `impact-spin` keyframe is used by this panel's button/status spinners;
             keep it defined unconditionally now the running banner is gone. */}

@@ -96,8 +96,9 @@ cleartext `http://localhost` *main-frame* load itself.)
   `pkill -KILL -f mapper-backend` sweep** that reaps every process by the
   sidecar's unique binary name regardless of reparenting. This is safe: the
   standalone-web backend runs as `uvicorn mapper.main:app` (argv has no
-  `mapper-backend` substring) and the Rust shell is `mapper-tauri`, so neither
-  is ever matched. Verified: graceful quit → zero surviving `mapper-backend`
+  `mapper-backend` substring) and the Rust shell's executable is `MApper`
+  (`mainBinaryName` in tauri.conf.json; it was `mapper-tauri`, the Cargo package
+  name, until 0.3.1), so neither is ever matched. Verified: graceful quit → zero surviving `mapper-backend`
   processes.
 
 ## Build (on this machine)

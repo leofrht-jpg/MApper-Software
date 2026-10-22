@@ -4407,7 +4407,12 @@ export interface AESADefaultsBundle {
 }
 
 async function _aesaJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API_BASE}${path}`, init)
+  // Through _withProjectHeader like every other call. This helper used to pass
+  // `init` straight to fetch, so AESA requests carried no X-Mapper-Project
+  // (writes went to whatever project the backend was on, unchecked) and no
+  // `cache: 'no-store'` (the template list is one URL for every project, so a
+  // webview could answer it from cache with the previous project's list).
+  const res = await fetch(`${API_BASE}${path}`, _withProjectHeader(init))
   if (!res.ok) throw new Error(`${init?.method ?? 'GET'} ${path} failed: ${res.status} ${await res.text()}`)
   return res.json()
 }

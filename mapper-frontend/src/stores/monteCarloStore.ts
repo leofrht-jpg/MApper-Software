@@ -67,6 +67,14 @@ export function isUsableHandoff(h: MonteCarloHandoff | null | undefined): h is M
   return !!h && typeof h.archetypeId === 'string' && Array.isArray(h.methods)
 }
 
+/** Identity of a comparison: which items, which indicators, which scope. */
+export function multiHandoffKey(h: MonteCarloMultiHandoff): string {
+  return JSON.stringify([
+    h.items?.map((i) => i.archetypeId) ?? [], h.methods ?? [], h.scope,
+    h.parameterScenario ?? null, h.computeDatabase ?? null, h.stageAmounts ?? {},
+  ])
+}
+
 /** Same contract for the multi-item mode, whose render maps over `items`. */
 export function isUsableMultiHandoff(
   h: MonteCarloMultiHandoff | null | undefined,
@@ -113,7 +121,17 @@ export const useMonteCarloStore = create<MonteCarloState>((set, get) => ({
 
   // Multi-item and single-item handoffs are mutually exclusive: the tab shows
   // one comparison or one product, never both.
-  setMultiHandoff: (multiHandoff) => set({ multiHandoff, handoff: null }),
+  //
+  // A DIFFERENT comparison invalidates the paired result on screen. It used to
+  // survive the new handoff, so the tab drew the previous comparison's
+  // pairwise differences under the new items. Same comparison again (the user
+  // went back and pressed Run uncertainty twice) keeps the finished run.
+  setMultiHandoff: (multiHandoff) => {
+    const prev = get().multiHandoff
+    const same = prev != null && multiHandoffKey(prev) === multiHandoffKey(multiHandoff)
+    if (same) { set({ multiHandoff, handoff: null }); return }
+    set({ multiHandoff, handoff: null, multiResult: null, error: null, cancelled: false })
+  },
 
   runMulti: async (body) => {
     set({ running: true, pct: 0, stage: 'queued', error: null, cancelled: false, multiResult: null })

@@ -107,15 +107,26 @@ export function PairwiseDifferences({ result }: { result: MonteCarloMultiResult 
 }
 
 function PairCard({ d }: { d: PairwiseDifference }) {
-  const pct = d.fraction_a_lower * 100
+  const pct = (Number.isFinite(d.fraction_a_lower) ? d.fraction_a_lower : 0) * 100
+  // `fraction_a_lower` counts a < b, so a TIE counts as "not lower". Two items
+  // whose difference is zero in every iteration (the demo's indicators with no
+  // characterised flow, or no spread at all) used to read "A is higher than B
+  // in 100% of iterations". Zero at both ends of the 95% interval and at the
+  // median is a tie, and says so.
+  const tie = d.p2_5 === 0 && d.p97_5 === 0 && d.median === 0
   // The statement a paired run supports.
   const claim =
-    pct >= 99.95 ? `${d.a_name} is lower than ${d.b_name} in 100% of iterations`
+    tie ? `${d.a_name} and ${d.b_name} do not differ in any iteration`
+      : pct >= 99.95 ? `${d.a_name} is lower than ${d.b_name} in 100% of iterations`
       : pct <= 0.05 ? `${d.a_name} is higher than ${d.b_name} in 100% of iterations`
       : `${d.a_name} is lower than ${d.b_name} in ${pct.toFixed(1)}% of iterations`
-  const decisive = pct >= 95 || pct <= 5
-  const num = (v: number) =>
-    Math.abs(v) >= 1e4 || (v !== 0 && Math.abs(v) < 1e-3) ? v.toExponential(3) : v.toFixed(4)
+  const decisive = !tie && (pct >= 95 || pct <= 5)
+  // A non-finite value arrives as null (pydantic writes NaN/inf as null in
+  // JSON); calling a number method on it would take the whole tab down.
+  const num = (v: number | null | undefined) =>
+    typeof v !== 'number' || !Number.isFinite(v) ? '—'
+      : Math.abs(v) >= 1e4 || (v !== 0 && Math.abs(v) < 1e-3) ? v.toExponential(3) : v.toFixed(4)
+  const corr = typeof d.correlation === 'number' && Number.isFinite(d.correlation) ? d.correlation : 0
 
   return (
     <div
@@ -136,10 +147,12 @@ function PairCard({ d }: { d: PairwiseDifference }) {
         data-testid={`mc-pair-corr-${d.a_id}-${d.b_id}`}
         style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4 }}
       >
-        correlation {d.correlation.toFixed(4)} —{' '}
-        {d.correlation >= 0.9
+        correlation {corr.toFixed(4)} —{' '}
+        {tie
+          ? 'the difference has no spread, so the correlation says nothing here'
+          : corr >= 0.9
           ? 'the items move together, so the difference is tightly determined'
-          : d.correlation >= 0.5
+          : corr >= 0.5
             ? 'partly shared drivers; the difference is correspondingly wider'
             : 'little shared structure, so this difference is genuinely wide'}
       </div>

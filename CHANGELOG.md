@@ -10,7 +10,7 @@ Releases before 0.3.0 are on the
 archived on [Zenodo](https://doi.org/10.5281/zenodo.22246255); this file starts
 at 0.3.0 and is kept from here on.
 
-## [0.3.0] — unreleased
+## [0.3.0] — 2026-10-22
 
 The version is bumped at every site and the desktop build is made and walked,
 but the tag and the GitHub release are not cut yet.

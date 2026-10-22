@@ -161,10 +161,77 @@ def _bw2_changes(before: dict, after: dict) -> list[str]:
     return lines
 
 
+# ── The MApper project store is live data too (run-level backstop) ──────────
+#
+# `GuardlessProbe` -- the DSM system `test_project_guard_e2e.py` used to
+# create -- piled up in real projects (Battery Circularity, then EVS40), one
+# per run, in whichever bw2 project was current. The per-test redirect and the
+# per-write guard further down stop the known paths in-process; neither sees a
+# write by another route (a subprocess server started by a test, an `open()` or
+# `os.replace` the guard does not wrap, a test file run without this conftest's
+# redirect in force). So, like the Brightway fingerprint above: list every file
+# under the real project-data roots (size + mtime, stat only, nothing read) at
+# conftest import and again at the end, and fail the run on any difference,
+# naming the file and, for a DSM system, the system's name.
+_STORE_LEAVES = ("dsm", "mfa", "aesa", "parameters", "plca", "aesa_presets")
+
+
+def _real_store_base() -> Path:
+    return Path(platformdirs.user_data_dir("mapper"))
+
+
+def _store_fingerprint(base: Path | None = None) -> dict[str, tuple[int, int]]:
+    base = _real_store_base() if base is None else base
+    out: dict[str, tuple[int, int]] = {}
+    for leaf in _STORE_LEAVES:
+        root = base / leaf
+        if not root.is_dir():
+            continue
+        for f in root.rglob("*"):
+            try:
+                if f.is_file():
+                    st = f.stat()
+                    out[f.relative_to(base).as_posix()] = (st.st_size, st.st_mtime_ns)
+            except OSError:
+                continue
+    return out
+
+
+def _store_changes(before: dict, after: dict, base: Path | None = None) -> list[str]:
+    base = _real_store_base() if base is None else base
+    lines = []
+
+    def _label(rel: str) -> str:
+        # A DSM system's directory is a uuid; its name is what the user sees.
+        if rel.startswith("dsm/") and rel.endswith("/system.json"):
+            try:
+                name = json.loads((base / rel).read_text(encoding="utf-8")).get("name")
+                return f"{rel} (DSM system {name!r})"
+            except (OSError, ValueError, AttributeError):
+                pass
+        return rel
+
+    for rel in sorted(set(after) - set(before)):
+        lines.append(f"  ADDED     {_label(rel)}")
+    for rel in sorted(set(before) - set(after)):
+        lines.append(f"  REMOVED   {rel}")
+    for rel in sorted(set(before) & set(after)):
+        if before[rel] != after[rel]:
+            lines.append(f"  REWRITTEN {_label(rel)}")
+    return lines
+
+
+_STORE_AT_START = _store_fingerprint()
+
+
 def pytest_sessionfinish(session, exitstatus):
     changes = _bw2_changes(_BW2_AT_START, _bw2_registry_fingerprint())
     if changes:
         session.config._mapper_bw2_changes = changes  # for the terminal summary
+        session.exitstatus = 1
+    store = _store_changes(_STORE_AT_START, _store_fingerprint())
+    if store:
+        session.config._mapper_store_changes = store
         session.exitstatus = 1
 
 
@@ -177,6 +244,16 @@ def pytest_terminal_summary(terminalreporter, exitstatus, config):
             "(or the MApper app was writing to them while the suite ran):"
         )
         for line in changes:
+            terminalreporter.line(line)
+    store = getattr(config, "_mapper_store_changes", None)
+    if store:
+        terminalreporter.section("REAL MAPPER PROJECT DATA WAS WRITTEN", sep="!", red=True)
+        terminalreporter.line(
+            f"The test run changed files under {_real_store_base()} (DSM systems, "
+            "archetypes, AESA, parameters, pLCA registry), or the MApper app was "
+            "writing to them while the suite ran:"
+        )
+        for line in store:
             terminalreporter.line(line)
 
 
@@ -347,13 +424,37 @@ def _forbid_live_store_writes():
         _check(self, "write a file")
         return real_write_text(self, *a, **k)
 
+    # `open(path, "w")` and `os.replace(tmp, path)` are the other two ways a
+    # file lands on disk; the guard used to see only the Path methods.
+    import builtins
+    import io
+    import os as _os
+
+    real_open = builtins.open  # same object as io.open; Path.open/write_bytes go through io.open
+    real_replace = _os.replace
+
+    def guarded_open(file, mode="r", *a, **k):
+        if isinstance(file, (str, bytes, _os.PathLike)) and any(c in mode for c in "wax+"):
+            _check(_os.fsdecode(file), "open a file for writing")
+        return real_open(file, mode, *a, **k)
+
+    def guarded_replace(src, dst, *a, **k):
+        _check(_os.fsdecode(dst), "replace a file")
+        return real_replace(src, dst, *a, **k)
+
     pathlib.Path.mkdir = guarded_mkdir
     pathlib.Path.write_text = guarded_write_text
+    builtins.open = guarded_open
+    io.open = guarded_open
+    _os.replace = guarded_replace
     try:
         yield
     finally:
         pathlib.Path.mkdir = real_mkdir
         pathlib.Path.write_text = real_write_text
+        builtins.open = real_open
+        io.open = real_open
+        _os.replace = real_replace
 
 
 # ── Brightway is live data too ───────────────────────────────────────────────

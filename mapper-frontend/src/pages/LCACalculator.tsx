@@ -22,6 +22,7 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import { useSessionState } from '../stores/sessionStateStore'
 import { useBOMStore } from '../stores/bomStore'
 import { useProjectSettingsStore } from '../stores/projectSettingsStore'
 import { YearsInput, canApplyLifetime, lifetimeBlockedReason, stageAmountsForPreset, stageBasis } from '../components/impact/StageAmountsEditor'
@@ -113,15 +114,18 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   const { archetypes, folders, fetchArchetypes } = useBOMStore()
 
   // ── State ──
-  const [fuMode, setFuMode] = useState<FUMode>('archetype')
-  const [selectedArchetypes, setSelectedArchetypes] = useState<ArchetypeSummary[]>([])
-  const [scope, setScope] = useState<Scope>('all')
+  const [fuMode, setFuMode] = useSessionState<FUMode>('lcaCalculator.fuMode', 'archetype')
+  const [selectedArchetypes, setSelectedArchetypes] = useSessionState<ArchetypeSummary[]>('lcaCalculator.selectedArchetypes', [])
+  const [scope, setScope] = useSessionState<Scope>('lcaCalculator.scope', 'all')
 
   // Per-archetype stage amounts (keyed by archetype ID)
   interface PerArchetypeAmounts { preset: AmountPreset; lifetime: number | null; amounts: Record<string, number> }
   const projectBasis = useProjectSettingsStore((st) => st.settings)?.use_phase_basis ?? 'one_year'
-  const [arcAmountsMap, setArcAmountsMap] = useState<Record<string, PerArchetypeAmounts>>({})
-  const [selectedMethods, setSelectedMethods] = useState<string[][]>([])
+  const [arcAmountsMap, setArcAmountsMap] = useSessionState<Record<string, PerArchetypeAmounts>>('lcaCalculator.arcAmountsMap', {})
+  const [selectedMethods, setSelectedMethods] = useSessionState<string[][]>('lcaCalculator.selectedMethods', [])
+  // The picker owns its own selection; seed it once per mount from what the
+  // user had picked before leaving the tab.
+  const [methodsSeed] = useState(() => selectedMethods)
 
   // Collapsible Configuration / Results sections (Patch 5N — mirrors 5H/5K).
   // Session-local; survives the LCA tab's visibility-toggle; no persistence.
@@ -129,22 +133,22 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   const [resultsOpen, setResultsOpen] = useState(true)
 
   // Contribution analysis cache + loading state, keyed by `${targetSig}::${methodSig}`.
-  const [caCache, setCaCache] = useState<Record<string, ContributionAnalysisResult>>({})
+  const [caCache, setCaCache] = useSessionState<Record<string, ContributionAnalysisResult>>('lcaCalculator.caCache', {})
   const [caLoadingKey, setCaLoadingKey] = useState<string | null>(null)
   const [caPhase, setCaPhase] = useState<string | null>(null)
   const [caStartedAt, setCaStartedAt] = useState<number | null>(null)
   const [caError, setCaError] = useState<string | null>(null)
 
   // Archetype mode state (multi-archetype)
-  const [arcResults, setArcResults] = useState<ArchetypeLCACalculateResult[]>([])
-  const [arcResultIndex, setArcResultIndex] = useState(0)
+  const [arcResults, setArcResults] = useSessionState<ArchetypeLCACalculateResult[]>('lcaCalculator.arcResults', [])
+  const [arcResultIndex, setArcResultIndex] = useSessionState('lcaCalculator.arcResultIndex', 0)
   const [arcCalculating, setArcCalculating] = useState(false)
   const [arcError, setArcError] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
 
   // Activity mode state (multi-activity)
   interface DemandEntry { act: ActivitySummary; amount: number }
-  const [actDemand, setActDemand] = useState<DemandEntry[]>([])
+  const [actDemand, setActDemand] = useSessionState<DemandEntry[]>('lcaCalculator.actDemand', [])
   // Patch 4AH — activity feed for the new <MultiItemSelector>. Parent
   // owns the result of the debounced backend search (kept as plain
   // ActivitySummary[] so downstream code that consumes
@@ -165,28 +169,28 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   // first 50 results.
   const [dbLocations, setDbLocations] = useState<string[]>([])
   const [dbUnits, setDbUnits] = useState<string[]>([])
-  const [actResult, setActResult] = useState<ActivityLCAResult | null>(null)
-  const [actResultIndex, setActResultIndex] = useState(0)
+  const [actResult, setActResult] = useSessionState<ActivityLCAResult | null>('lcaCalculator.actResult', null)
+  const [actResultIndex, setActResultIndex] = useSessionState('lcaCalculator.actResultIndex', 0)
   const [actCalculating, setActCalculating] = useState(false)
   const [actError, setActError] = useState<string | null>(null)
 
   // Activity-mode database selector
   const [databases, setDatabases] = useState<DatabaseResponse[]>([])
-  const [selectedDb, setSelectedDb] = useState<string | null>(null)
+  const [selectedDb, setSelectedDb] = useSessionState<string | null>('lcaCalculator.selectedDb', null)
 
   // Compute-against database (the DB the contribution analysis runs through).
   // Stored as a *pattern* (year-stripped for prospective; equal to the DB
   // name for static). The fully-qualified compute_database is built by
   // appending ``_<computeYear>`` for prospective patterns. Defaults to the
   // first static technosphere DB once databases are loaded.
-  const [computePattern, setComputePattern] = useState<string | null>(null)
-  const [computeYear, setComputeYear] = useState<number | null>(null)
+  const [computePattern, setComputePattern] = useSessionState<string | null>('lcaCalculator.computePattern', null)
+  const [computeYear, setComputeYear] = useSessionState<number | null>('lcaCalculator.computeYear', null)
 
   // Year mode: 'single' = current behaviour (one ContributionAnalysisResult);
   // 'multi'  = MultiYearTrajectoryPanel computed across selected years.
-  const [yearMode, setYearMode] = useState<'single' | 'multi'>('single')
-  const [multiYears, setMultiYears] = useState<number[]>([])
-  const [myResult, setMyResult] = useState<MultiYearContributionResult | null>(null)
+  const [yearMode, setYearMode] = useSessionState<'single' | 'multi'>('lcaCalculator.yearMode', 'single')
+  const [multiYears, setMultiYears] = useSessionState<number[]>('lcaCalculator.multiYears', [])
+  const [myResult, setMyResult] = useSessionState<MultiYearContributionResult | null>('lcaCalculator.myResult', null)
   const [myLoading, setMyLoading] = useState(false)
   const [myProgress, setMyProgress] = useState<{ stage: string; pct: number } | null>(null)
   const [myError, setMyError] = useState<string | null>(null)
@@ -217,6 +221,9 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   // Keep ``computeYear`` consistent with the active pattern: clear it on
   // static, snap to the first available year on prospective.
   useEffect(() => {
+    // Until the database list lands every pattern reads as static; acting on
+    // that would wipe a year carried over from before the user left the tab.
+    if (databases.length === 0) return
     if (!isComputeProspective) {
       if (computeYear != null) setComputeYear(null)
       return
@@ -224,19 +231,20 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
     if (computeYear == null || !computeAvailableYears.includes(computeYear)) {
       setComputeYear(computeAvailableYears[0] ?? null)
     }
-  }, [isComputeProspective, computeAvailableYears, computeYear])
+  }, [databases.length, isComputeProspective, computeAvailableYears, computeYear, setComputeYear])
 
   // When the user switches to multi-year mode, default the selection to all
   // available years for the active pattern. Filter out invalid years on
   // pattern change so the chip set doesn't carry stale selections.
   useEffect(() => {
     if (yearMode !== 'multi') return
+    if (databases.length === 0) return
     setMultiYears((prev) => {
       const valid = prev.filter((y) => computeAvailableYears.includes(y))
       if (valid.length > 0) return valid
       return [...computeAvailableYears]
     })
-  }, [yearMode, computeAvailableYears])
+  }, [databases.length, yearMode, computeAvailableYears, setMultiYears])
 
   // Group databases for the dropdown: technosphere static, prospective, biosphere.
   const dbGroups = useMemo(() => {
@@ -1234,7 +1242,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
             <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 8 }}>
               LCIA Method
             </label>
-            <MethodPicker onChange={setSelectedMethods} defaultAllSelected collapseKey="lca-calculator.methods" />
+            <MethodPicker onChange={setSelectedMethods} initialSelected={methodsSeed} defaultAllSelected collapseKey="lca-calculator.methods" />
           </div>
         </div>
 

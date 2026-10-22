@@ -1,0 +1,254 @@
+{
+ "_generated_from": "GET /api/lca/monte-carlo/multi/{task_id} on a live MApper 0.3.1 backend, demo project (synthetic data), demo-icev + demo-bev, 3 EF v3.1 indicators, 20 iterations, seed 7, keep_samples false. Captured verbatim (2026-10-22) so the Uncertainty tab is tested against the shape the backend really sends.",
+ "scope": "all",
+ "n_iterations": 20,
+ "seed": 7,
+ "elapsed_seconds": 0.054,
+ "compute_database": null,
+ "parameter_scenario": null,
+ "items": [
+  {
+   "archetype_id": "demo-icev",
+   "archetype_name": "DEMO combustion vehicle (FICTIONAL DATA)",
+   "distributions": [
+    {
+     "method": [
+      "EF v3.1",
+      "climate change",
+      "global warming potential (GWP100)"
+     ],
+     "method_label": "climate change | global warming potential (GWP100)",
+     "unit": "kg CO2-Eq",
+     "deterministic": 5738.499903380871,
+     "median": 5738.499903380871,
+     "mean": 5738.499903380871,
+     "p2_5": 5738.499903380871,
+     "p25": 5738.499903380871,
+     "p75": 5738.499903380871,
+     "p97_5": 5738.499903380871,
+     "gsd2": 1.0000000000000036,
+     "dispersion_95": 1.0,
+     "n_iterations": 20,
+     "seed": 7,
+     "samples": null
+    },
+    {
+     "method": [
+      "EF v3.1",
+      "acidification",
+      "accumulated exceedance (AE)"
+     ],
+     "method_label": "acidification | accumulated exceedance (AE)",
+     "unit": "mol H+-Eq",
+     "deterministic": 0.0,
+     "median": 0.0,
+     "mean": 0.0,
+     "p2_5": 0.0,
+     "p25": 0.0,
+     "p75": 0.0,
+     "p97_5": 0.0,
+     "gsd2": 0.0,
+     "dispersion_95": 0.0,
+     "n_iterations": 20,
+     "seed": 7,
+     "samples": null
+    },
+    {
+     "method": [
+      "EF v3.1",
+      "land use",
+      "soil quality index"
+     ],
+     "method_label": "land use | soil quality index",
+     "unit": "dimensionless",
+     "deterministic": 0.0,
+     "median": 0.0,
+     "mean": 0.0,
+     "p2_5": 0.0,
+     "p25": 0.0,
+     "p75": 0.0,
+     "p97_5": 0.0,
+     "gsd2": 0.0,
+     "dispersion_95": 0.0,
+     "n_iterations": 20,
+     "seed": 7,
+     "samples": null
+    }
+   ],
+   "coverage_gaps": [],
+   "authored_uncertainty": []
+  },
+  {
+   "archetype_id": "demo-bev",
+   "archetype_name": "DEMO battery-electric vehicle (FICTIONAL DATA)",
+   "distributions": [
+    {
+     "method": [
+      "EF v3.1",
+      "climate change",
+      "global warming potential (GWP100)"
+     ],
+     "method_label": "climate change | global warming potential (GWP100)",
+     "unit": "kg CO2-Eq",
+     "deterministic": 6410.700076568127,
+     "median": 6410.700076568104,
+     "mean": 6410.700076568103,
+     "p2_5": 6410.700076568104,
+     "p25": 6410.700076568104,
+     "p75": 6410.700076568104,
+     "p97_5": 6410.700076568104,
+     "gsd2": 1.0000000000000036,
+     "dispersion_95": 1.0,
+     "n_iterations": 20,
+     "seed": 7,
+     "samples": null
+    },
+    {
+     "method": [
+      "EF v3.1",
+      "acidification",
+      "accumulated exceedance (AE)"
+     ],
+     "method_label": "acidification | accumulated exceedance (AE)",
+     "unit": "mol H+-Eq",
+     "deterministic": 0.0,
+     "median": 0.0,
+     "mean": 0.0,
+     "p2_5": 0.0,
+     "p25": 0.0,
+     "p75": 0.0,
+     "p97_5": 0.0,
+     "gsd2": 0.0,
+     "dispersion_95": 0.0,
+     "n_iterations": 20,
+     "seed": 7,
+     "samples": null
+    },
+    {
+     "method": [
+      "EF v3.1",
+      "land use",
+      "soil quality index"
+     ],
+     "method_label": "land use | soil quality index",
+     "unit": "dimensionless",
+     "deterministic": 0.0,
+     "median": 0.0,
+     "mean": 0.0,
+     "p2_5": 0.0,
+     "p25": 0.0,
+     "p75": 0.0,
+     "p97_5": 0.0,
+     "gsd2": 0.0,
+     "dispersion_95": 0.0,
+     "n_iterations": 20,
+     "seed": 7,
+     "samples": null
+    }
+   ],
+   "coverage_gaps": [],
+   "authored_uncertainty": []
+  }
+ ],
+ "differences": [
+  {
+   "method": [
+    "EF v3.1",
+    "climate change",
+    "global warming potential (GWP100)"
+   ],
+   "method_label": "climate change | global warming potential (GWP100)",
+   "unit": "kg CO2-Eq",
+   "a_id": "demo-icev",
+   "a_name": "DEMO combustion vehicle (FICTIONAL DATA)",
+   "b_id": "demo-bev",
+   "b_name": "DEMO battery-electric vehicle (FICTIONAL DATA)",
+   "deterministic": -672.200173187256,
+   "median": -672.2001731872333,
+   "mean": -672.2001731872333,
+   "p2_5": -672.2001731872333,
+   "p25": -672.2001731872333,
+   "p75": -672.2001731872333,
+   "p97_5": -672.2001731872333,
+   "fraction_a_lower": 1.0,
+   "correlation": 0.0
+  },
+  {
+   "method": [
+    "EF v3.1",
+    "acidification",
+    "accumulated exceedance (AE)"
+   ],
+   "method_label": "acidification | accumulated exceedance (AE)",
+   "unit": "mol H+-Eq",
+   "a_id": "demo-icev",
+   "a_name": "DEMO combustion vehicle (FICTIONAL DATA)",
+   "b_id": "demo-bev",
+   "b_name": "DEMO battery-electric vehicle (FICTIONAL DATA)",
+   "deterministic": 0.0,
+   "median": 0.0,
+   "mean": 0.0,
+   "p2_5": 0.0,
+   "p25": 0.0,
+   "p75": 0.0,
+   "p97_5": 0.0,
+   "fraction_a_lower": 0.0,
+   "correlation": 0.0
+  },
+  {
+   "method": [
+    "EF v3.1",
+    "land use",
+    "soil quality index"
+   ],
+   "method_label": "land use | soil quality index",
+   "unit": "dimensionless",
+   "a_id": "demo-icev",
+   "a_name": "DEMO combustion vehicle (FICTIONAL DATA)",
+   "b_id": "demo-bev",
+   "b_name": "DEMO battery-electric vehicle (FICTIONAL DATA)",
+   "deterministic": 0.0,
+   "median": 0.0,
+   "mean": 0.0,
+   "p2_5": 0.0,
+   "p25": 0.0,
+   "p75": 0.0,
+   "p97_5": 0.0,
+   "fraction_a_lower": 0.0,
+   "correlation": 0.0
+  }
+ ],
+ "warnings": [],
+ "computed_at": "2026-10-22T23:09:07.552272+00:00",
+ "mapper_version": "0.3.1",
+ "scored_inputs": [],
+ "rows_with_uncertainty": 0,
+ "rows_inherited": 0,
+ "parameters_with_uncertainty": 0,
+ "stage_amounts": {},
+ "basis_amounts": null,
+ "use_phase_basis": "one_year",
+ "bom_hashes": {
+  "demo-icev": "bom:v1:a4c55c216f1eac36e78ee8b15ff68031e644df4faa8c1fa1c431d370c3b8e32a",
+  "demo-bev": "bom:v1:5bd5b3aa942faddb143c37f162332126bcc1cb69a890a5c6f501c91bb2cb795d"
+ },
+ "parameter_table_hash": "param:v1:c7a520208272a0a6702398007a0f32fc6704507ba331734148c70fd6963fa365",
+ "data_fingerprint": {
+  "version": "1",
+  "databases": {},
+  "methods": {
+   "EF v3.1 | climate change | global warming potential (GWP100)": {
+    "num_cfs": 223,
+    "abbreviation": "ef-v31cg.1c397559135d78f19a1915a0ca4f626a"
+   },
+   "EF v3.1 | acidification | accumulated exceedance (AE)": {
+    "num_cfs": 22,
+    "abbreviation": "ef-v31aa.3561cd671a473310747f754fe860108c"
+   },
+   "EF v3.1 | land use | soil quality index": {
+    "num_cfs": 155,
+    "abbreviation": "ef-v31ls.e6192af00690c5bc296f45e80359ae4b"
+   }
+  }
+ }
+}

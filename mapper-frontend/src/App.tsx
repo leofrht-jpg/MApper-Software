@@ -21,6 +21,7 @@ import { useThemeStore } from './stores/themeStore'
 import { OnboardingTour, hasCompletedOnboarding } from './components/OnboardingTour'
 import { configureProjectGuard } from './api/client'
 import { MonteCarloPage } from './pages/MonteCarlo'
+import { ErrorBoundary } from './components/ErrorBoundary'
 
 // Global helper so the Settings page can re-trigger the tour without
 // pulling App state into a context.
@@ -81,43 +82,54 @@ function App() {
     <>
       {tourRun && <OnboardingTour run={tourRun} onFinish={() => setTourRun(false)} />}
       <Shell>
-        {(activeItem, setActiveItem) => {
-          if (activeItem === 'databases') {
-            return <DatabaseExplorer />
-          }
-          if (activeItem === 'lca') {
-            return (
-              <LCAPage
-                onNavigateToExplorer={() => setActiveItem('databases')}
-              />
-            )
-          }
-          if (activeItem === 'dsm') {
-            return <DSMDashboard />
-          }
-          if (activeItem === 'plca') {
-            return <PLCADeveloper />
-          }
-          if (activeItem === 'impact') {
-            return <ImpactAssessment onNavigate={setActiveItem} />
-          }
-          if (activeItem === 'aesa') {
-            return <AESADashboard />
-          }
-          if (activeItem === 'uncertainty') {
-            return <MonteCarloPage onNavigate={setActiveItem} />
-          }
-          if (activeItem === 'settings') {
-            return <SettingsPage />
-          }
-          return (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
-              Select a database to get started
-            </div>
-          )
-        }}
+        {(activeItem, setActiveItem) => (
+          // One boundary PER TAB, inside the content area. A render error in a
+          // page used to reach only the root boundary, which replaces the whole
+          // app (sidebar included). Here the failing tab says what failed and
+          // the sidebar stays usable; keyed by tab so leaving it clears the
+          // error.
+          <ErrorBoundary key={activeItem} testId={`page-error-${activeItem}`}>
+            {renderPage(activeItem, setActiveItem)}
+          </ErrorBoundary>
+        )}
       </Shell>
     </>
+  )
+}
+
+function renderPage(activeItem: string, setActiveItem: (id: string) => void) {
+  if (activeItem === 'databases') {
+    return <DatabaseExplorer />
+  }
+  if (activeItem === 'lca') {
+    return (
+      <LCAPage
+        onNavigateToExplorer={() => setActiveItem('databases')}
+      />
+    )
+  }
+  if (activeItem === 'dsm') {
+    return <DSMDashboard />
+  }
+  if (activeItem === 'plca') {
+    return <PLCADeveloper />
+  }
+  if (activeItem === 'impact') {
+    return <ImpactAssessment onNavigate={setActiveItem} />
+  }
+  if (activeItem === 'aesa') {
+    return <AESADashboard />
+  }
+  if (activeItem === 'uncertainty') {
+    return <MonteCarloPage onNavigate={setActiveItem} />
+  }
+  if (activeItem === 'settings') {
+    return <SettingsPage />
+  }
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: 'var(--text-secondary)', fontSize: 'var(--text-base)' }}>
+      Select a database to get started
+    </div>
   )
 }
 

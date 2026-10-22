@@ -4284,6 +4284,43 @@ same rhythm (scale token, never hardcoded px).
   idx) must survive a tab switch. The wrapper uses `display:
   block|none` per pane, not conditional render.
 
+### Pages unmount on tab switch; results live in `useSessionState` (walkthrough 5)
+
+`App.tsx` renders ONE page at a time, so leaving a top-level tab unmounts the
+whole page and every `useState` in it. That is how a finished single-product
+result vanished when the user glanced at another tab: Impact Assessment kept
+the selected archetype in local state, which restarted at `null` on remount
+and was mirrored into `singleProductImpactStore`, whose setter clears the
+results; the Static/Prospective panels and the LCA Architect calculator held
+their runs locally too.
+
+- **The selected archetype is the store's `archetypeId`**, read directly; no
+  local copy, no mirror effect.
+- **Anything computed, and the selection that produced it, goes through
+  `useSessionState(key, initial)`** (`stores/sessionStateStore.ts`): a drop-in
+  for `useState` backed by a project-scoped store (reset on project change,
+  session only, never persisted). Single-product panels key it per archetype
+  (`singleProduct.static.<arcId>.*`), so a run in flight lands under its own
+  archetype even if the user picks another.
+- `tests/setup.ts` resets it after every test through a hook the store puts on
+  `globalThis`; without that, one test's kept state is on screen in the next.
+- Locked by `tests/resultsSurviveTabSwitch.test.tsx` (compute, UNMOUNT,
+  remount, result back), reverted-source break-checked.
+- **Each tab also has its own `ErrorBoundary`** in `App.tsx`, keyed by tab:
+  a page that throws shows the error in the content area and the sidebar keeps
+  working, instead of the root boundary replacing the app.
+
+#### What NOT to do
+
+- **Don't hold a result, or the selection it belongs to, in `useState` in a
+  page.** It is gone the next time the user opens another tab. Form-only
+  values (an expanded card, a search box) can stay local.
+- **Don't key `useSessionState` without the identity it belongs to** (the
+  archetype for single-product runs). A shared key shows one archetype's
+  result under another.
+- **Don't persist it.** Session only; a stored result outliving its inputs is
+  the stale-number class the provenance work exists to prevent.
+
 ### Visibility-toggle vs. conditional mount (general UI rule)
 
 **General rule.** Any UI element that hides and reappears — tab panel,
@@ -9016,6 +9053,40 @@ data during a run, its own writes show up there too; the message says so.
 **Never run the backend suite on a branch whose conftest lacks these guards.**
 Runs on branches cut before #174 recreated `guard-db` in default and Battery
 Circularity on 2026-10-21/22.
+
+### `GuardlessProbe` and the run-level fingerprint of the MApper store (walkthrough 5)
+
+EVS40's DSM list filled with systems named `GuardlessProbe`. The only source
+of that name was `test_project_guard_e2e.py::test_create_dsm_system_without_header_is_unguarded`,
+which POSTed a VALID system to `/api/dsm/systems` with no `X-Mapper-Project`
+header and nothing mocked but the guard's project lookup, so the handler
+created it for real (a uuid-named directory under `dsm/<project>/` with
+`"name": "GuardlessProbe"`) in whatever bw2 project was current. Every run
+that escaped the storage redirect left one more.
+
+- The test now sends a well-formed body the HANDLER rejects (end_year <
+  start_year → 400), which proves the guard let it through while saving
+  nothing, and asserts `save_system`/`save_state` were never called. A sibling
+  case checks the same body with a mismatched header is a 409, so the 400
+  cannot mask the guard.
+- The per-write guard now also refuses `open(..., "w"/"a"/"x"/"+")` (via both
+  `builtins.open` and `io.open`, which `Path.open` uses) and `os.replace` into
+  the live roots; it used to see only `Path.mkdir`/`Path.write_text`.
+- **Run-level backstop**, like the Brightway one: `_store_fingerprint()` lists
+  every file under the real `dsm`, `mfa`, `aesa`, `parameters`, `plca`,
+  `aesa_presets` roots (size + mtime, stat only) at conftest import and at
+  `pytest_sessionfinish`, and fails the run on any added, removed or rewritten
+  file, naming a new DSM system by its name. It catches writes no in-process
+  guard can see (a subprocess server, a test run without the redirect).
+- Locked by `tests/test_live_store_guard.py`, whose write probes aim at a
+  directory that does not exist, so a broken guard fails with
+  FileNotFoundError instead of writing.
+
+**Cleanup of existing entries** goes through the app, never by hand-editing
+files: switch to the project (`POST /api/projects/switch {"name": ...}`), list
+`GET /api/dsm/systems`, and `DELETE /api/dsm/systems/{system_id}` for each
+`name == "GuardlessProbe"`. The delete acts on the CURRENT project and also
+purges that system's cohort mappings.
 
 #### What NOT to do
 

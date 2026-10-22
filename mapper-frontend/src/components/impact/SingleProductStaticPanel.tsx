@@ -18,6 +18,7 @@ import {
   type ArchetypeLCACalculateResult,
 } from '../../api/client'
 import { toStageAmountsMeta, useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
+import { useSessionState } from '../../stores/sessionStateStore'
 import { useParameterStore } from '../../stores/parameterStore'
 import { SensitivityCases, hasVaryingParameters, varyingCases } from './SensitivityCases'
 import { SensitivityRangeChart } from '../charts/SensitivityRangeChart'
@@ -95,11 +96,16 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   const [isCalculating, setIsCalculating] = useState(false)
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [resultsByScenario, setResultsByScenario] = useState<
+  // The computed runs outlive the panel: App mounts one page at a time, so
+  // local state lost a finished calculation every time the user opened another
+  // tab and came back. Keyed per archetype, so a run in flight for one
+  // archetype lands under that archetype even if the user picks another.
+  const runKey = `singleProduct.static.${archetypeId ?? ''}`
+  const [resultsByScenario, setResultsByScenario] = useSessionState<
     Record<string, ArchetypeLCACalculateResult>
-  >({})
-  const [scenarioOrder, setScenarioOrder] = useState<string[]>([])
-  const [activeScenario, setActiveScenario] = useState<string | null>(null)
+  >(`${runKey}.results`, {})
+  const [scenarioOrder, setScenarioOrder] = useSessionState<string[]>(`${runKey}.order`, [])
+  const [activeScenario, setActiveScenario] = useSessionState<string | null>(`${runKey}.active`, null)
 
   const valueFormat = useNumberFormatter()
   const setStoreStaticResult = useSingleProductImpactStore((s) => s.setStaticResult)
@@ -196,7 +202,8 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
       setIsCalculating(false)
       setProgress(null)
     }
-  }, [archetypeId, scope, selectedMethods, currentStageAmounts, stageAmountsByArc, setStaticRunMeta])
+  }, [archetypeId, scope, selectedMethods, currentStageAmounts, stageAmountsByArc, setStaticRunMeta,
+      setResultsByScenario, setScenarioOrder, setActiveScenario, effectiveCases])
 
   const isMulti = scenarioOrder.length > 1
   // Same derivation the Sensitivity cases checklist uses, so a case marked

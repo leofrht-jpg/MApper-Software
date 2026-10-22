@@ -64,21 +64,56 @@ def test_create_dsm_system_409s_on_project_mismatch(mock_get, client):
 @patch("mapper.api.project_guard.get_current_project")
 def test_create_dsm_system_without_header_is_unguarded(mock_get, client):
     """Backward compat: clients that don't send the header bypass the
-    guard. (Tests, curl, non-browser scripts.) The actual create may
-    still 4xx for other reasons — we only assert it's NOT a 409.
+    guard. (Tests, curl, non-browser scripts.)
+
+    This used to POST a VALID system named ``GuardlessProbe``, which the
+    handler then created for real -- in whichever bw2 project was current.
+    Every run that escaped the storage redirect left one more in a real
+    project (Battery Circularity, then EVS40). It now proves the same thing
+    without creating anything: the body is well-formed but end_year <
+    start_year, so the HANDLER rejects it with 400. A 400 from the handler
+    means the guard dependency ran and let the request through; a 409 would
+    mean it did not. Nothing is saved either way, and that is asserted.
     """
+    from mapper.api import dsm as _dsm
+
     mock_get.return_value = "default"
     body = {
         "id": "",
-        "name": "GuardlessProbe",
-        "time_horizon": {"start_year": 2025, "end_year": 2050},
+        "name": "UnguardedProbe (never saved)",
+        "time_horizon": {"start_year": 2050, "end_year": 2025},
         "dimensions": [
             {"name": "s", "display_name": "Size",
              "labels": ["x"], "is_age": False},
         ],
     }
-    res = client.post("/api/dsm/systems", json=body)
-    assert res.status_code != 409
+    with patch("mapper.core.dsm_storage.save_system") as save_system, \
+            patch("mapper.core.dsm_storage.save_state") as save_state:
+        res = client.post("/api/dsm/systems", json=body)
+    assert res.status_code == 400, res.text
+    assert "end_year" in res.text
+    save_system.assert_not_called()
+    save_state.assert_not_called()
+    for systems in _dsm._systems.values():
+        assert not any(s.name.startswith("UnguardedProbe") for s in systems.values())
+
+
+@patch("mapper.api.project_guard.get_current_project")
+def test_the_invalid_probe_body_does_not_mask_the_guard(mock_get, client):
+    """The same invalid body WITH a mismatched header is a 409, not a 400:
+    the guard runs before the handler, so the 400 above really does mean
+    "the guard let it through"."""
+    mock_get.return_value = "default"
+    body = {
+        "id": "",
+        "name": "UnguardedProbe (never saved)",
+        "time_horizon": {"start_year": 2050, "end_year": 2025},
+        "dimensions": [
+            {"name": "s", "display_name": "Size", "labels": ["x"], "is_age": False},
+        ],
+    }
+    res = client.post("/api/dsm/systems", json=body, headers={"X-Mapper-Project": "EVS40"})
+    assert res.status_code == 409
 
 
 @patch("mapper.api.project_guard.get_current_project")

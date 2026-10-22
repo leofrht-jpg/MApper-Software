@@ -12,6 +12,8 @@ import { logEvent } from '../stores/logStore'
 
 interface Props {
   children: ReactNode
+  /** data-testid on the fallback, so a per-tab boundary can be told apart. */
+  testId?: string
 }
 
 interface State {
@@ -41,6 +43,8 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!this.state.error) return this.props.children
     return (
       <div
+        data-testid={this.props.testId ?? 'error-boundary'}
+        role="alert"
         style={{
           display: 'flex',
           flexDirection: 'column',

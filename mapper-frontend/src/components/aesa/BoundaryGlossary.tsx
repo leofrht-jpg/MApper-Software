@@ -22,7 +22,7 @@ import type { BoundarySet } from '../../api/client'
  * and a glossary that disagrees with the chart is worse than none.
  *
  * The "commonly written" column is INFORMATIONAL. Those abbreviations (AP,
- * HTP-c, ODP…) come from CML/ILCD convention, not from EF: Zampori & Pant
+ * HTPc, ODP…) come from CML/ILCD convention, not from EF: Zampori & Pant
  * (2019), EUR 29682 EN, Table 2 defines category names, indicators and units
  * and no per-category acronyms. MApper therefore never uses them as a label —
  * showing one would assert a naming EF does not define — but an LCA reader

@@ -7,7 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
-import { useCallback } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { NumberInput } from '../ui/NumberInput'
 import type { ArchetypeSummary } from '../../api/client'
 import type {
@@ -41,16 +41,18 @@ export function StageAmountsEditor({
 }: Props) {
   const stages = archetype.stages ?? []
   const blocked = lifetimeBlockedReason(archetype, projectBasis)
-  const lifetimeAvailable = canApplyLifetime(archetype, projectBasis)
-  // A referenced parameter drives the lifetime; the typed box is the fallback.
-  const paramLifetime = value.lifetimeParam
+  const yearsAvailable = canApplyLifetime(archetype, projectBasis)
+  // A referenced parameter drives the years; the typed box is the fallback.
+  const paramYears = value.lifetimeParam
     ? parameters?.find((p) => p.name === value.lifetimeParam)?.value
     : undefined
-  const effectiveLifetime = paramLifetime ?? value.lifetime
 
-  const applyPreset = useCallback(
-    (preset: AmountPreset, lifetime: number) => {
-      onChange({ preset, lifetime, amounts: stageAmountsForPreset(archetype, preset, lifetime, value.amounts, projectBasis) })
+  const setYears = useCallback(
+    (years: number | null, lifetimeParam: string | null = null) => {
+      onChange({
+        preset: 'custom', lifetime: years, lifetimeParam,
+        amounts: stageAmountsForPreset(archetype, 'custom', years, value.amounts, projectBasis),
+      })
     },
     [archetype, value.amounts, onChange, projectBasis],
   )
@@ -62,18 +64,16 @@ export function StageAmountsEditor({
       <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
         {([
           { key: '1year' as AmountPreset, label: '1 year' },
-          { key: 'lifetime' as AmountPreset, label: `Lifetime (${effectiveLifetime}yr)` },
           { key: 'custom' as AmountPreset, label: 'Custom' },
         ]).map((p) => (
           <button
             key={p.key}
             type="button"
             data-testid={`stage-amounts-preset-${p.key}`}
-            disabled={p.key === 'lifetime' && !lifetimeAvailable}
-            title={p.key === 'lifetime' ? (blocked ?? undefined) : undefined}
-            onClick={() => applyPreset(p.key, effectiveLifetime)}
+            onClick={() => onChange(p.key === '1year'
+              ? { preset: '1year', lifetime: null, lifetimeParam: null, amounts: stageAmountsForPreset(archetype, '1year', null) }
+              : { ...value, preset: 'custom', amounts: stageAmountsForPreset(archetype, 'custom', value.lifetime, value.amounts, projectBasis) })}
             style={{
-              opacity: p.key === 'lifetime' && !lifetimeAvailable ? 0.45 : 1,
               padding: '3px 8px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
               border: '1px solid ' + (value.preset === p.key ? accent : 'var(--border-default)'),
               backgroundColor: value.preset === p.key ? `color-mix(in srgb, ${accent} 12%, transparent)` : 'var(--bg-elevated)',
@@ -85,42 +85,24 @@ export function StageAmountsEditor({
           </button>
         ))}
       </div>
-      {blocked && (
-        <div
-          data-testid="stage-amounts-lifetime-blocked"
-          style={{ fontSize: 10, color: 'var(--text-secondary)', marginBottom: 6 }}
-        >
-          {blocked}
-        </div>
-      )}
-      {value.preset === 'lifetime' && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Lifetime:</span>
-          <NumberInput
-            value={effectiveLifetime}
-            onChange={(lt) => applyPreset('lifetime', lt)}
-            integerOnly
-            min={1}
-            emptyValue={1}
-            disabled={!!value.lifetimeParam}
-            data-testid="stage-amounts-lifetime"
-            style={{ width: 50, height: 22, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', outline: 'none', textAlign: 'right' }}
+      {value.preset === 'custom' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Years:</span>
+          <YearsInput
+            value={value.lifetimeParam ? (paramYears != null ? Math.max(1, Math.round(paramYears)) : value.lifetime) : value.lifetime}
+            onChange={(y) => setYears(y)}
+            disabled={!yearsAvailable || !!value.lifetimeParam}
+            testId="stage-amounts-lifetime"
           />
-          <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>years</span>
           {parameters && parameters.length > 0 && (
             <select
               data-testid="stage-amounts-lifetime-param"
               value={value.lifetimeParam ?? ''}
+              disabled={!yearsAvailable}
               onChange={(e) => {
                 const name = e.target.value || null
-                const lt = name
-                  ? (parameters.find((q) => q.name === name)?.value ?? value.lifetime)
-                  : value.lifetime
-                onChange({
-                  ...value, preset: 'lifetime', lifetimeParam: name,
-                  lifetime: Math.max(1, Math.round(lt)),
-                  amounts: stageAmountsForPreset(archetype, 'lifetime', Math.max(1, Math.round(lt)), value.amounts, projectBasis),
-                })
+                const v = name ? parameters.find((q) => q.name === name)?.value : undefined
+                setYears(v != null ? Math.max(1, Math.round(v)) : value.lifetime, name)
               }}
               style={{
                 height: 22, padding: '0 4px', backgroundColor: 'var(--bg-elevated)',
@@ -134,6 +116,13 @@ export function StageAmountsEditor({
               ))}
             </select>
           )}
+          <span data-testid="stage-amounts-years-note" style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+            {blocked
+              ? blocked
+              : value.lifetime == null
+                ? 'Enter the years for this product; per-year stages are multiplied by it.'
+                : `= 1 unit over ${value.lifetime} year${value.lifetime !== 1 ? 's' : ''}`}
+          </span>
         </div>
       )}
       <div style={{ border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', overflow: 'hidden' }}>
@@ -193,9 +182,13 @@ export function StageAmountsEditor({
               <NumberInput
                 value={value.amounts[stage] ?? 1}
                 onChange={(v) => {
+                  // A hand edit means the amounts no longer follow the years,
+                  // so the years stop describing the run: cleared, not kept.
                   onChange({
                     ...value,
                     preset: 'custom',
+                    lifetime: null,
+                    lifetimeParam: null,
                     amounts: { ...value.amounts, [stage]: v },
                   })
                 }}
@@ -216,18 +209,15 @@ export function StageAmountsEditor({
           )
         })}
       </div>
-      {value.preset === 'lifetime' && (
-        <div style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4, textAlign: 'right' }}>
-          = 1 unit over {value.lifetime} year{value.lifetime !== 1 ? 's' : ''}
-        </div>
-      )}
     </div>
   )
 }
 
-// Preset → per-stage amounts. ANNUAL stages scale by `lifetime` under the
-// "lifetime" preset; one-time stages stay at 1. "custom" preserves prior
-// values (defaulting to 1). Shared by the editor's preset toggle AND by
+// Preset → per-stage amounts. "1 year" sets every stage to 1. "Custom" with
+// years entered scales per-year stages by them (one-time stages stay at 1);
+// "Custom" without years preserves prior values (defaulting to 1). There is no
+// Lifetime preset and no default lifetime: not every product lives 15 years,
+// so the years are always the user's. Shared by the editor's preset toggle AND by
 // multi-item seeding / apply-to-all so the preset math has one definition.
 /** The DECLARED basis of a stage, or null when undeclared.
  *
@@ -281,10 +271,10 @@ export function lifetimeBlockedReason(
 ): string | null {
   const undeclared = undeclaredStages(arc, projectBasis)
   if (undeclared.length > 0) {
-    return `Declare a basis for ${undeclared.join(', ')} to use Lifetime.`
+    return `Declare a basis for ${undeclared.join(', ')} to enter years.`
   }
   if (!(arc.stages ?? []).some((s) => stageBasis(arc, s, projectBasis) === 'per_year')) {
-    return 'No per-year stages — lifetime has no effect.'
+    return 'No per-year stages, so the years have no effect.'
   }
   return null
 }
@@ -292,17 +282,17 @@ export function lifetimeBlockedReason(
 export function stageAmountsForPreset(
   arc: ArchetypeSummary,
   preset: AmountPreset,
-  lifetime: number,
+  years: number | null,
   prev?: Record<string, number> | null,
   projectBasis?: UsePhaseBasis,
 ): Record<string, number> {
   const amounts: Record<string, number> = {}
   for (const s of arc.stages ?? []) {
     if (preset === '1year') amounts[s] = 1
-    // Only a stage DECLARED per_year scales with the lifetime. per_unit and
-    // undeclared both stay at 1 -- the identity multiplier is the one value
+    // Years entered: only a stage DECLARED per_year scales with them. per_unit
+    // and undeclared both stay at 1 -- the identity multiplier is the one value
     // both conventions agree on, which is what makes it safe as a default.
-    else if (preset === 'lifetime') amounts[s] = stageBasis(arc, s, projectBasis) === 'per_year' ? lifetime : 1
+    else if (years != null) amounts[s] = stageBasis(arc, s, projectBasis) === 'per_year' ? years : 1
     else amounts[s] = prev?.[s] ?? 1
   }
   return amounts
@@ -313,18 +303,18 @@ export function stageAmountsForPreset(
 export function defaultStageAmounts(arc: ArchetypeSummary): ArchetypeStageAmounts {
   const amounts: Record<string, number> = {}
   for (const s of arc.stages ?? []) amounts[s] = 1
-  return { preset: '1year', lifetime: 15, amounts }
+  return { preset: '1year', lifetime: null, amounts }
 }
 
 // Compact summary for a collapsed Stage Amounts card — preset name + the
 // per-stage values in insertion order, abbreviated. Truncated to the first
 // six stages so the line stays readable on narrow viewports. Shared by
 // Single-item (wrapper-level card) and Multi-item (per-item cards).
-export function stageAmountsSummary(entry: { preset: string; lifetime: number; lifetimeParam?: string | null; amounts: Record<string, number> }): string {
+export function stageAmountsSummary(entry: { preset: string; lifetime: number | null; lifetimeParam?: string | null; amounts: Record<string, number> }): string {
   const presetLabel =
     entry.preset === '1year' ? '1 year' :
-    entry.preset === 'lifetime'
-      ? `Lifetime · ${entry.lifetime} yr${entry.lifetimeParam ? ` (${entry.lifetimeParam})` : ''}` :
+    entry.lifetime != null
+      ? `Custom · ${entry.lifetime} yr${entry.lifetimeParam ? ` (${entry.lifetimeParam})` : ''}` :
     'Custom'
   const stages = Object.keys(entry.amounts)
   const head = stages.slice(0, 6).map((s) => `${abbreviateStage(s)} ${formatStageAmount(entry.amounts[s])}`)
@@ -362,4 +352,38 @@ export function stageAmountsEqual(
     if (a[k] !== b[k]) return false
   }
   return true
+}
+
+/** The years box. Starts EMPTY: there is no default lifetime to fall back on.
+ *  A whole number of at least 1, or nothing. */
+export function YearsInput({ value, onChange, disabled, testId }: {
+  value: number | null
+  onChange: (years: number | null) => void
+  disabled?: boolean
+  testId?: string
+}) {
+  const [text, setText] = useState(value == null ? '' : String(value))
+  useEffect(() => { setText(value == null ? '' : String(value)) }, [value])
+  return (
+    <input
+      type="text"
+      inputMode="numeric"
+      data-testid={testId}
+      placeholder="years"
+      value={text}
+      disabled={disabled}
+      onChange={(e) => {
+        const t = e.target.value.replace(/[^0-9]/g, '')
+        setText(t)
+        const n = parseInt(t, 10)
+        onChange(Number.isFinite(n) && n >= 1 ? n : null)
+      }}
+      style={{
+        width: 56, height: 22, padding: '0 6px', backgroundColor: 'var(--bg-elevated)',
+        border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
+        color: 'var(--text-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
+        outline: 'none', textAlign: 'right', opacity: disabled ? 0.5 : 1,
+      }}
+    />
+  )
 }

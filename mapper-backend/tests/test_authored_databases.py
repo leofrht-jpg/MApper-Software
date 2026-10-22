@@ -119,7 +119,7 @@ def test_scope_is_required_with_no_default():
 
 
 def test_partial_scope_requires_a_note():
-    with pytest.raises(ValidationError, match="scope_note"):
+    with pytest.raises(ValidationError, match="note on what it leaves out"):
         act([ex()], scope="partial")
     act([ex()], scope="partial", scope_note="CO2 only; other flows not known")
 
@@ -167,7 +167,7 @@ def test_basic_variance_is_ecoinvents_median_for_that_flow():
 
 def test_basic_variance_cannot_be_overridden_where_ecoinvent_has_one():
     """Otherwise a user could lower it and slip under the floor unnoticed."""
-    with pytest.raises(eng.AuthoredError, match="not user-settable"):
+    with pytest.raises(eng.AuthoredError, match="cannot be set here"):
         eng.resolve_exchange(ex(NOX, basic_variance=0.0001, basic_variance_reason="x"),
                              FakeBackend())
 
@@ -217,7 +217,7 @@ def test_a_flow_ecoinvent_never_scores_needs_a_user_variance_and_reason():
     with pytest.raises(eng.AuthoredError) as err:
         eng.resolve_exchange(ex(RARE), FakeBackend())
     text = " ".join(err.value.problems)
-    assert "basic_variance must be entered" in text and "basic_variance_reason is required" in text
+    assert "enter the Basic variance" in text and "give the reason under Basic variance" in text
 
 
 def test_a_user_entered_variance_is_stored_with_its_reason_and_marked_unfloored():
@@ -500,3 +500,26 @@ def test_authored_databases_are_not_listed_as_licensed_base(monkeypatch):
     assert inv["authored"] == ["my-authored"]
     assert "my-authored" not in inv["installed_base"]
     assert "rebuilt automatically" in inv["authored_rebuild"].lower()
+
+
+def test_no_refusal_names_a_request_field():
+    """A refusal is read by a person in the editor, which shows "Basic
+    variance", a reason box under it, and the floor-reason box -- never the
+    request fields. Driven through ``resolve_exchange`` on both bases."""
+    import re
+
+    from mapper.models.authored_schemas import ExchangeInput
+
+    raw = re.compile(r"\b(basic_variance(_reason|_detail)?|floor_reason|scope_note|complete_indicators|uncertainty_basis)\b")
+    texts = []
+    backend = FakeBackend()
+    for basis, extra in [("supplied", {"floor_reason": "x"}), ("ecoinvent", {"basic_variance": 0.5})]:
+        for flow in (NOX, NOBV):
+            inp = ExchangeInput(flow_database=flow.database, flow_code=flow.code, amount=1.0,
+                                pedigree=PED_LOW, uncertainty_basis=basis, **extra)
+            try:
+                eng.resolve_exchange(inp, backend)
+            except eng.AuthoredError as e:
+                texts += list(e.problems)
+    assert texts, "no refusal was produced; the probe does not test anything"
+    assert not [t for t in texts if raw.search(t)], texts

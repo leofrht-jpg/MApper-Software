@@ -305,8 +305,12 @@ interface AESAStore {
   caseSelection: string[] | null
   setCaseSelection: (ids: string[]) => void
   /** Which result the views show: null = base, else an `AESACase.id`. */
-  activeCaseId: string | null
-  setActiveCaseId: (id: string | null) => void
+  /** The case and the sharing being shown: one cell of the case x sharing
+   *  matrix. "base" on both is the base result. */
+  activeCase: string
+  activeSharing: string
+  setActiveCase: (id: string) => void
+  setActiveSharing: (id: string) => void
   // Set the carbon-budget basis ("CO2" budget vs "CO2e_GHG" budget) on the
   // draft and, if a result is already on screen, re-run the last compute so the
   // climate SR reflects the new basis. Only the climate-change SR responds; the
@@ -695,19 +699,20 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
         running: false,
         lastRunAt: new Date().toISOString(),
         displayedIndicators: null,
-        activeCaseId: null,
+        activeCase: 'base', activeSharing: 'base',
       })
     } catch (e) {
       set({ running: false, error: e instanceof Error ? e.message : String(e) })
     }
   },
 
-  clearResult: () => set({ result: null, lastRunAt: null, displayedIndicators: null, activeCaseId: null }),
+  clearResult: () => set({ result: null, lastRunAt: null, displayedIndicators: null, activeCase: 'base', activeSharing: 'base' }),
 
   caseSelection: null,
   setCaseSelection: (ids) => set({ caseSelection: ids }),
-  activeCaseId: null,
-  setActiveCaseId: (id) => set({ activeCaseId: id }),
+  activeCase: 'base', activeSharing: 'base',
+  setActiveCase: (id) => set({ activeCase: id }),
+  setActiveSharing: (id) => set({ activeSharing: id }),
 
   setBudgetBasis: (basis) => {
     const { draft } = get()
@@ -864,7 +869,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
       // sessions don't carry the field; ``displayed_indicators ??
       // null`` keeps them on "show all".
       displayedIndicators: session.displayed_indicators ?? null,
-      activeCaseId: null,
+      activeCase: 'base', activeSharing: 'base',
     })
   },
 
@@ -899,7 +904,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     result: null,
     lastRunAt: null,
     displayedIndicators: null,
-    activeCaseId: null,
+    activeCase: 'base', activeSharing: 'base',
   }),
 
   reset: () => set((s) => ({
@@ -923,7 +928,7 @@ export const useAESAStore = create<AESAStore>((set, get) => ({
     error: null,
     displayedIndicators: null,
     caseSelection: null,
-    activeCaseId: null,
+    activeCase: 'base', activeSharing: 'base',
   })),
 
   // ── Preset / chain editing ────────────────────────────────────────────────

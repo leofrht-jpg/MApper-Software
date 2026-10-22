@@ -93,18 +93,36 @@ def test_static_default_one_year_exports_validly():
 
 
 def test_custom_amounts_say_the_lifetime_was_not_used():
-    # The EVS40 shape: amounts typed by hand (Use Phase 16) while the stored
-    # lifetime was still the 15 default. The export read "Lifetime 15" beside
-    # "Use Phase 16"; the 15 was never applied.
-    meta = StageAmountsMeta(preset="custom", lifetime=15,
+    # The EVS40 shape: amounts typed by hand (Use Phase 16), no years entered.
+    # The export once read "Lifetime 15" beside "Use Phase 16" from a stale
+    # default; a hand edit now clears the years, so there is none to print.
+    meta = StageAmountsMeta(preset="custom", lifetime=None,
                             amounts={"Manufacturing": 1, "Use Phase": 16, "End of Life": 1})
     res = _result()
     res.stage_amounts = dict(meta.amounts)
     cfg = _cfg(impact_api._build_single_product_static_workbook(
         archetype_name="A", scope="all", scenarios=[("Base", res)], stage_amounts_meta=meta,
     ))
-    assert cfg["Lifetime (yr)"] == "not used (custom stage amounts)"
+    assert cfg["Lifetime (yr)"] == "not used (custom stage amounts, no years entered)"
     assert "Use Phase 16" in cfg["Stage amounts"]
+
+
+def test_custom_with_years_entered_prints_the_years():
+    """The Lifetime preset is gone; Custom › Years is where the years come from.
+    Entered years ARE what the per-year stages were scaled by, so they print."""
+    meta = StageAmountsMeta(preset="custom", lifetime=16,
+                            amounts={"Manufacturing": 1, "Use Phase": 16, "End of Life": 1})
+    res = _result()
+    res.stage_amounts = dict(meta.amounts)
+    cfg = _cfg(impact_api._build_single_product_static_workbook(
+        archetype_name="A", scope="all", scenarios=[("Base", res)], stage_amounts_meta=meta,
+    ))
+    assert cfg["Preset"] == "custom" and cfg["Lifetime (yr)"] == 16
+
+
+def test_one_year_never_prints_a_lifetime_even_if_one_was_sent():
+    meta = StageAmountsMeta(preset="1year", lifetime=15, amounts={"Use Phase": 1})
+    assert meta.entered_years() is None
 
 
 def test_a_parameter_sourced_lifetime_names_the_parameter():

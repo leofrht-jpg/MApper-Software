@@ -33,6 +33,19 @@ _BACKUP_COUNT = 3
 _configured = False
 
 
+#: Libraries whose INFO lines are per-call progress chatter. bw2calc logs
+#: "Switching LCIA method" and "Redoing LCIA" on EVERY characterisation, so one
+#: multi-indicator run wrote thousands of lines (4,529 in one user's log) and
+#: buried everything else in Settings › Logs. Raised to WARNING: their warnings
+#: and errors still come through.
+QUIET_INFO_LOGGERS = ("bw2calc",)
+
+
+def quiet_chatty_libraries() -> None:
+    for name in QUIET_INFO_LOGGERS:
+        logging.getLogger(name).setLevel(logging.WARNING)
+
+
 def configure_logging() -> Path:
     """Install a rotating file handler on the root logger.
 
@@ -40,6 +53,7 @@ def configure_logging() -> Path:
     resolved log file path so callers can show it in the UI.
     """
     global _configured
+    quiet_chatty_libraries()
     if _configured:
         return LOG_FILE
 

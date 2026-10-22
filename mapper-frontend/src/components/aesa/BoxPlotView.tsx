@@ -18,20 +18,26 @@ import { boxStats, type BoxStats } from '../../utils/boxStats'
 
 interface Props {
   result: AESAComputeResult
+  /** The dashboard's selected year. When given, this view's slider and the
+   *  dashboard's "Selected year" card are ONE control: both write it. */
+  year?: number | null
+  onYearChange?: (year: number) => void
 }
 
 const PRINCIPLES: SharingPrincipleId[] = ['EpC', 'IN', 'AGR', 'LA', 'AR']
 
 const MULTI_D_COLOR = '#A78BFA'
 
-export function BoxPlotView({ result }: Props) {
+export function BoxPlotView({ result, year: yearProp, onYearChange }: Props) {
   const years = useMemo(() => {
     const s = new Set<number>()
     for (const r of result.results) s.add(r.year)
     return Array.from(s).sort((a, b) => a - b)
   }, [result.results])
 
-  const [year, setYear] = useState(() => years[years.length - 1] ?? 0)
+  const [localYear, setLocalYear] = useState(() => years[years.length - 1] ?? 0)
+  const year = yearProp ?? localYear
+  const setYear = (y: number) => { if (onYearChange) onYearChange(y); else setLocalYear(y) }
   const boxRef = useRef<HTMLDivElement>(null)
   // Patch 4J — sibling ref on the existing legend block (Multi-D
   // baseline + per-principle swatches) so ChartExportButton's Mode

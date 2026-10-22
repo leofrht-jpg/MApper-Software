@@ -21,7 +21,7 @@ import type { ArchetypeSummary } from '../src/api/client'
 
 // `annual` now declares the stage BASIS rather than relying on the
 // scope-derived hint: a stage with no declaration is undeclared, computes at
-// x1 and disables the Lifetime preset. See the scope-vs-basis section in
+// x1 and keeps the years box locked. See the scope-vs-basis section in
 // CLAUDE.md and tests/stageBasis.test.tsx.
 const mkArc = (id: string, stages: string[], annual: Record<string, boolean> = {}): ArchetypeSummary => ({
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -36,7 +36,7 @@ beforeEach(() => {
 })
 
 describe('StageAmountsEditor', () => {
-  it('renders preset toggle, lifetime input, and per-stage rows', () => {
+  it('offers "1 year" and "Custom" only: there is no Lifetime preset', () => {
     const arc = mkArc('a1', ['Manufacturing', 'Use Phase', 'End of Life'], { 'Use Phase': true })
     const value = defaultStageAmounts(arc)
     const { getByTestId, queryByTestId } = render(
@@ -44,26 +44,54 @@ describe('StageAmountsEditor', () => {
     )
     expect(getByTestId('stage-amounts-editor')).toBeInTheDocument()
     expect(getByTestId('stage-amounts-preset-1year')).toBeInTheDocument()
-    expect(getByTestId('stage-amounts-preset-lifetime')).toBeInTheDocument()
     expect(getByTestId('stage-amounts-preset-custom')).toBeInTheDocument()
+    expect(queryByTestId('stage-amounts-preset-lifetime')).toBeNull()
     expect(getByTestId('stage-amounts-input-Manufacturing')).toBeInTheDocument()
-    expect(getByTestId('stage-amounts-input-Use Phase')).toBeInTheDocument()
-    // Lifetime input only shows when preset is 'lifetime'.
+    // The years box belongs to Custom.
     expect(queryByTestId('stage-amounts-lifetime')).toBeNull()
+    // And no default lifetime anywhere.
+    expect(value.lifetime).toBeNull()
   })
 
-  it('switching to lifetime preset multiplies annual stages by lifetime years', () => {
+  it('Custom starts with the years EMPTY, and entering them scales per-year stages', () => {
     const arc = mkArc('a1', ['Manufacturing', 'Use Phase'], { 'Use Phase': true })
-    const value = defaultStageAmounts(arc)
-    let captured = value
-    const { getByTestId } = render(
-      <StageAmountsEditor archetype={arc} value={value} onChange={(v) => { captured = v }} />,
+    let captured = defaultStageAmounts(arc)
+    const { getByTestId, rerender } = render(
+      <StageAmountsEditor archetype={arc} value={captured} onChange={(v) => { captured = v }} />,
     )
-    fireEvent.click(getByTestId('stage-amounts-preset-lifetime'))
-    expect(captured.preset).toBe('lifetime')
-    // Annual stage scales to lifetime; non-annual stays at 1.
-    expect(captured.amounts['Use Phase']).toBe(15)
+    fireEvent.click(getByTestId('stage-amounts-preset-custom'))
+    expect(captured.preset).toBe('custom')
+    expect(captured.lifetime).toBeNull()
+    rerender(<StageAmountsEditor archetype={arc} value={captured} onChange={(v) => { captured = v }} />)
+    const years = getByTestId('stage-amounts-lifetime') as HTMLInputElement
+    expect(years.value).toBe('')
+    fireEvent.change(years, { target: { value: '12' } })
+    expect(captured.lifetime).toBe(12)
+    expect(captured.amounts['Use Phase']).toBe(12)
     expect(captured.amounts['Manufacturing']).toBe(1)
+  })
+
+  it('a hand edit to a stage clears the years: they no longer describe the run', () => {
+    const arc = mkArc('a1', ['Manufacturing', 'Use Phase'], { 'Use Phase': true })
+    let captured = { preset: 'custom' as const, lifetime: 12, amounts: { Manufacturing: 1, 'Use Phase': 12 } }
+    const { getByTestId } = render(
+      <StageAmountsEditor archetype={arc} value={captured} onChange={(v) => { captured = v as typeof captured }} />,
+    )
+    const input = getByTestId('stage-amounts-input-Use Phase') as HTMLInputElement
+    fireEvent.change(input, { target: { value: '10' } })
+    fireEvent.blur(input)
+    expect(captured.amounts['Use Phase']).toBe(10)
+    expect(captured.lifetime).toBeNull()
+  })
+
+  it('the years stay locked until every stage declares a basis', () => {
+    const arc = mkArc('a1', ['Manufacturing', 'Use Phase'], { 'Use Phase': true })
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ;(arc as any).stage_basis = { 'Use Phase': 'per_year' }          // Manufacturing undeclared
+    const value = { preset: 'custom' as const, lifetime: null, amounts: { Manufacturing: 1, 'Use Phase': 1 } }
+    const { getByTestId } = render(<StageAmountsEditor archetype={arc} value={value} onChange={() => {}} />)
+    expect((getByTestId('stage-amounts-lifetime') as HTMLInputElement).disabled).toBe(true)
+    expect(getByTestId('stage-amounts-years-note').textContent).toContain('Declare a basis for Manufacturing')
   })
 
   it('returns null UI when archetype has no stages', () => {

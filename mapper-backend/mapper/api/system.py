@@ -132,6 +132,50 @@ def save_to_downloads(data: bytes, filename: str, *, fallback_dir: Path) -> Path
     return target
 
 
+class RevealRequest(BaseModel):
+    path: str
+
+
+def _reveal_roots() -> list[Path]:
+    """Where ``save_to_downloads`` writes: ~/Downloads, else the log directory
+    (Logs and AESA both fall back there). Only files under these are revealed."""
+    return [(Path.home() / "Downloads").resolve(), LOG_FILE.parent.resolve()]
+
+
+def _reveal_command(target: Path) -> list[str]:
+    import sys
+
+    if sys.platform == "darwin":
+        return ["open", "-R", str(target)]
+    if sys.platform.startswith("win"):
+        return ["explorer", f"/select,{target}"]
+    return ["xdg-open", str(target.parent)]
+
+
+@router.post("/reveal")
+async def reveal_saved_file(body: RevealRequest) -> dict:
+    """Show a file this app saved in Finder (Explorer on Windows).
+
+    The packaged app is a remote http origin with no Tauri IPC, so the page
+    cannot ask the OS itself; the backend, which wrote the file and runs as the
+    user, does. Restricted to the folders ``save_to_downloads`` writes to, so a
+    request cannot open an arbitrary path.
+    """
+    import subprocess
+
+    try:
+        target = Path(body.path).expanduser().resolve(strict=True)
+    except (OSError, RuntimeError):
+        raise HTTPException(status_code=404, detail=f"{body.path} no longer exists.")
+    if not target.is_file() or not any(root == target.parent or root in target.parents for root in _reveal_roots()):
+        raise HTTPException(status_code=400, detail="Only a file this app saved can be revealed.")
+    try:
+        subprocess.Popen(_reveal_command(target))  # noqa: S603 -- fixed argv, checked path
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not open the folder: {e}") from e
+    return {"revealed": str(target)}
+
+
 @router.get("/logs/export")
 async def export_logs() -> FileResponse:
     if not LOG_FILE.is_file():

@@ -64,7 +64,7 @@ beforeEach(() => {
 describe('a parameter-sourced lifetime follows its parameter', () => {
   it('re-derives the stored lifetime and amounts when the parameter changes', async () => {
     useSingleProductImpactStore.getState().setStageAmountsForArc('ev9', {
-      preset: 'lifetime', lifetime: 15, lifetimeParam: 'lifetime_yr',
+      preset: 'custom', lifetime: 15, lifetimeParam: 'lifetime_yr',
       amounts: { Manufacturing: 1, 'Use Phase': 15 },
     })
     render(<SingleProductImpact />)
@@ -77,7 +77,7 @@ describe('a parameter-sourced lifetime follows its parameter', () => {
 
   it('leaves a typed lifetime alone', async () => {
     useSingleProductImpactStore.getState().setStageAmountsForArc('ev9', {
-      preset: 'lifetime', lifetime: 15, lifetimeParam: null,
+      preset: 'custom', lifetime: 15, lifetimeParam: null,
       amounts: { Manufacturing: 1, 'Use Phase': 15 },
     })
     render(<SingleProductImpact />)
@@ -88,7 +88,7 @@ describe('a parameter-sourced lifetime follows its parameter', () => {
 
 describe('the run freezes its own stage-amount meta', () => {
   it('Static: the meta is captured at Calculate and does not follow later edits', async () => {
-    const entry = { preset: 'lifetime' as const, lifetime: 16, lifetimeParam: 'lifetime_yr', amounts: { Manufacturing: 1, 'Use Phase': 16 } }
+    const entry = { preset: 'custom' as const, lifetime: 16, lifetimeParam: 'lifetime_yr', amounts: { Manufacturing: 1, 'Use Phase': 16 } }
     useSingleProductImpactStore.getState().setStageAmountsForArc('ev9', entry)
     useSingleProductImpactStore.getState().setStaticConfigForArc('ev9', { scope: 'all', selectedMethods: [GWP] })
     render(<SingleProductStaticPanel archetypeId="ev9" />)
@@ -110,7 +110,7 @@ describe('year range vs lifetime', () => {
   }
 
   it('says they are independent when the span and the lifetime differ', async () => {
-    useSingleProductImpactStore.getState().setStageAmountsForArc('ev9', { preset: 'lifetime', lifetime: 15, amounts: { Manufacturing: 1, 'Use Phase': 15 } })
+    useSingleProductImpactStore.getState().setStageAmountsForArc('ev9', { preset: 'custom', lifetime: 15, amounts: { Manufacturing: 1, 'Use Phase': 15 } })
     render(<SingleProductProjectedPanel archetypeId="ev9" />)
     await act(async () => { pickAll() })
     const note = screen.getByTestId('single-product-projected-lifetime-vs-range').textContent!
@@ -119,8 +119,8 @@ describe('year range vs lifetime', () => {
     expect(note).toMatch(/independent/)
   })
 
-  it('stays quiet when they agree, and off the Lifetime preset', async () => {
-    useSingleProductImpactStore.getState().setStageAmountsForArc('ev9', { preset: 'lifetime', lifetime: 16, amounts: { Manufacturing: 1, 'Use Phase': 16 } })
+  it('stays quiet when they agree, and with no years entered', async () => {
+    useSingleProductImpactStore.getState().setStageAmountsForArc('ev9', { preset: 'custom', lifetime: 16, amounts: { Manufacturing: 1, 'Use Phase': 16 } })
     const { unmount } = render(<SingleProductProjectedPanel archetypeId="ev9" />)
     await act(async () => { pickAll() })
     expect(screen.queryByTestId('single-product-projected-lifetime-vs-range')).toBeNull()

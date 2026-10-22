@@ -32,10 +32,16 @@ export function CaseSelectionModal({ options, initial, onRun, onCancel }: {
     if (next.has(id)) next.delete(id); else next.add(id)
     return next
   })
-  const groups: { title: string; items: CaseOption[] }[] = [
-    { title: 'Sharing principles', items: options.filter((o) => o.kind === 'sharing') },
-    { title: 'Parameter sensitivity cases', items: options.filter((o) => o.kind === 'parameter') },
-  ].filter((g) => g.items.length > 0)
+  // Two axes, listed apart: every ticked case is computed under every ticked
+  // sharing. Base is on both and always computed.
+  const groups: { axis: 'case' | 'sharing'; title: string; note: string; base: string; items: CaseOption[] }[] = [
+    { axis: 'case', title: 'Cases', note: 'Parameter values. Each case reruns the LCA once.',
+      base: 'Base: the parameter values as they stand.', items: options.filter((o) => o.kind === 'parameter') },
+    { axis: 'sharing', title: 'Sharing', note: 'How the boundary is shared down to the product. No LCA rerun.',
+      base: 'Base chain: the configured sharing chain.', items: options.filter((o) => o.kind === 'sharing') },
+  ]
+  const nCases = 1 + groups[0].items.filter((o) => picked.has(o.id)).length
+  const nSharing = 1 + groups[1].items.filter((o) => picked.has(o.id)).length
 
   return createPortal(
     <div
@@ -56,20 +62,21 @@ export function CaseSelectionModal({ options, initial, onRun, onCancel }: {
         display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
       }}>
         <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-          Sensitivity cases to compute
+          Cases and sharing to compute
         </div>
-        <label style={rowStyle}>
-          <input type="checkbox" checked disabled data-testid="aesa-case-base" />
-          <span>
-            <span style={labelStyle}>Base</span>
-            <span style={defStyle}>The configuration as it stands. Always computed.</span>
-          </span>
-        </label>
         {groups.map((g) => (
-          <div key={g.title} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+          <div key={g.axis} data-testid={`aesa-case-group-${g.axis}`} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
             <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-tertiary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
               {g.title}
             </div>
+            <div style={defStyle}>{g.note}</div>
+            <label style={rowStyle}>
+              <input type="checkbox" checked disabled data-testid={g.axis === 'case' ? 'aesa-case-base' : 'aesa-sharing-base'} />
+              <span>
+                <span style={labelStyle}>{g.axis === 'case' ? 'Base' : 'Base chain'}</span>
+                <span style={defStyle}>{g.base} Always computed.</span>
+              </span>
+            </label>
             {g.items.map((o) => (
               <label key={o.id} style={rowStyle}>
                 <input
@@ -79,17 +86,24 @@ export function CaseSelectionModal({ options, initial, onRun, onCancel }: {
                   onChange={() => toggle(o.id)}
                 />
                 <span>
-                  <span style={labelStyle}>{o.label}</span>
+                  <span style={labelStyle}>{o.label.replace(/^(Case|Sharing): /, '')}</span>
                   {o.definition.map((d) => <span key={d} style={defStyle}>{d}</span>)}
                 </span>
               </label>
             ))}
+            {g.items.length === 0 && (
+              <div style={defStyle}>
+                {g.axis === 'case'
+                  ? 'No parameter cases offered (the project has none, or the source is a fleet).'
+                  : 'No sharing choices offered (tick "Sharing sensitivity" to add them).'}
+              </div>
+            )}
           </div>
         ))}
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 'var(--space-2)' }}>
           <Button variant="ghost" onClick={onCancel} data-testid="aesa-case-cancel">Cancel</Button>
           <Button variant="primary" onClick={() => onRun(picked)} data-testid="aesa-case-run">
-            Run {picked.size + 1} case{picked.size === 0 ? '' : 's'}
+            Run {nCases} case{nCases === 1 ? '' : 's'} × {nSharing} sharing
           </Button>
         </div>
       </div>

@@ -10,10 +10,9 @@ Releases before 0.3.0 are on the
 archived on [Zenodo](https://doi.org/10.5281/zenodo.22246255); this file starts
 at 0.3.0 and is kept from here on.
 
-## [0.3.0] — unreleased
+## [0.3.0] — 2026-10-22
 
-The version is bumped at every site and the desktop build is made and walked,
-but the tag and the GitHub release are not cut yet.
+Released 2026-10-22.
 
 ### Added
 
@@ -85,7 +84,73 @@ but the tag and the GitHub release are not cut yet.
   ship silent.
 - `CHANGELOG.md` — this file.
 
+- **Reveal in Finder for a saved log.** In the desktop app, Settings › Logs ›
+  Export now shows a "Reveal in Finder" button ("Show in folder" on Windows)
+  beside the path it wrote. The backend, which saved the file, asks the system
+  to show it, and it refuses any path outside the folders it saves to. "Copy
+  all" writes no file, so it has nothing to reveal.
+- **A warning when every AESA ratio is below 0.001.** A single-product run
+  under a downscaling chain that stops at a sector divides one product's impact
+  by a whole sector's share of each boundary, and every ratio reads as safe. The
+  AESA page now says that the chain probably does not reach a single product.
+  No value changes.
+
 ### Changed
+
+- **Impact-category abbreviations follow one convention**: AP, GWP100, ETfw,
+  EPf, EPm, EPt, HTPc, HTPnc, IRP, LU, ODP, PM, POCP, ADPf, ADPmm, WU, on screen
+  and in the export's Abbreviation column. Eight changed (for example ETP-fw
+  became ETfw, ADP-mm became ADPmm). No other place used the old forms.
+- **Authored-editor messages use the names on screen.** A refusal said
+  "basic_variance_reason" or "floor_reason"; it now names the Basic variance
+  box, the reason under it, and the Partial inventory note.
+- **Settings › Logs is no longer flooded by Brightway.** bw2calc wrote "Switching
+  LCIA method" and "Redoing LCIA" at INFO on every characterisation, thousands of
+  lines per run. Its INFO lines are dropped; its warnings and errors still come
+  through.
+
+- **Loading cards, checked against measured times.** Every calculation entry
+  point was timed on a sidecar against EVS40 and MAp-test. Five take more than
+  10 s, and each shows the shared loading card (what is running, elapsed time;
+  the page stays usable):
+  - AESA with four parameter cases × all sharing, 77 s;
+  - Monte Carlo, 1000 iterations, 69 s;
+  - system-level Prospective, 63 s;
+  - single-product Prospective over four years, 19 s;
+  - system-level Static with 25 indicators, 11 s.
+
+  DSM simulation, subsystem compute, material flows and every export finished
+  in under a second. The AESA card now says what it is running ("5 cases ×
+  6 sharing · 4 LCA reruns"). It also appears on the dashboard when the
+  Configuration panel is collapsed, which used to hide it during a minute-long
+  case run.
+
+- **AESA cases and sharing as a matrix.** The case switcher mixed parameter
+  cases (v1g, v2h_credit…) and sharing choices (Equal per Capita, Industrial
+  Output…) in one row, so a case could only be seen under the base chain. There
+  are now two selectors, Case (Base and the parameter cases) and Sharing (the
+  base chain, EpC, IN, AGR, LA, AR), and any case can be read under any sharing.
+  A parameter case reruns the LCA once. A sharing choice changes only the SOS,
+  so every case is also evaluated under every ticked sharing without another
+  LCA. The compute window lists the two groups separately and says which one
+  reruns the LCA. The Cases view and the export's Sensitivity sheets take each
+  difference against Base under the same sharing. Base's own sharing variants
+  are taken against the base chain. Every column and row names its case and its
+  sharing, and the Summary lists both axes with their definitions. Results saved
+  before this still switch and export.
+
+- **No Lifetime preset; the years are always entered.** Stage amounts offered
+  "1 year | Lifetime (15yr) | Custom", but not every product lives 15 years.
+  The preset is gone from Single item, Multi-item and the LCA Calculator, and
+  so is the default of 15. Under Custom a Years box starts empty; entering N
+  sets every per-year stage to N and every per-unit stage to 1. It stays locked
+  until each stage declares its basis, Manufacturing and End of Life included.
+  Editing a stage by hand clears the years, because they no longer describe the
+  run. The exports' "Lifetime (yr)" row prints the years entered, or "not used",
+  and AESA's per-year functional unit divides by them. A result computed before
+  this change, on the Lifetime preset, still exports and still divides. The LCA
+  Calculator also stops scaling stages by the scope-derived "annual" hint and
+  uses the declared basis, like the other two.
 
 - **Results are addressed by the full method tuple; the indicator label is
   display only.** An LCIA method's last tuple element is not unique: EF v3.1's
@@ -108,6 +173,38 @@ but the tag and the GitHub release are not cut yet.
   single-year basis actually used. No Sustainability Ratio values move.
 
 ### Fixed
+
+- **The not-specified note counted labels, not indicators.** It said "Not
+  specified for 14 indicators" beside a table marking 23, because EF v3.1's 25
+  indicators share 14 short names and the note counted the names. It now counts
+  indicators and names each one unambiguously ("climate change: fossil").
+- **The AESA export said "Impact Mode: static" for a Prospective single-product
+  run.** It printed the configuration's fleet Background setting. The result now
+  records what fed it, and the Summary row is "Impact source" (for example
+  "Single product (LCA), Prospective"). Results saved before this say "not
+  recorded" rather than guess.
+- **Opening a dependent subsystem before computing it logged an ERROR.** The
+  view asks for the result on open, and "not computed yet" came back as a 404.
+  It is now an ordinary empty answer; an unknown subsystem is still an error.
+
+- **One selected year in AESA.** The "Selected year" card at the top right
+  and the slider under the Radar and Box plot views each kept their own year,
+  so the card could read 2030 while the chart showed 2040. The dashboard's
+  year is now the only one; both controls set it, and switching views keeps it.
+
+- **Cohort colours on the by-cohort charts match the cohort mapping.** On the
+  Prospective chart (system level, MAp-test), the charger subsystems' colours
+  differed from the cohort mapping table. With a Stack-by set, a band and its
+  legend swatch took their colours from different places. The band used the
+  cohort's mapping colour; the legend used a group colour from a map that knew
+  only the primary system's dimension labels. A subsystem group such as "Public
+  AC Charger" was missing from that map, so its swatch, and the band of any
+  uncoloured subsystem cohort, fell back to a palette slot chosen by position,
+  with one position for the legend and another for the band. Every group the
+  chart shows now has its own colour, and a group's legend swatch is the
+  mapping colour when its cohorts share one. The bands, legend, facets and
+  tooltip use that one source, and the AESA Detail table now shows each cohort
+  in the same colour.
 
 - **Multi-item Monte Carlo across two authored databases.** A paired run whose
   items live in databases that do not reach each other (the polycarbonate

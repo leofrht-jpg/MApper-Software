@@ -25,6 +25,10 @@ import { YearSlider } from '../components/ui/YearSlider'
 import { ZONE_COLOR, ZONE_LABEL } from '../components/aesa/zones'
 import { useAESAStore } from '../stores/aesaStore'
 import { useDSMStore } from '../stores/dsmStore'
+import { useSubsystemStore } from '../stores/subsystemStore'
+import { cellResults, computeLabel, resultAxes } from '../utils/aesaCases'
+import { ComputeProgress } from '../components/ui/ComputeProgress'
+import { buildCombinedRowColorOverrides, useDSMSystemColors } from '../utils/dsmCohortColors'
 import { useImpactStore } from '../stores/impactStore'
 import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
 import { buildIndicatorColorMap } from '../utils/aesaIndicatorColors'
@@ -33,7 +37,7 @@ import { impactBasisLabel } from '../utils/aesaImpactBasis'
 import { CoverageGapNote } from '../components/authored/CoverageMarkers'
 import {
   exportAESA,
-  type AESAComputeResult,
+  type AESACase, type AESAComputeResult,
   type AESAZone,
   type AESAConfiguration,
 } from '../api/client'
@@ -56,10 +60,23 @@ export function AESADashboard() {
     clearActiveSession,
     displayedIndicators, toggleDisplayedIndicator,
     selectAllDisplayedIndicators, clearDisplayedIndicators,
-    activeCaseId, setActiveCaseId,
+    activeCase: activeCaseKey, activeSharing, setActiveCase, setActiveSharing,
     source, singleProductBasis,
+    running: aesaRunning, lastComputeArgs,
   } = useAESAStore()
   const { activeSystem, systemState } = useDSMStore()
+  // Cohort colours for the Detail table's per-cohort rows: the SAME resolver
+  // the Impact Assessment by-cohort charts use, fed the cohort-mapping colours
+  // (primary + dependent subsystems), so a cohort reads in one colour across
+  // the cohort mapping table, the impact charts and AESA.
+  const cohortRowColors = useDSMStore((s) => s.cohortRowColors)
+  const stackByDimension = useDSMStore((s) => s.stackByDimension)
+  const allSubsystems = useSubsystemStore((s) => s.subsystems)
+  const dependentSubsystems = useMemo(() => allSubsystems.filter((x) => x.type === 'dependent'), [allSubsystems])
+  const combinedRowColors = useMemo(
+    () => buildCombinedRowColorOverrides(activeSystem?.id, cohortRowColors, dependentSubsystems),
+    [activeSystem?.id, cohortRowColors, dependentSubsystems],
+  )
   const { staticResult, projectedResult } = useImpactStore()
   const spStaticResult = useSingleProductImpactStore((s) => s.staticResult)
   const spHasProspective = useSingleProductImpactStore((s) => s.projectedRuns.some((r) => r.year != null))
@@ -112,7 +129,7 @@ export function AESADashboard() {
     [defaults, draft?.boundary_set_id],
   )
 
-  // Conventional abbreviations (GWP100, ETP-fw, ADP-mm, LU ...) for the case
+  // Conventional abbreviations (GWP100, ETfw, ADPmm, LU ...) for the case
   // comparison figure, from the boundary record. Full names stay in tooltips.
   const caseAcronyms = useMemo(() => {
     const out: Record<string, string> = {}
@@ -141,17 +158,42 @@ export function AESADashboard() {
     if (year === null || !years.includes(year)) setYear(years[years.length - 1])
   }, [years, year])
 
-  // The result the views show: the base, or the case picked in the switcher.
-  // A case carries only its SR rows, so its zone counts are recomputed here;
-  // everything else (sensitivity, coverage, basis) is the run's.
-  const activeCase = useMemo(
-    () => (activeCaseId ? result?.cases?.find((c) => c.id === activeCaseId) ?? null : null),
-    [result, activeCaseId],
+  // The result the views show: one cell of the case x sharing matrix, picked
+  // by the two selectors. A cell carries only its SR rows, so its zone counts
+  // are recomputed here; everything else (sensitivity, coverage, basis) is the
+  // run's. A pair that was not computed (an old result) falls back to Base.
+  const axes = useMemo(() => resultAxes(result), [result])
+  const activeCell = useMemo(
+    () => cellResults(result, activeCaseKey, activeSharing),
+    [result, activeCaseKey, activeSharing],
   )
   const shown = useMemo<AESAComputeResult | null>(() => {
-    if (!result || !activeCase) return result
-    return { ...result, results: activeCase.results, summary_by_year: summariseByYear(activeCase.results) }
-  }, [result, activeCase])
+    if (!result || !activeCell || (activeCaseKey === 'base' && activeSharing === 'base')) return result
+    return { ...result, results: activeCell, summary_by_year: summariseByYear(activeCell) }
+  }, [result, activeCell, activeCaseKey, activeSharing])
+
+  // The Cases view: each parameter case against Base under the CHOSEN sharing
+  // (the Sharing selector). A run with no parameter cases compares its sharing
+  // choices against the base chain instead.
+  const casesView = useMemo(() => {
+    const empty = { base: result?.results ?? [], series: [] as AESACase[], reference: 'base' }
+    if (!result) return empty
+    if (axes.cases.length > 1) {
+      const sh = axes.sharings.find((x) => x.id === activeSharing) ?? axes.sharings[0]
+      const base = cellResults(result, 'base', sh.id) ?? result.results
+      const series = axes.cases.filter((c) => c.id !== 'base').flatMap((c) => {
+        const rows = cellResults(result, c.id, sh.id)
+        return rows ? [{ id: `parameter:${c.id}`, kind: 'parameter' as const, label: c.label, definition: c.definition, results: rows }] : []
+      })
+      const shLabel = sh.id === 'base' ? 'the base chain' : sh.label
+      return { base, series, reference: `Base under ${shLabel}` }
+    }
+    const series = axes.sharings.filter((x) => x.id !== 'base').flatMap((x) => {
+      const rows = cellResults(result, 'base', x.id)
+      return rows ? [{ id: `sharing:${x.id}`, kind: 'sharing' as const, label: x.label, definition: x.definition, results: rows }] : []
+    })
+    return { base: result.results, series, reference: 'the base chain' }
+  }, [result, axes, activeSharing])
 
   const yearSummary = useMemo(() => {
     if (!shown || year === null) return null
@@ -233,6 +275,19 @@ export function AESADashboard() {
       sensitivity: filteredSensitivity,
     }
   }, [shown, displayedIndicators, effectiveDisplayed])
+
+  const detailCohortKeys = useMemo(() => {
+    const keys = new Set<string>()
+    for (const r of filteredResult?.results ?? []) for (const k of Object.keys(r.impact_by_cohort ?? {})) keys.add(k)
+    return Array.from(keys)
+  }, [filteredResult])
+  const detailColors = useDSMSystemColors(source === 'single_product' ? null : (activeSystem ?? null), stackByDimension, {
+    rowColorOverrides: combinedRowColors,
+    cohortKeys: detailCohortKeys,
+  })
+  const detailCohortColor = source === 'single_product'
+    ? undefined
+    : (key: string) => detailColors.colorForCohort(key, detailCohortKeys.indexOf(key))
 
   const yearSummaryFiltered = useMemo(() => {
     if (!filteredResult || year === null) return null
@@ -466,6 +521,18 @@ export function AESADashboard() {
         <ConfigSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* The progress card lives in the Configuration panel, under Compute.
+              Collapsed, that panel shows no card -- and a case run takes over a
+              minute -- so the card moves here. */}
+          {sidebarCollapsed && (
+            <ComputeProgress
+              active={aesaRunning}
+              label={computeLabel(lastComputeArgs)}
+              bar="none"
+              statusColor="var(--mod-aesa)"
+              data-testid="aesa-compute-progress-main"
+            />
+          )}
           {/* Part C1 — source-aware empty states. Single-product (LCA) source
               has no DSM system; it needs a static single-product result. */}
           {source === 'single_product' ? (
@@ -608,34 +675,47 @@ export function AESADashboard() {
                   and could disagree with the panel about which basis a result
                   was computed on. It stays visible read-only in the export. */}
 
-              {/* Case switcher: which result Radar, Timeline and Detail show.
-                  Only when the run computed sensitivity cases. */}
-              {(result.cases?.length ?? 0) > 0 && (
-                <div data-testid="aesa-case-switcher" style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', marginRight: 4 }}>
-                    Case
-                  </span>
-                  {[{ id: null as string | null, label: 'Base' }, ...(result.cases ?? []).map((c) => ({ id: c.id as string | null, label: c.label }))].map((c) => {
-                    const active = activeCaseId === c.id
-                    return (
-                      <button
-                        key={c.id ?? 'base'}
-                        type="button"
-                        data-testid={`aesa-case-switch-${c.id ?? 'base'}`}
-                        aria-pressed={active}
-                        onClick={() => setActiveCaseId(c.id)}
-                        style={{
-                          padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: 'pointer',
-                          border: '1px solid ' + (active ? 'var(--mod-aesa)' : 'var(--border-default)'),
-                          background: active ? 'color-mix(in srgb, var(--mod-aesa) 14%, transparent)' : 'var(--bg-elevated)',
-                          color: active ? 'var(--mod-aesa)' : 'var(--text-primary)',
-                          fontSize: 12, fontWeight: active ? 600 : 500,
-                        }}
-                      >
-                        {c.label}
-                      </button>
-                    )
-                  })}
+              {/* Case x sharing selectors: which cell Radar, Timeline and Detail
+                  show. Two axes, so any case can be read under any sharing.
+                  Only when the run computed more than the base. */}
+              {(axes.cases.length > 1 || axes.sharings.length > 1) && (
+                <div data-testid="aesa-case-switcher" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {([
+                    { axis: 'case' as const, title: 'Case', entries: axes.cases, active: activeCaseKey, set: setActiveCase },
+                    { axis: 'sharing' as const, title: 'Sharing', entries: axes.sharings, active: activeSharing, set: setActiveSharing },
+                  ]).filter((g) => g.entries.length > 1).map((g) => (
+                    <div key={g.axis} data-testid={`aesa-${g.axis}-selector`} style={{ display: 'flex', gap: 4, flexWrap: 'wrap', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', marginRight: 4, minWidth: 56 }}>
+                        {g.title}
+                      </span>
+                      {g.entries.map((e) => {
+                        const active = g.active === e.id
+                        const pair = g.axis === 'case' ? [e.id, activeSharing] : [activeCaseKey, e.id]
+                        const available = cellResults(result, pair[0], pair[1]) != null
+                        return (
+                          <button
+                            key={e.id}
+                            type="button"
+                            data-testid={`aesa-${g.axis}-switch-${e.id}`}
+                            aria-pressed={active}
+                            disabled={!available}
+                            title={available ? e.definition.join(' · ') || undefined : 'Not computed for this combination. Compute again to fill it.'}
+                            onClick={() => g.set(e.id)}
+                            style={{
+                              padding: '4px 10px', borderRadius: 'var(--radius-sm)', cursor: available ? 'pointer' : 'not-allowed',
+                              opacity: available ? 1 : 0.45,
+                              border: '1px solid ' + (active ? 'var(--mod-aesa)' : 'var(--border-default)'),
+                              background: active ? 'color-mix(in srgb, var(--mod-aesa) 14%, transparent)' : 'var(--bg-elevated)',
+                              color: active ? 'var(--mod-aesa)' : 'var(--text-primary)',
+                              fontSize: 12, fontWeight: active ? 600 : 500,
+                            }}
+                          >
+                            {e.label}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  ))}
                 </div>
               )}
 
@@ -686,20 +766,22 @@ export function AESADashboard() {
                   />
                 ) : (
                   <>
+                    <ChainReachBanner results={result?.results ?? []} />
                     <CoverageGapNote
                       gaps={(result?.coverage_gaps ?? []).filter((g) => filteredResult.results.some((r) => r.pb_id === g.pb_id))}
                       testId="aesa-coverage-note"
                     />
-                    {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
+                    {view === 'radar'    && <RadarView results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} year={year} onYearChange={setYear} />}
                     {view === 'timeline' && <TimelineView results={filteredResult.results} carbonBudget={draft?.carbon_budget ?? null} sharing={draft?.sharing ?? null} coverageGaps={result?.coverage_gaps} />}
-                    {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} />}
-                    {view === 'boxplot'  && <BoxPlotView result={filteredResult} />}
+                    {view === 'detail'   && <DetailTable results={filteredResult.results} coverageGaps={result?.coverage_gaps} basis={result} cohortColor={detailCohortColor} />}
+                    {view === 'boxplot'  && <BoxPlotView result={filteredResult} year={year} onYearChange={setYear} />}
                     {view === 'cases'    && year !== null && result && (
                       <CaseComparisonView
-                        base={result.results.filter((r) => effectiveDisplayed.includes(r.pb_id))}
-                        cases={result.cases ?? []}
+                        base={casesView.base.filter((r) => effectiveDisplayed.includes(r.pb_id))}
+                        cases={casesView.series}
                         year={year}
                         acronyms={caseAcronyms}
+                        referenceLabel={casesView.reference}
                       />
                     )}
                   </>
@@ -1008,6 +1090,33 @@ const menuItemStyle: React.CSSProperties = {
 // Recoverable via Select all; the chart slot is otherwise blank to
 // avoid rendering a misleading "no data" message that could be
 // confused with a compute failure.
+/** Every SR below this reads as a chain that never narrowed to one product. */
+export const CHAIN_REACH_SR = 1e-3
+
+/**
+ * The default-configuration trap. A single-product run under a chain built for
+ * a fleet or a sector (the default allocates down to a sector, not to one
+ * product) divides one product's impact by a whole sector's share of the
+ * planetary boundary, so every SR comes out tiny and reads as "safe".
+ * Says so, and changes no number.
+ */
+export function ChainReachBanner({ results }: { results: { sr: number | null }[] }) {
+  const srs = results.map((r) => r.sr).filter((v): v is number => v != null && Number.isFinite(v))
+  if (!srs.length || !srs.every((v) => Math.abs(v) < CHAIN_REACH_SR)) return null
+  return (
+    <div data-testid="aesa-chain-reach-banner" role="note" style={{
+      fontSize: 'var(--text-xs)', color: 'var(--warning)', border: '1px solid var(--warning)',
+      borderRadius: 'var(--radius-md)', padding: 'var(--space-2) var(--space-3)', marginBottom: 'var(--space-3)',
+    }}>
+      <strong>Every Sustainability Ratio is below 0.001.</strong>{' '}
+      The downscaling chain probably does not reach a single product: its last layer still
+      allocates a whole sector's or country's share of each boundary, so one product's impact
+      looks negligible against it. Check the chain under Sharing before reading these as safe.
+      The values shown are unchanged.
+    </div>
+  )
+}
+
 function EmptyFilterState({ onSelectAll }: { onSelectAll: () => void }) {
   return (
     <div

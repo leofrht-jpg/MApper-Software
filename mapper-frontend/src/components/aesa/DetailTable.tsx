@@ -21,11 +21,15 @@ interface Props {
   coverageGaps?: AESACoverageGap[] | null
   /** The result's impact basis, so the headers say what each number is per. */
   basis?: Pick<AESAComputeResult, 'impact_basis' | 'lifetime_years'> | null
+  /** Colour of a cohort, from the cohort mapping (the same resolver the Impact
+   *  Assessment by-cohort charts use). Absent for a single-product source,
+   *  which has no cohorts. */
+  cohortColor?: (cohortKey: string) => string
 }
 
 type SortKey = 'year' | 'pb_name' | 'sr' | 'impact' | 'allocated_sos' | 'zone' | 'principle'
 
-export function DetailTable({ results, coverageGaps, basis }: Props) {
+export function DetailTable({ results, coverageGaps, basis, cohortColor }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>('sr')
   const [sortDesc, setSortDesc] = useState(true)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
@@ -182,7 +186,18 @@ export function DetailTable({ results, coverageGaps, basis }: Props) {
                             const pct = total > 0 ? (v / total) * 100 : 0
                             return (
                               <tr key={cohort}>
-                                <td style={{ ...td, width: 140 }}>{cohortDisplayString(cohort)}</td>
+                                <td style={{ ...td, width: 140 }}>
+                                  {cohortColor && (
+                                    <span
+                                      data-testid={`aesa-detail-cohort-swatch-${cohort}`}
+                                      style={{
+                                        display: 'inline-block', width: 8, height: 8, borderRadius: 2,
+                                        marginRight: 6, verticalAlign: 'middle', backgroundColor: cohortColor(cohort),
+                                      }}
+                                    />
+                                  )}
+                                  {cohortDisplayString(cohort)}
+                                </td>
                                 <td style={{ ...td, textAlign: 'right', width: 120 }}>{fmt(v)}</td>
                                 <td style={td}>
                                   <div style={{

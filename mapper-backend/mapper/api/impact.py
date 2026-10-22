@@ -2644,19 +2644,20 @@ def _sp_stage_amount_meta_rows(meta) -> list[tuple[str, Any]]:
 
 
 def _sp_lifetime_cell(meta) -> Any:
-    """The lifetime as the run used it, or why it was not used.
+    """The years the run used, or why none were.
 
-    Only the Lifetime preset multiplies anything by it. Under "1year" and
-    "custom" the stored number is a leftover the calculation never read, and
-    printing it beside the stage amounts made the export contradict itself
-    (an EVS40 export read "Lifetime 15" beside "Use Phase 16")."""
+    Only entered years multiply anything (``StageAmountsMeta.entered_years``).
+    Under "1year", or custom amounts typed stage by stage, there is no lifetime,
+    and printing a leftover number beside the stage amounts made the export
+    contradict itself (an EVS40 export read "Lifetime 15" beside "Use Phase
+    16")."""
     if meta is None:
         return "—"
-    if meta.preset != "lifetime":
-        why = "1-year preset" if meta.preset == "1year" else "custom stage amounts"
+    years = meta.entered_years()
+    if years is None:
+        why = "1-year preset" if meta.preset == "1year" else "custom stage amounts, no years entered"
         return f"not used ({why})"
-    lt = f"{meta.lifetime:g}"
-    return f"{lt} (from parameter {meta.lifetime_param})" if meta.lifetime_param else float(meta.lifetime)
+    return f"{years:g} (from parameter {meta.lifetime_param})" if meta.lifetime_param else years
 
 
 #: What the prospective "Year range" is, stated beside it. It is the span of the

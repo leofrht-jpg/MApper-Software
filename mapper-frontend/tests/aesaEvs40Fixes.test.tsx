@@ -179,10 +179,12 @@ describe('item 2: every impact says what it is per', () => {
 })
 
 describe('item 2: the Functional unit option is guarded', () => {
-  it('names why per year cannot apply to a run that was not on the Lifetime preset', () => {
+  it('names why per year cannot apply to a run without years entered', () => {
     expect(perYearBlockedReason(null)).toMatch(/Compute the single-product run first/)
     expect(perYearBlockedReason({ preset: '1year', lifetime: 15, amounts: {} })).toMatch(/"1 year"/)
-    expect(perYearBlockedReason({ preset: 'custom', lifetime: 15, amounts: {} })).toMatch(/"custom"/)
+    expect(perYearBlockedReason({ preset: 'custom', lifetime: null, amounts: {} })).toMatch(/without years entered/)
+    expect(perYearBlockedReason({ preset: 'custom', lifetime: 16, amounts: {} })).toBeNull()
+    // A result made before the Lifetime preset was removed still reads.
     expect(perYearBlockedReason({ preset: 'lifetime', lifetime: 16, amounts: {} })).toBeNull()
   })
 

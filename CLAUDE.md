@@ -2187,7 +2187,7 @@ Base SR/zone, then SR / ΔSR / zone per case); the old long sheet is
 before `cases` existed is read from `sensitivity` as sharing cases.
 
 The Cases view (`CaseComparisonView`) labels categories with the boundary's
-`conventional_acronym` (GWP100, ETP-fw, ADP-mm, LU …), an exception to the
+`conventional_acronym` (GWP100, ETfw, ADPmm, LU …), an exception to the
 "never an acronym on a label" rule in `aesaBoundaryLabels.ts`, made for this
 figure on request; full names stay in tooltips.
 

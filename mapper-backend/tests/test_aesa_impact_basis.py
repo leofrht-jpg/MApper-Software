@@ -109,11 +109,21 @@ def test_per_year_echoes_its_basis_and_lifetime(registered):
     assert res.impact_basis == "per_year" and res.lifetime_years == 16
 
 
-@pytest.mark.parametrize("preset", ["1year", "custom"])
-def test_per_year_is_refused_unless_the_run_was_on_the_lifetime_preset(registered, preset):
+@pytest.mark.parametrize(("meta", "said"), [
+    (StageAmountsMeta(preset="1year", lifetime=15), "1 year"),
+    (StageAmountsMeta(preset="custom", lifetime=None, amounts={"Use Phase": 16}), "custom amounts without years"),
+])
+def test_per_year_is_refused_unless_years_were_entered(registered, meta, said):
     with pytest.raises(HTTPException) as e:
-        _compute("per_year", StageAmountsMeta(preset=preset, lifetime=15))
-    assert e.value.status_code == 400 and preset in e.value.detail
+        _compute("per_year", meta)
+    assert e.value.status_code == 400 and said in e.value.detail
+
+
+def test_per_year_divides_by_the_years_entered_under_custom(registered):
+    """The Lifetime preset is gone: Custom with years entered is the run that
+    can be divided, and it divides by exactly those years."""
+    res = _compute("per_year", StageAmountsMeta(preset="custom", lifetime=16, amounts={"Use Phase": 16}))
+    assert res.impact_basis == "per_year" and res.lifetime_years == 16
 
 
 def test_per_year_is_refused_without_stage_meta(registered):

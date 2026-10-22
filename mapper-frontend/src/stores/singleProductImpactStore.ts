@@ -43,10 +43,16 @@ export type ViewMode = 'chart' | 'table'
 // per archetype, since the user can switch archetype within the wrapper and
 // expect their stage-amount edits to survive). The wrapper edits map[active]
 // only — switching archetypes preserves both sides' edits.
-export type AmountPreset = '1year' | 'lifetime' | 'custom'
+/** "1 year" sets every stage to 1. "Custom" takes per-stage amounts, filled
+ *  from the years when the user enters them. There is no Lifetime preset: not
+ *  every product lives 15 years, so the years are always entered. */
+export type AmountPreset = '1year' | 'custom'
 export interface ArchetypeStageAmounts {
   preset: AmountPreset
-  lifetime: number
+  /** The years entered under Custom; per-year stages were set to it. null when
+   *  none were entered, or when a stage was then edited by hand (the amounts no
+   *  longer follow the years, so the years no longer describe the run). */
+  lifetime: number | null
   /** Optional parameter name driving `lifetime`, so a project that already
    *  models its horizon (Battery Circularity's `bess_lifetime_years = 15`)
    *  does not carry a hand-typed duplicate that can drift from the BOM. */

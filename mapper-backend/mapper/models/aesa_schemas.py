@@ -101,7 +101,7 @@ class PlanetaryBoundary(BaseModel):
     # boundary set that omits it (Ryberg's scaffold) still renders.
     short_name: str | None = None
     # PURELY INFORMATIONAL, for the glossary. The abbreviation LCA readers will
-    # recognise (AP, HTP-c, ODP …). These come from CML / ILCD convention, NOT
+    # recognise (AP, HTPc, ODP …). These come from CML / ILCD convention, NOT
     # from EF, which is why MApper never uses them as a label — displaying one
     # would assert a naming EF does not define. The glossary shows it as
     # "commonly written AP" so the familiar handle is available without the
@@ -815,6 +815,23 @@ class AESACase(BaseModel):
     results: list[SustainabilityRatioResult] = Field(default_factory=list)
 
 
+class AESAAxisEntry(BaseModel):
+    """One choice on an axis of the case x sharing matrix."""
+    id: str                     # "base", a parameter case name, or a principle id
+    label: str
+    definition: list[str] = Field(default_factory=list)
+
+
+class AESACell(BaseModel):
+    """The SRs of one (case, sharing) pair. ``case`` is "base" or a parameter
+    case name; ``sharing`` is "base" (the configured chain) or a principle id.
+    The (base, base) cell is ``AESAComputeResult.results`` and is not repeated
+    here."""
+    case: str
+    sharing: str
+    results: list[SustainabilityRatioResult] = Field(default_factory=list)
+
+
 class AESAComputeResult(BaseModel):
     config_id: str | None
     results: list[SustainabilityRatioResult]
@@ -835,6 +852,21 @@ class AESAComputeResult(BaseModel):
     #: parameter. The base is ``results``; ``sensitivity`` keeps the sharing
     #: variants keyed by principle for the box plot.
     cases: list[AESACase] = Field(default_factory=list)
+    #: The case x sharing matrix. A parameter case changes the inventory, so it
+    #: costs one LCA rerun; a sharing choice changes only the SOS, so every
+    #: case is ALSO evaluated under every chosen sharing without another LCA.
+    #: ``case_axis`` starts with Base, ``sharing_axis`` with the base chain.
+    #: Empty on results made before the matrix existed (read ``cases`` then).
+    case_axis: list[AESAAxisEntry] = Field(default_factory=list)
+    sharing_axis: list[AESAAxisEntry] = Field(default_factory=list)
+    matrix: list[AESACell] = Field(default_factory=list)
+    #: What fed the SR numerators, stamped at compute time. ``config.impact_mode``
+    #: is the fleet Background radio and says nothing about a single-product
+    #: source, so the export used to read "static" for a Prospective one.
+    #: None on results made before this was recorded.
+    impact_source: Literal[
+        "single_product_static", "single_product_prospective", "fleet_static", "fleet_projected",
+    ] | None = None
 
 
 class AESAExportRequest(BaseModel):

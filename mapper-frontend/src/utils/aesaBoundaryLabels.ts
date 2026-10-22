@@ -23,7 +23,7 @@
  * tool should not coin notation. Fitting is a layout problem, solved by
  * wrapping to two lines rather than by shortening the text.
  *
- * `conventional_acronym` (AP, HTP-c, …) exists on the boundary record for the
+ * `conventional_acronym` (AP, HTPc, …) exists on the boundary record for the
  * GLOSSARY only, presented as "commonly written AP". It is never a label.
  */
 

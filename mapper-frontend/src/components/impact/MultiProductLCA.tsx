@@ -38,11 +38,10 @@ import { GroupedVintagePanel } from './GroupedVintagePanel'
 import { MethodPicker } from '../MethodPicker'
 import { MultiProductSensitivityChart } from '../charts/MultiProductSensitivityChart'
 import { useNumberFormatter } from '../charts/numberFormat'
-import { NumberInput } from '../ui/NumberInput'
 import { MultiProductComparisonChart } from './MultiProductComparisonChart'
 import { MultiProductLineChart } from './MultiProductLineChart'
 import { shortenByCommonPrefix } from '../../utils/labelPrefix'
-import { StageAmountsEditor, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
+import { StageAmountsEditor, YearsInput, canApplyLifetime, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
 import { ComputeProgress } from '../ui/ComputeProgress'
 import { useBOMStore } from '../../stores/bomStore'
 import { useParameterStore } from '../../stores/parameterStore'
@@ -54,6 +53,7 @@ import { usePLCAStore } from '../../stores/plcaStore'
 import { useMultiProductLCAStore } from '../../stores/multiProductLCAStore'
 import { methodColumns, methodKey, methodPath } from '../../utils/methodLabels'
 import { type AmountPreset, type ArchetypeStageAmounts } from '../../stores/singleProductImpactStore'
+import type { ArchetypeSummary } from '../../api/client'
 import { productItemKey, type ActivityProductItem, type ArchetypeProductItem, type ProductItem } from '../shared/productItem'
 import {
   exportMultiProductComparison,
@@ -176,7 +176,8 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
   // this preset. Default '1year' matches the prior multi-item behavior
   // (all stages = 1 ≡ no per-item amounts), so existing results don't shift.
   const [globalPreset, setGlobalPreset] = useState<AmountPreset>('1year')
-  const [globalLifetime, setGlobalLifetime] = useState(15)
+  // Years entered for every item at once. Starts empty: no default lifetime.
+  const [globalLifetime, setGlobalLifetime] = useState<number | null>(null)
   // Per-item editor collapse state (default collapsed — advanced tweak, the
   // summary line carries the values; mirrors the Single-item card).
   const [stageOpenByItem, setStageOpenByItem] = useState<Record<string, boolean>>({})
@@ -196,6 +197,17 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
     [selectedItems],
   )
 
+  // One item's entry for a global pick. The years reach only an item whose
+  // stages all declare a basis (Manufacturing and End of Life in particular);
+  // any other item keeps no years and its own editor says what to declare.
+  const itemEntry = (
+    arc: ArchetypeSummary, preset: AmountPreset, years: number | null,
+    prev: Record<string, number> | undefined,
+  ): ArchetypeStageAmounts => {
+    const y = preset === 'custom' && years != null && canApplyLifetime(arc, projectBasis) ? years : null
+    return { preset, lifetime: y, amounts: stageAmountsForPreset(arc, preset, y, prev, projectBasis) }
+  }
+
   // Reconcile per-item stage amounts against the LIVE selection: seed a new
   // item from the current global preset, prune a removed item's entry. Keyed
   // by item id — never a parallel copy of selectedItems. The only-set-if-
@@ -213,7 +225,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
       // Phase, Maintenance) can never resolve to per_year and the Lifetime
       // preset silently yields 1 for every stage -- a run labelled
       // "Lifetime · 15 yr" that is manufacturing plus ONE year.
-      next[key] = { preset: globalPreset, lifetime: globalLifetime, amounts: stageAmountsForPreset(arc, globalPreset, globalLifetime, undefined, projectBasis) }
+      next[key] = itemEntry(arc, globalPreset, globalLifetime, undefined)
       changed = true
     }
     for (const key of Object.keys(next)) {
@@ -223,7 +235,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
   }, [archetypeItems, archetypes, globalPreset, globalLifetime, projectBasis, stageAmountsByItem, setStageAmountsMap])
 
   // Apply-to-all: a global preset pick overwrites every item's amounts.
-  const applyGlobalPreset = (preset: AmountPreset, lifetime: number) => {
+  const applyGlobalPreset = (preset: AmountPreset, lifetime: number | null) => {
     setGlobalPreset(preset)
     setGlobalLifetime(lifetime)
     const next: Record<string, ArchetypeStageAmounts> = { ...stageAmountsByItem }
@@ -231,7 +243,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
       const arc = archetypes.find((a) => a.id === item.archetype_id)
       if (!arc) continue
       const key = productItemKey(item)
-      next[key] = { preset, lifetime, amounts: stageAmountsForPreset(arc, preset, lifetime, next[key]?.amounts, projectBasis) }
+      next[key] = itemEntry(arc, preset, lifetime, next[key]?.amounts)
     }
     setStageAmountsMap(next)
   }
@@ -493,7 +505,6 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
             <div style={{ display: 'flex', gap: 4 }}>
               {([
                 { key: '1year' as AmountPreset, label: '1 year' },
-                { key: 'lifetime' as AmountPreset, label: `Lifetime (${globalLifetime}yr)` },
                 { key: 'custom' as AmountPreset, label: 'Custom' },
               ]).map((p) => (
                 <button
@@ -513,19 +524,15 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
                 </button>
               ))}
             </div>
-            {globalPreset === 'lifetime' && (
+            {globalPreset === 'custom' && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Lifetime:</span>
-                <NumberInput
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>Years:</span>
+                <YearsInput
                   value={globalLifetime}
-                  onChange={(lt) => applyGlobalPreset('lifetime', lt)}
-                  integerOnly
-                  min={1}
-                  emptyValue={1}
-                  data-testid="multi-product-global-lifetime"
-                  style={{ width: 50, height: 22, padding: '0 6px', backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)', color: 'var(--text-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)', outline: 'none', textAlign: 'right' }}
+                  onChange={(y) => applyGlobalPreset('custom', y)}
+                  testId="multi-product-global-lifetime"
                 />
-                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>years · applies to all</span>
+                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>applies to every item whose stages declare a basis</span>
               </div>
             )}
             <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>· per-item overridable below</span>

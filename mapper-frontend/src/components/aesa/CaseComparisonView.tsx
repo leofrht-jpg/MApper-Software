@@ -15,7 +15,9 @@ import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { ZONE_COLOR, ZONE_LABEL, fmtSR } from './zones'
 
 /**
- * Every selected case against the base, per impact category, for one year.
+ * Every selected case against a reference, per impact category, for one year:
+ * the parameter cases against Base under the chosen sharing, or -- when the run
+ * has no parameter cases -- the sharing choices against the base chain.
  *
  * x is the SR difference from the base (case − base), centred on zero; one mark
  * per case. A case that moves the category into a different zone is drawn as a
@@ -25,11 +27,14 @@ import { ZONE_COLOR, ZONE_LABEL, fmtSR } from './zones'
  * (full name in each mark's tooltip). Existing colours only: the scenario
  * palette for cases, the zone colours for zones.
  */
-export function CaseComparisonView({ base, cases, year, acronyms }: {
+export function CaseComparisonView({ base, cases, year, acronyms, referenceLabel = 'base' }: {
   base: SustainabilityRatioResult[]
   cases: AESACase[]
   year: number
   acronyms: Record<string, string>
+  /** What every Δ is taken against, e.g. "Base, under AR". Named on the axis
+   *  and in each mark's tooltip. */
+  referenceLabel?: string
 }) {
   const frameRef = useRef<HTMLDivElement>(null)
   const legendRef = useRef<HTMLDivElement>(null)
@@ -96,7 +101,7 @@ export function CaseComparisonView({ base, cases, year, acronyms }: {
                   if (m.delta == null || !m.v) return null
                   const cx = x(m.delta)
                   const color = SCENARIO_PALETTE[m.i % SCENARIO_PALETTE.length]
-                  const title = `${r.base.pb_name} · ${m.c.label}\nSR ${fmtSR(m.v.sr)} vs base ${fmtSR(r.base.sr)} (Δ ${m.delta >= 0 ? '+' : ''}${m.delta.toPrecision(3)})\n` +
+                  const title = `${r.base.pb_name} · ${m.c.label}\nSR ${fmtSR(m.v.sr)} vs ${referenceLabel} ${fmtSR(r.base.sr)} (Δ ${m.delta >= 0 ? '+' : ''}${m.delta.toPrecision(3)})\n` +
                     `${ZONE_LABEL[r.base.zone]} → ${ZONE_LABEL[m.v.zone as AESAZone]}`
                   return m.changed ? (
                     <polygon
@@ -127,7 +132,7 @@ export function CaseComparisonView({ base, cases, year, acronyms }: {
             </text>
           ))}
           <text x={(plotL + plotR) / 2} y={H - 4} textAnchor="middle" fontSize={11} fill="var(--text-secondary)">
-            ΔSR vs base
+            ΔSR vs {referenceLabel}
           </text>
         </svg>
         <div ref={legendRef} data-testid="aesa-cases-legend" style={{ display: 'flex', flexWrap: 'wrap', gap: 14, fontSize: 11, color: 'var(--text-secondary)' }}>

@@ -1172,18 +1172,20 @@ async def compute_all_subsystems(
 
 @router.get(
     "/systems/{system_id}/subsystems/{subsystem_id}/results",
-    response_model=SimulationResult,
+    response_model=SimulationResult | None,
 )
-async def get_subsystem_result(system_id: str, subsystem_id: str) -> SimulationResult:
+async def get_subsystem_result(system_id: str, subsystem_id: str) -> SimulationResult | None:
+    """The cached result, or ``null`` when the subsystem has not been computed.
+
+    "Not computed yet" is the ordinary state of a subsystem view before its
+    first Compute, and the view asks on mount. A 404 there landed in Settings ›
+    Logs as an ERROR on every visit. An unknown subsystem is still a 404.
+    """
     if subsystem_id == system_id:
         return _require_primary_result(system_id)
-    res = _sys_sub_results(system_id).get(subsystem_id)
-    if res is None:
-        raise HTTPException(
-            status_code=404,
-            detail="No results yet. Run /compute for this subsystem first.",
-        )
-    return res
+    if subsystem_id not in _sys_subs(system_id):
+        raise HTTPException(status_code=404, detail="Subsystem not found")
+    return _sys_sub_results(system_id).get(subsystem_id)
 
 
 # ── Subsystem DSM Excel export ──────────────────────────────────────────────

@@ -1595,7 +1595,7 @@ export async function exportMultiProductComparison(
     // Patch 5J — per-item stage-amount provenance, keyed by item_id
     // (archetype_id for archetype items). Captures preset + lifetime +
     // resolved amounts so the export's "Stage amounts" sheet reproduces the run.
-    stageAmountsMeta?: Record<string, { preset: string; lifetime: number; amounts: Record<string, number> }>
+    stageAmountsMeta?: Record<string, { preset: string; lifetime: number | null; amounts: Record<string, number> }>
     // Per-item vintage provenance (activity mode), keyed by item_id
     // ("{database}|{code}"). Records which DB/SSP/year each activity item used.
     activityVintageMeta?: Record<string, {
@@ -2468,8 +2468,9 @@ export async function computeAllSubsystems(
 export async function getSubsystemResult(
   systemId: string,
   subsystemId: string,
-): Promise<SimulationResult> {
-  return request<SimulationResult>(
+): Promise<SimulationResult | null> {
+  // null = not computed yet (an ordinary state, not an error).
+  return request<SimulationResult | null>(
     `/dsm/systems/${systemId}/subsystems/${subsystemId}/results`,
   )
 }
@@ -3723,8 +3724,10 @@ async function _downloadXlsx(url: string, body: unknown, fallbackName: string): 
 // the multi-item export). Threaded into the single-product export requests so
 // the Configuration block can record preset/lifetime alongside the amounts.
 export interface StageAmountsMeta {
+  /** '1year' | 'custom' ('lifetime' only on results made before it was removed). */
   preset: string
-  lifetime: number
+  /** The years entered under Custom; null when none were entered. */
+  lifetime: number | null
   /** The parameter the lifetime came from, when one was referenced. */
   lifetime_param?: string | null
   amounts: Record<string, number>
@@ -4104,7 +4107,7 @@ export interface PlanetaryBoundary {
    *  `name` is already EF's short category name — a duplicate string would be
    *  two copies that can drift. Consumers fall back to `name`. */
   short_name?: string | null
-  /** GLOSSARY ONLY — the abbreviation LCA readers recognise (AP, HTP-c…),
+  /** GLOSSARY ONLY — the abbreviation LCA readers recognise (AP, HTPc…),
    *  from CML/ILCD convention. EF defines no per-category acronyms, so MApper
    *  never renders this as a label; the glossary shows it as
    *  "commonly written AP". */
@@ -4320,6 +4323,12 @@ export interface AESACase {
   results: SustainabilityRatioResult[]
 }
 
+/** One choice on an axis of the case x sharing matrix. */
+export interface AESAAxisEntry { id: string; label: string; definition: string[] }
+
+/** The SRs of one (case, sharing) pair; (base, base) is ``results``. */
+export interface AESACell { case: string; sharing: string; results: SustainabilityRatioResult[] }
+
 export interface AESAComputeResult {
   /** PB axes whose SR rests on a partial authored activity: unknown, not small. */
   coverage_gaps?: AESACoverageGap[] | null
@@ -4335,6 +4344,13 @@ export interface AESAComputeResult {
   lifetime_years?: number | null
   /** Selected sensitivity cases, in selection order. Absent on old results. */
   cases?: AESACase[]
+  /** Case x sharing matrix: Base + parameter cases, base chain + principles.
+   *  Absent on results made before it existed (read ``cases`` then). */
+  case_axis?: AESAAxisEntry[]
+  sharing_axis?: AESAAxisEntry[]
+  matrix?: AESACell[]
+  /** What fed the SR numerators, stamped at compute time (null on older results). */
+  impact_source?: 'single_product_static' | 'single_product_prospective' | 'fleet_static' | 'fleet_projected' | null
 }
 
 export interface MultiDDefault {
@@ -4765,6 +4781,18 @@ export function isPackagedDesktop(): boolean {
  * in the installed app, so that attribution is unconfirmed. The server-side
  * save works and shows the path, so it stays.
  */
+/**
+ * Show a file the backend saved (Logs or AESA export) in Finder / Explorer.
+ * Packaged app only: there is no Tauri IPC on the http origin, so the backend,
+ * which wrote the file, asks the OS. It refuses any path outside the folders
+ * it saves to.
+ */
+export async function revealSavedFile(path: string): Promise<void> {
+  await request<{ revealed: string }>('/system/reveal', {
+    method: 'POST', body: JSON.stringify({ path }),
+  })
+}
+
 export async function downloadSystemLogs(): Promise<LogSaveResult> {
   if (isPackagedDesktop()) {
     const saved = await request<{ path: string; bytes: number }>(

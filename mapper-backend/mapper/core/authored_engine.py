@@ -252,7 +252,7 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
             problems.append(
                 f"{_label(flow)}: the basic variance comes from ecoinvent for this flow "
                 f"(median {stats.median_basic_variance:.4g} over {stats.n_basic_variance} "
-                "exchanges) and is not user-settable. Remove basic_variance."
+                "exchanges) and cannot be set here. Clear the Basic variance box."
             )
         bv = derived
         bv_source = "ecoinvent_median"
@@ -269,13 +269,13 @@ def resolve_exchange(inp: ExchangeInput, backend: Backend) -> AuthoredExchange:
         )
         if inp.basic_variance is None:
             codes.append("bv_required")
-            problems.append(f"{_label(flow)}: {why}, so basic_variance must be entered")
+            problems.append(f"{_label(flow)}: {why}, so enter the Basic variance")
         elif not (inp.basic_variance >= 0 and math.isfinite(inp.basic_variance)):
             codes.append("bv_invalid")
-            problems.append(f"{_label(flow)}: basic_variance must be a finite value >= 0")
+            problems.append(f"{_label(flow)}: the Basic variance must be a number of at least 0")
         if inp.basic_variance_reason is None or not inp.basic_variance_reason.strip():
             codes.append("bv_reason_required")
-            problems.append(f"{_label(flow)}: {why}, so basic_variance_reason is required")
+            problems.append(f"{_label(flow)}: {why}, so give the reason under Basic variance: where the value comes from")
         bv = inp.basic_variance if inp.basic_variance is not None else 0.0
         bv_source = "user_entered"
         bv_detail = (inp.basic_variance_reason or "").strip()
@@ -350,23 +350,24 @@ def _resolve_supplied(inp: ExchangeInput, flow: FlowInfo) -> AuthoredExchange:
     if bv is None:
         codes.append("bv_required")
         problems.append(
-            f"{_label(flow)}: with the supplied basis the uncertainty is the data owner's, "
-            "so basic_variance must be entered"
+            f"{_label(flow)}: with the uncertainty basis 'supplied with the figure', the "
+            "uncertainty is the data owner's, so enter the Basic variance"
         )
     elif not (bv >= 0 and math.isfinite(bv)):
         codes.append("bv_invalid")
-        problems.append(f"{_label(flow)}: basic_variance must be a finite value >= 0")
+        problems.append(f"{_label(flow)}: the Basic variance must be a number of at least 0")
     if not (inp.basic_variance_reason or "").strip():
         codes.append("bv_reason_required")
         problems.append(
-            f"{_label(flow)}: with the supplied basis, basic_variance_reason is required -- "
-            "say whose uncertainty this is and where it comes from"
+            f"{_label(flow)}: with the uncertainty basis 'supplied with the figure', give the "
+            "reason under Basic variance: whose uncertainty this is and where it comes from"
         )
     if (inp.floor_reason or "").strip():
         codes.append("floor_reason_not_applicable")
         problems.append(
-            f"{_label(flow)}: no floor is applied on the supplied basis, so floor_reason "
-            "is meaningless here. Remove it."
+            f"{_label(flow)}: no floor is applied with the uncertainty basis 'supplied with the "
+            "figure', so a reason for a tighter spread than ecoinvent's has nothing to explain. "
+            "Clear that box."
         )
     if problems:
         raise AuthoredError(problems, codes)

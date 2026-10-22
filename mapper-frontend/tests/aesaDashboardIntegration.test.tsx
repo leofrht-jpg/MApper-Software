@@ -241,3 +241,28 @@ describe('AESADashboard page composition (Patch 4R + 4T)', () => {
     expect(document.body.querySelector('[data-testid="aesa-save-session-confirm"]')).not.toBeNull()
   })
 })
+
+describe('chain-reach banner (every SR below 0.001)', () => {
+  const withSr = (sr: number) => ({ ...RESULT, results: SR_RESULTS.map((r) => ({ ...r, sr })) })
+
+  it('appears when every SR is below 0.001, and the SR values are left alone', () => {
+    useAESAStore.setState({ result: withSr(0.0004) } as any)
+    const { container } = render(<AESADashboard />)
+    const banner = container.querySelector('[data-testid="aesa-chain-reach-banner"]')
+    expect(banner?.textContent).toMatch(/does not reach a single product/)
+    expect(useAESAStore.getState().result!.results.every((r) => r.sr === 0.0004)).toBe(true)
+  })
+
+  it('stays away when any SR reaches 0.001', () => {
+    const res = withSr(0.0004)
+    res.results[0] = { ...res.results[0], sr: 0.002 }
+    useAESAStore.setState({ result: res } as any)
+    const { container } = render(<AESADashboard />)
+    expect(container.querySelector('[data-testid="aesa-chain-reach-banner"]')).toBeNull()
+  })
+
+  it('stays away on an ordinary result', () => {
+    const { container } = render(<AESADashboard />)
+    expect(container.querySelector('[data-testid="aesa-chain-reach-banner"]')).toBeNull()
+  })
+})

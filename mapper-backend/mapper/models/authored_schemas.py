@@ -145,8 +145,8 @@ def _check_ticks(act) -> None:
     (the order carries no meaning, and a stable order keeps files diffable)."""
     if act.scope == "complete" and act.complete_indicators:
         raise ValueError(
-            "complete_indicators is only for a PARTIAL activity: a complete one "
-            "declares full coverage by definition"
+            "Indicators declared complete apply only to a Partial inventory: a Complete "
+            "one covers every indicator by definition"
         )
     if any(not m for m in act.complete_indicators):
         raise ValueError("complete_indicators entries must be method tuples")
@@ -170,7 +170,7 @@ class ActivityInput(BaseModel):
     def _scope_note_for_partial(self) -> "ActivityInput":
         if self.scope == "partial" and _blank(self.scope_note):
             raise ValueError(
-                "scope_note is required when scope is 'partial': say which flows "
+                "A Partial inventory needs a note on what it leaves out: say which flows "
                 "were specified and which were not"
             )
         if _blank(self.name):

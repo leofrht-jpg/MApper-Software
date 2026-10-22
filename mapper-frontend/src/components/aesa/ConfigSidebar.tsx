@@ -37,7 +37,7 @@ import type {
 } from '../../api/client'
 import type { StageAmountsMeta } from '../../api/client'
 import { CaseSelectionModal } from './CaseSelectionModal'
-import { availableCases, selectionPayload, type CaseOption } from '../../utils/aesaCases'
+import { availableCases, computeLabel, selectionPayload, type CaseOption } from '../../utils/aesaCases'
 import { useParameterStore } from '../../stores/parameterStore'
 import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
@@ -157,7 +157,7 @@ const CONFIG_LOAD_LABELS: Record<AESAConfigLoadKind, string> = {
 
 export function ConfigSidebar({ collapsed, onToggle }: Props) {
   const {
-    defaults, defaultsLoading, draft, running, error,
+    defaults, defaultsLoading, draft, running, error, lastComputeArgs,
     loadDefaults, loadConfigurations, loadPresets, loadSessions, updateDraft,
     updateCarbonBudget, resetDraftToDefaults, suggestMapping, saveConfig, compute,
     configurations, activeConfigId, creatingNewConfig, startNewConfig,
@@ -767,7 +767,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
       {!showEmptyState && !inSessionMode && (
         <ComputeProgress
           active={running}
-          label="Computing AESA…"
+          label={computeLabel(lastComputeArgs)}
           bar="none"
           statusColor="var(--mod-aesa)"
           data-testid="aesa-compute-progress"
@@ -1221,19 +1221,27 @@ function ResetDefaultsModal({ onCancel, onConfirm }: {
 // Persisted on the draft as ``dsm_scenario_id`` + ``impact_mode``;
 // ``mfa_system_id`` is captured at save time from ``activeSystem.id``.
 
+/** The years a run's per-year stages were set to, or null when none were.
+ *  A result made before the Lifetime preset was removed still reads as its
+ *  lifetime. */
+export function enteredYears(meta: StageAmountsMeta | null): number | null {
+  if (!meta || meta.preset === '1year') return null
+  return meta.lifetime ?? null
+}
+
 /** Why "per year" cannot apply to the consumed run, or null when it can.
  *
- *  "Per year" divides a whole-life impact by its lifetime. That is only a
- *  whole-life impact on the Lifetime preset; on "1 year" or custom amounts the
- *  division has no meaning. The backend refuses the same cases (and, in
- *  addition, a BOM that already divides by the lifetime, which only it can
- *  see), so this is the early, visible half of one rule. */
+ *  "Per year" divides a whole-life impact by the years entered for the run.
+ *  Without entered years ("1 year", or custom amounts typed stage by stage)
+ *  the division has no meaning. The backend refuses the same cases (and, in
+ *  addition, a BOM that already divides by the years, which only it can see),
+ *  so this is the early, visible half of one rule. */
 export function perYearBlockedReason(meta: StageAmountsMeta | null): string | null {
   if (!meta) return 'Compute the single-product run first; its stage amounts decide whether per year applies.'
-  if (meta.preset !== 'lifetime') {
-    const used = meta.preset === '1year' ? '1 year' : 'custom'
-    return `The run used the "${used}" stage amounts, not Lifetime, so it is not a whole-life impact to divide. ` +
-      'Recompute on the Lifetime preset, or keep "as computed".'
+  if (enteredYears(meta) == null) {
+    return meta.preset === '1year'
+      ? 'The run used "1 year" stage amounts, so it is not a whole-life impact to divide. Recompute with Custom and the years entered, or keep "as computed".'
+      : 'The run used custom stage amounts without years entered, so there is nothing to divide by. Enter the years under Custom and recompute, or keep "as computed".'
   }
   return null
 }
@@ -1253,7 +1261,7 @@ function FunctionalUnitControl({ draft, updateDraft, singleProductBasis }: {
         <div style={{ display: 'flex', gap: 4 }}>
           {([
             { value: 'as_computed', label: 'As computed' },
-            { value: 'per_year', label: 'Per year (÷ lifetime)' },
+            { value: 'per_year', label: 'Per year (÷ years)' },
           ] as const).map((o) => {
             const active = basis === o.value
             const disabled = o.value === 'per_year' && !!blocked && !active
@@ -1282,7 +1290,7 @@ function FunctionalUnitControl({ draft, updateDraft, singleProductBasis }: {
         </div>
         <div data-testid="aesa-functional-unit-note" style={{ fontSize: 11, color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
           {basis === 'per_year'
-            ? `Impact divided by the run's lifetime${meta?.preset === 'lifetime' ? ` (${meta.lifetime} yr)` : ''}, to compare with the per-year SOS.`
+            ? `Impact divided by the years entered for the run${enteredYears(meta) != null ? ` (${enteredYears(meta)} yr)` : ''}, to compare with the per-year SOS.`
             : 'Impact used as Impact Assessment computed it. The SOS is per year, so the run must already be one year of the product (a 1-year run, or a BOM that divides one-off stages by its lifetime).'}
         </div>
         {basis === 'per_year' && blocked && (

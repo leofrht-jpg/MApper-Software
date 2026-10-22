@@ -146,18 +146,82 @@ def test_the_exported_sensitivity_sheet_has_one_column_group_per_selected_case(
     rows = list(wb["Sensitivity"].iter_rows(values_only=True))
     head = rows[0]
     assert head[:6] == ("Year", "PB ID", "Impact category", "Abbreviation", "Base SR", "Base zone")
-    case_cols = [h for h in head[6:] if h.endswith(" SR")]
-    assert len(case_cols) == 2
-    assert case_cols[0].startswith("Sharing: ") and case_cols[1] == "Case: v1g SR"
+    case_cols = [h for h in head[6:] if h.endswith(": SR")]
+    # Every cell of the case x sharing matrix but (Base, base chain), each
+    # header naming its case AND its sharing.
+    assert case_cols == [
+        "Case Base × Sharing AR: SR",
+        "Case v1g × Sharing Base chain: SR",
+        "Case v1g × Sharing AR: SR",
+    ]
     d = [dict(zip(head, r)) for r in rows[1:]]
     clim = next(x for x in d if x["PB ID"] == "climate_change")
     assert clim["Abbreviation"] == "GWP100"
-    assert clim["Case: v1g ΔSR vs base"] == pytest.approx(clim["Case: v1g SR"] - clim["Base SR"])
-    assert clim["Case: v1g SR"] == pytest.approx(clim["Base SR"] / 2)
+    v1g = "Case v1g × Sharing Base chain"
+    assert clim[f"{v1g}: ΔSR vs Case Base × Sharing Base chain"] == pytest.approx(clim[f"{v1g}: SR"] - clim["Base SR"])
+    assert clim[f"{v1g}: SR"] == pytest.approx(clim["Base SR"] / 2)
+    # v1g under AR is compared with Base under AR -- the same sharing.
+    both = "Case v1g × Sharing AR"
+    assert clim[f"{both}: ΔSR vs Case Base × Sharing AR"] == pytest.approx(
+        clim[f"{both}: SR"] - clim["Case Base × Sharing AR: SR"])
     assert not any("EpC" in h for h in head), "only selected cases appear"
 
     summary = [r for r in wb["Summary"].iter_rows(values_only=True) if r and r[0]]
     defs = {r[0]: r[1] for r in summary}
-    assert defs["Sensitivity"] == "2 case(s) beside the base"
+    assert defs["Sensitivity"].startswith("2 case(s) x 2 sharing choice(s)")
     assert defs["Case: v1g"] == "ev_use = 5136.4 (base 5820.5)"
+    assert defs["Sharing: Base chain (" + _sp_config().sharing.name + ")"] == "the configured sharing chain"
+
+    long = list(wb["Sensitivity (long)"].iter_rows(values_only=True))
+    assert long[0] == ("Case", "Sharing", "Year", "PB", "SR", "Zone", "Allocated SOS", "Difference against", "ΔSR")
+    assert {(r[0], r[1]) for r in long[1:]} == {("Base", "Base chain"), ("Base", "AR"), ("v1g", "Base chain"), ("v1g", "AR")}
     assert "Sensitivity (long)" in wb.sheetnames
+
+
+# ── the case x sharing matrix ─────────────────────────────────────────────────
+
+def test_every_case_is_evaluated_under_every_chosen_sharing(table, lca_by_case):
+    res = _compute(single_product_result=_single_product(), run_sensitivity=True,
+                   sharing_cases=["EpC", "AR"], parameter_cases=["v1g"])
+    assert [a.id for a in res.case_axis] == ["base", "v1g"]
+    assert [a.id for a in res.sharing_axis] == ["base", "EpC", "AR"]
+    assert {(m.case, m.sharing) for m in res.matrix} == {
+        ("base", "EpC"), ("base", "AR"), ("v1g", "base"), ("v1g", "EpC"), ("v1g", "AR"),
+    }
+    cell = {(m.case, m.sharing): m.results for m in res.matrix}
+    # Under one sharing, the case halves the impact and the SOS is unchanged,
+    # so the SR halves: the case's sharing cells are its OWN impact over that
+    # sharing's SOS, not copies of Base's.
+    for pid in ("EpC", "AR"):
+        assert _climate(cell[("v1g", pid)]).sr == pytest.approx(_climate(cell[("base", pid)]).sr / 2)
+        assert _climate(cell[("v1g", pid)]).allocated_sos == pytest.approx(_climate(cell[("base", pid)]).allocated_sos)
+
+
+def test_sharing_never_reruns_the_lca(table, lca_by_case):
+    """A sharing choice changes the SOS only: one LCA per parameter CASE,
+    however many sharing choices there are."""
+    _compute(single_product_result=_single_product(), run_sensitivity=True,
+             sharing_cases=["EpC", "AR", "IN"], parameter_cases=["v1g"])
+    assert len(lca_by_case) == 1
+
+
+def test_sharing_only_runs_no_lca_at_all(lca_by_case):
+    res = _compute(single_product_result=_single_product(), run_sensitivity=True, sharing_cases=["EpC"])
+    assert lca_by_case == []
+    assert [(m.case, m.sharing) for m in res.matrix] == [("base", "EpC")]
+
+
+def test_a_result_saved_before_the_matrix_still_exports(table, lca_by_case, server, home):  # noqa: F811
+    """Only ``cases`` (as sessions saved before the matrix carry): read as
+    Base x sharing cells and case x base-chain cells."""
+    res = _compute(single_product_result=_single_product(), run_sensitivity=True,
+                   sharing_cases=["AR"], parameter_cases=["v1g"])
+    old = res.model_copy(update={"matrix": [], "case_axis": [], "sharing_axis": []})
+    status, raw, _ = _post(f"{server}/aesa/export/save", {
+        "config": _sp_config().model_dump(), "result": old.model_dump(), "source_name": "EV9",
+    })
+    assert status == 200, raw
+    head = next(load_workbook(Path(json.loads(raw)["path"]))["Sensitivity"].iter_rows(values_only=True))
+    assert [h for h in head if h.endswith(": SR")] == [
+        "Case Base × Sharing AR: SR", "Case v1g × Sharing Base chain: SR",
+    ]

@@ -107,7 +107,7 @@ def test_the_floor_is_reapplied_at_compute():
 def test_a_complete_activity_carries_no_ticks():
     from pydantic import ValidationError
 
-    with pytest.raises(ValidationError, match="only for a PARTIAL"):
+    with pytest.raises(ValidationError, match="only to a Partial inventory"):
         act([ex(CO2)], scope="complete", complete_indicators=[list(GW)])
 
 

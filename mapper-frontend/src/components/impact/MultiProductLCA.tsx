@@ -42,7 +42,7 @@ import { MultiProductComparisonChart } from './MultiProductComparisonChart'
 import { MultiProductLineChart } from './MultiProductLineChart'
 import { shortenByCommonPrefix } from '../../utils/labelPrefix'
 import { StageAmountsEditor, YearsInput, canApplyLifetime, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
-import { ComputeProgress } from '../ui/ComputeProgress'
+import { ComputeOverlay } from '../ui/ComputeOverlay'
 import { useBOMStore } from '../../stores/bomStore'
 import { useParameterStore } from '../../stores/parameterStore'
 import { SensitivityCases, hasVaryingParameters, varyingCases } from './SensitivityCases'
@@ -322,7 +322,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
   }, [])
 
   const canCompute = selectedItems.length > 0 && methods.length > 0 && !multiLoading
-  // Live compute progress (Patch 5AL): the shared <ComputeProgress> card owns
+  // Live compute progress (Patch 5AL): the shared <ComputeOverlay> card owns
   // the elapsed counter. Multi-item is a synchronous client-side fan-out with no
   // obtainable pct, so the card uses bar='none' (spinner + elapsed) — never a
   // fabricated bar. The compute button morphs to a spinner only; the final
@@ -698,13 +698,11 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
         )}
       </div>
 
-      <ComputeProgress
+      <ComputeOverlay
         active={multiLoading}
-        label="Computing…"
-        bar="none"
-        statusColor="var(--mod-lca)"
+        title="Comparing items"
+        detail={`${selectedItems.length} item${selectedItems.length === 1 ? '' : 's'} · ${methods.length} indicator${methods.length === 1 ? '' : 's'}`}
         data-testid="multi-product-compute-progress"
-        style={{ marginTop: 'var(--space-3)' }}
       />
 
       {/* Results — Patch 4AG.4 ships the chart + view toggle + export.

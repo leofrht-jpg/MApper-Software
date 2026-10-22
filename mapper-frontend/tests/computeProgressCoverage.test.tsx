@@ -10,7 +10,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import React from 'react'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, fireEvent, within, screen } from '@testing-library/react'
+import { act, render, fireEvent, within, screen } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { AESADashboard } from '../src/pages/AESADashboard'
 import { useAESAStore } from '../src/stores/aesaStore'
@@ -187,37 +187,88 @@ beforeEach(() => {
  *     (AESA save 0.3, Monte Carlo 0.3, system Static 0.7, prospective impact
  *     0.3, single-product 0.0, project modelling-only 0.2).
  */
+// Walkthrough 4: every entry point below shows the shared full-screen
+// <ComputeOverlay> (dimmed screen, centred card, elapsed time), not an inline
+// card. DSM compute and project export/import are under 10 s on the measured
+// projects but were asked for explicitly (and a full project export streams
+// tens of GB).
 const OVER_10_S: Array<[string, string]> = [
-  ['AESA compute with cases', 'src/components/aesa/ConfigSidebar.tsx'],
-  ['Monte Carlo', 'src/pages/MonteCarlo.tsx'],
+  ['AESA compute with cases', 'src/pages/AESADashboard.tsx'],
+  ['Monte Carlo (single and paired)', 'src/pages/MonteCarlo.tsx'],
   ['System-level Prospective', 'src/components/impact/ProjectedImpactPanel.tsx'],
-  ['Single-product Prospective', 'src/components/impact/SingleProductProjectedPanel.tsx'],
   ['System-level Static', 'src/components/dsm/DSMImpactPanel.tsx'],
+  ['Single-product Prospective', 'src/components/impact/SingleProductProjectedPanel.tsx'],
+  ['Single-product Static', 'src/components/impact/SingleProductStaticPanel.tsx'],
+  ['Multi-item comparison', 'src/components/impact/MultiProductLCA.tsx'],
+  ['DSM compute', 'src/pages/DSMDashboard.tsx'],
+  ['Project export / import', 'src/components/ProjectSwitcher.tsx'],
 ]
 
-describe('every entry point over 10 s shows the shared loading card', () => {
+describe('every long calculation shows the shared full-screen card', () => {
   it.each(OVER_10_S)('%s', (_name, file) => {
     const src = readFileSync(file, 'utf-8')
-    expect(src).toMatch(/import \{ ComputeProgress \} from '[./]+(components\/)?ui\/ComputeProgress'/)
-    expect(src).toMatch(/<ComputeProgress[\s\S]*?active=\{/)
+    expect(src).toMatch(/import \{ ComputeOverlay \} from '[./]+(components\/)?ui\/ComputeOverlay'/)
+    expect(src).toMatch(/<ComputeOverlay[\s\S]*?active=\{/)
+    // Not the old inline card beside it.
+    expect(src).not.toMatch(/<ComputeProgress\b/)
+  })
+
+  it('the system-level panels show it from the click, not from the task id', () => {
+    // projectedJob / the static slots exist only once POST /impact/calculate
+    // has answered (~0.01 s locally, longer on a busy machine); the card
+    // should not wait on the network.
+    for (const [file, fn] of [
+      ['src/components/impact/ProjectedImpactPanel.tsx', 'handleRun'],
+      ['src/components/dsm/DSMImpactPanel.tsx', 'handleCalculate'],
+    ]) {
+      const src = readFileSync(file, 'utf-8')
+      expect(src).toMatch(new RegExp(`const ${fn} = async \\(\\) => \\{\\s*setSubmitting\\(true\\)`))
+      expect(src.match(/<ComputeOverlay\s+active[\s\S]*?\/>/)?.[0]).toMatch(/active=\{[^}]*submitting/)
+    }
   })
 })
 
-describe('the AESA card says what is running, and is seen with the panel collapsed', () => {
+const shown = async () => {
+  // The card is revealed OVERLAY_REVEAL_MS after the run starts.
+  await act(async () => { await new Promise((r) => setTimeout(r, 300)) })
+  return screen.getByTestId('aesa-compute-progress')
+}
+
+describe('the AESA card says what is running, wherever the panel is', () => {
   it('names the case x sharing matrix and the LCA reruns', async () => {
-    const { computeLabel } = await import('../src/utils/aesaCases')
+    const { computeLabel, computeDetail } = await import('../src/utils/aesaCases')
     expect(computeLabel({ cases: { parameter: ['v1g', 'v2h_credit0', 'v2h_credit50', 'v2h_credit100'], sharing: ['EpC', 'IN', 'AGR', 'LA', 'AR'] } }))
       .toBe('Computing AESA: 5 cases × 6 sharing · 4 LCA reruns')
-    expect(computeLabel({ cases: { parameter: [], sharing: ['EpC'] } })).toBe('Computing AESA: 1 case × 2 sharing')
-    expect(computeLabel(null)).toBe('Computing AESA…')
+    expect(computeDetail({ cases: { parameter: ['v1g', 'v2h_credit0', 'v2h_credit50', 'v2h_credit100'], sharing: ['EpC', 'IN', 'AGR', 'LA', 'AR'] } }))
+      .toBe('5 cases × 6 sharing · 4 LCA reruns')
+    expect(computeDetail(null)).toBe('Base configuration')
   })
 
-  it('with the Configuration panel collapsed, the card shows on the dashboard', () => {
+  it('covers the screen with the panel expanded', async () => {
     useAESAStore.setState({ running: true, lastComputeArgs: { mfaSystemId: '', cases: { parameter: ['v1g'], sharing: [] } } } as any)
     render(<AESADashboard />)
-    expect(screen.queryByTestId('aesa-compute-progress-main')).toBeNull()      // expanded: it is in the panel
+    const card = await shown()
+    expect(card.parentElement).toBe(document.body)            // portalled, full screen
+    expect(card.style.position).toBe('fixed')
+    expect(screen.getByTestId('aesa-compute-progress-title').textContent).toBe('Computing AESA')
+    expect(screen.getByTestId('aesa-compute-progress-detail').textContent).toBe('2 cases × 1 sharing · 1 LCA rerun')
+    expect(screen.getByTestId('aesa-compute-progress-elapsed').textContent).toMatch(/\d:\d\d elapsed/)
+  })
+
+  it('and with it collapsed (one card, not two)', async () => {
+    useAESAStore.setState({ running: true, lastComputeArgs: { mfaSystemId: '', cases: { parameter: ['v1g'], sharing: [] } } } as any)
+    render(<AESADashboard />)
     fireEvent.click(screen.getByTestId('aesa-sidebar-collapse'))
-    const card = screen.getByTestId('aesa-compute-progress-main')
-    expect(card.textContent).toContain('Computing AESA: 2 cases × 1 sharing · 1 LCA rerun')
+    await shown()
+    expect(screen.getAllByTestId('aesa-compute-progress')).toHaveLength(1)
+    expect(screen.queryByTestId('aesa-compute-progress-main')).toBeNull()
+  })
+
+  it('goes away when the run ends', async () => {
+    useAESAStore.setState({ running: true, lastComputeArgs: null } as any)
+    render(<AESADashboard />)
+    await shown()
+    act(() => { useAESAStore.setState({ running: false } as any) })
+    expect(screen.queryByTestId('aesa-compute-progress')).toBeNull()
   })
 })

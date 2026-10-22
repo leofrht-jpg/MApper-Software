@@ -26,8 +26,8 @@ import { ZONE_COLOR, ZONE_LABEL } from '../components/aesa/zones'
 import { useAESAStore } from '../stores/aesaStore'
 import { useDSMStore } from '../stores/dsmStore'
 import { useSubsystemStore } from '../stores/subsystemStore'
-import { cellResults, computeLabel, resultAxes } from '../utils/aesaCases'
-import { ComputeProgress } from '../components/ui/ComputeProgress'
+import { cellResults, computeDetail, resultAxes } from '../utils/aesaCases'
+import { ComputeOverlay } from '../components/ui/ComputeOverlay'
 import { buildCombinedRowColorOverrides, useDSMSystemColors } from '../utils/dsmCohortColors'
 import { useImpactStore } from '../stores/impactStore'
 import { useSingleProductImpactStore } from '../stores/singleProductImpactStore'
@@ -522,18 +522,16 @@ export function AESADashboard() {
         <ConfigSidebar collapsed={sidebarCollapsed} onToggle={() => setSidebarCollapsed(!sidebarCollapsed)} />
 
         <main style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 12 }}>
-          {/* The progress card lives in the Configuration panel, under Compute.
-              Collapsed, that panel shows no card -- and a case run takes over a
-              minute -- so the card moves here. */}
-          {sidebarCollapsed && (
-            <ComputeProgress
-              active={aesaRunning}
-              label={computeLabel(lastComputeArgs)}
-              bar="none"
-              statusColor="var(--mod-aesa)"
-              data-testid="aesa-compute-progress-main"
-            />
-          )}
+          {/* Walkthrough 4 — full-screen card while AESA computes. Owned by
+              the PAGE, not the Configuration panel: collapsed, that panel
+              renders a slim variant without its body, which took the card
+              with it. AESA exposes no pct: spinner + elapsed. */}
+          <ComputeOverlay
+            active={aesaRunning && !inSessionMode}
+            title="Computing AESA"
+            detail={computeDetail(lastComputeArgs)}
+            data-testid="aesa-compute-progress"
+          />
           {/* Part C1 — source-aware empty states. Single-product (LCA) source
               has no DSM system; it needs a static single-product result. */}
           {source === 'single_product' ? (

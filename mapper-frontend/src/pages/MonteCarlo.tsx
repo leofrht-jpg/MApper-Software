@@ -18,7 +18,7 @@ import {
 import { Button } from '../components/ui/Button'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { NumberInput } from '../components/ui/NumberInput'
-import { ComputeProgress } from '../components/ui/ComputeProgress'
+import { ComputeOverlay } from '../components/ui/ComputeOverlay'
 import {
   isUsableHandoff,
   isUsableMultiHandoff,
@@ -278,13 +278,13 @@ export function MonteCarloPage({ onNavigate }: Props) {
         </CollapsibleCard>
       </div>
 
-      <ComputeProgress
-        label={stage || 'Sampling…'}
+      <ComputeOverlay
         active={running}
-        bar="determinate"
+        title={`Monte Carlo: ${handoff.archetypeName}`}
+        detail={`${iterations} iterations × ${handoff.methods.length} indicator${handoff.methods.length === 1 ? '' : 's'} · ${stage || 'sampling'}`}
         pct={pct}
-        statusColor="var(--mod-lca)"
         onCancel={() => void cancel()}
+        data-testid="mc-progress"
       />
 
       {exportError && (
@@ -711,9 +711,13 @@ function MultiItemMode({
         </div>
       </CollapsibleCard>
 
-      <ComputeProgress
-        label={stage || 'Sampling…'} active={running} bar="determinate" pct={pct}
-        statusColor="var(--mod-lca)" onCancel={() => void onCancel()}
+      <ComputeOverlay
+        active={running}
+        title="Monte Carlo: paired comparison"
+        detail={`${ordered.length} items × ${iterations} iterations × ${handoff.methods.length} indicator${handoff.methods.length === 1 ? '' : 's'} · ${stage || 'sampling'}`}
+        pct={pct}
+        onCancel={() => void onCancel()}
+        data-testid="mc-multi-progress"
       />
       {error && <Banner tone="danger" testId="mc-multi-error">{error}</Banner>}
       {cancelled && !result && (

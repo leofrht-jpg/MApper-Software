@@ -27,7 +27,7 @@ import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { StageBreakdownChart } from '../charts/StageBreakdownChart'
 import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
-import { ComputeProgress } from '../ui/ComputeProgress'
+import { ComputeOverlay } from '../ui/ComputeOverlay'
 import { stageAmountsEqual } from './StageAmountsEditor'
 import { useMonteCarloStore } from '../../stores/monteCarloStore'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
@@ -380,12 +380,12 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
         </div>
       </CollapsibleCard>
 
-      <ComputeProgress
+      <ComputeOverlay
         active={isCalculating}
-        label={progress ? `Calculating ${progress.done}/${progress.total}` : 'Calculating…'}
-        bar={progress && progress.total > 0 ? 'determinate' : 'none'}
-        pct={progress && progress.total > 0 ? progress.done / progress.total : undefined}
-        statusColor="var(--mod-lca)"
+        title="Calculating Static impact"
+        detail={`${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`
+          + (progress && progress.total > 1 ? ` · sensitivity case ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : '')}
+        pct={progress && progress.total > 1 ? progress.done / progress.total : null}
         data-testid="single-product-static-progress"
       />
 

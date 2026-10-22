@@ -76,16 +76,17 @@ describe('LCACalculator timers migrated to <ComputeProgress>', () => {
 
 describe('DSMDashboard simulation timer migrated', () => {
   const src = read('src/pages/DSMDashboard.tsx')
-  const blocks = progressBlocks(src)
 
-  it('imports ComputeProgress, not ElapsedCounter', () => {
-    expect(src).toMatch(/import\s*\{\s*ComputeProgress\s*\}/)
+  // Walkthrough 4: the simulation shows the full-screen <ComputeOverlay>.
+  it('imports ComputeOverlay, not ElapsedCounter', () => {
+    expect(src).toMatch(/import\s*\{\s*ComputeOverlay\s*\}/)
     expect(src).not.toMatch(/import\s*\{\s*ElapsedCounter\s*\}/)
   })
 
-  it('sim progress is bar=none (single in-process op, no pct) and simStartedAt is gone', () => {
-    expect(blocks['dsm-sim-progress']).toBeTruthy()
-    expect(blocks['dsm-sim-progress']).toContain('bar="none"')
+  it('sim progress carries no fabricated pct and simStartedAt is gone', () => {
+    const block = src.match(/<ComputeOverlay[\s\S]*?\/>/)?.[0] ?? ''
+    expect(block).toContain('data-testid="dsm-sim-progress"')
+    expect(block).not.toContain('pct=')
     expect(src).not.toContain('simStartedAt')
   })
 })

@@ -174,6 +174,20 @@ Released 2026-10-22.
 
 ### Fixed
 
+- **Long calculations show a full-screen card.** AESA compute, Impact
+  Assessment Calculate (system-level Static and Prospective, single-product
+  Static and Prospective, Multi-item), Monte Carlo (single and paired), DSM
+  simulate and project export/import now dim the screen and show a centred
+  card in the style of the startup screen: what is running, what it is doing
+  (for example "5 cases × 6 sharing · 4 LCA reruns"), the elapsed time, and
+  Stop where the run can be stopped. The rest of the app cannot be clicked
+  while it runs. It replaces the small inline status lines. With the AESA
+  Configuration panel collapsed, the AESA card now shows too.
+- **System-level Prospective Calculate showed no progress after a
+  Sensitivity-cases run.** The panel decided "running" from the finished
+  sensitivity runs left in memory and ignored the new calculation, so neither
+  the progress card nor Stop appeared, and Stop could not have cancelled it.
+  Both now look at every kind of run.
 - **AESA reset says what it resets.** The confirmation now reads "Reset the
   configuration to the default template? Unsaved changes are lost." and lists
   everything it replaces: the name, boundary set, downscaling chain, sharing

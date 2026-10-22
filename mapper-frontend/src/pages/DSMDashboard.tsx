@@ -56,7 +56,7 @@ import { SystemCreator } from '../components/dsm/SystemCreator'
 import { EditSystemModal } from '../components/dsm/EditSystemModal'
 import { EditSubsystemModal } from '../components/subsystems/EditSubsystemModal'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
-import { ComputeProgress } from '../components/ui/ComputeProgress'
+import { ComputeOverlay } from '../components/ui/ComputeOverlay'
 import { YearSlider } from '../components/ui/YearSlider'
 import { BASE_SCENARIO, exportDSMCohorts } from '../api/client'
 import { multiResultKey, resolveSlot, useDSMStore } from '../stores/dsmStore'
@@ -703,13 +703,11 @@ export function DSMDashboard() {
             {/* Patch 5AN — DSM simulation is a single in-process op (sub-3s, no
                 pct, not cancellable), so the shared progress card uses
                 bar='none' (spinner + elapsed). */}
-            <ComputeProgress
+            <ComputeOverlay
               active={isSimulating}
-              label="Simulating…"
-              bar="none"
-              statusColor="var(--mod-dsm)"
+              title="Running the stock model"
+              detail={activeSystem?.name ? `Simulating ${activeSystem.name}` : 'Simulating'}
               data-testid="dsm-sim-progress"
-              style={{ marginTop: 'var(--space-3)' }}
             />
 
             {/* Three clearly-separated selectors:

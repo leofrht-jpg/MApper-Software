@@ -20,6 +20,7 @@ import {
   X,
 } from 'lucide-react'
 import { useProjectStore } from '../stores/projectStore'
+import { ComputeOverlay } from './ui/ComputeOverlay'
 
 type Mode = 'idle' | 'new' | 'duplicate' | 'rename' | 'confirm-delete'
 
@@ -223,6 +224,15 @@ export function ProjectSwitcher() {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
+      {/* A full export streams the whole Brightway project (tens of GB for an
+          ecoinvent project), and an import unpacks one: both can run for
+          minutes. */}
+      <ComputeOverlay
+        active={busy === 'export' || busy === 'import'}
+        title={busy === 'export' ? 'Exporting project' : 'Importing project'}
+        detail={busy === 'export' ? (currentProject ?? undefined) : 'Unpacking the archive and installing its storage'}
+        data-testid="project-transfer-progress"
+      />
       <button
         onClick={toggleOpen}
         style={{

@@ -115,7 +115,12 @@ describe('DSMImpactPanel elapsed timer (Patch 4P)', () => {
     const { container } = render(<DSMImpactPanel />)
 
     // Initial render: the ComputeProgress card shows "0:00 elapsed".
-    const elapsedEl = () => container.querySelector('[data-testid="dsm-impact-progress-elapsed"]')
+    // Walkthrough 4: the card is the full-screen overlay, portalled into
+    // document.body and revealed after OVERLAY_REVEAL_MS.
+    void container
+    const elapsedEl = () => document.body.querySelector('[data-testid="dsm-impact-progress-elapsed"]')
+    // setTimeout is NOT faked in this file, so the reveal delay runs in real time.
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)) })
     expect(elapsedEl()?.textContent).toContain('0:00')
 
     // Advance 2.5 seconds. useElapsedSeconds' interval fires at 1s and 2s →
@@ -154,7 +159,12 @@ describe('DSMImpactPanel elapsed timer (Patch 4P)', () => {
     const { DSMImpactPanel } = await import('../src/components/dsm/DSMImpactPanel')
     const { container } = render(<DSMImpactPanel />)
 
-    const elapsedEl = () => container.querySelector('[data-testid="dsm-impact-progress-elapsed"]')
+    // Walkthrough 4: the card is the full-screen overlay, portalled into
+    // document.body and revealed after OVERLAY_REVEAL_MS.
+    void container
+    const elapsedEl = () => document.body.querySelector('[data-testid="dsm-impact-progress-elapsed"]')
+    // setTimeout is NOT faked in this file, so the reveal delay runs in real time.
+    await act(async () => { await new Promise((r) => setTimeout(r, 300)) })
     expect(elapsedEl()?.textContent).toContain('0:00')
 
     await act(async () => {
@@ -184,7 +194,7 @@ describe('DSMImpactPanel elapsed timer (Patch 4P)', () => {
 
     // The ComputeProgress card only renders while `isAnyCalculating` is true,
     // so in the idle state it's absent entirely (returns null).
-    expect(container.querySelector('[data-testid="dsm-impact-progress"]')).toBeNull()
+    expect(document.body.querySelector('[data-testid="dsm-impact-progress"]')).toBeNull()
     expect(container.textContent).not.toMatch(/\d:\d\d elapsed/)
   })
 })

@@ -22,15 +22,12 @@ import { dirname, resolve } from 'node:path'
 const dir = dirname(fileURLToPath(import.meta.url))
 const read = (p: string) => readFileSync(resolve(dir, '..', p), 'utf8')
 
+// Walkthrough 4: the long calculations moved on from this inline card to the
+// full-screen <ComputeOverlay> (tests/computeOverlayCoverage.test.tsx). The
+// inline card stays for the two sites below, which are not on that list.
 const MIGRATED = [
-  'src/components/impact/MultiProductLCA.tsx',
-  'src/components/impact/SingleProductStaticPanel.tsx',
-  'src/components/impact/SingleProductProjectedPanel.tsx',
-  'src/components/dsm/DSMImpactPanel.tsx',
-  'src/components/impact/ProjectedImpactPanel.tsx',
   'src/components/lca/ContributionAnalysisPanel.tsx',
   'src/pages/PLCADeveloper.tsx',
-  'src/components/aesa/ConfigSidebar.tsx',
 ]
 
 describe('compute-progress migration (Patch 5AL)', () => {
@@ -48,9 +45,10 @@ describe('compute-progress migration (Patch 5AL)', () => {
     expect(src).not.toContain('multi-product-compute-elapsed')
     expect(src).not.toContain('computeElapsed')
     expect(src).not.toMatch(/import.*useElapsedSeconds/)
-    // Its ComputeProgress uses bar='none' (synchronous fan-out, no real pct).
+    // Its card (now the full-screen overlay) carries no fabricated pct.
     expect(src).toContain('data-testid="multi-product-compute-progress"')
-    expect(src).toContain('bar="none"')
+    const block = src.match(/<ComputeOverlay[\s\S]*?\/>/)?.[0] ?? ''
+    expect(block).not.toContain('pct=')
   })
 
   it('retired panels no longer roll a bespoke setInterval elapsed timer', () => {

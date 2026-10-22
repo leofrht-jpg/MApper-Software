@@ -26,7 +26,7 @@ import {
 import { Button } from '../ui/Button'
 import { Badge } from '../ui/Badge'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
-import { ComputeProgress } from '../ui/ComputeProgress'
+import { ComputeOverlay } from '../ui/ComputeOverlay'
 import { YearSlider } from '../ui/YearSlider'
 import { DSMScenariosChip } from './DSMScenariosChip'
 import { useDSMStore } from '../../stores/dsmStore'
@@ -322,7 +322,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
   // ``staticScenarioRuns``; none of those flip ``isCalculatingLCA``.
   // Wire the timer to ``isAnyCalculating`` (already computed above)
   // so it ticks regardless of which slot is in flight.
-  // Patch 5AL — the LIVE elapsed counter now lives in <ComputeProgress>
+  // Patch 5AL — the LIVE elapsed counter now lives in <ComputeOverlay>
   // (fed by useElapsedSeconds). This effect only records the FINAL elapsed
   // (`completedElapsed`) for the post-result "Calculated in Xs" metadata line;
   // no live interval, no bespoke seconds state.
@@ -348,7 +348,14 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
     return paramScenarios.find((s) => s.id === first)?.name ?? first ?? 'Base'
   }, [paramScenarios, effectiveSelected, selectedParamSetId])
 
+  // From the click until the request returns: the slots behind
+  // isAnyCalculating are set only once the backend has answered.
+  const [submitting, setSubmitting] = useState(false)
   const handleCalculate = async () => {
+    setSubmitting(true)
+    try { await handleCalculateInner() } finally { setSubmitting(false) }
+  }
+  const handleCalculateInner = async () => {
     if (methods.length === 0 || mappedCount === 0) return
     if (axisConflict) return
     const ys = yearStart ?? undefined
@@ -786,13 +793,11 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
           </div>
         )}
 
-        <ComputeProgress
-          active={isAnyCalculating}
-          label={`Running LCA for ${yearCount} year${yearCount === 1 ? '' : 's'} × ${mappedCount} cohort${mappedCount === 1 ? '' : 's'} × ${methods.length} indicator${methods.length === 1 ? '' : 's'}…`}
-          bar="indeterminate"
-          statusColor="var(--mod-lca)"
+        <ComputeOverlay
+          active={isAnyCalculating || submitting}
+          title="Calculating Static impact"
+          detail={`${yearCount} year${yearCount === 1 ? '' : 's'} × ${mappedCount} cohort${mappedCount === 1 ? '' : 's'} × ${methods.length} indicator${methods.length === 1 ? '' : 's'}`}
           data-testid="dsm-impact-progress"
-          style={{ marginTop: 'var(--space-3)' }}
         />
         {/* `dsm-spin` keyframe is referenced by this panel's button/status
             spinners (and other DSM chips); keep it defined unconditionally now

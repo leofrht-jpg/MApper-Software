@@ -11,7 +11,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { AlertCircle, ArrowLeft, ChevronLeft, ChevronRight, Loader2, Pencil, Play, Plus, Save, RotateCcw, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/Button'
-import { ComputeProgress } from '../ui/ComputeProgress'
 import { NumberInput } from '../ui/NumberInput'
 import { useAESAStore, type AESAConfigLoadKind } from '../../stores/aesaStore'
 import {
@@ -37,7 +36,7 @@ import type {
 } from '../../api/client'
 import type { StageAmountsMeta } from '../../api/client'
 import { CaseSelectionModal } from './CaseSelectionModal'
-import { availableCases, computeLabel, selectionPayload, type CaseOption } from '../../utils/aesaCases'
+import { availableCases, selectionPayload, type CaseOption } from '../../utils/aesaCases'
 import { useParameterStore } from '../../stores/parameterStore'
 import type { ProjectedRun } from '../../stores/singleProductImpactStore'
 
@@ -157,7 +156,7 @@ const CONFIG_LOAD_LABELS: Record<AESAConfigLoadKind, string> = {
 
 export function ConfigSidebar({ collapsed, onToggle }: Props) {
   const {
-    defaults, defaultsLoading, draft, running, error, lastComputeArgs,
+    defaults, defaultsLoading, draft, running, error,
     loadDefaults, loadConfigurations, loadPresets, loadSessions, updateDraft,
     updateCarbonBudget, resetDraftToDefaults, suggestMapping, saveConfig, compute,
     configurations, activeConfigId, creatingNewConfig, startNewConfig,
@@ -760,19 +759,6 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                   ? `Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first.`
                   : ''}
         </div>
-      )}
-
-      {/* Patch 5AL — shared live compute-progress card. AESA compute exposes no
-          pct (in-process pipeline), so bar='none' (spinner + elapsed). */}
-      {!showEmptyState && !inSessionMode && (
-        <ComputeProgress
-          active={running}
-          label={computeLabel(lastComputeArgs)}
-          bar="none"
-          statusColor="var(--mod-aesa)"
-          data-testid="aesa-compute-progress"
-          style={{ margin: '8px 12px' }}
-        />
       )}
 
       <div style={bodyStyle}>

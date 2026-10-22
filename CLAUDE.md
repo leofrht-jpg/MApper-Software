@@ -2411,6 +2411,43 @@ draft" from "user has decided to create a new config".
   fix when Patch 4Q landed; future cascade-rendering tests
   should mirror the pattern.
 
+### Long calculations: the full-screen `<ComputeOverlay>` (walkthrough 4)
+
+Every calculation that can take more than ~10 s shows
+`components/ui/ComputeOverlay.tsx`: a dimmed full screen with a centred card in
+the desktop startup screen's style (the `LOADING_DATA_URL` page in
+`mapper-tauri/src/main.rs`): spinner, what is running (title), what it is doing
+(detail, e.g. "5 cases × 6 sharing · 4 LCA reruns"), elapsed M:SS, a % bar only
+from a REAL pct, and Stop when the run can be stopped (the Stop button behind
+the card is unreachable). Clicks are swallowed by the backdrop (and its
+`stopPropagation` keeps portal events from reaching the owning panel's React
+handlers); `inert` on `#root` blocks the keyboard. Portalled into
+`document.body`. The card is revealed after `OVERLAY_REVEAL_MS` (250 ms) so a
+sub-second run never flashes one; clicks are blocked from the first frame.
+
+Entry points (measured on EVS40 / MAp-test, 2026-10-21): AESA compute with
+cases (77 s; owned by `AESADashboard`, not the sidebar, whose collapsed variant
+has no body), system-level Prospective (63 s) and Static (11 s with 25
+indicators), single-product Prospective (19 s for 4 years) and Static (4 s),
+Multi-item comparison, Monte Carlo single (69 s) and paired, DSM simulate, and
+project export/import (`ProjectSwitcher`; a full export streams the whole
+Brightway project). Locked by `tests/computeProgressCoverage.test.tsx` and
+`tests/computeOverlay.test.tsx`.
+
+**Why Prospective Calculate showed nothing (the first version).** Not the
+request: `POST /impact/calculate` answers with a task id in ~0.01 s (measured,
+MAp-test Car Fleet). `ProjectedImpactPanel`'s running flag was a ternary —
+`scenarioProgress ? done < total : projectedJob running || …` — and a
+single-scenario `run()` never clears `projectedScenarioOrder`. After one
+Sensitivity-cases run on that tab, every later plain Calculate read "not
+running", and `requestStop` only collected the finished fan-out tasks. Each
+slot now counts on its own (`tests/projectedProgressAfterSensitivityRun.test.tsx`).
+Both system-level panels also hold a `submitting` flag from the click until
+the request returns, so the card never waits on the network.
+
+`<ComputeProgress>` (below) remains for the inline cases not on this list:
+pLCA generation, contribution analysis, and the LCA Calculator.
+
 ### Compute-progress unification — `<ComputeProgress>` (Patch 5AL)
 
 All live compute-progress is the shared
@@ -2438,7 +2475,7 @@ Ns" pill is **deleted** — button morphs to spinner-only), `SingleProductStatic
 retired (DSM keeps `completedElapsed` for the post-result line only). Locked by
 `tests/computeProgress.test.tsx` + `tests/computeProgressMigration.test.tsx`.
 
-> **All live compute-progress uses <ComputeProgress> fed by useElapsedSeconds (M:SS via formatElapsed); never a bespoke setInterval timer, an in-button elapsed label, or a fabricated progress bar — the bar is determinate only from real pct, else 'none'.**
+> **All live compute-progress uses <ComputeOverlay> (long runs) or <ComputeProgress> (inline), both fed by useElapsedSeconds (M:SS via formatElapsed); never a bespoke setInterval timer, an in-button elapsed label, or a fabricated progress bar — the bar is determinate only from real pct, else 'none'.**
 
 **Sole documented exception: `MethodLibrary`.** Its install rows interleave the
 elapsed with a stateful `<StopButton>` and render a separate determinate bar —

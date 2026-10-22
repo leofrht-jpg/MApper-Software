@@ -9054,6 +9054,40 @@ data during a run, its own writes show up there too; the message says so.
 Runs on branches cut before #174 recreated `guard-db` in default and Battery
 Circularity on 2026-10-21/22.
 
+### `GuardlessProbe` and the run-level fingerprint of the MApper store (walkthrough 5)
+
+EVS40's DSM list filled with systems named `GuardlessProbe`. The only source
+of that name was `test_project_guard_e2e.py::test_create_dsm_system_without_header_is_unguarded`,
+which POSTed a VALID system to `/api/dsm/systems` with no `X-Mapper-Project`
+header and nothing mocked but the guard's project lookup, so the handler
+created it for real (a uuid-named directory under `dsm/<project>/` with
+`"name": "GuardlessProbe"`) in whatever bw2 project was current. Every run
+that escaped the storage redirect left one more.
+
+- The test now sends a well-formed body the HANDLER rejects (end_year <
+  start_year → 400), which proves the guard let it through while saving
+  nothing, and asserts `save_system`/`save_state` were never called. A sibling
+  case checks the same body with a mismatched header is a 409, so the 400
+  cannot mask the guard.
+- The per-write guard now also refuses `open(..., "w"/"a"/"x"/"+")` (via both
+  `builtins.open` and `io.open`, which `Path.open` uses) and `os.replace` into
+  the live roots; it used to see only `Path.mkdir`/`Path.write_text`.
+- **Run-level backstop**, like the Brightway one: `_store_fingerprint()` lists
+  every file under the real `dsm`, `mfa`, `aesa`, `parameters`, `plca`,
+  `aesa_presets` roots (size + mtime, stat only) at conftest import and at
+  `pytest_sessionfinish`, and fails the run on any added, removed or rewritten
+  file, naming a new DSM system by its name. It catches writes no in-process
+  guard can see (a subprocess server, a test run without the redirect).
+- Locked by `tests/test_live_store_guard.py`, whose write probes aim at a
+  directory that does not exist, so a broken guard fails with
+  FileNotFoundError instead of writing.
+
+**Cleanup of existing entries** goes through the app, never by hand-editing
+files: switch to the project (`POST /api/projects/switch {"name": ...}`), list
+`GET /api/dsm/systems`, and `DELETE /api/dsm/systems/{system_id}` for each
+`name == "GuardlessProbe"`. The delete acts on the CURRENT project and also
+purges that system's cohort mappings.
+
 #### What NOT to do
 
 - **Don't add a storage module without adding its root to `_STORAGE_ROOTS`.**

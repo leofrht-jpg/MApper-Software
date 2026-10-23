@@ -29,6 +29,7 @@ import path from 'node:path'
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 import * as client from '../src/api/client'
+import { relPosix } from './helpers/relPosix'
 
 const SRC = path.resolve(__dirname, '../src')
 
@@ -85,7 +86,7 @@ export function bareRequests(name: string, source: string): string[] {
 describe('no request bypasses the project header', () => {
   it('every fetch under src/ goes through _withProjectHeader', () => {
     const bad = sourceFiles(SRC).flatMap((f) =>
-      bareRequests(path.relative(SRC, f), fs.readFileSync(f, 'utf8')))
+      bareRequests(relPosix(SRC, f), fs.readFileSync(f, 'utf8')))
     expect(bad, 'route these through request()/uploadFile() or wrap the options in _withProjectHeader()')
       .toEqual([])
   })
@@ -94,7 +95,7 @@ describe('no request bypasses the project header', () => {
     const outside = sourceFiles(SRC)
       .filter((f) => !f.endsWith(path.join('api', 'client.ts')))
       .filter((f) => /(?<![\w.$])fetch\s*\(/.test(stripComments(fs.readFileSync(f, 'utf8'))))
-      .map((f) => path.relative(SRC, f))
+      .map((f) => relPosix(SRC, f))
     expect(outside, 'call the backend through src/api/client.ts').toEqual([])
   })
 

@@ -842,6 +842,11 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <StopButton taskId={myCancel.taskId} state={myCancel.state} onClick={myCancel.requestStop} />
+            {myCancel.stopError && (
+              <span role="alert" data-testid="stop-error" style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', maxWidth: 280 }}>
+                {myCancel.stopError}
+              </span>
+            )}
             <Button
               variant="primary"
               onClick={handleRunMultiYear}

@@ -61,7 +61,11 @@ from typing import Iterable
 
 from fastapi import APIRouter, HTTPException
 
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+# "/tasks", not "/api/tasks": main.py mounts the whole API router under /api.
+# With "/api/tasks" the cancel route lived at /api/api/tasks/{id}/cancel, the
+# frontend's POST to /api/tasks/{id}/cancel was a 404, and every Stop button
+# did nothing (tests/test_cancel_route_through_app.py).
+router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 # Grace window after task registration before zero-subscriber disconnect
 # triggers an automatic cancel. Covers the POST-returns → client-opens-WS

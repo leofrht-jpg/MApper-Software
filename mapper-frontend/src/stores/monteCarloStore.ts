@@ -9,6 +9,7 @@
 
 import { create } from 'zustand'
 import {
+  CANCEL_NOT_FOUND_MESSAGE,
   cancelTask,
   getMonteCarloMultiResult,
   getMonteCarloResult,
@@ -92,6 +93,10 @@ interface MonteCarloState {
   stage: string
   error: string | null
   cancelled: boolean
+  /** Stop was pressed and the run has not ended yet. */
+  cancelling: boolean
+  /** Stop did not reach the task (404 while still running, or a network error). */
+  cancelError: string | null
   result: MonteCarloResult | null
 
   /** Called from a Single-product results panel. Stores the configuration; the
@@ -115,6 +120,8 @@ export const useMonteCarloStore = create<MonteCarloState>((set, get) => ({
   stage: '',
   error: null,
   cancelled: false,
+  cancelling: false,
+  cancelError: null,
   result: null,
 
   setHandoff: (handoff) => set({ handoff, multiHandoff: null }),
@@ -134,13 +141,13 @@ export const useMonteCarloStore = create<MonteCarloState>((set, get) => ({
   },
 
   runMulti: async (body) => {
-    set({ running: true, pct: 0, stage: 'queued', error: null, cancelled: false, multiResult: null })
+    set({ running: true, cancelling: false, cancelError: null, pct: 0, stage: 'queued', error: null, cancelled: false, multiResult: null })
     let taskId: string
     try {
       taskId = (await startMonteCarloMulti(body)).task_id
       set({ taskId })
     } catch (e) {
-      set({ running: false, error: e instanceof Error ? e.message : String(e) })
+      set({ running: false, cancelling: false, error: e instanceof Error ? e.message : String(e) })
       return
     }
     await new Promise<void>((resolve) => {
@@ -152,31 +159,31 @@ export const useMonteCarloStore = create<MonteCarloState>((set, get) => ({
         if (msg.type === 'progress') set({ pct: msg.pct ?? 0, stage: msg.stage ?? '' })
         else if (msg.type === 'done') {
           try {
-            set({ multiResult: await getMonteCarloMultiResult(taskId), running: false, pct: 1 })
+            set({ multiResult: await getMonteCarloMultiResult(taskId), running: false, cancelling: false, pct: 1 })
           } catch (e) {
-            set({ running: false, error: e instanceof Error ? e.message : String(e) })
+            set({ running: false, cancelling: false, error: e instanceof Error ? e.message : String(e) })
           }
           finish()
-        } else if (msg.type === 'cancelled') { set({ running: false, cancelled: true }); finish() }
-        else if (msg.type === 'error') { set({ running: false, error: msg.error ?? 'Run failed' }); finish() }
+        } else if (msg.type === 'cancelled') { set({ running: false, cancelling: false, cancelled: true }); finish() }
+        else if (msg.type === 'error') { set({ running: false, cancelling: false, error: msg.error ?? 'Run failed' }); finish() }
       }
       ws.onerror = () => {
-        if (!settled && get().running) set({ running: false, error: 'Lost connection to the Monte Carlo task' })
+        if (!settled && get().running) set({ running: false, cancelling: false, error: 'Lost connection to the Monte Carlo task' })
         finish()
       }
-      ws.onclose = () => { if (!settled && get().running) set({ running: false }); finish() }
+      ws.onclose = () => { if (!settled && get().running) set({ running: false, cancelling: false }); finish() }
     })
   },
 
   run: async (body) => {
-    set({ running: true, pct: 0, stage: 'queued', error: null, cancelled: false, result: null })
+    set({ running: true, cancelling: false, cancelError: null, pct: 0, stage: 'queued', error: null, cancelled: false, result: null })
     let taskId: string
     try {
       const started = await startMonteCarlo(body)
       taskId = started.task_id
       set({ taskId })
     } catch (e) {
-      set({ running: false, error: e instanceof Error ? e.message : String(e) })
+      set({ running: false, cancelling: false, error: e instanceof Error ? e.message : String(e) })
       return
     }
 
@@ -196,16 +203,16 @@ export const useMonteCarloStore = create<MonteCarloState>((set, get) => ({
         } else if (msg.type === 'done') {
           try {
             const result = await getMonteCarloResult(taskId)
-            set({ result, running: false, pct: 1 })
+            set({ result, running: false, cancelling: false, pct: 1 })
           } catch (e) {
-            set({ running: false, error: e instanceof Error ? e.message : String(e) })
+            set({ running: false, cancelling: false, error: e instanceof Error ? e.message : String(e) })
           }
           finish()
         } else if (msg.type === 'cancelled') {
-          set({ running: false, cancelled: true })
+          set({ running: false, cancelling: false, cancelled: true })
           finish()
         } else if (msg.type === 'error') {
-          set({ running: false, error: msg.error ?? 'Monte Carlo run failed' })
+          set({ running: false, cancelling: false, error: msg.error ?? 'Monte Carlo run failed' })
           finish()
         }
       }
@@ -213,12 +220,12 @@ export const useMonteCarloStore = create<MonteCarloState>((set, get) => ({
       // stuck on "running" forever.
       ws.onerror = () => {
         if (!settled && get().running) {
-          set({ running: false, error: 'Lost connection to the Monte Carlo task' })
+          set({ running: false, cancelling: false, error: 'Lost connection to the Monte Carlo task' })
         }
         finish()
       }
       ws.onclose = () => {
-        if (!settled && get().running) set({ running: false })
+        if (!settled && get().running) set({ running: false, cancelling: false })
         finish()
       }
     })
@@ -226,15 +233,23 @@ export const useMonteCarloStore = create<MonteCarloState>((set, get) => ({
 
   cancel: async () => {
     const id = get().taskId
-    if (!id) return
-    set({ stage: 'stopping…' })
-    await cancelTask(id)
+    if (!id || !get().running) return
+    set({ cancelling: true, cancelError: null })
+    // The terminal ``cancelled`` frame ends the run. A 404 is NOT an end: it
+    // used to be read as one, and every Stop silently did nothing.
+    const stillOurs = () => get().running && get().taskId === id
+    try {
+      const res = await cancelTask(id)
+      if (res === null && stillOurs()) set({ cancelling: false, cancelError: CANCEL_NOT_FOUND_MESSAGE })
+    } catch (e) {
+      if (stillOurs()) set({ cancelling: false, cancelError: `Stop failed: ${e instanceof Error ? e.message : String(e)}` })
+    }
   },
 
   reset: () =>
     set({
-      taskId: null, running: false, pct: 0, stage: '',
-      error: null, cancelled: false, result: null, multiResult: null,
+      taskId: null, running: false, cancelling: false, pct: 0, stage: '',
+      error: null, cancelled: false, cancelError: null, result: null, multiResult: null,
     }),
 }))
 

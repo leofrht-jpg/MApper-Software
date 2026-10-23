@@ -22,7 +22,7 @@ import { usePLCAStore } from '../../stores/plcaStore'
 import { useImpactStore } from '../../stores/impactStore'
 import { useParameterStore } from '../../stores/parameterStore'
 import {
-  BASE_SCENARIO, cancelTask, exportImpact,
+  BASE_SCENARIO, CANCEL_NOT_FOUND_MESSAGE, cancelTask, exportImpact,
   pairKey, pairedShortLabel,
   type MultiPairedImpactResult, type MultiParamImpactResult,
   type PairedDSMLCIRef, type ProspectiveScenarioRef,
@@ -198,24 +198,62 @@ function ProjectedImpactPanelImpl() {
   // ``cancelled`` frame, so we just POST cancel for each and the store
   // finalises state via existing handlers.
   const [isStopping, setIsStopping] = useState(false)
-  useEffect(() => { if (!isRunning) setIsStopping(false) }, [isRunning])
+  const [stopError, setStopError] = useState<string | null>(null)
+  // End state after an accepted Stop: the card closes, so the panel must say
+  // the run was stopped instead of going quiet.
+  const [stoppedNotice, setStoppedNotice] = useState(false)
+  const stopAcceptedRef = useRef<string[]>([])
+  useEffect(() => {
+    if (isRunning) return
+    setIsStopping(false)
+    setStopError(null)
+    const asked = stopAcceptedRef.current
+    stopAcceptedRef.current = []
+    // Only when a task we stopped actually ended as cancelled: a cancel that
+    // arrives after the last checkpoint lets the run finish with a result.
+    const jobs = [
+      projectedJob,
+      ...projectedScenarioOrder.map((k) => projectedScenarioRuns[k]?.job),
+      ...dsmScenarioOrder.map((k) => dsmScenarioRuns[k]?.job),
+      ...pairedScenarioOrder.map((k) => pairedScenarioRuns[k]?.job),
+    ]
+    if (jobs.some((j) => j?.cancelled && j.taskId && asked.includes(j.taskId))) setStoppedNotice(true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs on the running -> idle edge only
+  }, [isRunning])
   const stopState = isStopping ? 'stopping' : isRunning ? 'running' : 'idle'
   const stopTaskId = scenarioRunning && scenarioProgress
     ? (scenarioProgress.active.job.taskId || null)
     : (projectedJob?.taskId ?? null)
-  const requestStop = async () => {
-    setIsStopping(true)
+  // Every task this panel can have in flight. Multi-DSM and paired runs were
+  // missing: Stop showed for them (isRunning covers them) and cancelled nothing.
+  const liveTaskIds = (): string[] => {
     const ids: string[] = []
+    const add = (job: { done?: boolean; taskId?: string } | undefined) => {
+      if (job && !job.done && job.taskId && !ids.includes(job.taskId)) ids.push(job.taskId)
+    }
     // Both slots: a finished fan-out left in the store must not hide the
     // live single-run task (the same stale-order trap as isRunning).
-    for (const s of projectedScenarioOrder) {
-      const r = projectedScenarioRuns[s]
-      if (r && !r.job.done && r.job.taskId) ids.push(r.job.taskId)
+    for (const s of projectedScenarioOrder) add(projectedScenarioRuns[s]?.job)
+    for (const s of dsmScenarioOrder) add(dsmScenarioRuns[s]?.job)
+    for (const k of pairedScenarioOrder) add(pairedScenarioRuns[k]?.job)
+    add(projectedJob ?? undefined)
+    return ids
+  }
+  const requestStop = async () => {
+    setIsStopping(true)
+    setStopError(null)
+    const ids = liveTaskIds()
+    const results = await Promise.all(ids.map((id) => cancelTask(id).catch((e: unknown) => e)))
+    // A 404 (null) or an error is NOT "finished". If nothing was accepted and
+    // a task is still live, say Stop failed and offer it again; each task's own
+    // terminal frame is what ends the run.
+    const accepted = results.some((r) => r != null && !(r instanceof Error))
+    if (accepted) stopAcceptedRef.current = ids.filter((_, i) => results[i] != null && !(results[i] instanceof Error))
+    if (!accepted && liveTaskIds().length > 0) {
+      setIsStopping(false)
+      const err = results.find((r) => r instanceof Error) as Error | undefined
+      setStopError(err ? `Stop failed: ${err.message}` : CANCEL_NOT_FOUND_MESSAGE)
     }
-    if (projectedJob && !projectedJob.done && projectedJob.taskId && !ids.includes(projectedJob.taskId)) {
-      ids.push(projectedJob.taskId)
-    }
-    await Promise.all(ids.map((id) => cancelTask(id).catch(() => null)))
   }
 
   const handleExport = async () => {
@@ -486,6 +524,7 @@ function ProjectedImpactPanelImpl() {
   const [submitting, setSubmitting] = useState(false)
   const handleRun = async () => {
     setSubmitting(true)
+    setStoppedNotice(false)
     try { await handleRunInner() } finally { setSubmitting(false) }
   }
   const handleRunInner = async () => {
@@ -1193,13 +1232,24 @@ function ProjectedImpactPanelImpl() {
               ? (scenarioProgress.done + scenarioProgress.active.job.pct) / scenarioProgress.total
               : (projectedJob && !projectedJob.done ? projectedJob.pct : null)
           }
-          onCancel={isRunning && stopState === 'running' ? () => { void requestStop() } : undefined}
+          onCancel={isRunning ? () => { void requestStop() } : undefined}
+          cancelling={stopState === 'stopping'}
+          cancelError={stopError}
           data-testid="projected-impact-progress"
         />
         {/* `impact-spin` keyframe is used by this panel's button/status spinners;
             keep it defined unconditionally now the running banner is gone. */}
         <style>{`@keyframes impact-spin { to { transform: rotate(360deg) } }`}</style>
 
+        {stoppedNotice && !isRunning && (
+          <div
+            data-testid="projected-stopped"
+            role="status"
+            style={{ marginTop: 'var(--space-3)', padding: '8px 10px', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)', color: 'var(--text-secondary)', fontSize: 'var(--text-sm)' }}
+          >
+            Calculation stopped. A stopped run produces no result{projectedResult ? '; the results shown are from an earlier run.' : '.'}
+          </div>
+        )}
         {(projectedJob?.error || storeError) && (
           <div style={{ marginTop: 'var(--space-3)', padding: '8px 10px', backgroundColor: 'var(--danger-muted)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-md)', color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>
             {projectedJob?.error || storeError}

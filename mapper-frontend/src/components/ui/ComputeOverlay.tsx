@@ -47,11 +47,16 @@ interface Props {
   pct?: number | null
   onCancel?: () => void
   cancelLabel?: string
+  /** Stop was pressed and the run has not ended yet: the card says so and the
+   *  button is disabled, instead of the card vanishing with no explanation. */
+  cancelling?: boolean
+  /** Stop did not reach the task (shown on the card; Stop stays available). */
+  cancelError?: string | null
   'data-testid'?: string
 }
 
 export function ComputeOverlay({
-  active, title, detail, pct, onCancel, cancelLabel = 'Stop', 'data-testid': testId = 'compute-overlay',
+  active, title, detail, pct, onCancel, cancelLabel = 'Stop', cancelling = false, cancelError = null, 'data-testid': testId = 'compute-overlay',
 }: Props) {
   const seconds = useElapsedSeconds(active)
   const [revealed, setRevealed] = useState(false)
@@ -124,18 +129,29 @@ export function ComputeOverlay({
           <div data-testid={`${testId}-elapsed`} style={{ fontSize: 13, color: '#8b97a5', fontFamily: 'var(--font-mono, monospace)' }}>
             {pctInt != null ? `${pctInt}% · ` : ''}{formatElapsed(seconds * 1000)} elapsed
           </div>
+          {cancelling && (
+            <div data-testid={`${testId}-cancelling`} role="status" style={{ fontSize: 13, color: '#f59e0b' }}>
+              Stopping: the calculation ends at its next checkpoint.
+            </div>
+          )}
+          {cancelError && !cancelling && (
+            <div data-testid={`${testId}-cancel-error`} role="alert" style={{ fontSize: 12, color: '#f87171', lineHeight: 1.5 }}>
+              {cancelError}
+            </div>
+          )}
           {onCancel && (
             <button
               type="button"
               data-testid={`${testId}-cancel`}
               onClick={onCancel}
+              disabled={cancelling}
               style={{
-                marginTop: 2, padding: '5px 14px', fontSize: 12, cursor: 'pointer',
-                background: 'transparent', color: '#e6edf3',
+                marginTop: 2, padding: '5px 14px', fontSize: 12, cursor: cancelling ? 'wait' : 'pointer',
+                background: 'transparent', color: cancelling ? '#8b97a5' : '#e6edf3',
                 border: '1px solid #374151', borderRadius: 6,
               }}
             >
-              {cancelLabel}
+              {cancelling ? 'Stopping…' : cancelLabel}
             </button>
           )}
           <style>{`

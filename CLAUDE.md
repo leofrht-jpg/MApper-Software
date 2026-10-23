@@ -2768,9 +2768,16 @@ failure shows nothing. Use the helpers in `components/ui/dialogs.tsx`:
 `<DialogHost />` is mounted once in `App.tsx`, outside the per-tab
 ErrorBoundary; a helper called with no host throws. Row-level "second click to
 delete" buttons (AESA configurations dropdown, ProjectSwitcher) are a separate,
-inline pattern and stay as they are. `tests/noNativeDialogs.test.ts` fails on
-any native call under `src`; while the migration runs it carries an allow-list
-of the unmigrated files with exact counts, and a migrated file must leave it.
+inline pattern and stay as they are.
+
+**The guard is absolute: there is no allow-list.** Every native call was
+migrated (dialogs PRs 1-4), so `tests/noNativeDialogs.test.ts` scans every
+file under `src` and fails on any native `confirm`, `prompt` or `alert`: bare,
+`window.`/`globalThis.`/`self.`-prefixed, passed around as a reference, or by
+index access (`window['alert']`). The only exception is
+`components/ui/dialogs.tsx`, which owns the dialog UI and calls none itself.
+Don't reintroduce an allow-list or an exemption to land a native call; use
+the helpers.
 
 
 ## Common Error Patterns

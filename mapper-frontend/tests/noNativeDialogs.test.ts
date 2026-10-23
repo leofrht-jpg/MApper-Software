@@ -14,10 +14,9 @@
  * shipped: deletes that never happened, names that could not be entered,
  * failures that showed nothing. src/components/ui/dialogs.tsx replaces them.
  *
- * ALLOWED holds the call sites not migrated yet, per file, with the EXACT
- * count: a new call fails, and so does a migrated one whose entry was not
- * updated, so the list cannot go stale. The final migration PR deletes it.
- * Found by scanning, so a call in a new file fails here.
+ * The guard is absolute: there is no allow-list. Every file under src is
+ * scanned (so a call in a new file fails here) and any native call fails,
+ * except in components/ui/dialogs.tsx, the module that owns dialog UI.
  */
 import fs from 'node:fs'
 import path from 'node:path'
@@ -31,10 +30,6 @@ const SRC = path.resolve(__dirname, '../src')
 
 /** The one module allowed to own dialog UI (it calls no native dialog either). */
 const EXEMPT = new Set(['components/ui/dialogs.tsx'])
-
-// One entry per line, a blank line between entries, so parallel migration PRs
-// each delete their own lines without touching a neighbour's.
-const ALLOWED: Record<string, number> = {}
 
 const CALL = /(?<![\w.$])(?:(?:window|globalThis|self)\s*\.\s*)?(?:confirm|prompt|alert)\s*\(/g
 // A native dialog passed around or indexed instead of called directly.
@@ -60,37 +55,26 @@ function sourceFiles(dir: string): string[] {
   return out
 }
 
-function countsByFile(): Record<string, number> {
-  const counts: Record<string, number> = {}
+/** Every native dialog use under src, outside EXEMPT, as "file:line". */
+function allNativeDialogs(): string[] {
+  const hits: string[] = []
   for (const f of sourceFiles(SRC)) {
     const rel = relPosix(SRC, f)
     if (EXEMPT.has(rel)) continue
-    const n = nativeDialogs(rel, fs.readFileSync(f, 'utf8')).length
-    if (n > 0) counts[rel] = n
+    hits.push(...nativeDialogs(rel, fs.readFileSync(f, 'utf8')))
   }
-  return counts
+  return hits
 }
 
 describe('no native dialogs under src', () => {
-  it('every native call is in ALLOWED with its exact count', () => {
-    const counts = countsByFile()
-    const unexpected = Object.entries(counts)
-      .filter(([f, n]) => ALLOWED[f] !== n)
-      .map(([f, n]) => `${f}: ${n} (allowed ${ALLOWED[f] ?? 0})`)
-    expect(unexpected, 'use confirmDialog / promptDialog / choose / messageDialog / notify from components/ui/dialogs').toEqual([])
+  it('no native confirm, prompt or alert anywhere under src', () => {
+    expect(allNativeDialogs(), 'use confirmDialog / promptDialog / choose / messageDialog / notify from components/ui/dialogs').toEqual([])
   })
 
-  it('ALLOWED has no stale entry (a migrated file must be removed from it)', () => {
-    const counts = countsByFile()
-    const stale = Object.keys(ALLOWED).filter((f) => counts[f] === undefined)
-    expect(stale).toEqual([])
-  })
-
-  it('the migrated AESA files are not allowed any native call', () => {
-    for (const f of ['components/aesa/DownscalingChainEditor.tsx', 'components/aesa/PrinciplesEditor.tsx']) {
-      expect(ALLOWED[f]).toBeUndefined()
-      expect(nativeDialogs(f, fs.readFileSync(path.join(SRC, f), 'utf8'))).toEqual([])
-    }
+  it('the scan really walks src (so [] above is not an empty walk)', () => {
+    const files = sourceFiles(SRC).map((f) => relPosix(SRC, f))
+    expect(files.length).toBeGreaterThan(100)
+    for (const f of ['App.tsx', 'pages/Archetypes.tsx', 'components/ui/dialogs.tsx']) expect(files).toContain(f)
   })
 
   it('the dialog module itself calls no native dialog', () => {

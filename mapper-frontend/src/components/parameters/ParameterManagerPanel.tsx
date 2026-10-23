@@ -24,6 +24,7 @@ import {
 } from '../../api/client'
 import { findLeverReferenceMaterials, type LeverReferenceMaterial } from '../../utils/keyframes'
 import { PedigreeEditor } from '../uncertainty/PedigreeEditor'
+import { choose, confirmDialog, messageDialog, notify, promptDialog } from '../ui/dialogs'
 import { scoreSummary, usePedigreeTable } from '../../utils/pedigree'
 
 /** Lazily fetch full archetype BOMs and scan them for nodes tagged with the
@@ -56,6 +57,10 @@ function validateName(name: string): string | null {
   if (RESERVED.has(name)) return `"${name}" is a reserved function name`
   return null
 }
+
+/** Value of the "Start empty" choice. The colon cannot occur in a case name
+ *  (SCENARIO_NAME_RE), so it never collides with a real case. */
+const START_EMPTY = 'start-empty:'
 
 function validateScenarioName(name: string, existing: string[]): string | null {
   const trimmed = name.trim()
@@ -236,13 +241,15 @@ export function ParameterManagerPanel() {
     renameCategory(oldCat, trimmed)
   }
 
-  const handleDeleteCategory = (cat: string) => {
+  const handleDeleteCategory = async (cat: string) => {
     if (!table) return
     const affected = params.filter((p) => (p.category?.trim() || '') === cat)
     if (affected.length > 0) {
-      if (!confirm(
-        `Move ${affected.length} parameter${affected.length === 1 ? '' : 's'} to "(no category)" and delete the "${cat}" group?`,
-      )) return
+      if (!await confirmDialog({
+        title: `Delete the "${cat}" group?`,
+        body: `${affected.length} parameter${affected.length === 1 ? '' : 's'} will move to "(no category)".`,
+        destructive: true,
+      })) return
       const next: Record<string, Parameter> = {}
       for (const [k, p] of Object.entries(table.parameters)) {
         next[k] = p.category?.trim() === cat ? { ...p, category: null } : p
@@ -281,19 +288,31 @@ export function ParameterManagerPanel() {
 
   const handleAddScenario = async () => {
     if (!table) return
-    const name = prompt('New sensitivity case name (e.g. "Optimistic"):')
-    if (!name?.trim()) return
-    const err = validateScenarioName(name, scenarioCols)
-    if (err) { alert(err); return }
-    const copyFrom = scenarioCols.length > 0
-      ? (prompt(
-          `Copy overrides from existing case? Enter case name or leave blank for a fresh column.\n\nAvailable: ${scenarioCols.join(', ')}`,
-        ) || '').trim() || null
-      : null
+    const name = await promptDialog({
+      title: 'New sensitivity case',
+      label: 'Case name',
+      placeholder: 'e.g. Optimistic',
+      confirmLabel: 'Add',
+      validate: (v) => validateScenarioName(v, scenarioCols),
+    })
+    if (name == null) return
+    let copyFrom: string | null = null
+    if (scenarioCols.length > 0) {
+      const picked = await choose({
+        title: `Start "${name}" from an existing case?`,
+        body: 'Its overrides are copied into the new column.',
+        options: [
+          ...scenarioCols.map((s) => ({ value: s, label: s })),
+          { value: START_EMPTY, label: 'Start empty' },
+        ],
+      })
+      if (picked == null) return
+      copyFrom = picked === START_EMPTY ? null : picked
+    }
     try {
-      await addScenario(name.trim(), copyFrom || null)
+      await addScenario(name, copyFrom)
     } catch (e) {
-      alert(`Add case failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Add case failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     }
   }
 
@@ -309,33 +328,43 @@ export function ParameterManagerPanel() {
     setRenamingScenario(null)
     if (!trimmed || trimmed === old) return
     const err = validateScenarioName(trimmed, scenarioCols.filter((s) => s !== old))
-    if (err) { alert(err); return }
+    if (err) { await messageDialog({ title: 'Cannot rename case', body: err }); return }
     try {
       await renameScenario(old, trimmed)
     } catch (e) {
-      alert(`Rename failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Rename failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     }
   }
 
   const handleDeleteScenario = async (s: string) => {
     setScenarioMenuOpen(null)
-    if (!confirm(`Delete case column "${s}"? All overrides in this column will be lost.`)) return
+    if (!await confirmDialog({
+      title: `Delete case column "${s}"?`,
+      body: 'All overrides in this column will be lost.',
+      destructive: true,
+    })) return
     try {
       await removeScenario(s)
     } catch (e) {
-      alert(`Delete failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Delete failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     }
   }
 
   const handleImport = async (file: File) => {
     setImporting(true)
     try {
-      const mode: 'replace' | 'merge' = confirm(
-        `Import mode: OK = Replace (overwrite parameters + cases)\nCancel = Merge (keep existing, add/update from file)`,
-      ) ? 'replace' : 'merge'
+      const mode = await choose({
+        title: `Import "${file.name}"`,
+        body: 'Replace overwrites the parameters and cases. Merge keeps existing ones and adds or updates from the file.',
+        options: [
+          { value: 'replace', label: 'Replace', destructive: true },
+          { value: 'merge', label: 'Merge' },
+        ],
+      })
+      if (mode !== 'replace' && mode !== 'merge') return
       await importFile(file, mode)
     } catch (e) {
-      alert(`Import failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Import failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     } finally {
       setImporting(false)
       if (fileInputRef.current) fileInputRef.current.value = ''
@@ -549,7 +578,7 @@ export function ParameterManagerPanel() {
                   </Button>
                   <Button
                     variant="secondary"
-                    onClick={() => exportFile().catch((e) => alert(`Export failed: ${e instanceof Error ? e.message : e}`))}
+                    onClick={() => exportFile().catch((e) => notify(`Export failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' }))}
                     title="Download table as .xlsx"
                     style={{ height: 28, fontSize: 'var(--text-xs)' }}
                   >
@@ -557,7 +586,7 @@ export function ParameterManagerPanel() {
                   </Button>
                   <Button
                     variant="ghost"
-                    onClick={() => downloadTemplate().catch((e) => alert(e instanceof Error ? e.message : String(e)))}
+                    onClick={() => downloadTemplate().catch((e) => notify(`Template download failed: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error' }))}
                     title="Download blank template"
                     style={{ height: 28, fontSize: 'var(--text-xs)' }}
                   >

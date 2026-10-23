@@ -12,6 +12,7 @@ import { X, TrendingDown, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { NumberInput } from '../ui/NumberInput'
 import type { Archetype } from '../../api/client'
+import { messageDialog, notify } from '../ui/dialogs'
 
 interface BulkLearningRateModalProps {
   archetype: Archetype
@@ -68,7 +69,7 @@ export function BulkLearningRateModal({ archetype, onApply, onClose }: BulkLearn
   const handleApply = async () => {
     const ids = applyTo === 'selection' ? Array.from(selected) : null
     if (applyTo === 'selection' && !selected.size) {
-      alert('Select at least one material or switch to "All materials".')
+      await messageDialog('Select at least one material or switch to "All materials".')
       return
     }
     setSubmitting(true)
@@ -76,7 +77,7 @@ export function BulkLearningRateModal({ archetype, onApply, onClose }: BulkLearn
       await onApply(mode === 'reset' ? null : learningRate, baseYear, ids)
       onClose()
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      notify(`Apply failed: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error' })
     } finally {
       setSubmitting(false)
     }

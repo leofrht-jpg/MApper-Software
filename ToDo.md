@@ -64,7 +64,8 @@ outside the repository; this file holds items recorded from work done in it.
   - **Single-product Prospective and Static**: N sequential synchronous
     `POST /lca/calculate-archetype` calls from the browser. A Stop could at
     least end the loop between background databases client-side.
-  - **Multi-item comparison**: one synchronous `POST /lca/calculate-multi-product`.
+  - **Multi-item comparison**: one synchronous `POST /lca/calculate-multi-product`,
+    so a long comparison cannot be stopped either.
   - **Project export / import**: synchronous; export streams a tar of the
     whole project.
   Making any of these stoppable means turning it into a registered task with
@@ -75,3 +76,33 @@ outside the repository; this file holds items recorded from work done in it.
 - [ ] **pageErrorBoundary.test.tsx times out at 5000 ms on a cold first run
   (dynamic import of the whole App).** Seen once in three frontend runs on
   main after #180 (run 1 only); runs 2 and 3 passed. Not investigated.
+- [ ] **Native dialogs do nothing in the packaged app.** 65 `window.confirm`
+  / `prompt` / `alert` calls under `src` (WKWebView: confirm answers false,
+  prompt returns null, alert shows nothing), so about 27 actions cannot be
+  completed (deletes, new scenario, new folder, new stage, add sensitivity
+  case, method uninstall, ...), two choices are forced (parameter import is
+  always Merge; a new DSM scenario always starts empty) and 39 messages are
+  lost. Being replaced area by area with `components/ui/dialogs.tsx`
+  (fix/0.3.2-dialogs-1 does the helpers and AESA); `tests/noNativeDialogs.test.ts`
+  holds the remaining files. Not yet checked on Windows, where WebView2 may
+  show native dialogs.
+- [ ] **AESA export overwrites a same-named file in ~/Downloads.**
+  `save_to_downloads` (`api/system.py`) does `target.write_bytes(data)` with
+  no uniqueness check, so a second AESA export with the same filename replaces
+  the first without a word. Logs are not affected (their name carries a
+  timestamp).
+- [ ] **`test_content_hash[Battery Circularity]` fails on the developer's
+  machine.** A `live_storage` test that reads the real project, so it skips in
+  CI and in a fresh container and only shows locally. Not investigated.
+- [ ] **Two backend tests fail only in the cloud container:**
+  `test_aesa_export_real_path::test_a_write_failure_is_reported_not_swallowed`
+  and `test_reveal_saved_file::test_a_saved_file_is_revealed`. Both fail on
+  main there and pass in CI. Not investigated.
+- [ ] **README has no desktop install steps.** README "Install & run" and
+  INSTALL.md describe only the source install (conda + npm); nothing says how
+  to install the released .dmg or .exe.
+- [ ] **The release procedure is not documented.** `release-windows.yml`
+  waits about 10 minutes (30 x 20 s) for a release for the tag to exist (a
+  draft is enough) and then fails with "release never appeared". Nothing in
+  DESKTOP.md, CONTRIBUTING.md or the README says to create the (draft) release
+  when pushing the tag.

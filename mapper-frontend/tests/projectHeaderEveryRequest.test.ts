@@ -30,6 +30,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 import * as client from '../src/api/client'
 import { relPosix } from './helpers/relPosix'
+import { stripComments } from './helpers/stripComments'
 
 const SRC = path.resolve(__dirname, '../src')
 
@@ -61,12 +62,6 @@ function closeParen(s: string, open: number): number {
     else if (c === ')' || c === ']' || c === '}') { depth--; if (depth === 0) return i + 1 }
   }
   return s.length
-}
-
-/** Strip comments so prose that mentions fetch( is not counted. */
-function stripComments(s: string): string {
-  return s.replace(/\/\*[\s\S]*?\*\//g, (m) => m.replace(/[^\n]/g, ' '))
-    .replace(/(^|[^:'"`\\])\/\/.*$/gm, (m, p) => p + ' '.repeat(m.length - p.length))
 }
 
 /** Every direct call that bypasses the project header, as "file:line". */

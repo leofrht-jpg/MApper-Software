@@ -27,6 +27,7 @@ import { useBOMStore } from '../stores/bomStore'
 import { useProjectSettingsStore } from '../stores/projectSettingsStore'
 import { YearsInput, canApplyLifetime, lifetimeBlockedReason, stageAmountsForPreset, stageBasis } from '../components/impact/StageAmountsEditor'
 import { Button } from '../components/ui/Button'
+import { confirmDialog } from '../components/ui/dialogs'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { Badge } from '../components/ui/Badge'
 import { ChartExportButton } from '../components/charts/ChartExportButton'
@@ -356,10 +357,16 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
 
   // Switching the database while activities are selected clears the selection
   // (results were computed against the previous database). Confirm first.
-  const handleDatabaseChange = (next: string) => {
+  // The select is controlled by selectedDb, which only changes once the
+  // dialog says yes, so on Cancel it stays on the old database.
+  const handleDatabaseChange = async (next: string) => {
     if (next === selectedDb) return
     if (actDemand.length > 0) {
-      const ok = window.confirm('Switching database will clear the selected activity. Continue?')
+      const ok = await confirmDialog({
+        title: `Switch to "${next}"?`,
+        body: 'Switching database will clear the selected activity.',
+        confirmLabel: 'Switch',
+      })
       if (!ok) return
       setActDemand([])
       setActResult(null)
@@ -1304,10 +1311,15 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                   <DatabaseSelector
                     databases={databases}
                     value={computePattern}
-                    onChange={(next) => {
+                    onChange={async (next) => {
                       if (next === computePattern) return
                       if (hasAnyResult) {
-                        const ok = window.confirm('Switching database will require recomputation. Continue?')
+                        // computePattern only changes on yes; Cancel keeps the old value.
+                        const ok = await confirmDialog({
+                          title: 'Switch the compute database?',
+                          body: 'Switching database will require recomputation.',
+                          confirmLabel: 'Switch',
+                        })
                         if (!ok) return
                         // Drop the contribution-analysis cache so the result panel
                         // doesn't briefly flash stale data from the previous DB.

@@ -30,7 +30,8 @@ beforeEach(() => {
   lastAnchor = { download: '', href: '', click: () => {} }
   vi.spyOn(document, 'createElement').mockImplementation(((tag: string) => {
     if (tag === 'a') {
-      lastAnchor = { download: '', href: '', click: vi.fn() }
+      // The shared download helper also marks and hides its anchor.
+      lastAnchor = { download: '', href: '', click: vi.fn(), setAttribute: vi.fn(), style: {} } as never
       return lastAnchor as unknown as HTMLElement
     }
     return document.createElementNS('http://www.w3.org/1999/xhtml', tag) as HTMLElement

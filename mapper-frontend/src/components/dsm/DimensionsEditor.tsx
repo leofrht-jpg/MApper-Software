@@ -11,6 +11,7 @@ import { useRef, useState } from 'react'
 import { Plus, Trash2, X, Upload, Download } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { parseLabelFile, type DimensionDef } from '../../api/client'
+import { downloadBlob } from '../../utils/download'
 
 interface DimensionsEditorProps {
   dimensions: DimensionDef[]
@@ -172,14 +173,7 @@ function SingleDimensionEditor({ dim, siblingDimensionNames, onChange, onDelete 
     }
     const rows = [dim.name, ...dim.labels]
     const blob = new Blob([rows.join('\n') + '\n'], { type: 'text/csv;charset=utf-8' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${dim.name}_labels.csv`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+    downloadBlob(blob, `${dim.name}_labels.csv`)
   }
 
   return (

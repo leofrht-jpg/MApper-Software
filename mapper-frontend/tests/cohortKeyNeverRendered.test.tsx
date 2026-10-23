@@ -135,9 +135,9 @@ describe('discovery', () => {
       // Reads the already-rendered legend (`row.textContent`) and re-emits it
       // as SVG <text>, so it inherits the fix rather than formatting a key.
       'components/charts/chartExport.ts': 'row.textContent',
-      // `createElement('a')` for file downloads. Cohort keys appear only as
-      // payload fields; no cohort string reaches a filename or the DOM.
-      'api/client.ts': 'a.download',
+      // api/client.ts used to be listed here for its per-export
+      // `createElement('a')`; downloads now go through utils/download.ts,
+      // which never sees a cohort key, so client.ts no longer emits anything.
     }
     expect(emitters.sort(), 'a non-tsx module now formats a cohort key itself')
       .toEqual(Object.keys(ACCOUNTED).sort())

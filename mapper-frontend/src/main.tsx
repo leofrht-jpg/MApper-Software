@@ -13,8 +13,12 @@ import './styles/globals.css'
 import App from './App.tsx'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { installGlobalErrorHandlers } from './stores/logStore'
+import { installNavigationGuard } from './utils/navigationGuard'
 
 installGlobalErrorHandlers()
+// Mounted once, before the app renders: nothing in the page may navigate the
+// main frame away (see utils/navigationGuard.ts).
+installNavigationGuard()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

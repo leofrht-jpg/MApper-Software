@@ -803,9 +803,16 @@ export async function withTransientRetry<T>(
 
 // ── Universal task cancellation ─────────────────────────────────────────────
 // Cancels any registered long-running task. Backend returns 200 on success
-// with ``{cancelled: true, task_id}``; 404 if the task is unknown (already
-// finished, never existed, or was cleaned up). The frontend treats 404 as
-// "the task already finished, refresh state" — it's not an error to surface.
+// with ``{cancelled: true, task_id}``; 404 if the server has no such task.
+//
+// A 404 is NOT proof the task finished. Until 0.3.1 the route was mounted at
+// /api/api/tasks/... and EVERY cancel was a 404, which callers read as
+// "finished" -- so every Stop button silently did nothing. A caller that gets
+// null while its task is still running must say Stop failed and keep waiting
+// for the task's own terminal frame, never drop to idle on its own.
+export const CANCEL_NOT_FOUND_MESSAGE =
+  'Stop did not reach the calculation: the server has no record of this task. '
+  + 'It may be just finishing; if it keeps running, try Stop again.'
 
 export interface CancelTaskResponse {
   cancelled: true

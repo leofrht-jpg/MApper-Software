@@ -58,7 +58,7 @@ interface Props {
 export function MonteCarloPage({ onNavigate }: Props) {
   const {
     handoff: rawHandoff, multiHandoff: rawMultiHandoff, multiResult, running, pct,
-    stage, error, cancelled, result, run, runMulti, cancel, reset,
+    stage, error, cancelled, cancelling, cancelError, result, run, runMulti, cancel, reset,
   } = useMonteCarloStore()
 
   // Normalised ONCE, above every hook that dereferences them. An unusable
@@ -142,6 +142,8 @@ export function MonteCarloPage({ onNavigate }: Props) {
         stage={stage}
         error={error}
         cancelled={cancelled}
+        cancelling={cancelling}
+        cancelError={cancelError}
         onRun={runMulti}
         onCancel={cancel}
       />
@@ -284,6 +286,8 @@ export function MonteCarloPage({ onNavigate }: Props) {
         detail={`${iterations} iterations × ${handoff.methods.length} indicator${handoff.methods.length === 1 ? '' : 's'} · ${stage || 'sampling'}`}
         pct={pct}
         onCancel={() => void cancel()}
+        cancelling={cancelling}
+        cancelError={cancelError}
         data-testid="mc-progress"
       />
 
@@ -601,7 +605,7 @@ const tdNum: React.CSSProperties = {
  * the wrong answer.
  */
 function MultiItemMode({
-  handoff, result, running, pct, stage, error, cancelled, onRun, onCancel,
+  handoff, result, running, pct, stage, error, cancelled, cancelling, cancelError, onRun, onCancel,
 }: {
   handoff: import('../stores/monteCarloStore').MonteCarloMultiHandoff
   result: import('../api/client').MonteCarloMultiResult | null
@@ -610,6 +614,8 @@ function MultiItemMode({
   stage: string
   error: string | null
   cancelled: boolean
+  cancelling: boolean
+  cancelError: string | null
   onRun: (b: import('../api/client').MonteCarloMultiRequest) => Promise<void>
   onCancel: () => Promise<void>
 }) {
@@ -717,6 +723,8 @@ function MultiItemMode({
         detail={`${ordered.length} items × ${iterations} iterations × ${handoff.methods.length} indicator${handoff.methods.length === 1 ? '' : 's'} · ${stage || 'sampling'}`}
         pct={pct}
         onCancel={() => void onCancel()}
+        cancelling={cancelling}
+        cancelError={cancelError}
         data-testid="mc-multi-progress"
       />
       {error && <Banner tone="danger" testId="mc-multi-error">{error}</Banner>}

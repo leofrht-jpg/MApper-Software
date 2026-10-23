@@ -302,6 +302,11 @@ export function PLCADeveloper() {
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)' }}>
             <StopButton taskId={cancel.taskId} state={cancel.state} onClick={cancel.requestStop} />
+            {cancel.stopError && (
+              <span role="alert" data-testid="stop-error" style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', maxWidth: 280 }}>
+                {cancel.stopError}
+              </span>
+            )}
             <Button onClick={handleGenerate} disabled={!canSubmit} style={{ backgroundColor: 'var(--mod-plca)' }}>
               {isGenerating ? <Loader2 size={14} strokeWidth={1.5} className="plca-spin" /> : <Wand2 size={14} strokeWidth={1.5} />}
               {isGenerating

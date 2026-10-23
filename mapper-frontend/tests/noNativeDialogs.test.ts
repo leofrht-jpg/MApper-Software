@@ -34,15 +34,7 @@ const EXEMPT = new Set(['components/ui/dialogs.tsx'])
 
 // One entry per line, a blank line between entries, so parallel migration PRs
 // each delete their own lines without touching a neighbour's.
-const ALLOWED: Record<string, number> = {
-  'components/dsm/ScenarioManagerModal.tsx': 4,
-
-  'components/subsystems/SubsystemTabs.tsx': 1,
-
-  'pages/Archetypes.tsx': 18,
-
-  'pages/DSMDashboard.tsx': 5,
-}
+const ALLOWED: Record<string, number> = {}
 
 const CALL = /(?<![\w.$])(?:(?:window|globalThis|self)\s*\.\s*)?(?:confirm|prompt|alert)\s*\(/g
 // A native dialog passed around or indexed instead of called directly.

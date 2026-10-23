@@ -12,6 +12,7 @@ import { X, TrendingUp, Loader2, RotateCcw } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { NumberInput } from '../ui/NumberInput'
 import type { Archetype } from '../../api/client'
+import { messageDialog, notify } from '../ui/dialogs'
 
 interface BulkReboundModalProps {
   archetype: Archetype
@@ -80,13 +81,13 @@ export function BulkReboundModal({ archetype, onApply, onClose }: BulkReboundMod
     if (applyTo === 'selection') {
       ids = Array.from(selected)
       if (!ids.length) {
-        alert('Select at least one material or switch to "All materials".')
+        await messageDialog('Select at least one material or switch to "All materials".')
         return
       }
     } else if (stageFilter !== '__all__') {
       ids = filtered.map((m) => m.nodeId)
       if (!ids.length) {
-        alert(`No materials in stage "${stageFilter}".`)
+        await messageDialog(`No materials in stage "${stageFilter}".`)
         return
       }
     } else {
@@ -98,7 +99,7 @@ export function BulkReboundModal({ archetype, onApply, onClose }: BulkReboundMod
       await onApply(mode === 'reset' ? null : reboundRate, baseYear, ids, stagesHint)
       onClose()
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      notify(`Apply failed: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error' })
     } finally {
       setSubmitting(false)
     }

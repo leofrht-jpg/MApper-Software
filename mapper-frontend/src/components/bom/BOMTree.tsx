@@ -15,6 +15,7 @@ import { NumberInput } from '../ui/NumberInput'
 import { EcoinventLinker } from './EcoinventLinker'
 import type { BOMNode, EcoinventLink, MaterialEvolution, QuantityMilestone } from '../../api/client'
 import { useParameterStore } from '../../stores/parameterStore'
+import { messageDialog } from '../ui/dialogs'
 
 // An amount that starts with a letter or underscore (snake_case) is treated as
 // an expression, else as a plain number.
@@ -277,7 +278,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
     if (isExpressionInput(trimmed)) {
       const res = resolveExpression(trimmed, paramMap)
       if (res.error) {
-        alert(`Expression error: ${res.error}`)
+        await messageDialog({ title: 'Expression error', body: res.error })
         return
       }
       if (trimmed !== (node.quantity_expression ?? '')) patch.quantity_expression = trimmed
@@ -285,7 +286,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
     } else {
       const num = Number(trimmed)
       if (!Number.isFinite(num)) {
-        alert('Quantity must be a number or a parameter expression.')
+        await messageDialog('Quantity must be a number or a parameter expression.')
         return
       }
       if (node.quantity_expression) patch.quantity_expression = null
@@ -779,7 +780,7 @@ function EvolutionPanel({
       await onSave({ method: 'rebound_effect', rebound_rate: reboundRate, base_year: baseYear })
     } else {
       if (milestones.length < 2) {
-        alert('Milestones require at least two (year, value) pairs.')
+        await messageDialog('Milestones require at least two (year, value) pairs.')
         return
       }
       await onSave({ method: 'milestones', milestones: [...milestones].sort((a, b) => a.year - b.year), base_year: baseYear })

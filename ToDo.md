@@ -50,11 +50,25 @@ outside the repository; this file holds items recorded from work done in it.
   request work, but it changes the global current project for every later
   request, which is the opposite of what the 409 guard does. Decide one
   policy.
-- [ ] **The task cancel route is mounted at `/api/api/tasks/{id}/cancel`.**
-  `tasks.py` declares `prefix="/api/tasks"` and `main.py` mounts the API
-  router under `/api` again. The frontend posts to `/api/tasks/{id}/cancel`,
-  which is a 404, and `cancelTask` reads a 404 as "the task already finished",
-  so the Stop buttons send no cancel at all. Verified with TestClient:
-  `/api/tasks/t1/cancel` → 404, `/api/api/tasks/t1/cancel` → 200 for a
-  registered task. Unit tests call the handler directly, which is why this
-  never showed. Fix the prefix to `/tasks` and add a test through the app.
+- [ ] **Most long calculations have no Stop at all.** The cancel route works
+  since fix/0.3.1-cancel-route, and two long operations honour it: Monte Carlo
+  (single and paired; checked every iteration) and system-level Prospective
+  (checked every LCA solve, and at each LCI-scenario boundary). These run with
+  a full-screen card and NO Stop, because they are not cancellable tasks:
+  - **AESA compute** (77 s measured with cases): a synchronous
+    `POST /aesa/compute`, no task id, no checkpoint.
+  - **System-level Static**: the single run is a synchronous
+    `POST /dsm/systems/{id}/dsm-lca`; the Sensitivity-cases / multi-DSM
+    fan-out does go through `/impact/calculate-scenarios`, whose tasks DO
+    check the flag, but the Static card offers no Stop.
+  - **Single-product Prospective and Static**: N sequential synchronous
+    `POST /lca/calculate-archetype` calls from the browser. A Stop could at
+    least end the loop between background databases client-side.
+  - **Multi-item comparison**: one synchronous `POST /lca/calculate-multi-product`.
+  - **Project export / import**: synchronous; export streams a tar of the
+    whole project.
+  Making any of these stoppable means turning it into a registered task with
+  checkpoints (the plca/impact/monte_carlo pattern), not a frontend change.
+- [ ] **pLCA generation honours cancel only between premise stages.** The
+  checkpoint is premise_engine's stage callback, so a Stop during one long
+  premise transformation waits until that stage ends.

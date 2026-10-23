@@ -72,3 +72,6 @@ outside the repository; this file holds items recorded from work done in it.
 - [ ] **pLCA generation honours cancel only between premise stages.** The
   checkpoint is premise_engine's stage callback, so a Stop during one long
   premise transformation waits until that stage ends.
+- [ ] **pageErrorBoundary.test.tsx times out at 5000 ms on a cold first run
+  (dynamic import of the whole App).** Seen once in three frontend runs on
+  main after #180 (run 1 only); runs 2 and 3 passed. Not investigated.

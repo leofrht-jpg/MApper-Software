@@ -37,15 +37,7 @@ const EXEMPT = new Set(['components/ui/dialogs.tsx'])
 const ALLOWED: Record<string, number> = {
   'components/PremiseKeyManager.tsx': 1,
 
-  'components/dsm/ScenarioManagerModal.tsx': 4,
-
   'components/impact/MethodLibrary.tsx': 1,
-
-  'components/subsystems/SubsystemTabs.tsx': 1,
-
-  'pages/Archetypes.tsx': 18,
-
-  'pages/DSMDashboard.tsx': 5,
 
   'pages/LCACalculator.tsx': 2,
 

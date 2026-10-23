@@ -11,6 +11,7 @@ import { useState } from 'react'
 import { Layers, Plus, Trash2 } from 'lucide-react'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import { AddSubsystemDialog } from './AddSubsystemDialog'
+import { confirmDialog, notify } from '../ui/dialogs'
 
 export const OVERALL_ID = '__overall__'
 
@@ -109,8 +110,12 @@ export function SubsystemTabs({ primarySystemId: _primarySystemId, primarySystem
                 <button
                   onClick={async (e) => {
                     e.stopPropagation()
-                    if (!confirm(`Delete subsystem "${tab.label}"?`)) return
-                    await removeDependent(tab.id as string)
+                    if (!await confirmDialog({ title: `Delete subsystem "${tab.label}"?`, destructive: true })) return
+                    try {
+                      await removeDependent(tab.id as string)
+                    } catch (err) {
+                      notify(`Delete failed: ${err instanceof Error ? err.message : String(err)}`, { tone: 'error' })
+                    }
                   }}
                   title="Delete subsystem"
                   style={{

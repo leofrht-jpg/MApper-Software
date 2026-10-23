@@ -26,6 +26,7 @@ import { TimelinePreviewModal } from '../components/bom/TimelinePreviewModal'
 import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
 import { ParameterManagerPanel } from '../components/parameters/ParameterManagerPanel'
 import { useBOMStore } from '../stores/bomStore'
+import { confirmDialog, notify, promptDialog } from '../components/ui/dialogs'
 import type { ArchetypeSummary } from '../api/client'
 import {
   buildArchetypeTree,
@@ -211,24 +212,27 @@ export function Archetypes() {
       setExpanded((s) => new Set(s).add(folderPath))
       setEditingName(true)
     } catch (e) {
-      alert(`Create failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Create failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     }
   }
 
   const handleNewFolder = async (parent: string | null = null) => {
     const base = parent ? `${parent}/` : ''
-    const input = prompt(
-      `New folder path (relative to root).\nExample: ${base}Electric\nAllowed: letters, digits, spaces, "_", "-". Max depth ${MAX_FOLDER_DEPTH}.`,
-      base,
-    )
-    if (!input) return
-    const err = validateFolderPath(input)
-    if (err) { alert(err); return }
+    const input = await promptDialog({
+      title: 'New folder',
+      label: 'Folder path (relative to root)',
+      body: `Example: ${base}Electric. Allowed: letters, digits, spaces, "_", "-". Max depth ${MAX_FOLDER_DEPTH}.`,
+      defaultValue: base,
+      confirmLabel: 'Create',
+      validate: validateFolderPath,
+    })
+    if (input == null) return
+    const path = input.replace(/^\/+|\/+$/g, '')
     try {
-      await createFolder(input.trim().replace(/^\/+|\/+$/g, ''))
-      setExpanded((s) => new Set(s).add(input.trim().replace(/^\/+|\/+$/g, '')))
+      await createFolder(path)
+      setExpanded((s) => new Set(s).add(path))
     } catch (e) {
-      alert(`Create failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Create failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     }
   }
 
@@ -289,17 +293,18 @@ export function Archetypes() {
       const parts: string[] = []
       if (insideArcs.length > 0) parts.push(`${insideArcs.length} archetype${insideArcs.length === 1 ? '' : 's'}`)
       if (subfolders > 0) parts.push(`${subfolders} subfolder${subfolders === 1 ? '' : 's'}`)
-      if (!confirm(
-        `Delete folder "${folderName}" and all its contents? ` +
-        `This will delete ${parts.join(' and ')}. This action cannot be undone.`
-      )) return
-    } else if (!confirm(`Delete empty folder "${folderName}"?`)) {
+      if (!await confirmDialog({
+        title: `Delete folder "${folderName}" and all its contents?`,
+        body: `This will delete ${parts.join(' and ')}. This action cannot be undone.`,
+        destructive: true,
+      })) return
+    } else if (!await confirmDialog({ title: `Delete empty folder "${folderName}"?`, destructive: true })) {
       return
     }
     try {
       await deleteFolder(path, hasContents)
     } catch (e) {
-      alert(`Delete failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Delete failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     }
   }
 
@@ -319,18 +324,25 @@ export function Archetypes() {
         bom: stripIds(full.bom),
       })
     } catch (e) {
-      alert(`Duplicate failed: ${e instanceof Error ? e.message : e}`)
+      notify(`Duplicate failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
     }
   }
 
   const handleAddStage = async () => {
-    const name = prompt('Life cycle stage name (e.g. Manufacturing, Use Phase, Maintenance, End of Life):', 'New stage')
-    if (!name?.trim()) return
-    await addRootStage(name.trim())
+    const name = await promptDialog({
+      title: 'New life cycle stage',
+      label: 'Stage name',
+      body: 'e.g. Manufacturing, Use Phase, Maintenance, End of Life',
+      defaultValue: 'New stage',
+      confirmLabel: 'Add',
+      validate: (v) => (v.trim() ? null : 'Stage name is required'),
+    })
+    if (name == null) return
+    await addRootStage(name)
   }
 
   const handleExport = async () => {
-    try { await exportActive() } catch (e) { alert(`Export failed: ${e instanceof Error ? e.message : e}`) }
+    try { await exportActive() } catch (e) { notify(`Export failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' }) }
   }
 
   const commitName = async () => {
@@ -363,10 +375,29 @@ export function Archetypes() {
 
   const handleDelete = async () => {
     if (!active?.id) return
-    if (!confirm(`Delete "${active.name}"? This cannot be undone.`)) return
+    if (!await confirmDialog({ title: `Delete "${active.name}"?`, body: 'This cannot be undone.', destructive: true })) return
     // removeArchetype already refreshes the list and clears `active` when it was the deleted one.
     // Do NOT call clear() here — that wipes the archetypes array and hides siblings.
     await removeArchetype(active.id)
+  }
+
+  // Called from the context menu AFTER it has closed: everything it needs is
+  // passed in, so it does not depend on the menu (or its focus target) existing.
+  const handleDeleteArcFromMenu = async (arc: ArchetypeSummary) => {
+    if (!await confirmDialog({ title: `Delete "${arc.name}"?`, body: 'This cannot be undone.', destructive: true })) return
+    try {
+      await removeArchetype(arc.id)
+    } catch (e) {
+      notify(`Delete failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
+    }
+  }
+
+  // A failed move changes nothing in the store (it only updates after the
+  // server succeeds); re-read the list anyway so the tree matches the server
+  // if the move went through and only the refresh failed.
+  const moveFailed = (err: unknown) => {
+    notify(`Move failed: ${err instanceof Error ? err.message : err}`, { tone: 'error' })
+    void fetchArchetypes()
   }
 
   const handleFlatten = async () => {
@@ -408,9 +439,7 @@ export function Archetypes() {
               setDragOverPath(null)
               const id = e.dataTransfer.getData('application/mapper-archetype-id')
               if (!id) return
-              void moveArchetype(id, node.path).catch((err) =>
-                alert(`Move failed: ${err instanceof Error ? err.message : err}`),
-              )
+              void moveArchetype(id, node.path).catch(moveFailed)
             }}
             style={{
               display: 'flex', alignItems: 'center', gap: 6,
@@ -544,9 +573,7 @@ export function Archetypes() {
       setDragOverPath(null)
       const id = e.dataTransfer.getData('application/mapper-archetype-id')
       if (!id) return
-      void moveArchetype(id, null).catch((err) =>
-        alert(`Move failed: ${err instanceof Error ? err.message : err}`),
-      )
+      void moveArchetype(id, null).catch(moveFailed)
     },
   }
 
@@ -809,8 +836,11 @@ export function Archetypes() {
                         Life cycle stage
                       </span>
                       <button
-                        onClick={() => {
-                          if (confirm(`Delete stage "${root.name}" and everything inside it?`)) {
+                        onClick={async () => {
+                          if (await confirmDialog({
+                            title: `Delete stage "${root.name}" and everything inside it?`,
+                            destructive: true,
+                          })) {
                             removeNode(root.id ?? '')
                           }
                         }}
@@ -884,10 +914,9 @@ export function Archetypes() {
                 Duplicate
               </MenuItem>
               <MenuItem icon={<Trash2 size={12} />} danger onClick={() => {
-                if (confirm(`Delete "${menu.arc.name}"? This cannot be undone.`)) {
-                  removeArchetype(menu.arc.id)
-                }
+                const arc = menu.arc
                 setMenu(null)
+                void handleDeleteArcFromMenu(arc)
               }}>
                 Delete
               </MenuItem>
@@ -906,7 +935,7 @@ export function Archetypes() {
             try {
               await moveArchetype(movePickerFor.id, target)
             } catch (e) {
-              alert(`Move failed: ${e instanceof Error ? e.message : e}`)
+              moveFailed(e)
             } finally {
               setMovePickerFor(null)
             }
@@ -919,7 +948,7 @@ export function Archetypes() {
         <FlattenedBOM
           data={flattened}
           year={flattenYear}
-          onYearChange={(y) => { setFlattenYear(y).catch((e) => alert(e instanceof Error ? e.message : String(e))) }}
+          onYearChange={(y) => { setFlattenYear(y).catch((e) => notify(`Year change failed: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error' })) }}
           onClose={() => setShowFlattened(false)}
         />
       )}
@@ -990,6 +1019,7 @@ function FolderPickerModal({
   onCancel: () => void
 }) {
   const [custom, setCustom] = useState('')
+  const [customError, setCustomError] = useState<string | null>(null)
   const sorted = useMemo(() => [...folders].sort(), [folders])
 
   return (
@@ -1023,7 +1053,8 @@ function FolderPickerModal({
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
           <input
             value={custom}
-            onChange={(e) => setCustom(e.target.value)}
+            onChange={(e) => { setCustom(e.target.value); setCustomError(null) }}
+            aria-invalid={customError ? true : undefined}
             placeholder="Or type a new folder path…"
             style={{
               flex: 1, height: 28, padding: '0 8px',
@@ -1038,7 +1069,7 @@ function FolderPickerModal({
               const trimmed = custom.trim().replace(/^\/+|\/+$/g, '')
               if (!trimmed) return
               const err = validateFolderPath(trimmed)
-              if (err) { alert(err); return }
+              if (err) { setCustomError(err); return }
               onPick(trimmed)
             }}
             disabled={!custom.trim()}
@@ -1047,6 +1078,12 @@ function FolderPickerModal({
             Move here
           </Button>
         </div>
+
+        {customError && (
+          <div role="alert" data-testid="folder-picker-error" style={{ fontSize: 'var(--text-xs)', color: 'var(--danger)', marginTop: -6 }}>
+            {customError}
+          </div>
+        )}
 
         <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
           <Button variant="ghost" onClick={onCancel}>Cancel</Button>

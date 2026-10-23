@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Copy, Edit2, Eye, Plus, Star, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { choose, confirmDialog, promptDialog } from '../ui/dialogs'
 import { useDSMStore } from '../../stores/dsmStore'
 import type { DSMScenario } from '../../api/client'
 import { SlotDataViewer, type SlotKey } from './SlotDataViewer'
@@ -44,6 +45,8 @@ function slotOwned(scenario: DSMScenario, slot: keyof DSMScenario): boolean {
   return v !== null && v !== undefined
 }
 
+const requireName = (v: string) => (v.trim() ? null : 'Scenario name is required')
+
 export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
   const systemState = useDSMStore((s) => s.systemState)
   const createScenario = useDSMStore((s) => s.createScenario)
@@ -76,16 +79,27 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
   }, [onClose])
 
   const handleCreate = async () => {
-    const name = window.prompt('New scenario name:')
-    if (!name?.trim()) return
+    const name = await promptDialog({
+      title: 'New scenario',
+      label: 'Scenario name',
+      confirmLabel: 'Next',
+      validate: requireName,
+    })
+    if (name == null) return
+    const start = await choose({
+      title: `Start "${name}" from the Base scenario?`,
+      body: 'Fork Base copies all current data so it becomes editable here. Start empty inherits everything from Base until you change it.',
+      options: [
+        { value: 'fork', label: 'Fork Base' },
+        { value: 'empty', label: 'Start empty' },
+      ],
+    })
+    if (start == null) return
     setBusy(true); setError(null)
     try {
-      const copyPrompt = window.confirm(
-        'Copy data from the Base scenario? OK = fork Base (all current data becomes editable), Cancel = start empty (inherits from Base).',
-      )
       await createScenario({
-        name: name.trim(),
-        copyFrom: copyPrompt ? 'base' : undefined,
+        name,
+        copyFrom: start === 'fork' ? 'base' : undefined,
       })
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
@@ -95,11 +109,17 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
   }
 
   const handleDuplicate = async (scen: DSMScenario) => {
-    const name = window.prompt(`Duplicate "${scen.name}" as:`, `${scen.name} copy`)
-    if (!name?.trim()) return
+    const name = await promptDialog({
+      title: `Duplicate "${scen.name}"`,
+      label: 'New scenario name',
+      defaultValue: `${scen.name} copy`,
+      confirmLabel: 'Duplicate',
+      validate: requireName,
+    })
+    if (name == null) return
     setBusy(true); setError(null)
     try {
-      await duplicateScenario(scen.id, name.trim())
+      await duplicateScenario(scen.id, name)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -109,7 +129,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
 
   const handleDelete = async (scen: DSMScenario) => {
     if (scen.is_base) return
-    if (!window.confirm(`Delete scenario "${scen.name}"? This cannot be undone.`)) return
+    if (!await confirmDialog({ title: `Delete scenario "${scen.name}"?`, body: 'This cannot be undone.', destructive: true })) return
     setBusy(true); setError(null)
     try {
       await deleteScenario(scen.id)

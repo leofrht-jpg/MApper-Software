@@ -64,6 +64,7 @@ import type { ActiveResultView } from '../stores/dsmStore'
 import { useParameterStore } from '../stores/parameterStore'
 import { useSubsystemStore } from '../stores/subsystemStore'
 import { SubsystemTabs, OVERALL_ID, resolveActiveSubsystem } from '../components/subsystems/SubsystemTabs'
+import { confirmDialog, messageDialog, notify } from '../components/ui/dialogs'
 import { DependentSubsystemView } from '../components/subsystems/DependentSubsystemView'
 import { colorFor } from '../utils/chartColors'
 import { groupKeyForDim, parseCohortKey, useDSMSystemColors } from '../utils/dsmCohortColors'
@@ -214,9 +215,20 @@ export function DSMDashboard() {
     try {
       const res = await importSimulation(file)
       const msg = `Imported ${res.years_imported} years, ${res.cohorts_found} cohorts.`
-      alert(res.warnings.length ? `${msg}\n\nWarnings:\n${res.warnings.join('\n')}` : msg)
+      // A message dialog, not a toast: the warnings list needs room.
+      await messageDialog({
+        title: msg,
+        body: res.warnings.length ? (
+          <>
+            <div style={{ marginBottom: 4 }}>{res.warnings.length} warning{res.warnings.length === 1 ? '' : 's'}:</div>
+            <ul data-testid="dsm-import-warnings" style={{ margin: 0, paddingLeft: 16, maxHeight: 240, overflow: 'auto' }}>
+              {res.warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </>
+        ) : undefined,
+      })
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Import failed')
+      notify(`Import failed: ${err instanceof Error ? err.message : err}`, { tone: 'error' })
     } finally {
       setImporting(false)
     }
@@ -230,7 +242,7 @@ export function DSMDashboard() {
     try {
       await importSystem(file)
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Import failed')
+      notify(`Import failed: ${err instanceof Error ? err.message : err}`, { tone: 'error' })
     } finally {
       setImporting(false)
     }
@@ -332,7 +344,7 @@ export function DSMDashboard() {
     try {
       await revertSlotToBase(slot)
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      notify(`Revert failed: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error' })
     }
   }
 
@@ -560,7 +572,15 @@ export function DSMDashboard() {
               systems={systems}
               activeId={activeSystem.id ?? ''}
               onSelect={async (id) => { setSystemListOpen(false); await selectSystem(id) }}
-              onDelete={async (id) => { if (confirm('Delete this system?')) await removeSystem(id) }}
+              onDelete={async (id) => {
+                const name = systems.find((s) => s.id === id)?.name
+                if (!await confirmDialog({ title: name ? `Delete system "${name}"?` : 'Delete this system?', destructive: true })) return
+                try {
+                  await removeSystem(id)
+                } catch (e) {
+                  notify(`Delete failed: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error' })
+                }
+              }}
               onCreateNew={() => setShowCreator(true)}
             />
           </div>

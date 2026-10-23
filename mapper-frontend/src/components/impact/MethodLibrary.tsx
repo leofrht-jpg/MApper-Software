@@ -23,6 +23,7 @@ import {
   type LCIAMethodInfo,
 } from '../../api/client'
 import { StopButton } from '../ui/StopButton'
+import { confirmDialog } from '../ui/dialogs'
 
 interface MethodLibraryProps {
   onClose: () => void
@@ -200,7 +201,12 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
   }
 
   const handleUninstall = async (method: LCIAMethodInfo) => {
-    if (!window.confirm(`Uninstall ${method.name}? This removes its methods from the current Brightway2 project.`)) return
+    if (!await confirmDialog({
+      title: `Uninstall ${method.name}?`,
+      body: 'This removes its methods from the current Brightway2 project.',
+      confirmLabel: 'Uninstall',
+      destructive: true,
+    })) return
     try {
       await uninstallLcaMethod(method.id)
       window.dispatchEvent(new CustomEvent('lcia-library-changed'))

@@ -34,17 +34,7 @@ const EXEMPT = new Set(['components/ui/dialogs.tsx'])
 
 // One entry per line, a blank line between entries, so parallel migration PRs
 // each delete their own lines without touching a neighbour's.
-const ALLOWED: Record<string, number> = {
-  'components/PremiseKeyManager.tsx': 1,
-
-  'components/impact/MethodLibrary.tsx': 1,
-
-  'pages/LCACalculator.tsx': 2,
-
-  'pages/LCAManager.tsx': 5,
-
-  'pages/PLCADeveloper.tsx': 2,
-}
+const ALLOWED: Record<string, number> = {}
 
 const CALL = /(?<![\w.$])(?:(?:window|globalThis|self)\s*\.\s*)?(?:confirm|prompt|alert)\s*\(/g
 // A native dialog passed around or indexed instead of called directly.

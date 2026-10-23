@@ -83,7 +83,11 @@ jobs:
         with:
           # Miniforge ships conda-forge as the default channel, matching
           # environment.yml, and brings the libmamba solver.
-          miniforge-version: latest
+          # Windows pinned: Miniforge 26.9.4-0 makes "conda init --all" fail on the Windows runner
+          # ("needs sudo" on Scripts\conda.exe, exit code 1) while 26.7.2-1 passes on
+          # the same image (windows-2025-vs2026 20261021.278.1). Unpin or bump later
+          # once a newer release passes.
+          miniforge-version: ${{ matrix.os == 'windows-latest' && '26.7.2-1' || 'latest' }}
           activate-environment: map
           environment-file: environment.yml
           auto-activate-base: false

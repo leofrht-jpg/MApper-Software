@@ -35,8 +35,6 @@ const EXEMPT = new Set(['components/ui/dialogs.tsx'])
 // One entry per line, a blank line between entries, so parallel migration PRs
 // each delete their own lines without touching a neighbour's.
 const ALLOWED: Record<string, number> = {
-  'components/PremiseKeyManager.tsx': 1,
-
   'components/bom/BOMTree.tsx': 3,
 
   'components/bom/BulkLearningRateModal.tsx': 2,
@@ -44,8 +42,6 @@ const ALLOWED: Record<string, number> = {
   'components/bom/BulkReboundModal.tsx': 3,
 
   'components/dsm/ScenarioManagerModal.tsx': 4,
-
-  'components/impact/MethodLibrary.tsx': 1,
 
   'components/parameters/ParameterManagerPanel.tsx': 13,
 
@@ -55,11 +51,6 @@ const ALLOWED: Record<string, number> = {
 
   'pages/DSMDashboard.tsx': 5,
 
-  'pages/LCACalculator.tsx': 2,
-
-  'pages/LCAManager.tsx': 5,
-
-  'pages/PLCADeveloper.tsx': 2,
 }
 
 const CALL = /(?<![\w.$])(?:(?:window|globalThis|self)\s*\.\s*)?(?:confirm|prompt|alert)\s*\(/g

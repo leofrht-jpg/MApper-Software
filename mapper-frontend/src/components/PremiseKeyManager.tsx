@@ -10,6 +10,7 @@
 import { useEffect, useState } from 'react'
 import { AlertTriangle, Check, Eye, EyeOff, Loader2, Mail, Trash2, X } from 'lucide-react'
 import { Button } from './ui/Button'
+import { confirmDialog } from './ui/dialogs'
 import {
   deletePremiseKey,
   getPremiseKeyStatus,
@@ -84,7 +85,12 @@ export function PremiseKeyManager({ variant, onStatusChange }: Props) {
   }
 
   const handleDelete = async () => {
-    if (!confirm('Remove the saved premise key? You will need to paste it again to generate prospective databases.')) return
+    if (!await confirmDialog({
+      title: 'Remove the saved premise key?',
+      body: 'You will need to paste it again to generate prospective databases.',
+      confirmLabel: 'Remove',
+      destructive: true,
+    })) return
     setError(null)
     setDeleting(true)
     try {

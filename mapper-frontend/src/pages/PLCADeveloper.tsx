@@ -15,6 +15,7 @@ import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { formatElapsed } from '../components/ui/ElapsedCounter'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
 import { StopButton } from '../components/ui/StopButton'
+import { confirmDialog, notify } from '../components/ui/dialogs'
 import { PremiseKeyManager } from '../components/PremiseKeyManager'
 import type { PLCAMode, ProspectiveDB } from '../api/client'
 import { usePLCAStore } from '../stores/plcaStore'
@@ -144,11 +145,11 @@ export function PLCADeveloper() {
   }
 
   const handleDelete = async (name: string) => {
-    if (!confirm(`Delete prospective database "${name}"?`)) return
+    if (!await confirmDialog({ title: `Delete prospective database "${name}"?`, destructive: true })) return
     try {
       await deleteDatabase(name)
     } catch (e) {
-      alert(e instanceof Error ? e.message : String(e))
+      notify(`Delete failed: ${e instanceof Error ? e.message : String(e)}`, { tone: 'error' })
     }
   }
 

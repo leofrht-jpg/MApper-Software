@@ -17,6 +17,7 @@ import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
 import { useBOMStore } from '../stores/bomStore'
 import { useProjectSettingsStore } from '../stores/projectSettingsStore'
+import { confirmDialog, notify } from '../components/ui/dialogs'
 import {
   downloadBOMTemplate,
   exportAllArchetypes,
@@ -52,18 +53,10 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
 
   useEffect(() => { void fetchArchetypes() }, [fetchArchetypes])
 
+  // The file picker opens straight from the click: WebKit only lets
+  // input.click() open a picker during a user activation, which an awaited
+  // dialog can use up. So Replace is confirmed AFTER the file is chosen.
   const handleImportClick = () => {
-    if (importMode === 'replace' && archetypes.length > 0) {
-      // Archetypes NAMED in the file are updated in place and keep their id;
-      // only those absent from it are deleted. The old copy said "will delete
-      // the N existing archetypes", which stopped being true once ids survive.
-      // The count that matters can't be known before parsing the file, so the
-      // prompt states the rule instead of a number.
-      const ok = window.confirm(
-        `Replace: archetypes named in the file are updated; any archetype NOT in the file is deleted. You currently have ${archetypes.length}. Continue?`,
-      )
-      if (!ok) return
-    }
     fileRef.current?.click()
   }
 
@@ -71,6 +64,19 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file) return
+    if (importMode === 'replace' && archetypes.length > 0) {
+      // Archetypes NAMED in the file are updated in place and keep their id;
+      // only those absent from it are deleted. The count that matters can't
+      // be known before parsing the file, so the dialog states the rule
+      // instead of a number. Cancel aborts the import.
+      const ok = await confirmDialog({
+        title: `Replace with "${file.name}"?`,
+        body: `Archetypes named in the file are updated; any archetype NOT in the file is deleted. You currently have ${archetypes.length}.`,
+        confirmLabel: 'Replace',
+        destructive: true,
+      })
+      if (!ok) return
+    }
     setImporting(true)
     setResult(null)
     setShowAllArchetypes(false)
@@ -78,7 +84,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
       const res = await importFromFile(file, importMode)
       setResult(res)
     } catch (err) {
-      alert(`Import failed: ${err instanceof Error ? err.message : err}`)
+      notify(`Import failed: ${err instanceof Error ? err.message : err}`, { tone: 'error' })
     } finally {
       setImporting(false)
     }
@@ -87,7 +93,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
   const handleExportAll = async () => {
     setExporting(true)
     try { await exportAllArchetypes(null) }
-    catch (e) { alert(`Export failed: ${e instanceof Error ? e.message : e}`) }
+    catch (e) { notify(`Export failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' }) }
     finally { setExporting(false) }
   }
 
@@ -95,7 +101,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
     if (!exportFolder) return
     setExporting(true)
     try { await exportAllArchetypes(exportFolder) }
-    catch (e) { alert(`Export failed: ${e instanceof Error ? e.message : e}`) }
+    catch (e) { notify(`Export failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' }) }
     finally { setExporting(false) }
   }
 
@@ -155,7 +161,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
             single-archetype workbooks are still accepted.
           </p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <Button variant="secondary" onClick={() => downloadBOMTemplate().catch((e) => alert(`Download failed: ${e}`))}>
+            <Button variant="secondary" onClick={() => downloadBOMTemplate().catch((e) => notify(`Download failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' }))}>
               <Download size={14} /> Download template
             </Button>
             <Button variant="primary" onClick={handleImportClick} disabled={importing} style={{ backgroundColor: 'var(--mod-lca)' }}>

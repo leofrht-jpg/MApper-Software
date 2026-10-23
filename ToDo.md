@@ -21,3 +21,40 @@ outside the repository; this file holds items recorded from work done in it.
   live backend with the demo project. fix/0.3.1-walkthrough-5 adds a per-tab error boundary, so
   if it still happens the tab should now show the error; send the Settings ›
   Logs entry.
+- [ ] **Most backend write routes ignore a mismatching `X-Mapper-Project`.**
+  Since fix/0.3.1-project-header every frontend request carries the header,
+  but only 13 write routes check it (409 on mismatch): `POST /dsm/systems`,
+  `/bom/archetypes`, `/bom/archetypes/import`, `/aesa/configurations`,
+  `/aesa/sessions`, `/parameters/import`, `/parameters/table/scenarios`, and the
+  authored-database writes. The other 121 POST/PUT/PATCH/DELETE routes ignore
+  the header and act on the backend's current Brightway project. Verified:
+  `PUT /project-settings` with a mismatching header returns 200 and saves under
+  the backend's project. Routes scoped by an id usually 404 on a mismatch
+  instead, but a duplicated project keeps its ids, so a write to a duplicate's
+  archetype or system can land in the original. The ones with no id at all are
+  the riskiest: `PUT /parameters/table`, `PATCH /parameters/table/scenarios`,
+  `DELETE /parameters/table/scenarios/{name}`, `POST/DELETE /parameters/sets`,
+  `PUT /project-settings`, `PUT /lca/material-pedigree`,
+  `POST /bom/folders/{create,rename,delete}`, `POST /bom/archetypes/move`,
+  `POST /dsm/import-system`, `POST /aesa/config/import`,
+  `POST /aesa/sharing-presets`, `POST /plca/generate`,
+  `DELETE /plca/databases/{name}`, `POST /impact/methods/install[-custom]`,
+  `DELETE /impact/methods/{id}`, `POST /ecoinvent/import[-local]`. Do not guard
+  `/projects/*` (switch, create, rename, ...): they name their project
+  explicitly. Suggested: one router-level dependency that refuses every write
+  on a mismatch.
+- [ ] **Subsystem routes SWITCH the backend's project to the header's.**
+  `subsystems.py` `_reconcile_project_from_header` calls
+  `bw2data.projects.set_current(header)` when the header names a different
+  known project, for all 17 subsystem writes (and reads). That makes the
+  request work, but it changes the global current project for every later
+  request, which is the opposite of what the 409 guard does. Decide one
+  policy.
+- [ ] **The task cancel route is mounted at `/api/api/tasks/{id}/cancel`.**
+  `tasks.py` declares `prefix="/api/tasks"` and `main.py` mounts the API
+  router under `/api` again. The frontend posts to `/api/tasks/{id}/cancel`,
+  which is a 404, and `cancelTask` reads a 404 as "the task already finished",
+  so the Stop buttons send no cancel at all. Verified with TestClient:
+  `/api/tasks/t1/cancel` → 404, `/api/api/tasks/t1/cancel` → 200 for a
+  registered task. Unit tests call the handler directly, which is why this
+  never showed. Fix the prefix to `/tasks` and add a test through the app.

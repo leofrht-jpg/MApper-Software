@@ -813,10 +813,7 @@ export interface CancelTaskResponse {
 }
 
 export async function cancelTask(taskId: string): Promise<CancelTaskResponse | null> {
-  const res = await fetch(
-    `${API_BASE}/tasks/${encodeURIComponent(taskId)}/cancel`,
-    { method: 'POST' },
-  )
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}/cancel`, _withProjectHeader({ method: 'POST' }))
   if (res.status === 404) return null
   if (!res.ok) throw new HttpError(res.status, await res.text())
   return res.json()
@@ -936,11 +933,11 @@ export type ProjectExportMode = 'modelling' | 'full'
 export async function exportProject(
   name: string, mode: ProjectExportMode = 'modelling',
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/projects/export`, {
+  const res = await fetch(`${API_BASE}/projects/export`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, mode }),
-  })
+  }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = name.replace(/[^A-Za-z0-9._-]+/g, '_') || 'project'
@@ -1003,14 +1000,11 @@ export async function getActivityExportDetails(
   database: string,
   codes: string[],
 ): Promise<ActivityExportDetail[]> {
-  const res = await fetch(
-    `${API_BASE}/activities/${encodeURIComponent(database)}/export-details`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codes }),
-    },
-  )
+  const res = await fetch(`${API_BASE}/activities/${encodeURIComponent(database)}/export-details`, _withProjectHeader({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codes }),
+  }))
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -1020,14 +1014,11 @@ export async function exportActivitySelection(
   codes: string[],
   format: 'csv' | 'xlsx',
 ): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/activities/${encodeURIComponent(database)}/export-selection`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ codes, format }),
-    },
-  )
+  const res = await fetch(`${API_BASE}/activities/${encodeURIComponent(database)}/export-selection`, _withProjectHeader({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codes, format }),
+  }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -1740,11 +1731,11 @@ export async function exportContributionAnalysis(
   result: ContributionAnalysisResult,
   filename: string,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/lca/contribution-analysis/export`, {
+  const res = await fetch(`${API_BASE}/lca/contribution-analysis/export`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ result }),
-  })
+  }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -1870,14 +1861,11 @@ export async function exportMultiYearContribution(
   result: MultiYearContributionResult,
   filename: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/lca/contribution-analysis/multi-year/export`,
-    {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ result }),
-    },
-  )
+  const res = await fetch(`${API_BASE}/lca/contribution-analysis/multi-year/export`, _withProjectHeader({
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ result }),
+  }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -1894,11 +1882,11 @@ export async function exportArchetypeLCA(
   results: ArchetypeLCACalculateResult[],
   filename: string,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}/lca/export-archetype`, {
+  const res = await fetch(`${API_BASE}/lca/export-archetype`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ results }),
-  })
+  }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -1986,7 +1974,7 @@ export async function parseLabelFile(
   if (validDimensions && validDimensions.length > 0) {
     form.append('valid_dimensions', validDimensions.join(','))
   }
-  const res = await fetch(`${API_BASE}/dsm/parse-labels`, { method: 'POST', body: form })
+  const res = await fetch(`${API_BASE}/dsm/parse-labels`, _withProjectHeader({ method: 'POST', body: form }))
   if (!res.ok) {
     let detail: string
     try {
@@ -2047,7 +2035,7 @@ export async function downloadStockTemplate(id: string, name: string): Promise<v
 }
 
 export async function exportMFAResults(systemId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/export`)
+  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/export`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const filename = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'simulation.xlsx'
@@ -2063,7 +2051,7 @@ export async function exportMFAResults(systemId: string): Promise<void> {
 // Mirrors exportMFAResults — the established DSM data-xlsx pattern (backend
 // builds the long-format workbook, frontend downloads the blob).
 export async function exportDSMCohorts(systemId: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/cohorts/export`)
+  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/cohorts/export`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const filename = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'cohorts.xlsx'
@@ -2085,9 +2073,7 @@ export async function exportSubsystemDSM(
   scope: 'combined' | 'subsystem',
   fallbackName: string,
 ): Promise<void> {
-  const res = await fetch(
-    `${API_BASE}/dsm/systems/${systemId}/subsystems/${subsystemId}/export?scope=${scope}`,
-  )
+  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/subsystems/${subsystemId}/export?scope=${scope}`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const cd = res.headers?.get('Content-Disposition')
   const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
@@ -2698,7 +2684,7 @@ export async function getArchetypeValidationReport(
 }
 
 export async function exportArchetype(arcId: string, name: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/bom/archetypes/${arcId}/export`)
+  const res = await fetch(`${API_BASE}/bom/archetypes/${arcId}/export`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = (name || 'archetype').replace(/[^A-Za-z0-9._-]+/g, '_')
@@ -2712,7 +2698,7 @@ export async function exportArchetype(arcId: string, name: string): Promise<void
 
 export async function exportAllArchetypes(folder?: string | null): Promise<void> {
   const q = folder ? `?folder=${encodeURIComponent(folder)}` : ''
-  const res = await fetch(`${API_BASE}/bom/archetypes/export-all${q}`)
+  const res = await fetch(`${API_BASE}/bom/archetypes/export-all${q}`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = folder ? folder.replace(/[^A-Za-z0-9._-]+/g, '_') : 'all'
@@ -2725,7 +2711,7 @@ export async function exportAllArchetypes(folder?: string | null): Promise<void>
 }
 
 export async function downloadBOMTemplate(): Promise<void> {
-  const res = await fetch(`${API_BASE}/bom/template`)
+  const res = await fetch(`${API_BASE}/bom/template`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -2742,10 +2728,10 @@ export async function importArchetype(
 ): Promise<MultiImportResult> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${API_BASE}/bom/archetypes/import?mode=${mode}`, {
+  const res = await fetch(`${API_BASE}/bom/archetypes/import?mode=${mode}`, _withProjectHeader({
     method: 'POST',
     body: form,
-  })
+  }))
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(detail || `HTTP ${res.status}`)
@@ -2931,10 +2917,10 @@ export async function uploadCohortMappings(
 ): Promise<CohortMappingResult> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/cohort-mappings/upload`, {
+  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/cohort-mappings/upload`, _withProjectHeader({
     method: 'POST',
     body: form,
-  })
+  }))
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(detail || `Upload failed (${res.status})`)
@@ -2947,7 +2933,7 @@ export async function downloadCohortMappingsTemplate(
   filename: string,
 ): Promise<void> {
   const url = `${API_BASE}/dsm/systems/${encodeURIComponent(systemId)}/cohort-mappings/template`
-  const res = await fetch(url)
+  const res = await fetch(url, _withProjectHeader())
   if (!res.ok) {
     const body = await res.text().catch(() => '')
     throw new Error(`Template download failed (${res.status}) ${url}: ${body || '(no body)'}`)
@@ -3053,7 +3039,7 @@ export async function getDSMLCAResult(systemId: string): Promise<DSMLCABatchResu
 
 export async function exportDSMLCA(systemId: string, filename: string, year?: number | null): Promise<void> {
   const qs = year != null ? `?year=${year}` : ''
-  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/dsm-lca/export${qs}`, { method: 'POST' })
+  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/dsm-lca/export${qs}`, _withProjectHeader({ method: 'POST' }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -3178,7 +3164,7 @@ export async function exportMaterialFlows(
   const params = new URLSearchParams({ scope })
   if (yearStart != null) params.set('year_start', String(yearStart))
   if (yearEnd != null) params.set('year_end', String(yearEnd))
-  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/material-flows/export?${params}`)
+  const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/material-flows/export?${params}`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -3267,23 +3253,23 @@ export interface PLCAProgressMessage {
 }
 
 export async function getPLCAScenarios(): Promise<PLCAScenarios> {
-  const res = await fetch(`${API_BASE}/plca/scenarios`)
+  const res = await fetch(`${API_BASE}/plca/scenarios`, _withProjectHeader())
   if (!res.ok) throw new Error(`GET /plca/scenarios failed: ${res.status}`)
   return res.json()
 }
 
 export async function getPLCADatabases(): Promise<ProspectiveDB[]> {
-  const res = await fetch(`${API_BASE}/plca/databases`)
+  const res = await fetch(`${API_BASE}/plca/databases`, _withProjectHeader())
   if (!res.ok) throw new Error(`GET /plca/databases failed: ${res.status}`)
   return res.json()
 }
 
 export async function startPLCAGeneration(body: PLCAGenerateRequest): Promise<PLCAGenerateResponse> {
-  const res = await fetch(`${API_BASE}/plca/generate`, {
+  const res = await fetch(`${API_BASE}/plca/generate`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }))
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(`POST /plca/generate failed: ${res.status} ${detail}`)
@@ -3292,7 +3278,7 @@ export async function startPLCAGeneration(body: PLCAGenerateRequest): Promise<PL
 }
 
 export async function deletePLCADatabase(name: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/plca/databases/${encodeURIComponent(name)}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/plca/databases/${encodeURIComponent(name)}`, _withProjectHeader({ method: 'DELETE' }))
   if (!res.ok) throw new Error(`DELETE /plca/databases failed: ${res.status}`)
 }
 
@@ -3308,18 +3294,18 @@ export async function getPremiseKeyStatus(): Promise<PremiseKeyStatus> {
   // Retry transiently so a mount-time blip self-heals instead of sticking a
   // stale error banner (same class + fix as the AESA config load, Patch 5AM).
   return withTransientRetry(async () => {
-    const res = await fetch(`${API_BASE}/plca/key/status`)
+    const res = await fetch(`${API_BASE}/plca/key/status`, _withProjectHeader())
     if (!res.ok) throw new Error(`GET /plca/key/status failed: ${res.status}`)
     return res.json()
   })
 }
 
 export async function savePremiseKey(key: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/plca/key`, {
+  const res = await fetch(`${API_BASE}/plca/key`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ key }),
-  })
+  }))
   if (!res.ok) {
     let detail: string
     try { detail = (await res.json()).detail ?? (await res.text()) } catch { detail = await res.text() }
@@ -3328,7 +3314,7 @@ export async function savePremiseKey(key: string): Promise<void> {
 }
 
 export async function deletePremiseKey(): Promise<void> {
-  const res = await fetch(`${API_BASE}/plca/key`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/plca/key`, _withProjectHeader({ method: 'DELETE' }))
   if (!res.ok) throw new Error(`DELETE /plca/key failed: ${res.status}`)
 }
 
@@ -3586,11 +3572,11 @@ export interface ImpactCompareResult {
 }
 
 export async function startImpactCalculation(body: ImpactAssessmentRequest): Promise<{ task_id: string }> {
-  const res = await fetch(`${API_BASE}/impact/calculate`, {
+  const res = await fetch(`${API_BASE}/impact/calculate`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }))
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(`POST /impact/calculate failed: ${res.status} ${detail}`)
@@ -3604,11 +3590,11 @@ export async function startImpactCalculation(body: ImpactAssessmentRequest): Pro
 export async function startImpactScenarios(
   body: ImpactAssessmentRequest,
 ): Promise<{ scenarios: Record<string, string> }> {
-  const res = await fetch(`${API_BASE}/impact/calculate-scenarios`, {
+  const res = await fetch(`${API_BASE}/impact/calculate-scenarios`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }))
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(`POST /impact/calculate-scenarios failed: ${res.status} ${detail}`)
@@ -3617,7 +3603,7 @@ export async function startImpactScenarios(
 }
 
 export async function getImpactResults(taskId: string): Promise<ImpactResultEnvelope> {
-  const res = await fetch(`${API_BASE}/impact/results/${encodeURIComponent(taskId)}`)
+  const res = await fetch(`${API_BASE}/impact/results/${encodeURIComponent(taskId)}`, _withProjectHeader())
   if (!res.ok) {
     const detail = await res.text()
     throw new Error(`GET /impact/results failed: ${res.status} ${detail}`)
@@ -3629,11 +3615,11 @@ export async function compareImpact(
   staticTaskId: string,
   projectedTaskId: string,
 ): Promise<ImpactCompareResult> {
-  const res = await fetch(`${API_BASE}/impact/compare`, {
+  const res = await fetch(`${API_BASE}/impact/compare`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ static_task_id: staticTaskId, projected_task_id: projectedTaskId }),
-  })
+  }))
   if (!res.ok) throw new Error(`POST /impact/compare failed: ${res.status}`)
   return res.json()
 }
@@ -3663,11 +3649,11 @@ export interface ImpactExportBody {
 }
 
 export async function exportImpact(body: ImpactExportBody, filename: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/impact/export`, {
+  const res = await fetch(`${API_BASE}/impact/export`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }))
   if (!res.ok) throw new Error(`POST /impact/export failed: ${res.status} ${await res.text()}`)
   // Prefer server-generated filename from Content-Disposition
   const cd = res.headers.get('Content-Disposition')
@@ -3700,11 +3686,11 @@ export interface SingleProductProspectiveRunPayload {
 }
 
 async function _downloadXlsx(url: string, body: unknown, fallbackName: string): Promise<void> {
-  const res = await fetch(url, {
+  const res = await fetch(url, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }))
   if (!res.ok) throw new Error(`POST ${url} failed: ${res.status} ${await res.text()}`)
   const cd = res.headers.get('Content-Disposition')
   const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
@@ -3940,7 +3926,7 @@ export async function renameScenario(
 }
 
 export async function exportParameterTable(): Promise<void> {
-  const res = await fetch(`${API_BASE}/parameters/export`)
+  const res = await fetch(`${API_BASE}/parameters/export`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -3959,10 +3945,10 @@ export async function importParameterTable(
 ): Promise<ParameterTable> {
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${API_BASE}/parameters/import?mode=${mode}`, {
+  const res = await fetch(`${API_BASE}/parameters/import?mode=${mode}`, _withProjectHeader({
     method: 'POST',
     body: form,
-  })
+  }))
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -4039,7 +4025,7 @@ export async function validateExpressions(
 }
 
 export async function downloadParameterTemplate(): Promise<void> {
-  const res = await fetch(`${API_BASE}/parameters/template`)
+  const res = await fetch(`${API_BASE}/parameters/template`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const url = URL.createObjectURL(blob)
@@ -4053,7 +4039,7 @@ export async function downloadParameterTemplate(): Promise<void> {
 }
 
 export async function exportParameterSet(setId: string, name: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/parameters/sets/${encodeURIComponent(setId)}/export`)
+  const res = await fetch(`${API_BASE}/parameters/sets/${encodeURIComponent(setId)}/export`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = (name || 'parameters').replace(/[^A-Za-z0-9._-]+/g, '_')
@@ -4077,10 +4063,10 @@ export async function importParameterSet(
   const form = new FormData()
   form.append('file', file)
   const qs = params.toString() ? `?${params}` : ''
-  const res = await fetch(`${API_BASE}/parameters/sets/import${qs}`, {
+  const res = await fetch(`${API_BASE}/parameters/sets/import${qs}`, _withProjectHeader({
     method: 'POST',
     body: form,
-  })
+  }))
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -4456,7 +4442,7 @@ export async function updateAESAConfiguration(id: string, body: AESAConfiguratio
 }
 
 export async function deleteAESAConfiguration(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/aesa/configurations/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/aesa/configurations/${encodeURIComponent(id)}`, _withProjectHeader({ method: 'DELETE' }))
   if (!res.ok) throw new Error(`DELETE /aesa/configurations failed: ${res.status}`)
 }
 
@@ -4516,7 +4502,7 @@ export async function renameAESASession(id: string, name: string): Promise<AESAS
 }
 
 export async function deleteAESASession(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/aesa/sessions/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/aesa/sessions/${encodeURIComponent(id)}`, _withProjectHeader({ method: 'DELETE' }))
   if (!res.ok) throw new Error(`DELETE /aesa/sessions failed: ${res.status}`)
 }
 
@@ -4634,11 +4620,11 @@ export async function exportAESA(
     )
     return { path: saved.path }
   }
-  const res = await fetch(`${API_BASE}/aesa/export`, {
+  const res = await fetch(`${API_BASE}/aesa/export`, _withProjectHeader({
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
-  })
+  }))
   if (!res.ok) throw new Error(`POST /aesa/export failed: ${res.status} ${await res.text()}`)
   // Prefer the backend's Content-Disposition filename — it names any
   // contributing dependent subsystem (the SR numerator sums primary +
@@ -4685,7 +4671,7 @@ export async function updateSharingPreset(id: string, body: SharingPresetCreate)
 }
 
 export async function deleteSharingPreset(id: string): Promise<void> {
-  const res = await fetch(`${API_BASE}/aesa/sharing-presets/${encodeURIComponent(id)}`, { method: 'DELETE' })
+  const res = await fetch(`${API_BASE}/aesa/sharing-presets/${encodeURIComponent(id)}`, _withProjectHeader({ method: 'DELETE' }))
   if (!res.ok) throw new Error(`DELETE sharing-preset failed: ${res.status} ${await res.text()}`)
 }
 
@@ -4805,7 +4791,7 @@ export async function downloadSystemLogs(): Promise<LogSaveResult> {
     )
     return { path: saved.path }
   }
-  const res = await fetch(`${API_BASE}/system/logs/export`)
+  const res = await fetch(`${API_BASE}/system/logs/export`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const stamp = new Date().toISOString().slice(0, 10)
   const blob = await res.blob()
@@ -4883,10 +4869,10 @@ export async function uploadCustomLcaMethod(
   fd.append('name_tuple', JSON.stringify(name_tuple))
   fd.append('description', description)
   fd.append('unit', unit)
-  const res = await fetch(`${API_BASE}/impact/methods/install-custom`, {
+  const res = await fetch(`${API_BASE}/impact/methods/install-custom`, _withProjectHeader({
     method: 'POST',
     body: fd,
-  })
+  }))
   if (!res.ok) {
     let detail: string
     try { detail = (await res.json()).detail ?? (await res.text()) } catch { detail = await res.text() }
@@ -4896,9 +4882,9 @@ export async function uploadCustomLcaMethod(
 }
 
 export async function uninstallLcaMethod(method_id: string): Promise<{ method_id: string; tuples_removed: number }> {
-  const res = await fetch(`${API_BASE}/impact/methods/${encodeURIComponent(method_id)}`, {
+  const res = await fetch(`${API_BASE}/impact/methods/${encodeURIComponent(method_id)}`, _withProjectHeader({
     method: 'DELETE',
-  })
+  }))
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
@@ -4977,7 +4963,7 @@ async function _downloadPreferringServerName(
   init: RequestInit,
   fallback: string,
 ): Promise<void> {
-  const res = await fetch(`${API_BASE}${path}`, init)
+  const res = await fetch(`${API_BASE}${path}`, _withProjectHeader(init))
   if (!res.ok) throw new Error(`${path} failed: ${res.status} ${await res.text()}`)
   const served = res.headers
     .get('content-disposition')
@@ -5042,7 +5028,7 @@ export async function importAESAConfig(file: File): Promise<AESAConfigBundle> {
   // a preset created this way would be unreachable.
   const form = new FormData()
   form.append('file', file)
-  const res = await fetch(`${API_BASE}/aesa/config/import`, { method: 'POST', body: form })
+  const res = await fetch(`${API_BASE}/aesa/config/import`, _withProjectHeader({ method: 'POST', body: form }))
   if (!res.ok) {
     let errors: AESAConfigImportError[] = []
     try {

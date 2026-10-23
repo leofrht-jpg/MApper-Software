@@ -61,7 +61,11 @@ jobs:
         env:
           CONDA_PKGS_DIRS: ${{ runner.temp }}/conda_pkgs
         with:
-          miniforge-version: latest
+          # Pinned: Miniforge 26.9.4-0 makes "conda init --all" fail on the Windows runner
+          # ("needs sudo" on Scripts\conda.exe, exit code 1) while 26.7.2-1 passes on
+          # the same image (windows-2025-vs2026 20261021.278.1). Unpin or bump later
+          # once a newer release passes.
+          miniforge-version: 26.7.2-1
           activate-environment: map
           environment-file: environment.yml
           auto-activate-base: false

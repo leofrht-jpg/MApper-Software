@@ -2493,7 +2493,20 @@ test_cancelled_operation_class_name_match_is_module_independent`.
 - `src/hooks/useCancellableTask.ts` — state machine; `useRef<string>` guards
   against stale closures and late WS frames from superseded tasks.
 - `src/api/client.ts:cancelTask(taskId)` — POST wrapper, returns null on
-  404 (treated as "the worker beat the cancel").
+  404. **A 404 is NOT proof the task finished**: callers whose task is still
+  running say Stop did not reach it and offer Stop again, and only the task's
+  own terminal frame ends the run (`CANCEL_NOT_FOUND_MESSAGE`).
+- **The route lived at `/api/api/tasks/{id}/cancel` until 0.3.1** (`tasks.py`
+  had `prefix="/api/tasks"` under main's `/api` mount), so every cancel was a
+  404, read as "finished": every Stop button did nothing, silently, and the
+  unit tests missed it because they called the handler directly.
+  `tests/test_cancel_route_through_app.py` cancels a running task through
+  `mapper.main.app` and fails on any route starting `/api/api`. Test a route
+  through the app, not its handler.
+- `<ComputeOverlay cancelling cancelError>`: after Stop the card says
+  "Stopping" with a disabled button, never just loses the button; the panel
+  then shows a stopped state (Monte Carlo `mc-cancelled`, Prospective
+  `projected-stopped`).
 
 ### What NOT to do
 

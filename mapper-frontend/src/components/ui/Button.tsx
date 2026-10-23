@@ -9,7 +9,7 @@
 
 import React from 'react'
 
-type ButtonVariant = 'primary' | 'secondary' | 'ghost'
+type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger'
 type ButtonSize = 'sm' | 'md'
 
 // `size` is not a standard <button> attribute, so it must be an explicit prop
@@ -17,6 +17,8 @@ type ButtonSize = 'sm' | 'md'
 interface ButtonProps extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, 'size'> {
   variant?: ButtonVariant
   size?: ButtonSize
+  /** React 19 passes `ref` as a prop; it reaches the <button> through the spread. */
+  ref?: React.Ref<HTMLButtonElement>
 }
 
 const sizeStyles: Record<ButtonSize, React.CSSProperties> = {
@@ -38,6 +40,12 @@ const styles: Record<ButtonVariant, React.CSSProperties> = {
   ghost: {
     backgroundColor: 'transparent',
     color: 'var(--text-secondary)',
+    border: '1px solid transparent',
+  },
+  // Destructive confirmations (dialogs.tsx): delete, remove, uninstall.
+  danger: {
+    backgroundColor: 'var(--danger)',
+    color: 'var(--text-inverse)',
     border: '1px solid transparent',
   },
 }

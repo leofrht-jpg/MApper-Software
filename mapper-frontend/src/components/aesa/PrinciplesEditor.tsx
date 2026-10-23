@@ -12,6 +12,7 @@ import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronRight, Lock, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useAESAStore } from '../../stores/aesaStore'
 import type { PrincipleDefinition } from '../../api/client'
+import { confirmDialog, messageDialog } from '../ui/dialogs'
 
 /** Custom-principle manager. Lists all principles defined on the active preset
  *  with add / edit / delete. Prevents deletion of principles referenced by any
@@ -50,13 +51,13 @@ export function PrinciplesEditor() {
   const openNew = () => { setIsNew(true); setEditing({ id: '', name: '', description: '' }) }
   const openEdit = (p: PrincipleDefinition) => { setIsNew(false); setEditing({ ...p }) }
 
-  const save = (p: PrincipleDefinition) => {
+  const save = async (p: PrincipleDefinition) => {
     const trimmed: PrincipleDefinition = {
       id: p.id.trim(), name: p.name.trim() || p.id.trim(), description: p.description ?? '',
     }
-    if (!trimmed.id) { alert('Principle id is required.'); return }
+    if (!trimmed.id) { await messageDialog('Principle id is required.'); return }
     if (isNew && principles.some((x) => x.id === trimmed.id)) {
-      alert(`A principle with id "${trimmed.id}" already exists.`)
+      await messageDialog(`A principle with id "${trimmed.id}" already exists.`)
       return
     }
     const next = isNew
@@ -66,12 +67,12 @@ export function PrinciplesEditor() {
     setEditing(null); setIsNew(false)
   }
 
-  const remove = (id: string) => {
+  const remove = async (id: string) => {
     if (inUse[id]) {
-      alert(`Cannot delete "${id}": ${inUse[id]}. Remove the reference first.`)
+      await messageDialog(`Cannot delete "${id}": ${inUse[id]}. Remove the reference first.`)
       return
     }
-    if (!confirm(`Delete principle "${id}"?`)) return
+    if (!(await confirmDialog({ title: `Delete principle "${id}"?`, destructive: true }))) return
     updatePrinciples(principles.filter((x) => x.id !== id))
   }
 
@@ -116,7 +117,7 @@ export function PrinciplesEditor() {
                   <Pencil size={11} />
                 </button>
                 <button
-                  onClick={() => remove(p.id)}
+                  onClick={() => void remove(p.id)}
                   style={{ ...iconBtn, color: inUse[p.id] ? 'var(--text-tertiary)' : 'var(--danger)' }}
                   title={inUse[p.id] ? `In use: ${inUse[p.id]}` : 'Delete'}
                   disabled={!!inUse[p.id]}
@@ -149,7 +150,7 @@ export function PrinciplesEditor() {
           value={editing}
           isNew={isNew}
           onClose={() => { setEditing(null); setIsNew(false) }}
-          onSave={save}
+          onSave={(p) => void save(p)}
         />
       )}
     </div>

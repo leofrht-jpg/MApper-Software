@@ -2746,6 +2746,32 @@ an anchor, that a backend failure propagates, and every visible outcome
 grants clipboard access on a user gesture, and whether the real build reaches
 port 8765. Those two need the installed app.
 
+### Never use native window dialogs
+
+`window.confirm`, `window.prompt` and `window.alert` (and the bare `confirm(`,
+`prompt(`, `alert(`) do nothing useful in the packaged app: the WKWebView has
+no dialog delegate, so confirm answers false, prompt returns null and alert
+shows nothing. A guarded delete never happens, a name can never be entered, a
+failure shows nothing. Use the helpers in `components/ui/dialogs.tsx`:
+
+- `confirmDialog({ title, body?, destructive? })` -> boolean (destructive:
+  danger button, `role="alertdialog"`, focus on Cancel);
+- `promptDialog({ title, label?, defaultValue?, validate? })` -> trimmed
+  string or null;
+- `choose({ title, options })` -> value or null. Escape ABORTS; never map
+  Cancel to one of the branches (the old `confirm` "Cancel = Merge" pattern);
+- `messageDialog(title)` -> a blocking acknowledgement, for a validation
+  message that stops an action;
+- `notify(message, { tone })` -> a toast, for the outcome of an async action
+  (errors stay until dismissed).
+
+`<DialogHost />` is mounted once in `App.tsx`, outside the per-tab
+ErrorBoundary; a helper called with no host throws. Row-level "second click to
+delete" buttons (AESA configurations dropdown, ProjectSwitcher) are a separate,
+inline pattern and stay as they are. `tests/noNativeDialogs.test.ts` fails on
+any native call under `src`; while the migration runs it carries an allow-list
+of the unmigrated files with exact counts, and a migrated file must leave it.
+
 
 ## Common Error Patterns
 

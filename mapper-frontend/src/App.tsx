@@ -22,6 +22,7 @@ import { OnboardingTour, hasCompletedOnboarding } from './components/OnboardingT
 import { configureProjectGuard } from './api/client'
 import { MonteCarloPage } from './pages/MonteCarlo'
 import { ErrorBoundary } from './components/ErrorBoundary'
+import { DialogHost } from './components/ui/dialogs'
 
 // Global helper so the Settings page can re-trigger the tour without
 // pulling App state into a context.
@@ -93,6 +94,10 @@ function App() {
           </ErrorBoundary>
         )}
       </Shell>
+      {/* In-app confirm/prompt/message dialogs and toasts. Outside the per-tab
+          ErrorBoundary, so a crashed page cannot take them down; portalled to
+          document.body. The packaged WKWebView ignores window.confirm/prompt/alert. */}
+      <DialogHost />
     </>
   )
 }

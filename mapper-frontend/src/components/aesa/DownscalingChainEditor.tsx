@@ -13,6 +13,7 @@ import { computeChainFactor, useAESAStore } from '../../stores/aesaStore'
 import { describeLayerSeries, resolveYearPair, seriesBadgeText } from '../../utils/aesaSeries'
 import type { SeriesShape } from '../../utils/aesaSeries'
 import { LayerEditModal } from './LayerEditModal'
+import { confirmDialog } from '../ui/dialogs'
 
 interface Props {
   /** Shown in the factor preview — defaults to current year. */
@@ -228,7 +229,7 @@ function LayerCard({
           </button>
           {canDelete && (
             <button
-              onClick={() => { if (confirm(`Delete "${name}"?`)) onDelete() }}
+              onClick={async () => { if (await confirmDialog({ title: `Delete "${name}"?`, destructive: true })) onDelete() }}
               style={{ ...iconBtn, color: 'var(--danger)' }}
               title="Delete layer"
             >

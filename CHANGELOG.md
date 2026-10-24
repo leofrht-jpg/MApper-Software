@@ -10,7 +10,7 @@ Releases before 0.3.1 are on the
 archived on [Zenodo](https://doi.org/10.5281/zenodo.22246255); this file starts
 at 0.3.1 and is kept from here on.
 
-## [0.3.2] (unreleased)
+## [0.3.2] — 2026-10-24
 
 ### Changed
 

@@ -9,6 +9,7 @@
 
 import { jsPDF } from 'jspdf'
 import { svg2pdf } from 'svg2pdf.js'
+import { downloadBlob } from '../../utils/download'
 
 export type ExportFormat = 'svg' | 'pdf' | 'png' | 'jpeg'
 export type BgOption = 'dark' | 'light' | 'transparent'
@@ -189,14 +190,7 @@ function serializeSvgForExport(sourceSvg: SVGSVGElement, bg: BgOption): {
 }
 
 function triggerDownload(blob: Blob, filename: string): void {
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(url), 1000)
+  downloadBlob(blob, filename, { revokeDelayMs: 1000 })
 }
 
 /**

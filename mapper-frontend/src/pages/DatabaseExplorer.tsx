@@ -20,6 +20,7 @@ import { DemoLoadButton } from '../components/DemoLoadButton'
 import { ImportWizard } from '../components/ImportWizard'
 import { BiosphereFlowPicker } from '../components/authored/BiosphereFlowPicker'
 import { AuthoredActivityEditor } from '../components/authored/AuthoredActivityEditor'
+import { downloadBlob } from '../utils/download'
 import {
   AuthoredActivityActions, AuthoredDatabaseBar, NewAuthoredDatabaseModal, useAuthoredDatabases,
 } from '../components/authored/AuthoredDatabaseControls'
@@ -344,12 +345,7 @@ async function exportSelectionCsv(activities: ActivitySummary[]): Promise<void> 
     ),
   ]
   const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `activities_selection_${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `activities_selection_${new Date().toISOString().slice(0, 10)}.csv`)
 }
 
 async function exportSelectionXlsx(activities: ActivitySummary[]): Promise<void> {

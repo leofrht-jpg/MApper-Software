@@ -149,7 +149,7 @@ describe('Life cycle hides Stage amounts, and says so where it is missing', () =
     const onNavigate = vi.fn()
     const { getByTestId } = render(<SingleProductImpact onNavigate={onNavigate} />)
     fireEvent.click(getByTestId('single-product-stage-amounts-hidden-link'))
-    expect(onNavigate).toHaveBeenCalledWith('archetypes')
+    expect(onNavigate).toHaveBeenCalledWith('lca')
   })
 
   it('One year shows the control and no note', () => {

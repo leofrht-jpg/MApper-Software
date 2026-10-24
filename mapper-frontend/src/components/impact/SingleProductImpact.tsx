@@ -269,7 +269,7 @@ function SingleProductImpactBody({ onNavigate }: SingleProductImpactProps) {
           <button
             type="button"
             data-testid="single-product-stage-amounts-hidden-link"
-            onClick={() => onNavigate?.('archetypes')}
+            onClick={() => onNavigate?.('lca')}
             style={{
               background: 'none', border: 'none', padding: 0, cursor: 'pointer',
               color: 'var(--mod-lca)', fontSize: 'inherit', textDecoration: 'underline',

@@ -1,5 +1,44 @@
 # MApper Installation Guide
 
+## Desktop app
+
+Most users want the desktop app, not a source install. The steps below are the
+same as in [README → Download and install](README.md#download-and-install).
+
+The desktop installers are attached to each GitHub release. Download them from
+the [latest release](https://github.com/leofrht-jpg/MApper-Software/releases/latest).
+They are not code-signed, which is why each platform has a one-time step below.
+
+**macOS (Apple silicon only)**
+
+1. Download `MApper_<version>_aarch64.dmg` from the latest release.
+2. Open it and drag **MApper** to **Applications**.
+3. Run this once in Terminal, so macOS lets the unsigned app open:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/MApper.app
+   ```
+
+**Windows**
+
+1. Download `MApper_<version>_x64-setup.exe` from the latest release and run it.
+2. If Windows SmartScreen shows a warning, click **More info**, then **Run anyway**.
+
+**Data you supply.** The ecoinvent database and the IAM scenario data that
+premise uses for prospective databases are separately licensed and are not
+included. Import ecoinvent from inside the app (**Database Explorer → Import**);
+to try MApper without it, see
+[Try it without ecoinvent](README.md#try-it-without-ecoinvent).
+
+**The sparse solver differs by platform.** The macOS build links UMFPACK
+through scikit-umfpack, so each prospective database is factorised once and
+reused for every later solve. The Windows build falls back to SciPy's SuperLU
+(conda-forge publishes no Windows build of scikit-umfpack). The results are the
+same to solver tolerance, but large sparse solves, such as prospective runs over
+many years, are slower on Windows.
+
+The rest of this guide covers running MApper from source.
+
 ## Prerequisites
 
 - **Miniconda** or Anaconda ([download](https://docs.conda.io/en/latest/miniconda.html))

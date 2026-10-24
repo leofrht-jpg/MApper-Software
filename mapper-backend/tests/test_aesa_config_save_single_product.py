@@ -105,3 +105,19 @@ def test_a_derived_default_is_still_saved_as_absent(server):  # noqa: F811
 def test_a_named_system_that_does_not_exist_still_404s(server):  # noqa: F811
     status, raw, _ = _post(f"{server}/aesa/configurations", _payload(mfa_system_id="no-such-system"))
     assert status == 404, raw
+
+
+def test_a_rename_is_saved_and_read_back_by_both_routes(server):  # noqa: F811
+    """ToDo 0.3.2: "renaming a configuration does not save". The route always
+    stored the new name; the frontend never sent it (Save was disabled with no
+    DSM system selected). This pins the backend half of the round trip."""
+    _, raw, _ = _post(f"{server}/aesa/configurations", _payload(name="Old name"))
+    cid = json.loads(raw)["id"]
+    status, upd = _put(f"{server}/aesa/configurations/{cid}", _payload(name="New name"))
+    assert status == 200, upd
+    assert upd["name"] == "New name"
+    _, listed = _get(f"{server}/aesa/configurations")
+    _, one = _get(f"{server}/aesa/configurations/{cid}")
+    assert next(c for c in listed if c["id"] == cid)["name"] == "New name"
+    assert one["name"] == "New name"
+    assert not any(c["name"] == "Old name" for c in listed if c["id"] == cid)

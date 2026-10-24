@@ -13,6 +13,7 @@ import { Button } from '../ui/Button'
 import { NumberInput } from '../ui/NumberInput'
 import type { Archetype } from '../../api/client'
 import { messageDialog, notify } from '../ui/dialogs'
+import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 
 interface BulkReboundModalProps {
   archetype: Archetype
@@ -52,6 +53,7 @@ function collectMaterials(nodes: Archetype['bom'], stage: string | null = null, 
 }
 
 export function BulkReboundModal({ archetype, onApply, onClose }: BulkReboundModalProps) {
+  const backdrop = useBackdropDismiss(onClose)
   const materials = useMemo(() => collectMaterials(archetype.bom), [archetype])
   const stages = useMemo(() => Array.from(new Set(materials.map((m) => m.stage))).sort(), [materials])
   const [reboundRate, setReboundRate] = useState(0.02)
@@ -107,7 +109,7 @@ export function BulkReboundModal({ archetype, onApply, onClose }: BulkReboundMod
 
   return (
     <div
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      {...backdrop}
       style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 220 }}
     >
       <div style={{ width: 760, maxHeight: '90vh', backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-default)', borderRadius: 'var(--radius-xl)', boxShadow: 'var(--shadow-lg)', display: 'flex', flexDirection: 'column' }}>

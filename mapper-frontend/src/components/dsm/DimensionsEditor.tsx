@@ -12,6 +12,7 @@ import { Plus, Trash2, X, Upload, Download } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { parseLabelFile, type DimensionDef } from '../../api/client'
 import { downloadBlob } from '../../utils/download'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface DimensionsEditorProps {
   dimensions: DimensionDef[]
@@ -198,7 +199,7 @@ function SingleDimensionEditor({ dim, siblingDimensionNames, onChange, onDelete 
         </div>
         <div>
           <label style={labelCol}>Machine name</label>
-          <input
+          <input {...IDENTIFIER_INPUT_PROPS}
             type="text"
             value={dim.name}
             onChange={(e) => onChange({ name: slugify(e.target.value) })}

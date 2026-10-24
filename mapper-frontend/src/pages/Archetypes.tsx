@@ -27,12 +27,14 @@ import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
 import { ParameterManagerPanel } from '../components/parameters/ParameterManagerPanel'
 import { useBOMStore } from '../stores/bomStore'
 import { confirmDialog, notify, promptDialog } from '../components/ui/dialogs'
+import { useBackdropDismiss } from '../components/ui/useBackdropDismiss'
 import type { ArchetypeSummary } from '../api/client'
 import {
   buildArchetypeTree,
   collectFolderPaths,
   type TreeNode,
 } from '../components/archetypes/folderTree'
+import { IDENTIFIER_INPUT_PROPS } from '../components/ui/identifierInput'
 
 function stageIcon(name: string) {
   const n = name.toLowerCase()
@@ -456,7 +458,7 @@ export function Archetypes() {
             {open ? <FolderOpen size={13} style={{ color: 'var(--mod-lca)', flexShrink: 0 }} />
                   : <Folder size={13} style={{ color: 'var(--mod-lca)', flexShrink: 0 }} />}
             {renamingPath === node.path ? (
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 ref={renameInputRef}
                 data-testid="folder-rename-input"
                 value={renameDraft}
@@ -1021,10 +1023,11 @@ function FolderPickerModal({
   const [custom, setCustom] = useState('')
   const [customError, setCustomError] = useState<string | null>(null)
   const sorted = useMemo(() => [...folders].sort(), [folders])
+  const backdrop = useBackdropDismiss(onCancel)
 
   return (
     <div
-      onClick={onCancel}
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,
@@ -1051,7 +1054,7 @@ function FolderPickerModal({
         </div>
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input
+          <input {...IDENTIFIER_INPUT_PROPS}
             value={custom}
             onChange={(e) => { setCustom(e.target.value); setCustomError(null) }}
             aria-invalid={customError ? true : undefined}

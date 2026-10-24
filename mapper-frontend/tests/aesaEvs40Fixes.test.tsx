@@ -135,6 +135,19 @@ describe('item 3: the packaged app goes through the backend, not a blob', () => 
     expect(new Headers(init.headers).get('Content-Type')).toBe('application/json')
     expect(JSON.parse(String(init.body)).source_name).toBe('EV9')
   })
+
+  it('shows the FINAL saved name: a repeat export the backend numbered " (1)"', async () => {
+    Object.defineProperty(window, 'location', { value: { ...realLocation, port: '8765' }, configurable: true })
+    // Only the save call answers with the numbered name; a Response body can be
+    // read once, so build a fresh one per call.
+    const fetchSpy = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      new Response(JSON.stringify({ path: '/Users/x/Downloads/EV9_AESA (1).xlsx', bytes: 9 }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
+    render(<AESADashboard />)
+    await act(async () => { fireEvent.click(screen.getByTestId('aesa-export-default')) })
+    expect(fetchSpy.mock.calls.some(([u]) => /\/aesa\/export\/save$/.test(String(u)))).toBe(true)
+    expect((await screen.findByTestId('aesa-export-saved')).textContent).toContain('/Users/x/Downloads/EV9_AESA (1).xlsx')
+  })
 })
 
 describe('item 2: every impact says what it is per', () => {

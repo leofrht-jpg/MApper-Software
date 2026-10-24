@@ -10,10 +10,12 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Check, Copy, Edit2, Eye, Plus, Star, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/Button'
-import { choose, confirmDialog, promptDialog } from '../ui/dialogs'
+import { choose, confirmDialog, isDialogOpen, promptDialog } from '../ui/dialogs'
+import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 import { useDSMStore } from '../../stores/dsmStore'
 import type { DSMScenario } from '../../api/client'
 import { SlotDataViewer, type SlotKey } from './SlotDataViewer'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface ScenarioManagerModalProps {
   onClose: () => void
@@ -66,10 +68,11 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
   const [editDesc, setEditDesc] = useState('')
   const [promoteTarget, setPromoteTarget] = useState<DSMScenario | null>(null)
   const [viewSlot, setViewSlot] = useState<{ scenarioId: string; slotKey: SlotKey } | null>(null)
+  const backdrop = useBackdropDismiss(onClose)
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
+      if (e.key !== 'Escape' || isDialogOpen()) return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       onClose()
@@ -202,7 +205,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         padding: 'var(--space-5)',
       }}
-      onClick={onClose}
+      {...backdrop}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -268,7 +271,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
                     <td style={tdStyle}>
                       {isEditing ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <input
+                          <input {...IDENTIFIER_INPUT_PROPS}
                             autoFocus
                             style={inputStyle}
                             value={editName}

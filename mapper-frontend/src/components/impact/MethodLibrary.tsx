@@ -23,7 +23,8 @@ import {
   type LCIAMethodInfo,
 } from '../../api/client'
 import { StopButton } from '../ui/StopButton'
-import { confirmDialog } from '../ui/dialogs'
+import { confirmDialog, isDialogOpen } from '../ui/dialogs'
+import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 
 interface MethodLibraryProps {
   onClose: () => void
@@ -68,6 +69,7 @@ const inputStyle: React.CSSProperties = {
 type TabKey = 'library' | 'custom'
 
 export function MethodLibrary({ onClose }: MethodLibraryProps) {
+  const backdrop = useBackdropDismiss(onClose)
   const [tab, setTab] = useState<TabKey>('library')
   const [library, setLibrary] = useState<LCIALibraryResponse | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -88,7 +90,7 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
   useEffect(() => {
     reload()
     const handleKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape') return
+      if (e.key !== 'Escape' || isDialogOpen()) return
       const t = e.target as HTMLElement | null
       if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return
       onClose()
@@ -233,7 +235,7 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
         display: 'flex', alignItems: 'center', justifyContent: 'center',
         zIndex: 200,
       }}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      {...backdrop}
     >
       <div style={{
         backgroundColor: 'var(--bg-surface)',

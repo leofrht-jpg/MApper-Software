@@ -12,7 +12,61 @@ at 0.3.1 and is kept from here on.
 
 ## [0.3.2] (unreleased)
 
-### Changes
+### Changed
+
+- **In-app dialogs replace every native window dialog.** The packaged app's
+  webview has no dialog handler: `window.confirm` answered "no", `prompt`
+  returned nothing and `alert` showed nothing. So guarded deletes never
+  happened, a new name could not be typed, and failure messages were lost.
+  All 65 calls are now in-app confirmations, name prompts, choices,
+  messages and toasts, across AESA, the BOM editor, the parameter manager,
+  LCA Architect, the Method Library, pLCA, Archetypes, DSM and subsystems.
+  A choice that offered "Cancel" as one of its branches now aborts on Escape
+  instead. A test fails on any native dialog call under `src`.
+- **The app page can no longer navigate away.** In a 0.3.2 development build
+  the window once replaced the whole app with a page it could not leave until
+  quit. Links to `blob:`, `data:`, `file:` or another site are now cancelled
+  with a short "Navigation blocked" message. Exports still save, through
+  one shared download helper. A file dropped outside a drop zone is no longer
+  opened in place of the app. The two external links (the premise GitHub page
+  in Settings and a method's source in the Method Library) are blocked the
+  same way.
+- **Identifier fields are not auto-capitalised.** Parameter, case, scenario,
+  folder, stage and database names, principle ids and dimension names turn
+  off macOS auto-capitalisation, autocorrect and spell check, and so do name
+  prompts. Auto-capitalisation kept producing a capital letter that the
+  snake_case rule then rejected.
+- **premise's `unlinked.log` is capped at warnings.** It was written at INFO
+  and grew large in the app's workspace. The existing file is left as it is.
+
+### Fixed
+
+- **"Add parameter" closed while editing the name.** Selecting text in the
+  Name field and releasing the mouse over the dimmed background counted as a
+  click on the background and closed the window. A window now closes from the
+  background only when the press also started there. The same applies to the
+  Scenario manager, the Method Library, the bulk learning-rate and rebound
+  windows, the AESA principle and layer editors and the Archetypes folder
+  picker. Keys and clicks on a dialog shown above one of these windows no
+  longer reach the window underneath.
+- **AESA export no longer overwrites a file of the same name.** A second
+  export with the same name is saved as `name (1).xlsx`, then `name (2).xlsx`,
+  and the page shows the name it was saved under. Log exports keep their
+  timestamped names.
+- **Renaming an AESA configuration saves.** Save was disabled whenever the
+  source toggle read System-level and no DSM system was selected, even for a
+  configuration that was already saved, and the hint only mentioned Compute.
+  A saved configuration now saves without a system, keeping the one it was
+  saved for. A new System-level configuration still needs one, and the page
+  says so.
+- **The AESA radar shows a point's values on hover.** Hovering or focusing a
+  dot shows the boundary, year, Sustainability Ratio and zone, impact and
+  allocated SOS. On a not-specified axis the ratio is shown as a lower bound.
+- **"Change it in LCA Architect → Manager" opens LCA Architect.** The link on
+  the single-product page led to an empty "Select a database" page.
+- **Windows CI and the Windows release build pin Miniforge 26.7.2-1.**
+  Miniforge 26.9.4-0 failed in `conda init` on the Windows runner. macOS stays
+  on the latest Miniforge.
 
 ## [0.3.1] — 2026-10-22
 

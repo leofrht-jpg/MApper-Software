@@ -69,6 +69,34 @@ def reenable_mapper_loggers() -> list[str]:
     return out
 
 
+#: premise's ``inventory_imports`` calls ``logging.basicConfig(level=DEBUG,
+#: filename="unlinked.log", filemode="a")`` at import. premise is imported (via
+#: the routers) before MApper configures logging, so that call wins: the ROOT
+#: logger gets a plain FileHandler with no level at DEBUG, and every library's
+#: debug output lands in ``unlinked.log`` in the working directory (the
+#: packaged app's ``workspace/``), forever, unrotated -- 1.7 GB on one machine.
+#: premise's own warnings about unlinked flows are WARNING and above, so those
+#: still reach the file.
+PREMISE_UNLINKED_LOG = "unlinked.log"
+
+
+def cap_premise_unlinked_log() -> list[logging.Handler]:
+    """Hold premise's root ``unlinked.log`` handler to WARNING, root to INFO.
+
+    Never deletes, truncates or closes the file: an existing log stays as it
+    is, it just stops growing with debug chatter. Returns the handlers capped.
+    """
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    capped = []
+    for h in root.handlers:
+        name = getattr(h, "baseFilename", "") or ""
+        if isinstance(h, logging.FileHandler) and Path(name).name == PREMISE_UNLINKED_LOG:
+            h.setLevel(logging.WARNING)
+            capped.append(h)
+    return capped
+
+
 def configure_logging() -> Path:
     """Install a rotating file handler on the root logger.
 
@@ -79,6 +107,7 @@ def configure_logging() -> Path:
     quiet_chatty_libraries()
     # The app's routers (and with them premise) are imported before this runs.
     reenable_mapper_loggers()
+    cap_premise_unlinked_log()
     if _configured:
         return LOG_FILE
 
@@ -94,9 +123,6 @@ def configure_logging() -> Path:
     file_handler.setFormatter(logging.Formatter(_FILE_FORMAT, datefmt=_DATE_FORMAT))
 
     root = logging.getLogger()
-    # Ensure root level lets INFO through even if basicConfig set something higher.
-    if root.level > logging.INFO or root.level == logging.NOTSET:
-        root.setLevel(logging.INFO)
 
     # Avoid duplicate file handlers if reload picks us up twice.
     for h in root.handlers:

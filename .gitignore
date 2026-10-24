@@ -42,7 +42,8 @@ _reference/
 C4MApper/
 
 # Claude Code local config
-.claude/
+.claude/*
+!.claude/skills/
 
 # OS
 .DS_Store

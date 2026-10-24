@@ -34,6 +34,7 @@ import {
   collectFolderPaths,
   type TreeNode,
 } from '../components/archetypes/folderTree'
+import { IDENTIFIER_INPUT_PROPS } from '../components/ui/identifierInput'
 
 function stageIcon(name: string) {
   const n = name.toLowerCase()
@@ -457,7 +458,7 @@ export function Archetypes() {
             {open ? <FolderOpen size={13} style={{ color: 'var(--mod-lca)', flexShrink: 0 }} />
                   : <Folder size={13} style={{ color: 'var(--mod-lca)', flexShrink: 0 }} />}
             {renamingPath === node.path ? (
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 ref={renameInputRef}
                 data-testid="folder-rename-input"
                 value={renameDraft}
@@ -1053,7 +1054,7 @@ function FolderPickerModal({
         </div>
 
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <input
+          <input {...IDENTIFIER_INPUT_PROPS}
             value={custom}
             onChange={(e) => { setCustom(e.target.value); setCustomError(null) }}
             aria-invalid={customError ? true : undefined}

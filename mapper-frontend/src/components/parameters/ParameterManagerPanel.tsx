@@ -27,6 +27,7 @@ import { PedigreeEditor } from '../uncertainty/PedigreeEditor'
 import { choose, confirmDialog, isDialogOpen, messageDialog, notify, promptDialog } from '../ui/dialogs'
 import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 import { scoreSummary, usePedigreeTable } from '../../utils/pedigree'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 /** Lazily fetch full archetype BOMs and scan them for nodes tagged with the
  *  ``p_bp`` global lever — the reference materials for the composed-rate
@@ -660,7 +661,7 @@ export function ParameterManagerPanel() {
                           }}
                         >
                           {renamingScenario === s ? (
-                            <input
+                            <input {...IDENTIFIER_INPUT_PROPS}
                               autoFocus
                               value={scenarioNameDraft}
                               onChange={(e) => setScenarioNameDraft(e.target.value)}
@@ -976,7 +977,7 @@ function ParameterRow({
             σ
           </span>
         )}
-        <input
+        <input {...IDENTIFIER_INPUT_PROPS}
           value={nameDraft}
           onChange={(e) => { setNameDraft(e.target.value); setNameError(null) }}
           onBlur={commitName}
@@ -1276,7 +1277,7 @@ function AddParameterModal({
         <div style={{ padding: 'var(--space-4)', display: 'flex', flexDirection: 'column', gap: 'var(--space-3)' }}>
           <div>
             <label style={fieldLabel}>Name</label>
-            <input
+            <input {...IDENTIFIER_INPUT_PROPS}
               autoFocus
               value={name}
               onChange={(e) => { setName(e.target.value); setError(null) }}

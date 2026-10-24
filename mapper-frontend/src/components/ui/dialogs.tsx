@@ -37,6 +37,7 @@ import { create } from 'zustand'
 import { X } from 'lucide-react'
 import { Button } from './Button'
 import { useProjectStore } from '../../stores/projectStore'
+import { IDENTIFIER_INPUT_PROPS } from './identifierInput'
 
 // ── Public option types ───────────────────────────────────────────────────
 
@@ -59,6 +60,11 @@ export interface PromptOptions {
   cancelLabel?: string
   /** Return an error message to keep the dialog open, or null to accept. */
   validate?: (value: string) => string | null
+  /**
+   * The input is an identifier by default (case, stage, scenario, folder):
+   * no auto-capitalisation, autocorrect or spell check. Set for prose.
+   */
+  freeText?: boolean
 }
 
 export interface ChoiceOption {
@@ -349,6 +355,7 @@ function DialogView({ req }: { req: Request }) {
           placeholder={o.placeholder}
           onChange={(e) => { setValue(e.target.value); setError(null) }}
           aria-invalid={error ? true : undefined}
+          {...(o.freeText ? {} : IDENTIFIER_INPUT_PROPS)}
           data-testid="dialog-input"
           style={{
             width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',

@@ -15,6 +15,7 @@ import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 import { useDSMStore } from '../../stores/dsmStore'
 import type { DSMScenario } from '../../api/client'
 import { SlotDataViewer, type SlotKey } from './SlotDataViewer'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface ScenarioManagerModalProps {
   onClose: () => void
@@ -270,7 +271,7 @@ export function ScenarioManagerModal({ onClose }: ScenarioManagerModalProps) {
                     <td style={tdStyle}>
                       {isEditing ? (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                          <input
+                          <input {...IDENTIFIER_INPUT_PROPS}
                             autoFocus
                             style={inputStyle}
                             value={editName}

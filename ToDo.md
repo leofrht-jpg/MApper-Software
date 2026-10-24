@@ -5,16 +5,6 @@ outside the repository; this file holds items recorded from work done in it.
 
 ## 0.3.2
 
-- [ ] **AESA: renaming a configuration does not save.** Editing the name of an
-  AESA configuration and pressing Save leaves the old name. Reported in the
-  0.3.1 walkthrough (5). Not investigated yet.
-- [ ] **AESA radar: show the point's SR values on hover.** Hovering a dot on the
-  radar chart should show the Sustainability Ratio of the selected point (and
-  its boundary). Requested in the 0.3.1 walkthrough (5).
-- [ ] **Single-product "Change it in LCA Architect → Manager" link goes
-  nowhere.** It calls `onNavigate('archetypes')`, which is not a tab id
-  (`App.tsx` knows `lca`), so the content area shows the "Select a database"
-  placeholder. Found while working on walkthrough 5; not fixed there.
 - [ ] **Multi-item Uncertainty tab blank in the packaged app (walkthrough 5,
   item 1): confirm on the installed build.** It did not reproduce in jsdom,
   Chromium (dev server and the backend-served production build) or against a
@@ -76,11 +66,6 @@ outside the repository; this file holds items recorded from work done in it.
 - [ ] **pageErrorBoundary.test.tsx times out at 5000 ms on a cold first run
   (dynamic import of the whole App).** Seen once in three frontend runs on
   main after #180 (run 1 only); runs 2 and 3 passed. Not investigated.
-- [ ] **AESA export overwrites a same-named file in ~/Downloads.**
-  `save_to_downloads` (`api/system.py`) does `target.write_bytes(data)` with
-  no uniqueness check, so a second AESA export with the same filename replaces
-  the first without a word. Logs are not affected (their name carries a
-  timestamp).
 - [ ] **`test_content_hash[Battery Circularity]` fails on the developer's
   machine.** A `live_storage` test that reads the real project, so it skips in
   CI and in a fresh container and only shows locally. Not investigated.
@@ -88,11 +73,23 @@ outside the repository; this file holds items recorded from work done in it.
   `test_aesa_export_real_path::test_a_write_failure_is_reported_not_swallowed`
   and `test_reveal_saved_file::test_a_saved_file_is_revealed`. Both fail on
   main there and pass in CI. Not investigated.
-- [ ] **README has no desktop install steps.** README "Install & run" and
-  INSTALL.md describe only the source install (conda + npm); nothing says how
-  to install the released .dmg or .exe.
-- [ ] **The release procedure is not documented.** `release-windows.yml`
-  waits about 10 minutes (30 x 20 s) for a release for the tag to exist (a
-  draft is enough) and then fails with "release never appeared". Nothing in
-  DESKTOP.md, CONTRIBUTING.md or the README says to create the (draft) release
-  when pushing the tag.
+- [ ] **Open external links in the default browser.** Since the navigation
+  guard (#191), the two external links (the premise GitHub link in Settings and
+  a method's source link in the Method Library) are blocked with the
+  "Navigation blocked" toast. Open them in the system browser through a Tauri
+  opener instead. Note: the packaged page is a remote `http://localhost:8765`
+  origin with no Tauri IPC (CLAUDE.md, "The packaged app is a REMOTE http
+  origin"), so this needs either an IPC grant for that origin or a backend
+  route that opens the URL, as Reveal in Finder does.
+- [ ] **A Rust-level navigation block in the app shell.** Add an
+  `on_navigation` handler in `mapper-tauri/src/main.rs` that refuses any
+  navigation away from `http://localhost:8765`, as a second layer behind the
+  page-level guard in `utils/navigationGuard.ts`.
+- [ ] **The scenario manager's Duplicate button is easy to miss.** It is an
+  unlabelled Copy icon in the far-right Actions column of a table that scrolls
+  sideways inside the modal, so it can be off-screen. Give it a label or move
+  it.
+- [ ] **Delete the old `unlinked.log` by hand.** premise's `unlinked.log` is
+  now capped at warnings, but the existing file (about 1.7 GB in the user's
+  workspace folder, `~/Library/Application Support/mapper/workspace` on macOS)
+  stays. Delete it by hand; the app does not and should not.

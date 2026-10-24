@@ -31,7 +31,7 @@ abstract: >-
   MApper.
 type: software
 version: 0.3.2
-date-released: "2026-10-22"
+date-released: "2026-10-24"
 license: MPL-2.0
 repository-code: "https://github.com/leofrht-jpg/MApper-Software"
 url: "https://mapper.leonardoferhati.com"

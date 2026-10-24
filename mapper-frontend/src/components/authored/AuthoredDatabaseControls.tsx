@@ -32,6 +32,7 @@ import {
   reconcileAuthoredDatabases,
   structuredErrorDetail,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 /** Authored databases of the current project; reloads on project change. */
 export function useAuthoredDatabases() {
@@ -204,7 +205,7 @@ export function NewAuthoredDatabaseModal({ existing, onCreated, onCancel }: {
         </p>
         <label style={{ display: 'grid', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
           Name
-          <input data-testid="authored-new-db-name" value={name} onChange={(e) => setName(e.target.value)} style={input} autoFocus />
+          <input {...IDENTIFIER_INPUT_PROPS} data-testid="authored-new-db-name" value={name} onChange={(e) => setName(e.target.value)} style={input} autoFocus />
         </label>
         {clash && <span style={{ color: 'var(--danger)', fontSize: 'var(--text-xs)' }}>A database with this name already exists.</span>}
         <label style={{ display: 'grid', gap: 4, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>

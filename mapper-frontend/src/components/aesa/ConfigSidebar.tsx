@@ -440,8 +440,25 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
 
   // A single-product configuration has no DSM system; saving it used to be
   // impossible (this returned early, and the route 404'd on a null system).
-  const saveSystemId = source === 'single_product' ? null : (activeSystem?.id ?? null)
-  const canSave = !!draft && (source === 'single_product' || !!activeSystem)
+  //
+  // Updating an EXISTING configuration (a rename, say) never needs a DSM
+  // system: with none selected it keeps the system it was saved for (null
+  // for a single-product one). Save used to be disabled whenever the toggle
+  // read System-level and no system was selected, so a rename on such a
+  // project clicked a dead button and the old name stayed. Only a NEW
+  // System-level configuration needs a system, or it would be saved as a
+  // single-product one; saveBlockedReason says so instead of disabling
+  // silently.
+  const loadedConfig = activeConfigId ? configurations.find((c) => c.id === activeConfigId) ?? null : null
+  const saveSystemId = source === 'single_product'
+    ? null
+    : (activeSystem?.id ?? loadedConfig?.mfa_system_id ?? null)
+  const saveBlockedReason = !draft
+    ? 'No configuration loaded.'
+    : source === 'fleet' && !activeSystem && !loadedConfig
+      ? 'Select a DSM system to save a new System-level configuration.'
+      : null
+  const canSave = saveBlockedReason === null
   const handleSave = async () => {
     if (!canSave) return
     setSaving(true)
@@ -578,7 +595,7 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                 onClick={handleSave}
                 disabled={!canSave || saving}
                 data-testid="aesa-save-config"
-                title="Save configuration template (reusable)"
+                title={saveBlockedReason ?? 'Save configuration template (reusable)'}
                 aria-label="Save configuration template"
                 style={{ padding: '0 10px', height: 28 }}
               >
@@ -754,7 +771,9 @@ export function ConfigSidebar({ collapsed, onToggle }: Props) {
                       ? 'Compute a single-product static result on the Impact Assessment page first.'
                       : ''))
               : !activeSystem
-                ? 'Select a DSM system to enable Compute.'
+                ? (loadedConfig
+                    ? 'Select a DSM system to enable Compute. Save still updates the loaded configuration.'
+                    : 'Select a DSM system to enable Compute and to save a new configuration.')
                 : !hasImpact
                   ? `Run the ${draft?.impact_mode === 'projected' ? 'Projected' : 'Static'} LCI first.`
                   : ''}

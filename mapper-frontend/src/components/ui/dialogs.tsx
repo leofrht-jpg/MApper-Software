@@ -37,6 +37,7 @@ import { create } from 'zustand'
 import { X } from 'lucide-react'
 import { Button } from './Button'
 import { useProjectStore } from '../../stores/projectStore'
+import { IDENTIFIER_INPUT_PROPS } from './identifierInput'
 
 // ── Public option types ───────────────────────────────────────────────────
 
@@ -59,6 +60,11 @@ export interface PromptOptions {
   cancelLabel?: string
   /** Return an error message to keep the dialog open, or null to accept. */
   validate?: (value: string) => string | null
+  /**
+   * The input is an identifier by default (case, stage, scenario, folder):
+   * no auto-capitalisation, autocorrect or spell check. Set for prose.
+   */
+  freeText?: boolean
 }
 
 export interface ChoiceOption {
@@ -197,6 +203,14 @@ useProjectStore.subscribe((state) => {
   pending.forEach(cancelOf)
 })
 
+/**
+ * True while an in-app dialog is on screen. A modal underneath uses it to
+ * ignore keys and backdrop clicks that belong to the dialog.
+ */
+export function isDialogOpen(): boolean {
+  return useDialogStore.getState().queue.length > 0
+}
+
 /** Test-only: clear queue and toasts without answering. */
 export function __resetDialogsForTests(): void {
   useDialogStore.setState({ queue: [], toasts: [] })
@@ -263,15 +277,22 @@ function DialogView({ req }: { req: Request }) {
     settle(req, () => req.resolve(v))
   }
 
-  const onKeyDown = (e: React.KeyboardEvent) => {
-    // Keys handled here never reach the page underneath.
+  const onKeyDown = (e: KeyboardEvent) => {
+    // Runs in the CAPTURE phase on window, before any listener of the page or
+    // of a modal underneath, and stops the key there: a dialog stacked on a
+    // modal owns the keyboard, so Escape or Enter here can never also close
+    // or submit the modal below.
     e.stopPropagation()
+    const t = e.target as HTMLElement | null
+    const inside = !!t && !!panelRef.current?.contains(t)
     if (e.key === 'Escape') { e.preventDefault(); cancel(); return }
     if (e.key === 'Enter') {
-      const t = e.target as HTMLElement
-      if (t.tagName === 'TEXTAREA') return
+      if (inside && t!.tagName === 'TEXTAREA') return
       e.preventDefault()
-      if (t.tagName === 'BUTTON') (t as HTMLButtonElement).click()
+      // Enter outside the panel (focus left on the page) must not activate a
+      // control underneath; it does nothing.
+      if (!inside) return
+      if (t!.tagName === 'BUTTON') (t as HTMLButtonElement).click()
       else if (req.kind === 'prompt') submitPrompt()
       return
     }
@@ -288,6 +309,14 @@ function DialogView({ req }: { req: Request }) {
       }
     }
   }
+
+  const keyHandler = useRef(onKeyDown)
+  useLayoutEffect(() => { keyHandler.current = onKeyDown })
+  useEffect(() => {
+    const listener = (e: KeyboardEvent) => keyHandler.current(e)
+    window.addEventListener('keydown', listener, true)
+    return () => window.removeEventListener('keydown', listener, true)
+  }, [])
 
   const setInitial = (el: HTMLElement | null) => { if (el) initialRef.current = el }
 
@@ -326,6 +355,7 @@ function DialogView({ req }: { req: Request }) {
           placeholder={o.placeholder}
           onChange={(e) => { setValue(e.target.value); setError(null) }}
           aria-invalid={error ? true : undefined}
+          {...(o.freeText ? {} : IDENTIFIER_INPUT_PROPS)}
           data-testid="dialog-input"
           style={{
             width: '100%', height: 30, padding: '0 8px', boxSizing: 'border-box',
@@ -393,7 +423,6 @@ function DialogView({ req }: { req: Request }) {
         aria-labelledby={titleId}
         aria-describedby={body ? bodyId : undefined}
         tabIndex={-1}
-        onKeyDown={onKeyDown}
         data-testid="dialog"
         style={{
           background: 'var(--bg-surface)', border: '1px solid var(--border-default)',

@@ -108,23 +108,47 @@ async def save_logs() -> LogSaveResponse:
         data = LOG_FILE.read_bytes()
     except OSError as e:
         raise HTTPException(status_code=500, detail=f"Could not read {LOG_FILE}: {e}") from e
-    target = save_to_downloads(data, f"mapper_logs_{stamp}.txt", fallback_dir=LOG_FILE.parent)
+    target = save_to_downloads(
+        data, f"mapper_logs_{stamp}.txt", fallback_dir=LOG_FILE.parent, overwrite=True,
+    )
     return LogSaveResponse(path=str(target), bytes=len(data))
 
 
-def save_to_downloads(data: bytes, filename: str, *, fallback_dir: Path) -> Path:
+def unused_name(target: Path) -> Path:
+    """``target`` if it does not exist, else ``stem (1).ext``, ``stem (2).ext`` …
+
+    The same numbering a browser uses for a repeated download, so a second
+    export of the same result never replaces the first.
+    """
+    if not target.exists():
+        return target
+    n = 1
+    while True:
+        candidate = target.with_name(f"{target.stem} ({n}){target.suffix}")
+        if not candidate.exists():
+            return candidate
+        n += 1
+
+
+def save_to_downloads(
+    data: bytes, filename: str, *, fallback_dir: Path, overwrite: bool = False,
+) -> Path:
     """Write ``data`` to ~/Downloads (else ``fallback_dir``) and return the path.
 
     The server-side save used by Settings › Logs and the AESA export in the
     packaged app (every other export uses a blob download, which works there
-    too). A write failure
-    is raised as a 500 naming the path, never swallowed: a read-only or full
-    disk must say so.
+    too). An existing file of that name is kept and the new one gets
+    " (1)", " (2)" … before the extension, unless ``overwrite`` (the Logs save,
+    whose name is already the day's stamp). The returned path is the name
+    actually written, which is what the UI shows. A write failure is raised as
+    a 500 naming the path, never swallowed: a read-only or full disk must say so.
     """
     downloads = Path.home() / "Downloads"
     target_dir = downloads if downloads.is_dir() else fallback_dir
     target_dir.mkdir(parents=True, exist_ok=True)
     target = target_dir / filename
+    if not overwrite:
+        target = unused_name(target)
     try:
         target.write_bytes(data)
     except OSError as e:

@@ -13,6 +13,8 @@ import { ChevronDown, ChevronRight, Lock, Pencil, Plus, Trash2 } from 'lucide-re
 import { useAESAStore } from '../../stores/aesaStore'
 import type { PrincipleDefinition } from '../../api/client'
 import { confirmDialog, messageDialog } from '../ui/dialogs'
+import { useBackdropDismiss } from '../ui/useBackdropDismiss'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 /** Custom-principle manager. Lists all principles defined on the active preset
  *  with add / edit / delete. Prevents deletion of principles referenced by any
@@ -166,6 +168,7 @@ function PrincipleEditModal({
   onSave: (p: PrincipleDefinition) => void
 }) {
   const [draft, setDraft] = useState(value)
+  const backdropDismiss = useBackdropDismiss(onClose)
 
     // Patch 4X rule — portal to document.body. This modal renders inside the
   // `<aside style={{ position: 'sticky' }}>` configuration sidebar (Patch 4V).
@@ -178,7 +181,7 @@ function PrincipleEditModal({
 
     <div
       style={backdrop}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      {...backdropDismiss}
     >
       <div style={modal}>
         <header style={{ padding: '10px 14px', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -188,7 +191,7 @@ function PrincipleEditModal({
         </header>
         <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Field label="ID" hint="Short code (e.g. GDP, HDI). Cannot change after creation.">
-            <input
+            <input {...IDENTIFIER_INPUT_PROPS}
               value={draft.id}
               onChange={(e) => setDraft({ ...draft, id: e.target.value })}
               disabled={!isNew}

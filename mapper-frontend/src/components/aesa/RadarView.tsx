@@ -56,6 +56,11 @@ export function RadarView({ results, size = 480, coverageGaps, basis, year: year
     () => results.filter((r) => r.year === year),
     [results, year],
   )
+  // The dot under the pointer (or keyboard focus). The <title> on each dot
+  // stays for export and screen readers, but a native title only appears
+  // after a delay, which read as "hover shows nothing"; this card shows the
+  // point's SR at once.
+  const [hoverPb, setHoverPb] = useState<string | null>(null)
 
   if (!years.length) {
     return <EmptyBox msg="No results to plot" />
@@ -91,6 +96,7 @@ export function RadarView({ results, size = 480, coverageGaps, basis, year: year
     return `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`
   }).join(' ') + ' Z'
 
+  const hoverIdx = hoverPb ? yearResults.findIndex((r) => r.pb_id === hoverPb) : -1
   const rSafe = (1.0 / MAX_DISPLAY_SR) * radius
   const rUncert = (2.0 / MAX_DISPLAY_SR) * radius
 
@@ -104,6 +110,7 @@ export function RadarView({ results, size = 480, coverageGaps, basis, year: year
         />
         <ChartExportButton chartRef={radarRef} filename={`aesa_radar_${year}`} />
       </div>
+      <div style={{ position: 'relative', width: size, height: size }}>
       <ChartExportContainer ref={radarRef} style={{ width: size, height: size }}>
       <svg width={size} height={size} style={{ display: 'block' }} role="img" data-chart-export-target>
         {/* Zone-shaded background: safe → uncertainty → high_risk */}
@@ -155,16 +162,28 @@ export function RadarView({ results, size = 480, coverageGaps, basis, year: year
         {yearResults.map((r, i) => {
           const p = pointFor(i, r.sr)
           const g = gapsForPb(coverageGaps, r.pb_id)
+          const show = () => setHoverPb(r.pb_id)
+          const hide = () => setHoverPb((h) => (h === r.pb_id ? null : h))
           return (
             <g key={r.pb_id}>
+              {/* Hit target: a 5px dot is hard to land on. Transparent, so it
+                  draws nothing in the export. */}
+              <circle
+                data-testid={`radar-dot-${r.pb_id}`}
+                cx={p.x} cy={p.y} r={11} fill="transparent"
+                tabIndex={0}
+                aria-label={`${r.pb_name}: SR ${fmtSRDisplay(r.sr)}`}
+                style={{ cursor: 'default', outline: 'none' }}
+                onMouseEnter={show} onMouseLeave={hide} onFocus={show} onBlur={hide}
+              />
               {g.length ? (
                 // Hollow: a lower bound, not a value.
-                <circle cx={p.x} cy={p.y} r={5} fill="none" stroke={NOT_SPECIFIED_HATCH} strokeWidth={2} strokeDasharray="2 2">
+                <circle cx={p.x} cy={p.y} r={5} fill="none" stroke={NOT_SPECIFIED_HATCH} strokeWidth={2} strokeDasharray="2 2" pointerEvents="none">
                   <title>{`${r.pb_name}: SR ≥ ${fmtSRDisplay(r.sr)} (not specified)\n` +
                     `Impact: ${fmt(r.impact)} ${quantityUnit(r.unit)} ${impactBasisShort(basis)} · Allocated SOS: ${fmt(r.allocated_sos)} ${quantityUnit(r.unit)} per yr\n\n${notSpecifiedTitle(g)}`}</title>
                 </circle>
               ) : (
-                <circle cx={p.x} cy={p.y} r={5} fill={ZONE_COLOR[r.zone]} stroke="var(--bg-surface)" strokeWidth={1.5}>
+                <circle cx={p.x} cy={p.y} r={5} fill={ZONE_COLOR[r.zone]} stroke="var(--bg-surface)" strokeWidth={1.5} pointerEvents="none">
                   <title>{`${r.pb_name}: SR=${fmtSRDisplay(r.sr)} (${r.zone})\n` +
                     `Impact: ${fmt(r.impact)} ${quantityUnit(r.unit)} ${impactBasisShort(basis)} (${impactBasisLabel(basis)})\n` +
                     `Allocated SOS: ${fmt(r.allocated_sos)} ${quantityUnit(r.unit)} per yr`}</title>
@@ -202,6 +221,43 @@ export function RadarView({ results, size = 480, coverageGaps, basis, year: year
         })}
       </svg>
       </ChartExportContainer>
+      {hoverIdx >= 0 && (() => {
+        const r = yearResults[hoverIdx]
+        const p = pointFor(hoverIdx, r.sr)
+        const lower = gapsForPb(coverageGaps, r.pb_id).length > 0
+        const left = p.x > cx
+        return (
+          <div
+            data-testid="radar-tooltip"
+            role="tooltip"
+            style={{
+              position: 'absolute', pointerEvents: 'none', zIndex: 2,
+              top: p.y - 8,
+              left: left ? undefined : p.x + 14,
+              right: left ? size - p.x + 14 : undefined,
+              transform: 'translateY(-100%)',
+              background: 'var(--bg-elevated)', border: '1px solid var(--border-default)',
+              borderRadius: 'var(--radius-md)', padding: '6px 9px',
+              fontSize: 11, lineHeight: 1.45, color: 'var(--text-primary)',
+              boxShadow: '0 4px 14px rgba(0,0,0,0.25)', whiteSpace: 'nowrap',
+            }}
+          >
+            <div style={{ fontWeight: 600 }}>{boundaryLabel(r).full} · {r.year}</div>
+            <div>
+              <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', marginRight: 5, background: lower ? 'transparent' : ZONE_COLOR[r.zone], border: lower ? `1px dashed ${NOT_SPECIFIED_HATCH}` : 'none' }} />
+              SR {lower ? '≥ ' : '= '}<span style={{ fontFamily: 'var(--font-mono)' }}>{fmtSRDisplay(r.sr)}</span>
+              {' '}({lower ? 'not specified: a lower bound' : r.zone.replace(/_/g, ' ')})
+            </div>
+            <div style={{ color: 'var(--text-secondary)' }}>
+              Impact: {fmt(r.impact)} {quantityUnit(r.unit)} {impactBasisShort(basis)}
+            </div>
+            <div style={{ color: 'var(--text-secondary)' }}>
+              Allocated SOS: {fmt(r.allocated_sos)} {quantityUnit(r.unit)} per yr
+            </div>
+          </div>
+        )
+      })()}
+      </div>
 
       {years.length > 1 && (
         <div style={{ width: '80%' }}>

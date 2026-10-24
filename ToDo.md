@@ -76,16 +76,6 @@ outside the repository; this file holds items recorded from work done in it.
 - [ ] **pageErrorBoundary.test.tsx times out at 5000 ms on a cold first run
   (dynamic import of the whole App).** Seen once in three frontend runs on
   main after #180 (run 1 only); runs 2 and 3 passed. Not investigated.
-- [ ] **Native dialogs do nothing in the packaged app.** 65 `window.confirm`
-  / `prompt` / `alert` calls under `src` (WKWebView: confirm answers false,
-  prompt returns null, alert shows nothing), so about 27 actions cannot be
-  completed (deletes, new scenario, new folder, new stage, add sensitivity
-  case, method uninstall, ...), two choices are forced (parameter import is
-  always Merge; a new DSM scenario always starts empty) and 39 messages are
-  lost. Being replaced area by area with `components/ui/dialogs.tsx`
-  (fix/0.3.2-dialogs-1 does the helpers and AESA); `tests/noNativeDialogs.test.ts`
-  holds the remaining files. Not yet checked on Windows, where WebView2 may
-  show native dialogs.
 - [ ] **AESA export overwrites a same-named file in ~/Downloads.**
   `save_to_downloads` (`api/system.py`) does `target.write_bytes(data)` with
   no uniqueness check, so a second AESA export with the same filename replaces

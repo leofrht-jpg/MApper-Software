@@ -9,6 +9,7 @@
 
 import { recordComputation } from '../stores/carbonStore'
 import { buildExportFilename, buildTemplateFilename } from '../utils/exportFilename'
+import { downloadBlob } from '../utils/download'
 
 // Backend origin. Standalone web dev defaults to localhost:8000 (unchanged —
 // `npm run dev` sets no env). The packaged desktop (Tauri) build sets
@@ -849,14 +850,7 @@ export async function downloadCSV(path: string, filename: string): Promise<void>
   const res = await fetch(`${API_BASE}${path}`, _withProjectHeader({ method: 'POST' }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 // ── Phase 0 functions ─────────────────────────────────────────────────────────
@@ -948,12 +942,7 @@ export async function exportProject(
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = name.replace(/[^A-Za-z0-9._-]+/g, '_') || 'project'
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${safe}.${mode === 'full' ? 'full-LICENSED' : 'modelling'}.mapperproj.tar.gz`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `${safe}.${mode === 'full' ? 'full-LICENSED' : 'modelling'}.mapperproj.tar.gz`)
 }
 
 export async function importProject(file: File): Promise<ProjectResponse> {
@@ -1028,14 +1017,9 @@ export async function exportActivitySelection(
   }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
   const date = new Date().toISOString().slice(0, 10)
   const safeDb = database.replace(/[^A-Za-z0-9._-]+/g, '_')
-  a.download = `activities_${safeDb}_${date}.${format}`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `activities_${safeDb}_${date}.${format}`)
 }
 
 export async function getMethods(): Promise<MethodFamily[]> {
@@ -1745,14 +1729,7 @@ export async function exportContributionAnalysis(
   }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 // ── Multi-year contribution analysis ───────────────────────────────────────
@@ -1875,14 +1852,7 @@ export async function exportMultiYearContribution(
   }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 export async function exportArchetypeLCA(
@@ -1896,14 +1866,7 @@ export async function exportArchetypeLCA(
   }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 // ── DSM endpoints ────────────────────────────────────────────────────────────
@@ -2046,12 +2009,7 @@ export async function exportMFAResults(systemId: string): Promise<void> {
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const filename = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'simulation.xlsx'
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 // All-years cohort table export ("Cohorts in {year}" box, exports every year).
@@ -2062,12 +2020,7 @@ export async function exportDSMCohorts(systemId: string): Promise<void> {
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const filename = res.headers.get('content-disposition')?.split('filename=')[1]?.replace(/"/g, '') || 'cohorts.xlsx'
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 // Subsystem DSM (stock/flow) export. scope 'combined' = main system +
@@ -2085,14 +2038,7 @@ export async function exportSubsystemDSM(
   const cd = res.headers?.get('Content-Disposition')
   const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = serverName || fallbackName
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, serverName || fallbackName)
 }
 
 export interface ImportResult {
@@ -2395,16 +2341,9 @@ export async function downloadDependencyRulesTemplate(
   )
   if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = buildTemplateFilename(subsystemName, 'dependency_rules', {
+  downloadBlob(blob, buildTemplateFilename(subsystemName, 'dependency_rules', {
     fallback: 'subsystem',
-  })
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  }))
 }
 
 /**
@@ -2695,12 +2634,7 @@ export async function exportArchetype(arcId: string, name: string): Promise<void
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = (name || 'archetype').replace(/[^A-Za-z0-9._-]+/g, '_')
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${safe}_bom.xlsx`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `${safe}_bom.xlsx`)
 }
 
 export async function exportAllArchetypes(folder?: string | null): Promise<void> {
@@ -2709,24 +2643,14 @@ export async function exportAllArchetypes(folder?: string | null): Promise<void>
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = folder ? folder.replace(/[^A-Za-z0-9._-]+/g, '_') : 'all'
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `mapper_archetypes_${safe}.xlsx`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `mapper_archetypes_${safe}.xlsx`)
 }
 
 export async function downloadBOMTemplate(): Promise<void> {
   const res = await fetch(`${API_BASE}/bom/template`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'mapper_archetypes_template.xlsx'
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, 'mapper_archetypes_template.xlsx')
 }
 
 export async function importArchetype(
@@ -2946,14 +2870,7 @@ export async function downloadCohortMappingsTemplate(
     throw new Error(`Template download failed (${res.status}) ${url}: ${body || '(no body)'}`)
   }
   const blob = await res.blob()
-  const blobUrl = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = blobUrl
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(blobUrl)
+  downloadBlob(blob, filename)
 }
 
 /** Result of validating an uploaded subsystem cohort-mapping .xlsx. Mirrors
@@ -2978,16 +2895,9 @@ export async function downloadSubsystemCohortMappingTemplate(
   )
   if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`)
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = buildTemplateFilename(subsystemName, 'cohort_mappings', {
+  downloadBlob(blob, buildTemplateFilename(subsystemName, 'cohort_mappings', {
     fallback: 'subsystem',
-  })
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  }))
 }
 
 /** Parse + validate an uploaded subsystem cohort-mapping .xlsx (validate-only —
@@ -3049,14 +2959,7 @@ export async function exportDSMLCA(systemId: string, filename: string, year?: nu
   const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/dsm-lca/export${qs}`, _withProjectHeader({ method: 'POST' }))
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 // ── Material Flows ──────────────────────────────────────────────────────────
@@ -3174,14 +3077,7 @@ export async function exportMaterialFlows(
   const res = await fetch(`${API_BASE}/dsm/systems/${systemId}/material-flows/export?${params}`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 // ── WebSocket helper ──────────────────────────────────────────────────────────
@@ -3666,14 +3562,7 @@ export async function exportImpact(body: ImpactExportBody, filename: string): Pr
   const cd = res.headers.get('Content-Disposition')
   const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = serverName || filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, serverName || filename)
 }
 
 // Patch 4G — Single-product Impact Assessment exports. Three sibling
@@ -3702,14 +3591,7 @@ async function _downloadXlsx(url: string, body: unknown, fallbackName: string): 
   const cd = res.headers.get('Content-Disposition')
   const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
   const blob = await res.blob()
-  const blobUrl = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = blobUrl
-  a.download = serverName || fallbackName
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(blobUrl)
+  downloadBlob(blob, serverName || fallbackName)
 }
 
 // Patch 5K+ — stage-amount provenance (preset + lifetime + resolved amounts),
@@ -3936,14 +3818,7 @@ export async function exportParameterTable(): Promise<void> {
   const res = await fetch(`${API_BASE}/parameters/export`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'parameters.xlsx'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, 'parameters.xlsx')
 }
 
 export async function importParameterTable(
@@ -4035,14 +3910,7 @@ export async function downloadParameterTemplate(): Promise<void> {
   const res = await fetch(`${API_BASE}/parameters/template`, _withProjectHeader())
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = 'parameters_template.xlsx'
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, 'parameters_template.xlsx')
 }
 
 export async function exportParameterSet(setId: string, name: string): Promise<void> {
@@ -4050,14 +3918,7 @@ export async function exportParameterSet(setId: string, name: string): Promise<v
   if (!res.ok) throw new Error(await res.text())
   const blob = await res.blob()
   const safe = (name || 'parameters').replace(/[^A-Za-z0-9._-]+/g, '_')
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `${safe}.xlsx`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `${safe}.xlsx`)
 }
 
 export async function importParameterSet(
@@ -4640,14 +4501,7 @@ export async function exportAESA(
   const cd = res.headers?.get('Content-Disposition')
   const serverName = cd?.match(/filename="?([^"]+)"?/)?.[1]
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = serverName || filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, serverName || filename)
   return { path: null }
 }
 
@@ -4802,14 +4656,7 @@ export async function downloadSystemLogs(): Promise<LogSaveResult> {
   if (!res.ok) throw new Error(await res.text())
   const stamp = new Date().toISOString().slice(0, 10)
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `mapper_logs_${stamp}.txt`
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, `mapper_logs_${stamp}.txt`)
   return { path: null }
 }
 
@@ -4978,14 +4825,7 @@ async function _downloadPreferringServerName(
     ?.replace(/"/g, '')
     ?.trim()
   const blob = await res.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = served || fallback
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, served || fallback)
 }
 
 

@@ -10,6 +10,7 @@
 import { Download, X } from 'lucide-react'
 import { Button } from '../ui/Button'
 import type { DSMScenario } from '../../api/client'
+import { downloadBlob } from '../../utils/download'
 
 export type SlotKey =
   | 'initial_stock'
@@ -84,14 +85,7 @@ export function downloadSlotCSV(
     ...rows.map((r) => columns.map((c) => escape(r[c])).join(',')),
   ].join('\n')
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  URL.revokeObjectURL(url)
+  downloadBlob(blob, filename)
 }
 
 interface SlotDataViewerProps {

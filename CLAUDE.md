@@ -2779,6 +2779,17 @@ index access (`window['alert']`). The only exception is
 Don't reintroduce an allow-list or an exemption to land a native call; use
 the helpers.
 
+### A modal closes on a background click only if the press started there
+
+Selecting text in a modal's field and releasing the mouse over the dimmed
+background fires `click` on the background (the common ancestor), so an
+`onClick` that checks `e.target === e.currentTarget` closes the modal mid-edit.
+That is how "Add parameter" kept closing while a name was being corrected. Use
+`useBackdropDismiss(onClose)` (`components/ui/useBackdropDismiss.ts`): it
+closes only when the press also started on the background, and not while a
+dialog is open above the modal. `tests/modalBackdropDismiss.test.ts` checks the
+modals that use it.
+
 
 ## Common Error Patterns
 
@@ -2845,6 +2856,12 @@ npm run dev
 cd mapper-backend
 pytest tests/ -q
 ```
+
+## Releasing
+
+The release procedure (version sites, the macOS build, the tag, the draft
+release the Windows workflow waits for, publishing, Zenodo, the website) is in
+[RELEASING.md](RELEASING.md). Follow it rather than memory.
 
 ## Key Files for Debugging
 

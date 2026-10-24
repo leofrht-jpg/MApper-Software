@@ -23,6 +23,10 @@ at 0.3.1 and is kept from here on.
   LCA Architect, the Method Library, pLCA, Archetypes, DSM and subsystems.
   A choice that offered "Cancel" as one of its branches now aborts on Escape
   instead. A test fails on any native dialog call under `src`.
+- **The no-native-dialogs guard is absolute (#190).** With every call
+  migrated, its allow-list is gone: any native `confirm`, `prompt` or `alert`
+  anywhere under `src` fails the test, and only the dialog module itself is
+  exempt.
 - **The app page can no longer navigate away.** In a 0.3.2 development build
   the window once replaced the whole app with a page it could not leave until
   quit. Links to `blob:`, `data:`, `file:` or another site are now cancelled

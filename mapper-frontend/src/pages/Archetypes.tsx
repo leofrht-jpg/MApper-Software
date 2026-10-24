@@ -27,6 +27,7 @@ import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
 import { ParameterManagerPanel } from '../components/parameters/ParameterManagerPanel'
 import { useBOMStore } from '../stores/bomStore'
 import { confirmDialog, notify, promptDialog } from '../components/ui/dialogs'
+import { useBackdropDismiss } from '../components/ui/useBackdropDismiss'
 import type { ArchetypeSummary } from '../api/client'
 import {
   buildArchetypeTree,
@@ -1021,10 +1022,11 @@ function FolderPickerModal({
   const [custom, setCustom] = useState('')
   const [customError, setCustomError] = useState<string | null>(null)
   const sorted = useMemo(() => [...folders].sort(), [folders])
+  const backdrop = useBackdropDismiss(onCancel)
 
   return (
     <div
-      onClick={onCancel}
+      {...backdrop}
       style={{
         position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)',
         display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 2000,

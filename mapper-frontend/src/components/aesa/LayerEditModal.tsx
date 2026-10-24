@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { ChevronDown, ChevronRight, Plus, Trash2, X } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 import type {
   DownscalingLayer, LayerData, PrincipleDefinition, PrincipleMode, ResolutionMode,
 } from '../../api/client'
@@ -28,6 +29,7 @@ interface Props {
  *  time-varying table. */
 export function LayerEditModal({ layer, principles, onClose, onSave }: Props) {
   const [draft, setDraft] = useState<DownscalingLayer>(layer)
+  const backdropDismiss = useBackdropDismiss(onClose)
 
   useEffect(() => setDraft(layer), [layer])
 
@@ -86,7 +88,7 @@ export function LayerEditModal({ layer, principles, onClose, onSave }: Props) {
 
     <div
       style={backdrop}
-      onClick={(e) => { if (e.target === e.currentTarget) onClose() }}
+      {...backdropDismiss}
     >
       <div style={modal}>
         <header style={header}>

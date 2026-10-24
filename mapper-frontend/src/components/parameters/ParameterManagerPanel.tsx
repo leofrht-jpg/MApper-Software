@@ -24,7 +24,8 @@ import {
 } from '../../api/client'
 import { findLeverReferenceMaterials, type LeverReferenceMaterial } from '../../utils/keyframes'
 import { PedigreeEditor } from '../uncertainty/PedigreeEditor'
-import { choose, confirmDialog, messageDialog, notify, promptDialog } from '../ui/dialogs'
+import { choose, confirmDialog, isDialogOpen, messageDialog, notify, promptDialog } from '../ui/dialogs'
+import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 import { scoreSummary, usePedigreeTable } from '../../utils/pedigree'
 
 /** Lazily fetch full archetype BOMs and scan them for nodes tagged with the
@@ -126,7 +127,7 @@ export function ParameterManagerPanel() {
       const t = e.target as HTMLElement
       if (!t.closest('[data-scenario-menu]')) setScenarioMenuOpen(null)
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setScenarioMenuOpen(null) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isDialogOpen()) setScenarioMenuOpen(null) }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -142,7 +143,7 @@ export function ParameterManagerPanel() {
       const t = e.target as HTMLElement
       if (!t.closest('[data-category-menu]')) setCategoryMenuOpen(null)
     }
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setCategoryMenuOpen(null) }
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isDialogOpen()) setCategoryMenuOpen(null) }
     document.addEventListener('mousedown', onDown)
     document.addEventListener('keydown', onKey)
     return () => {
@@ -1185,9 +1186,11 @@ function AddParameterModal({
   const [categorySelect, setCategorySelect] = useState<string>('')
   const [newCategory, setNewCategory] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const backdrop = useBackdropDismiss(onCancel)
 
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onCancel() }
+    // A dialog stacked above owns the keyboard (DialogHost also stops the key).
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !isDialogOpen()) onCancel() }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
   }, [onCancel])
@@ -1231,7 +1234,8 @@ function AddParameterModal({
 
   return (
     <div
-      onClick={onCancel}
+      {...backdrop}
+      data-testid="add-parameter-backdrop"
       style={{
         position: 'fixed', inset: 0, zIndex: 100,
         backgroundColor: 'rgba(0, 0, 0, 0.5)',

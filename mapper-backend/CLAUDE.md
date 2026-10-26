@@ -534,6 +534,9 @@ Ground truth as of this patch: all 123 test files pass standalone.
 - [`compute()`'s `computeDatabase` parameter is DEAD, deliberately kept] Don't read `computeDatabase: null` on a Monte Carlo handoff as a bug.
 - [`compute()`'s `computeDatabase` parameter is DEAD, deliberately kept] Don't delete the dead parameter to satisfy a linter.
 - [`compute()`'s `computeDatabase` parameter is DEAD, deliberately kept] Don't test for a NaN scale with `is not None`.
+- [When it becomes reachable, settle this FIRST] If a background selector is ever added to multi-item Archetypes, or a "Run uncertainty" button to the single-product Prospective panel, then a prospective Monte Carlo becomes reachable from the UI and this question must be settled before that ships.
+- [When it becomes reachable, settle this FIRST] If `scale` is still 0 % usable, either the run must refuse, or every prospective MC result must say in the UI that its background spread is absent rather than small.
+- [When it becomes reachable, settle this FIRST] Do not ship the selector and the caveat separately.
 
 ## The premise superstructure fallback is recorded, not gated
 
@@ -543,6 +546,7 @@ Ground truth as of this patch: all 123 test files pass standalone.
 - Don't read the badge as "these databases are worse".
 - Don't set `fallback` on the superstructure branch.
 - Don't default it to anything but `False`. Every entry written before this — all 36 in MAp-test — has no key and must load unchanged.
+- A superstructure that SUCCEEDED is not a fallback; a test pins that the branch never sets it.
 
 ## A weak, honest fingerprint of the databases and LCIA methods
 
@@ -1367,6 +1371,7 @@ WKWebView, so the packaged desktop app would silently do nothing.
 - Don't drop the `type='production'` self-exchange.
 - Don't leave the exchanges unscored, and don't flatten them to one stated pedigree.
 - Don't add a generated database without adding it to `_GENERATED_DATABASES`.
+- `mapper-tailpipe` trips none — which is also why the name must never contain that substring.
 
 ## Authored databases — user-defined activities by biosphere flows (step 2: backend)
 
@@ -1377,6 +1382,15 @@ WKWebView, so the packaged desktop app would silently do nothing.
 - [The 10-exchange floor minimum is a documented choice, not a derived one] Don't reuse #94's `FALLBACK_BASIC_VARIANCE` for authored flows.
 - [The 10-exchange floor minimum is a documented choice, not a derived one] Don't query flow statistics through the input index per flow.
 - [The 10-exchange floor minimum is a documented choice, not a derived one] Don't save the definition before the bw2 write succeeds, and don't read a corrupt definition file as empty.
+- Uncertainty — an authored activity must never report itself as better constrained than ecoinvent's own data for the same flow:
+- Pedigree: all five indicators required on every exchange; no defaults.
+- `floor_status` is always explicit: `floored`, `below_floor_with_reason`, or `unfloored` (with `floor_detail` saying why).
+- Stored exchanges validate their own arithmetic on load (`sigma` must equal the composition of pedigree + basic variance, `gsd2 = exp(2σ)`), so a hand-edited file cannot carry numbers its scores do not produce.
+- `scope ∈ {complete, partial}` is required on every activity with no default; `scope_note` is required for `partial`.
+- Codes are minted once (`uuid4().hex`) and stored, never hashed from the name: a rename would change a name-derived code and dangle every BOM link.
+- A modelling-only import usually has no biosphere yet → `pending`, never a failure; a flow key that resolves to a DIFFERENT flow in the recipient's biosphere3 (name, compartment or unit) is also `pending`, never written.
+- [The 10-exchange floor minimum is a documented choice, not a derived one] Do not adopt the max (or any stricter small-sample estimator) without also measuring how often it refuses values that are actually fine.
+- `resolve_link_db` deliberately never translates a link into a non-base database, so an authored activity with a technosphere input would keep base-ecoinvent electricity in every premise year, silently.
 
 ## A method is its TUPLE. The label is display only.
 
@@ -1471,6 +1485,15 @@ bom's helpers through thin lazy wrappers -- `_sanitize_filename`,
 - Don't colour "not specified" with a zone colour.
 - Don't cache the fleet annotation in a new registry.
 - Don't default `coverage_gaps` to `[]`. The default is `None` = NOT RECORDED (a result computed before the check existed). `[]` means "checked, none" -- a stored old result deserialising to `[]` would claim a check that never happened. ...
+- Computed from what the run USED, never from a solve.
+- A COMPLETE activity never gaps: there a missing flow really is zero.
+- Keyed by the full method tuple, never the label.
+- It is grey (`NOT_SPECIFIED_HATCH`, a literal so it survives export): unknown must not read as "in the uncertainty zone".
+- Carry `None` through adapters and mirrors; never `?? []` it into a store that feeds an export.
+- [Per-indicator coverage declaration] Never prefill from reach; the editor shows the reached indicators UNticked.
+- [Per-indicator coverage declaration] The declaration can narrow what counts as specified, never widen it.
+- [Per-indicator coverage declaration] The editor asks the backend what is reachable (`POST /authored-databases/reached-indicators`, the same `reached_methods` the save floor calls) -- it never derives reach itself -- and blocks saving on a tick that lost its reach after a flow was removed.
+- [Per-indicator coverage declaration] It never reaches Brightway.
 
 ## Exchange-level uncertainty basis (step 5 of authored databases)
 
@@ -1478,6 +1501,9 @@ bom's helpers through thin lazy wrappers -- `_sanitize_filename`,
 
 - `supplied` asks for MORE than the default, never less (requires `basic_variance` AND `basic_variance_reason`).
 - The basis never reaches Brightway. Only the variance it implies does.
+- `supplied` asks for MORE than the default, never less.
+- In the editor it is a closed `<details>` at the foot of the row, in the tertiary colour, phrased as a question about what the amount IS -- never as a remedy.
+- Don't surface the basis from an error path.
 
 ## LCIA Method Library
 

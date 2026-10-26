@@ -100,6 +100,25 @@ the outcome, and still clipped — superseded above.)
 - [Legend export] Don't return colour strings unvalidated from the extractor ("just trust Recharts").
 - [Legend export] Don't drop the `renderLegendSvg` defensive `#888` coercion even though the extractor "should never" leak a transparent value.
 - [Legend export] Don't test legend extraction with custom-HTML fixtures only.
+- Every chart in the frontend must use `<ChartExportButton>` from `components/charts/ChartExportButton.tsx` (paired with `<ChartExportContainer>` as the capture target).
+- When adding a new visualization panel, audit chart coverage as part of the patch — don't ship a new chart without export.
+- Don't put `mapper_` in the prop; it would double.
+- Format settings are display-only — they do not affect data exports or stored values.
+- Don't hard-code a hex/black on these lines (use `ZONE_COLOR`), and don't drop the explicit `strokeWidth`.
+- > Chart exports re-theme INK only (text/axes/grid/background → black-on-white); data series colours are never recoloured, and the on-screen dark theme is untouched.
+- [Legend export] Charts without a legend (or whose legend is part of the chart visual itself, like `<StageBreakdownChart>`) MUST omit both props.
+- [Legend export] The exported chart legend is centered horizontally within the export width (clamped to margins) and stays visible-only (5O) — centering is layout only; it must never change which series are exported.
+- [Legend export] Don't fold visibility logic into the centering, and don't center by trimming/reordering items.
+- [Legend export] Charts with multi-category visual encoding (stacked, colored, faceted) MUST render a legend AND must use shared color mappings when their categories overlap with other charts in the codebase.
+- [Legend export] The colors half (Patch 4N): if two charts visualize overlapping dimensions, the same value MUST get the same color.
+- [Legend export] Patch 5AG — the MULTI-scenario "By cohort" facets must also use the shared resolver.
+- [Legend export] By-cohort impact charts inherit colors from the shared cohort resolver (`useDSMSystemColors`), keyed by cohort identity — never a default/index palette; the same cohort must be the same color across DSM and impact charts, and overrides must flow through.
+- [Legend export] They stack at the same level (cohort keys) and MUST share this one source so the same cohort/fuel keeps its color when the user switches tabs.
+- [Legend export] Prospective's fuel colors — do not reintroduce a second color-assignment path.
+- [Legend export] Every chart that visualises DSM cohorts or AESA indicators must import the shared helper — never re-implement per chart.
+- [Legend export] The fill must win; putting the stroke walk first or accepting "none" as a colour produces the invisible-swatch regression.
+- [Legend export] Always include Recharts-DOM-shape fixtures (`<svg><path stroke="none" fill={color}>`) when changing extraction logic.
+- [Legend export] This still applies — the prior rule's intent stands, but the audit must distinguish "doesn't need a legend" from "needs one but doesn't have one."
 
 ## UI conventions
 
@@ -184,6 +203,63 @@ the outcome, and still clipped — superseded above.)
 - [Multi-item export records per-item stage amounts] Don't derive preset/lifetime from the resolved amounts.
 - [Multi-item export records per-item stage amounts] Don't key `stage_amounts_meta` by `productItemKey` (`arc:{id}`) — the workbook identifies archetype items by `item_id` (= `archetype_id`).
 - [Multi-item export records per-item stage amounts] Don't make the "Stage amounts" sheet replace or reorder existing sheets.
+- [Multi-select chips/selectors anchor Pick/Add on the LEFT] Don't apply the rule here; reordering would break expected dropdown semantics.
+- [Multi-select chips/selectors anchor Pick/Add on the LEFT] When establishing a layout convention, apply it universally in one patch; don't accumulate technical debt by deferring siblings.
+- [Multi-select chips/selectors anchor Pick/Add on the LEFT] Hide the Results card entirely until a calculation has produced data — don't render an empty stub.
+- [Page-level scroll for chart-rendering pages] Don't constrain page or result-body containers to viewport height — sequential reading (scroll the page) is preferred over panel-internal scrolling.
+- [Page-level scroll for chart-rendering pages] Always-mount tab panels via the visibility-toggle convention (the existing rule) applies here too — don't conditional-mount panels to "save scroll height," just let `display: none` do the work.
+- [Single-product mode uses page-level scroll] Spacing comes from the scale token, never hardcoded px.
+- [Single-product mode uses page-level scroll] Any future card added to this pane follows the same rhythm (scale token, never hardcoded px).
+- [Single-product mode uses page-level scroll] Don't reintroduce `height: 100%` / `minHeight: 0` / `flex: 1` on panel roots, tab panes, or `<CollapsibleCard>` instances within the single-product subtree.
+- [Single-product mode uses page-level scroll] Same visibility-toggle rule as everywhere else — panel-local state (Configuration expanded/collapsed, scenario tab idx) must survive a tab switch.
+- [Pages unmount on tab switch; results live in `useSessionState`] Anything computed, and the selection that produced it, goes through `useSessionState(key, initial)` (`stores/sessionStateStore.ts`): a drop-in for `useState` backed by a project-scoped store (reset on project change, session only, never persisted).
+- [Visibility-toggle vs. conditional mount] When fixing a "state disappears on switching" bug, do NOT lift the affected state into a store as a first instinct.
+- [Visibility-toggle vs. conditional mount] Lift state only when you have a separate reason to share it across components — never as a workaround for unmount-on-hide.
+- [Effects in visibility-toggle-mounted panels] The mirror source being seeded to the full default regardless of visit order is the convention; `projectedCustomized` is set only by genuine user changes, never by the default seed.
+- [Effects in visibility-toggle-mounted panels] The fix is almost always "add the slice of X to Y's deps." Then ask "what's the off-switch?" — explicit user customization is usually the right answer; first-fire heuristics fail in incremental-edit workflows.
+- [Hooks must be called unconditionally] The rule: every hook (`useState`, `useEffect`, `useMemo`, `useCallback`, `useRef`, custom hooks, store hooks like `useSomeStore(...)`) must run before ANY conditional `return`.
+- [Render-test discipline for result-presence states] A hook that's only "needed" in one branch must still be called unconditionally — its return value can be ignored when the branch isn't taken.
+- [Δ chart framing in Single-product Comparison] Do not relitigate without a user-driven reason; document the next pivot here so the back-and-forth is visible.
+- [Onboarding tour] If a new feature is genuinely load-bearing for the canonical research path, replace or modify an existing step — don't append.
+- [DSM combined "Inflows & Outflows" flows chart] Don't fetch/recompute inflows (sum `simulationResult.years[].inflow`); don't index-color the series (fixed per-key via `FLOW_COLORS`); don't stack inflow into the outflow column (separate `stackId` → grouped, side-by-side).
+- [Patch 5A+ — layout structure] The inflows/outflows pair always splits its row 50/50 regardless of stock upload state.
+- [DSM Simulation warnings panel collapse] Hide the body, never the `(N)`.
+- [DSM start/end stock figures — top-left KPI card] Do NOT revert to `start = Σ stock` of the selected year — that's the END figure (the 5C/5D bug).
+- [Cohort → Archetype mapping is one source of truth] One mapping in `dsmStore`, consumed downstream by Material Flows and Impact Assessment — never duplicated per consumer.
+- [Header affordances must look actionable] Actionable header affordances must render with the shared `<Button>` primitive (`components/ui/Button.tsx`), never plain text with a click handler.
+- [Multi-item comparison page sections are collapsible] Collapsed headers carry a live summary read at render (never snapshotted at collapse time): Scope → `scope · method · N indicators` (selected family + selected count; the bare `<MethodPicker>` owns its selection internally, so the family's *total* "of M" isn't available to the parent without swapping the picker — out of scope, so we show the selected count); Items → `N selected`; Results → `N successful, M failed`.
+- [Multi-item comparison page sections are collapsible] Multi-item is N-item — align it to single-item's structure by analogy, never by forcing single-select shapes onto it.
+- [Multi-item comparison page sections are collapsible] Don't replace the multi-select selector with a single-archetype dropdown, and don't collapse the per-item editors into one.
+- [Within-type multi-item comparison + per-item vintages] Multi-item comparison is within-type: a comparison is of ONE type — archetypes OR activities, never mixed.
+- [Within-type multi-item comparison + per-item vintages] (The old `mode="mixed"` is retired here — `<MultiItemSelector>` still supports `'mixed'` for other contexts, but multi-item comparison never uses it.)
+- [Within-type multi-item comparison + per-item vintages] We do NOT reimplement prospective resolution and do NOT call `_resolve_prospective_dbs` per item — the registry is the single source of truth on both sides.
+- [Within-type multi-item comparison + per-item vintages] Each activity × vintage is an independent comparison item with its own DB; reuse `_resolve_prospective_dbs` (via the registry the frontend reads), don't reimplement prospective resolution.
+- [Within-type multi-item comparison + per-item vintages] The vintage picker groups by the full scenario (model · ssp-budget), matching single-item — never group by SSP alone (it collapses pkbudg1150 vs base); the grouping and ALL YEARS/CLEAR controls are display-only and must not change the checked-vintage → comparison-item mapping.
+- [Within-type multi-item comparison + per-item vintages] The multi-item database selector belongs to Activities mode only and must not render in Archetypes mode — but never remove it without first confirming the archetype compute path does not read selectedDatabase as its background.
+- [Within-type multi-item comparison + per-item vintages] Lifecycle scope (and stages) apply to archetypes only — the SCOPE selector must not render in Activities mode, and activities compute against Full Lifecycle; never remove the selector without confirming activity compute doesn't depend on a non-Full scope.
+- [Within-type multi-item comparison + per-item vintages] Per-item color must be stable (keyed by `item_id` via the shared resolution — Patch 5S moved the key off the label so display-shortening can't recolor) so a removed/reordered item doesn't recolor its neighbours — the whole point for comparing N vintages over time.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Derived from the results being charted, never from the live selection or compareMode: results can outlive a mode switch (the selection clears per 5R) and not every Activities-mode result is line-able (multi-distinct-activity has no year axis).
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] `effectiveChartType` never renders Line when disabled.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Line availability is derived from the displayed results' year axis (≥2 distinct years across scenarios) — never from the live selection or compareMode; keying it to the selection disables Line on valid line-able results once the selection changes, and keying it to the mode disables it on stale-but-line-able results and wrongly enables it for multi-distinct-activity comparisons.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Line view is per-scenario over years, not per-item — group by (base+IAM+SSP+budget) and plot by year; don't string-parse the label if structured coordinates exist.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Display-shorten labels via common-prefix stripping; never drop provenance from the export.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Shortening is display-only; the Vintages sheet always records the full structured database/SSP/year.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Reuse `useElapsedSeconds` (it does both via effect cleanup); don't hand-roll a `setInterval` without a cleanup path.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] It's rendered via the selector's `renderSelectedItems` seam; it must not own selection/removal logic beyond calling the parent's `onRemove`, and must never alter the compute payload.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Archetype mode must keep the default chip list (don't pass the override there).
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Use the collapsible's visibility-toggle (`display: none`, body stays mounted) so item selection, search text, scroll, and chart/table state survive collapse/expand — same reason tabs don't unmount.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Collapsed-header summaries must read from the live source at render, never a value captured when the section collapsed — or the summary goes stale (cf. the cohort-mapping single-source fix, Patch 5F).
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] `<CollapsibleCard>` is the right primitive for big content blocks; don't swap them.
+- [Multi-item comparison UX — Bar|Line toggle, label cleanup, grouped panel, live timer] Don't make Indicator Selection independently collapsible *inside* the now-collapsible Scope card.
+- [Stage amounts are a shared capability — Single item + Multi-item] A global preset (in `MultiProductLCA`) sets the default for all items (apply-to-all overwrites every entry); new items seed from the current global preset, removed items are pruned — reconciled against the live selection by a `useEffect`, never a parallel copy of `selectedItems`.
+- [Stage amounts are a shared capability — Single item + Multi-item] The elevated + numbered treatment is an opt-in CollapsibleCard variant for per-item cards only — never lighten the shared card globally, or the hierarchy with ITEMS TO COMPARE / CONFIGURATION is lost.
+- [Stage amounts are a shared capability — Single item + Multi-item] The number badge is display order, 1-based, re-sequenced on add/remove — derive it from the rendered/filtered item list's index, not a stored field; it must track selection order/count (reinforcing "N selected" / "Compute (N items)").
+- [Stage amounts are a shared capability — Single item + Multi-item] Both Single item and Multi-item compute MUST call the same server-side `calculate_archetype_lca`, so an equivalent configuration produces identical results.
+- [Stage amounts are a shared capability — Single item + Multi-item] Don't maintain a parallel copy of the selected-items list (it drifts); the `stageAmountsByItem` map is reconciled by an effect with an only-set-if-changed guard.
+- [Multi-item export records per-item stage amounts] Exported research outputs must be reconstructable from the export itself — the numbers PLUS the assumptions, not the numbers alone.
+- [Multi-item export records per-item stage amounts] Both capture preset + lifetime + per-stage amounts via the shared `StageAmountsMeta`; a new field added to one path's provenance must be added to the other (and to the type). 5K+ closed the 5J gap — don't reopen it.
+- [Multi-item export records per-item stage amounts] Thread them from the frontend store via `stage_amounts_meta`; fall back to "—" when absent, never guess.
+- [Within-type multi-item comparison + per-item vintages] (Patch 5Z: grouping uses the structured `(base_db, iam, ssp)` coords, not string-parsing; the shared `<ScenarioYearPicker>` is selection-agnostic — changing it must keep both single-item and multi-item behavior-preserving.)
 
 ## Frontend type-check (canonical gate)
 

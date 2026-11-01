@@ -43,7 +43,8 @@ The rest of this guide covers running MApper from source.
 
 - **Miniconda** or Anaconda ([download](https://docs.conda.io/en/latest/miniconda.html))
 - **Node.js 18+** ([download](https://nodejs.org))
-- **ecoinvent 3.10** licence and `.7z` file (cutoff system model) — needed
+- **ecoinvent** licence and the EcoSpold2 release of the version and system
+  model you want (for example 3.12 cut-off), unzipped — needed
   for real assessments only. To try MApper without one, see
   [Try it without ecoinvent](README.md#try-it-without-ecoinvent).
 - **Git** ([download](https://git-scm.com))
@@ -97,9 +98,23 @@ to recreate it.
 ## First Run
 
 1. Open MApper in your browser (http://localhost:5173)
-2. Go to **Database Explorer** → Import your ecoinvent `.7z` file
-3. Wait for import (~5–10 minutes for 23,000 activities)
-4. Start exploring!
+2. Download the EcoSpold2 release for the version and system model you want
+   (for example 3.12 cut-off) from ecoinvent, and unzip or extract it first.
+   MApper cannot open a `.7z` or `.zip` file. The extracted folder must contain
+   `datasets/` and `MasterData/`.
+3. Go to **Database Explorer** → **Import** → **Import from local files**. Paste
+   the full path to the `datasets` folder (the folder with the `.spold` files
+   directly inside it), click **Verify**, keep or edit the proposed database
+   name, and click **Import**. Alternative: **Log in with ecoinvent account**
+   downloads a release directly and needs your own ecoinvent licence.
+4. Wait for import (~5–10 minutes for 23,000 activities)
+5. Start exploring!
+
+*Known limitation.* The import installs no LCIA methods. EF, ReCiPe and CML are
+not available in a freshly imported project (they are installed only for the
+demo project). The Methods Library offers IMPACT World+ (including an ecoinvent
+3.12 variant), LC-Impact and an Excel upload. Importing ecoinvent 3.12 follows
+the same code path as the other versions but has no automated test yet.
 
 ## Optional: Premise Key (for Prospective LCA)
 
@@ -121,7 +136,7 @@ To generate prospective databases, you need an encryption key:
 ## Troubleshooting
 
 **Port already in use:** Kill existing processes: `lsof -ti :8000 | xargs kill`
-**ecoinvent import fails:** Use the cutoff `.7z` file (not lci or lcia variants)
+**ecoinvent import fails:** Point MApper at the unzipped EcoSpold2 `datasets` folder (the `.spold` files directly inside it), not at a `.7z` or `.zip` file. Click **Verify** first; "No .spold files found" means the path is not that folder.
 **Premise key error:** Verify key is saved in `~/.premise/premise_key` (single line, no spaces)
 
 **Desktop app shows an old version after upgrading from v0.1.x:** This affects

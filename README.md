@@ -182,7 +182,7 @@ To run MApper from source instead, see the Quickstart below.
 
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or Anaconda
 - [Node.js 18+](https://nodejs.org)
-- An ecoinvent 3.10 license and `.7z` file (cutoff system model) — see note below
+- An ecoinvent licence and the EcoSpold2 release of the version and system model you want (unzipped) — see [Example: first analysis](#example-first-analysis)
 
 ### Install & run
 
@@ -260,7 +260,24 @@ what any real system emits.
 *This is the workflow with a real ecoinvent licence. Without one, use
 **Try it without ecoinvent** above.*
 
-1. **Database Explorer** → import your ecoinvent `.7z` file (~10 min).
+1. Import ecoinvent (~10 min). MApper reads an **unzipped** EcoSpold2 release
+   from a folder; it cannot open a `.7z` or `.zip` file.
+   - Download the EcoSpold2 release for the version and system model you want
+     (for example 3.12 cut-off) from ecoinvent, and unzip or extract it first.
+     The extracted folder must contain `datasets/` and `MasterData/`.
+   - **Database Explorer** → **Import** → **Import from local files**. Paste the
+     full path to the `datasets` folder (the folder with the `.spold` files
+     directly inside it), click **Verify**, keep or edit the proposed database
+     name, and click **Import**.
+   - Alternative: **Log in with ecoinvent account** downloads a release
+     directly. It needs your own ecoinvent licence.
+
+   *Known limitation.* The import installs no LCIA methods. EF, ReCiPe and CML
+   are not available in a freshly imported project (they are installed only for
+   the demo project). The Methods Library offers IMPACT World+ (including an
+   ecoinvent 3.12 variant), LC-Impact and an Excel upload. Importing ecoinvent
+   3.12 follows the same code path as the other versions but has no automated
+   test yet.
 2. *(Optional)* **pLCA Developer** → generate prospective databases (requires a premise key).
 3. **LCA Architect** → import or create archetypes (Bills of Materials).
 4. **DSM Modeller** → upload stock + inflows data.

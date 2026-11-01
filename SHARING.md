@@ -55,10 +55,23 @@ ecoinvent:
    - **Import via your ecoinvent account** — enter your ecoinvent username +
      password, pick a version (e.g. 3.10) and system model (cutoff), and import.
      *(You must have your own ecoinvent licence.)*
-   - **or Import a local `.7z`** — point MApper at an ecoinvent `.7z` release
-     file you already downloaded.
+   - **or Import from local files** — MApper reads an **unzipped** EcoSpold2
+     release; it cannot open a `.7z` or `.zip` file. Download the EcoSpold2
+     release for the version and system model you want (for example 3.12
+     cut-off) from ecoinvent, then unzip or extract it. The folder must contain
+     `datasets/` and `MasterData/`. In **Import**, choose **Import from local
+     files**, paste the full path to the `datasets` folder (the folder with the
+     `.spold` files directly inside it), click **Verify**, keep or edit the
+     proposed database name, and click **Import**.
 3. The import runs in the background (can take ~10 minutes). When it finishes,
    the database appears in the Database Explorer.
+
+   *Known limitation.* The import installs no LCIA methods. EF, ReCiPe and CML
+   are not available in a freshly imported project (they are installed only for
+   the demo project). The Methods Library offers IMPACT World+ (including an
+   ecoinvent 3.12 variant), LC-Impact and an Excel upload. Importing ecoinvent
+   3.12 follows the same code path as the other versions but has no automated
+   test yet.
 
 Until a database is imported, **UI-only features still work** (AESA
 configuration, sharing/boundary setup, parameters). LCA/Impact tabs will tell

@@ -113,7 +113,9 @@ echo "  No ecoinvent licence? Run the demo — synthetic data, nothing to downlo
 echo "      cd mapper-backend && python scripts/load_demo_project.py --verify"
 echo
 echo "  Real assessments need your own ecoinvent database:"
-echo "      Database Explorer -> Import -> select your ecoinvent .7z"
+echo "      Unzip the ecoinvent EcoSpold2 release first, then in the app:"
+echo "      Database Explorer -> Import -> Import from local files, and paste"
+echo "      the path to the datasets folder (or log in with an ecoinvent account)"
 echo
 echo "  Prospective LCA additionally needs a premise key:"
 echo "      mkdir -p ~/.premise && echo 'YOUR_KEY' > ~/.premise/premise_key"

@@ -18,6 +18,7 @@ from collections.abc import Iterable
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 
+from mapper.api.heavy import run_heavy
 from mapper.api.project_guard import verify_project_state
 from openpyxl import Workbook, load_workbook
 from pydantic import BaseModel
@@ -843,6 +844,10 @@ async def apply_milestones(arc_id: str, body: ApplyMilestonesRequest) -> BOMNode
 
 @router.post("/bom/archetypes/{arc_id}/lca", response_model=ArchetypeLCAResult)
 async def standalone_lca(arc_id: str, body: ArchetypeLCARequest) -> ArchetypeLCAResult:
+    return await run_heavy(_standalone_lca_sync, arc_id=arc_id, body=body)
+
+
+def _standalone_lca_sync(arc_id: str, body: ArchetypeLCARequest) -> ArchetypeLCAResult:
     # Same preparation as every other demand builder. This route has no
     # frontend caller, which is exactly why it went unnoticed: nothing
     # hand-tested it, so it computed every expression row at its 1.0
@@ -1247,6 +1252,10 @@ async def upload_cohort_mappings(
 
 @router.post("/dsm/systems/{system_id}/dsm-lca", response_model=DSMLCABatchResult)
 async def run_dsm_lca(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
+    return await run_heavy(_run_dsm_lca_sync, system_id=system_id, body=body)
+
+
+def _run_dsm_lca_sync(system_id: str, body: DSMLCARequest) -> DSMLCABatchResult:
     from mapper.core.compute_metrics import measure_compute
     meter = measure_compute()
     _get_system(system_id)
@@ -2176,6 +2185,10 @@ async def export_dsm_lca(system_id: str, year: int | None = None) -> Response:
 
 @router.post("/dsm/systems/{system_id}/material-flows", response_model=MaterialFlowResult)
 async def material_flows(system_id: str, body: MaterialFlowRequest) -> MaterialFlowResult:
+    return await run_heavy(_material_flows_sync, system_id=system_id, body=body)
+
+
+def _material_flows_sync(system_id: str, body: MaterialFlowRequest) -> MaterialFlowResult:
     from mapper.core.compute_metrics import measure_compute
     meter = measure_compute()
     _get_system(system_id)

@@ -21,6 +21,7 @@ logger = logging.getLogger(__name__)
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.responses import Response
 
+from mapper.api.heavy import run_heavy
 from mapper.core.bw2_wrapper import (
     MultiDBPersistentRunner,
     PersistentLCARunner,
@@ -243,6 +244,10 @@ async def get_supply_chain_data(task_id: str) -> SankeyData:
 @router.post("/lca/calculate-activities", response_model=ActivityLCAResult)
 async def calculate_activity_lca(body: ActivityLCARequest) -> ActivityLCAResult:
     """LCA for one or more technosphere activities with per-activity contribution."""
+    return await run_heavy(_calculate_activity_lca_sync, body=body)
+
+
+def _calculate_activity_lca_sync(body: ActivityLCARequest) -> ActivityLCAResult:
     t0 = time.perf_counter()
 
     if not body.activities:
@@ -596,6 +601,10 @@ def _build_archetype_source_demand(
 
 @router.post("/lca/calculate-archetype", response_model=ArchetypeLCACalculateResult)
 async def calculate_archetype_lca(body: ArchetypeLCACalculateRequest) -> ArchetypeLCACalculateResult:
+    return await run_heavy(_calculate_archetype_lca_sync, body=body)
+
+
+def _calculate_archetype_lca_sync(body: ArchetypeLCACalculateRequest) -> ArchetypeLCACalculateResult:
     from mapper.api.parameters import validate_parameter_scenarios
     from mapper.core.bom_engine import material_key
 
@@ -845,6 +854,10 @@ async def calculate_archetype_trajectory(body: ArchetypeTrajectoryRequest) -> Ar
     ``/lca/calculate-archetype`` with that year's ``compute_database``. Reuses
     the 6A/6B primitives (``resolve_bracket`` / ``blend_method_scores``) and one
     ``MultiDBPersistentRunner`` per trajectory so each anchor DB factorizes once."""
+    return await run_heavy(_calculate_archetype_trajectory_sync, body=body)
+
+
+def _calculate_archetype_trajectory_sync(body: ArchetypeTrajectoryRequest) -> ArchetypeTrajectoryResult:
     from mapper.api.parameters import validate_parameter_scenarios
 
     validate_parameter_scenarios(body.parameter_scenario)
@@ -1517,6 +1530,12 @@ def _compute_contribution_analysis(
 
 @router.post("/lca/contribution-analysis", response_model=ContributionAnalysisResult)
 async def calculate_contribution_analysis(
+    body: ContributionAnalysisRequest,
+) -> ContributionAnalysisResult:
+    return await run_heavy(_calculate_contribution_analysis_sync, body=body)
+
+
+def _calculate_contribution_analysis_sync(
     body: ContributionAnalysisRequest,
 ) -> ContributionAnalysisResult:
     # At the boundary, before any work: a typo'd case name must be named, not

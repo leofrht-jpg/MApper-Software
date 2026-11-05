@@ -115,7 +115,7 @@ def test_count_and_coverage_use_the_SAME_spliced_row_set(registry):
     """
     import inspect
 
-    src = inspect.getsource(mc.get_pedigree_coverage)
+    src = inspect.getsource(mc._get_pedigree_coverage_sync)
     assert "_project_scoring_scope()" in src, (
         "coverage must reuse the spliced scope walk, not re-derive names"
     )

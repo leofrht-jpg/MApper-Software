@@ -1320,6 +1320,24 @@ export async function startEcoinventImport(
   })
 }
 
+/** What an ecoinvent import did with the release's biosphere exchanges. */
+export interface EcoinventImportSummary {
+  coverage_checked: boolean
+  flows_added: number
+  exchanges_found: number
+  dropped_by_design: number
+  exchanges_linked: number
+  exchanges_dropped: number
+  exchanges_stored: number | null
+  /** Non-empty when any exchange was dropped that is not on bw2io's drop-by-design list. */
+  warning: string
+  message: string
+}
+
+export async function getEcoinventImportSummary(taskId: string): Promise<EcoinventImportSummary> {
+  return request<EcoinventImportSummary>(`/ecoinvent/import-summary/${taskId}`)
+}
+
 export interface BrowseFolderResponse {
   valid: boolean
   spold_count: number

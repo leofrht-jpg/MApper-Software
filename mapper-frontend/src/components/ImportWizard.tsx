@@ -13,9 +13,11 @@ import { Button } from './ui/Button'
 import {
   browseEcoinventFolder,
   connectToTask,
+  getEcoinventImportSummary,
   startEcoinventImport,
   startEcoinventLocalImport,
   validateEcoinventCredentials,
+  type EcoinventImportSummary,
   type TaskProgressMessage,
 } from '../api/client'
 import { useProjectStore } from '../stores/projectStore'
@@ -104,6 +106,8 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
   const [taskProgress, setTaskProgress] = useState<TaskProgressMessage>({ step: '', progress: 0, message: '' })
   const [_importDone, setImportDone] = useState(false)
   const [importError, setImportError] = useState('')
+  // Biosphere counts of the finished import; null while unknown or if the fetch failed.
+  const [summary, setSummary] = useState<EcoinventImportSummary | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
   const { fetchDatabases } = useProjectStore()
 
@@ -167,6 +171,7 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
   const handleImport = async () => {
     setStep(3)
     setImportError('')
+    setSummary(null)
     setTaskProgress({ step: '', progress: 0, message: '' })
     try {
       const started = method === 'local'
@@ -179,6 +184,9 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
           if (msg.step === 'done') {
             setImportDone(true)
             setStep(4)
+            void (async () => {
+              try { setSummary(await getEcoinventImportSummary(started.task_id)) } catch { setSummary(null) }
+            })()
             fetchDatabases()
           } else if (msg.step === 'error') {
             setImportError(msg.message)
@@ -534,6 +542,23 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
               <p style={{ fontSize: 'var(--text-sm)', color: 'var(--text-secondary)', marginBottom: 'var(--space-6)' }}>
                 The database is now available in the Database Explorer.
               </p>
+              {summary?.warning && (
+                <p
+                  role="alert"
+                  data-testid="import-biosphere-warning"
+                  style={{ textAlign: 'left', fontSize: 'var(--text-sm)', color: 'var(--warning)', fontWeight: 600, marginBottom: 'var(--space-4)' }}
+                >
+                  {summary.warning}
+                </p>
+              )}
+              {summary && (
+                <p
+                  data-testid="import-biosphere-counts"
+                  style={{ textAlign: 'left', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginBottom: 'var(--space-6)' }}
+                >
+                  {summary.message}
+                </p>
+              )}
               <Button variant="primary" onClick={onClose}>Close</Button>
             </div>
           )}

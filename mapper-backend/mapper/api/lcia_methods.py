@@ -71,6 +71,8 @@ class LCIAMethodInfo(BaseModel):
     offline: bool = False
     # False for an installed entry whose methods this app did not register (no Uninstall).
     removable: bool | None = None
+    # One plain sentence on where the characterisation factors come from.
+    factor_source: str | None = None
 
 
 class LibraryResponse(BaseModel):

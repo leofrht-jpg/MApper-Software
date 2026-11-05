@@ -16,6 +16,8 @@ at 0.3.1 and is kept from here on.
 
 - **One-click EF v3.1 in the LCIA Method Library.** A project imported from ecoinvent has no LCIA methods; the library now installs the 25 EF v3.1 methods offline from the factors shipped with the installed Brightway software, linked to the project's existing biosphere3 (never modified). It reports how many factors were found, linked and skipped, and lists the 10 most frequent skipped flows.
 
+- **One-click ReCiPe 2016 and CML v4.8 in the LCIA Method Library.** ReCiPe 2016 midpoint and endpoint (hierarchist, individualist and egalitarian together) and CML v4.8 2016, with and without long-term emissions, install offline from the factors shipped with the installed Brightway software, on the same installer as EF v3.1 (linked by flow code, then name and compartment; `biosphere3` only read; skipped factors counted, listed, and the indicators that lost a quarter or more named). Every Library entry now says in one sentence where its characterisation factors come from.
+
 ### Fixed
 
 - **An ecoinvent import no longer silently loses biosphere exchanges.** Importing a release into a project whose `biosphere3` came from an older release dropped every exchange on a flow the old `biosphere3` lacked, with no warning (3.11 into a 3.10-era `biosphere3`: 41,915 of 541,321 exchanges, 7.7%). Both import routes now add the release's missing flows to `biosphere3` (never changing an existing one, and stopping with a clear message if one disagrees), and report how many biosphere exchanges were found, linked and dropped, with a warning when any were dropped.

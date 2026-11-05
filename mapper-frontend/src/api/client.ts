@@ -4700,11 +4700,15 @@ export interface LCIAMethodInfo {
   offline?: boolean
   /** False for an installed entry whose methods this app did not register: no Uninstall. */
   removable?: boolean | null
+  /** One plain sentence on where the characterisation factors come from. */
+  factor_source?: string | null
 }
 
 /** What installing a family that links factors to biosphere3 did with its factors. */
 export interface LCIAInstallReport {
   family: string
+  /** The bw2io families the entry installed (ReCiPe: three perspectives). */
+  families?: string[]
   methods_registered: number
   methods_already_present: number
   cfs_found: number
@@ -4714,6 +4718,8 @@ export interface LCIAInstallReport {
   cfs_skipped: number
   skipped_flows: number
   top_skipped: { name: string; categories: string[]; cfs: number }[]
+  /** Indicators that lost a quarter or more of their factors, worst first. */
+  worst_methods?: { name: string[]; cfs_found: number; cfs_skipped: number; share: number }[]
 }
 
 export interface LCIALibraryResponse {

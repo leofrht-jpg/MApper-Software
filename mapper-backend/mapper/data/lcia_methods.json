@@ -1,6 +1,17 @@
 {
   "methods": [
     {
+      "id": "ef_v3_1",
+      "name": "EF v3.1",
+      "description": "Environmental Footprint 3.1 (EU JRC): the 25 EF indicators MApper's indicator mapping, AESA and Impact Assessment use",
+      "long_description": "Installs the 25 EF v3.1 methods (11,414 characterisation factors on 3,226 flows) from the factors that ship with the installed Brightway software (the ecoinvent 3.9 LCIA implementation), so it works offline. Only EF v3.1 is installed, not the other ~760 methods. The factors are linked to this project's existing biosphere3, which is only read: no flow is added, changed or removed. Factors on flows the biosphere3 does not contain are skipped, counted and listed after the install; against a biosphere3 from a newer ecoinvent release a few percent are typically skipped. A project can hold several ecoinvent versions only if its biosphere3 contains the flows of all of them.",
+      "source_url": "https://eplca.jrc.ec.europa.eu/LCDN/developerEF.xhtml",
+      "citation": "Andreasi Bassi, S., et al. (2023). Updated characterisation and normalisation factors for the Environmental Footprint 3.1 method. EUR 31414 EN, Publications Office of the European Union.",
+      "installer": "bundled_ef",
+      "bundled_family": "EF v3.1",
+      "notes": "Offline. Needs an ecoinvent database (and so its biosphere3) already imported into the project."
+    },
+    {
       "id": "impact_world_plus_2_2_1",
       "name": "IMPACT World+ 2.2.1",
       "description": "Multi-regional LCIA, Bulle et al. (2019)",

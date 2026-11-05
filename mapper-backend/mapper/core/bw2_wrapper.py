@@ -8,6 +8,7 @@
 
 import ast
 import datetime
+import hashlib
 import io
 import logging
 import shutil
@@ -20,6 +21,8 @@ from typing import Any
 import bw2analyzer
 import bw2calc
 import bw2data
+import numpy as np
+from scipy.sparse.linalg import spsolve, splu
 
 from mapper.core import project_storage
 
@@ -796,6 +799,29 @@ def _patch_umfpack_import() -> bool:
 _UMFPACK_OK = _patch_umfpack_import()
 
 
+def _matrix_fingerprint(A: Any) -> tuple:
+    """Content identity of a sparse matrix: format, shape, nnz and a digest of
+    its data, indices and indptr arrays.
+
+    A factorisation is valid for exactly one matrix. Object identity is not
+    enough to say it is still that matrix: ``LCA.rebuild_technosphere_matrix``
+    (what every bw2calc Monte Carlo class calls per iteration) replaces the
+    object, and an in-place edit of ``A.data`` keeps the object and changes the
+    values. Hashing the arrays catches both, and costs about as much as one
+    pass over them (~10 ms for a 1 M-entry technosphere), against seconds for
+    the factorisation it guards.
+
+    A matrix that is not CSR/CSC gets a fingerprint equal to nothing else, so
+    the caller re-factorises rather than trusting it.
+    """
+    if getattr(A, "format", None) not in ("csr", "csc"):
+        return ("unhashable", object())
+    h = hashlib.blake2b(digest_size=16)
+    for arr in (A.data, A.indices, A.indptr):
+        h.update(np.ascontiguousarray(arr).data)
+    return (A.format, A.shape, int(A.nnz), h.digest())
+
+
 class PersistentLCARunner:
     """Reusable multi-method LCA runner that caches the LU factorization.
 
@@ -825,15 +851,31 @@ class PersistentLCARunner:
     factorizations, everything else back-substitution), down from ≈ 54 minutes
     before the extension was bundled.
 
-    ``spsolve``-per-call remains as a fallback for environments without the
-    extension, where the reuse is LOST and each call re-solves the full system.
-    A *pure* SuperLU ``splu`` reuse-fallback was profiled and rejected:
-    factorizing a premise technosphere with SuperLU measures ≈ 120 s/db AND
-    shifts scores vs UMFPACK by ≈ 3e-7 (SuperLU vs UMFPACK LU), so it would
-    trade a large slowdown for a correctness change. Bundling the real UMFPACK
-    extension is the fix — the frozen build matches the dev UMFPACK answer to
-    ≈ 7e-10 (an openBLAS-build difference between the two environments, NOT a
-    solver change).
+    Without UMFPACK (the Windows build) the runner falls back to ONE SuperLU
+    factorization (``scipy.sparse.linalg.splu``) reused for every solve, where
+    it used to fall back to bw2calc's ``spsolve`` per ``redo_lci`` -- a full
+    factorization each time, about 71 per single-product run. The factor is
+    used only while the live technosphere matrix still fingerprints as the one
+    that was factorized (``_matrix_fingerprint``, checked before every solve):
+    bw2calc's Monte Carlo classes call ``rebuild_technosphere_matrix`` per
+    iteration and its own docs warn that a stale factorization silently gives
+    wrong answers.
+
+    What the fallback does NOT fix: the factorization itself is as slow as it
+    ever was (≈ 120 s per premise-sized database, measured earlier; 116 s on a
+    synthetic 23 k technosphere), it is now paid once instead of per solve.
+    Each back-substitution is slower than UMFPACK's (≈ 190 ms against ≈ 2 ms on
+    that matrix) and the factor holds memory (≈ 0.7 GiB there).
+
+    Scores: ``splu`` and ``spsolve`` are the same SuperLU factorization, and
+    measure identical to rounding -- max relative difference 0 on the
+    synthetic 23 k benchmark, 2.7e-16 in ``test_runner_splu_reuse.py``. Against
+    UMFPACK: 4.3e-16 in those tests, 2.4e-15 on the benchmark. An earlier
+    version of this note quoted ≈ 3e-7 for SuperLU against UMFPACK on a premise
+    technosphere; that was not reproduced on synthetic matrices and has not
+    been re-measured on real ecoinvent. The frozen UMFPACK build matches the
+    dev UMFPACK answer to ≈ 7e-10 (an openBLAS-build difference between the
+    two environments, NOT a solver change).
 
     Thread safety: **not** thread-safe.  Create one instance per task.
     """
@@ -847,6 +889,13 @@ class PersistentLCARunner:
         self.factorizations: int = 0
         self.redo_calls: int = 0
         self.method_switches: int = 0
+        # SuperLU fallback (no UMFPACK): ONE factorisation reused for every
+        # solve, checked against the live matrix before each use.
+        self._splu: Any | None = None
+        self._splu_fp: tuple | None = None
+        self._splu_disabled: bool = False
+        #: Factorisations redone because the matrix changed under the runner.
+        self.stale_refactorizations: int = 0
 
     # ── internal helpers ───────────────────────────────────────────────────
 
@@ -890,6 +939,69 @@ class PersistentLCARunner:
         except Exception:
             return False
 
+    # ── SuperLU fallback (no UMFPACK, i.e. the Windows build) ──────────────
+
+    def _factorize_splu(self) -> bool:
+        """Factorise the CURRENT technosphere matrix once with SuperLU.
+
+        Returns ``False`` (and switches the runner back to bw2calc's plain
+        ``spsolve`` for good) if the factorisation fails -- a singular matrix
+        or an out-of-memory raise here, where ``spsolve`` returns NaN or fails
+        later, so the runner keeps the old behaviour rather than inventing a
+        new failure mode.
+        """
+        try:
+            A = self._lca.technosphere_matrix  # type: ignore[union-attr]
+            fp = _matrix_fingerprint(A)
+            lu = splu(A.tocsc())
+        except Exception:
+            self._splu = None
+            self._splu_fp = None
+            self._splu_disabled = True
+            return False
+        self._splu = lu
+        self._splu_fp = fp
+        return True
+
+    def _solve_splu(self, b: Any) -> Any:
+        """The ``lca.solver`` used when UMFPACK is unavailable.
+
+        bw2calc calls this for every ``redo_lci`` and trusts it blindly (its own
+        ``decompose_technosphere`` warns that a stale factorisation silently
+        gives wrong answers). So the guard lives here: the factorisation is
+        used only while the live technosphere matrix still fingerprints the
+        same as the one that was factorised; otherwise it is rebuilt first.
+        """
+        A = self._lca.technosphere_matrix  # type: ignore[union-attr]
+        if self._splu_disabled:
+            return spsolve(A, b)
+        if self._splu is None or _matrix_fingerprint(A) != self._splu_fp:
+            if self._splu is not None:
+                self.stale_refactorizations += 1
+            if not self._factorize_splu():
+                return spsolve(A, b)
+            self.factorizations += 1
+        return self._splu.solve(b)
+
+    def _build_fallback(self, fu: dict, first_method: tuple) -> None:
+        """``bw2calc.LCA(...).lci()`` minus its ``spsolve``.
+
+        ``lci()`` would solve once with a full SuperLU factorisation and the
+        fallback would then factorise AGAIN to cache it. Doing the three steps
+        of ``lci()`` here (load matrices, build demand, solve) with the solver
+        installed in between makes the first solve use the one factorisation.
+        """
+        self._splu = None
+        self._splu_fp = None
+        self._lca = bw2calc.LCA(fu, first_method)
+        self._lca.load_lci_data()
+        self._lca.build_demand_array()
+        if not self._splu_disabled and self._factorize_splu():
+            self.factorizations += 1
+            self._lca.solver = self._solve_splu  # type: ignore[assignment]
+        self._lca.lci_calculation()
+        self._lca.lcia()
+
     # ── public interface (same signature as run_lca_multi_method) ──────────
 
     def __call__(
@@ -914,12 +1026,16 @@ class PersistentLCARunner:
         first_method = unique[0]
 
         if self._lca is None:
-            # ── First call: load matrices + UMFPACK factorization ─────
-            self._lca = bw2calc.LCA(fu, first_method)
-            self._lca.lci()                     # loads matrices, spsolve
-            self._factorize_umfpack()            # cache UMFPACK factors
-            self._lca.lcia()
-            self.factorizations += 1
+            if _UMFPACK_OK:
+                # ── First call: load matrices + UMFPACK factorization ─────
+                self._lca = bw2calc.LCA(fu, first_method)
+                self._lca.lci()                     # loads matrices, spsolve
+                self._factorize_umfpack()            # cache UMFPACK factors
+                self._lca.lcia()
+                self.factorizations += 1
+            else:
+                # ── First call, no UMFPACK: one SuperLU factorization ─────
+                self._build_fallback(fu, first_method)
         else:
             # ── Subsequent call: reuse factorized matrix ──────────────
             # redo_lci → build_demand_array + lci_calculation →
@@ -928,11 +1044,14 @@ class PersistentLCARunner:
                 self._lca.redo_lci(fu)
             except Exception:
                 # Activity not in product_dict → rebuild from scratch.
-                self._lca = bw2calc.LCA(fu, first_method)
-                self._lca.lci()
-                self._factorize_umfpack()
-                self._lca.lcia()
-                self.factorizations += 1
+                if _UMFPACK_OK:
+                    self._lca = bw2calc.LCA(fu, first_method)
+                    self._lca.lci()
+                    self._factorize_umfpack()
+                    self._lca.lcia()
+                    self.factorizations += 1
+                else:
+                    self._build_fallback(fu, first_method)
                 out: dict[tuple, tuple[float, str]] = {
                     first_method: (float(self._lca.score), _method_unit(first_method))
                 }

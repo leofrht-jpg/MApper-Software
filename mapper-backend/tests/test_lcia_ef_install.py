@@ -124,7 +124,7 @@ def small_family(monkeypatch):
              _cf("Chloroform", ["air", "lower stratosphere + upper troposphere"], 1.0, "u-chcl3-b"),
          ]},
     ]
-    monkeypatch.setattr(ef, "load_family", lambda family: methods)
+    monkeypatch.setattr(ef, "load_families", lambda families: methods)
     monkeypatch.setattr(ef, "_CACHE", {})
     return methods
 
@@ -177,12 +177,13 @@ def test_skipped_flows_are_listed_most_frequent_first_and_warned(small_project):
 
 def test_the_warning_lists_at_most_ten_flows(project, monkeypatch):
     exchanges = [_cf(f"Flow {i}", ["air"], 1.0, f"u{i}") for i in range(15)] + [_cf("Known", ["air"], 1.0, "k")]
-    monkeypatch.setattr(ef, "load_family", lambda f: [{"name": [FAMILY, "x", "y"], "unit": "u", "exchanges": exchanges}])
+    monkeypatch.setattr(ef, "load_families", lambda f: [{"name": [FAMILY, "x", "y"], "unit": "u", "exchanges": exchanges}])
     monkeypatch.setattr(ef, "_CACHE", {})
     _biosphere({"k": ("Known", ("air",))})
     _, warnings, r = ef.install_family(FAMILY)
     assert r["cfs_skipped"] == 15 and r["skipped_flows"] == 15 and len(r["top_skipped"]) == 10
-    assert len(warnings) == 1 + 10
+    # summary + the 10 flows, then the one method that lost nearly all its factors
+    assert len(warnings) == 1 + 10 + 1 + 1 and "Indicators that lost at least" in warnings[11]
 
 
 def test_biosphere3_is_unchanged(small_project):

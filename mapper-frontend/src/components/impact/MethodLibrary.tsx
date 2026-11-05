@@ -393,6 +393,11 @@ function BundledRow({ method }: { method: LCIAMethodInfo }) {
             {method.category_count} indicator{method.category_count === 1 ? '' : 's'}
           </div>
         )}
+        {method.factor_source && (
+          <div data-testid={`factor-source-${method.id}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.5 }}>
+            {method.factor_source}
+          </div>
+        )}
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success, #10b981)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
         <CheckCircle2 size={14} /> Installed
@@ -450,6 +455,11 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
           {method.long_description && (
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4, lineHeight: 1.5 }}>
               {method.long_description}
+            </div>
+          )}
+          {method.factor_source && (
+            <div data-testid={`factor-source-${method.id}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.5 }}>
+              {method.factor_source}
             </div>
           )}
           {method.notes && (

@@ -10,9 +10,10 @@
 
 Four install paths, one install contract:
 
-  - ``bundled_ef``   EF v3.1 — one family taken from the characterisation factors
-                     that ship inside the installed bw2io, linked to the project's
-                     existing biosphere3 (see ``lcia_ef_install``). Works offline.
+  - ``bundled_ef``   EF v3.1, ReCiPe 2016, CML v4.8 — the families an entry names,
+                     taken from the characterisation factors that ship inside the
+                     installed bw2io, linked to the project's existing biosphere3
+                     (see ``lcia_ef_install``). Works offline.
   - ``bw2package``   IMPACT World+ — download a versioned ``.bw2package`` from
                      Zenodo and import it via ``bw2io.BW2Package.import_file``.
                      Per-ecoinvent-version variants are published; the active
@@ -152,6 +153,12 @@ def _method_tuples_for(method_id: str) -> list[tuple]:
     return [t for t in tuples if t in bw2data.methods]
 
 
+def _entry_families(entry: dict) -> list[str]:
+    """The bw2io families a ``bundled_ef`` entry installs: ``bundled_families``
+    (a list) or the single ``bundled_family``."""
+    return list(entry.get("bundled_families") or [entry["bundled_family"]])
+
+
 def _bundled_ef_entry(method_id: str) -> dict | None:
     entry = _registry_entry(method_id)
     return entry if entry and entry.get("installer") == "bundled_ef" else None
@@ -165,14 +172,14 @@ def _live_tuples(entry: dict) -> list[tuple]:
     must read as installed, not offer a reinstall.
     """
     if entry.get("installer") == "bundled_ef":
-        return lcia_ef_install.installed_tuples(entry["bundled_family"])
+        return lcia_ef_install.installed_tuples(_entry_families(entry))
     return _method_tuples_for(entry["id"])
 
 
 def is_installed(method_id: str) -> bool:
     entry = _bundled_ef_entry(method_id)
     if entry is not None:
-        return lcia_ef_install.is_complete(entry["bundled_family"])
+        return lcia_ef_install.is_complete(_entry_families(entry))
     return len(_method_tuples_for(method_id)) > 0
 
 
@@ -494,10 +501,10 @@ def install_excel(
 
 
 def install_bundled_ef(entry: dict, on_progress: ProgressCallback | None = None) -> InstallResult:
-    """Install the family named by ``entry["bundled_family"]`` from bw2io's own data."""
-    family = entry["bundled_family"]
+    """Install the families of a ``bundled_ef`` entry from bw2io's own data."""
+    families = _entry_families(entry)
     try:
-        tuples, warnings, report = lcia_ef_install.install_family(family, on_progress=on_progress)
+        tuples, warnings, report = lcia_ef_install.install_family(families, on_progress=on_progress)
     except lcia_ef_install.EFInstallError as exc:
         raise InstallError(str(exc)) from exc
     if not tuples:
@@ -509,7 +516,7 @@ def install_bundled_ef(entry: dict, on_progress: ProgressCallback | None = None)
         "report": report,
     }
     _write_manifest(entry["id"], {
-        "method_id": entry["id"], "installer": "bundled_ef", "family": family, "projects": projects,
+        "method_id": entry["id"], "installer": "bundled_ef", "families": families, "projects": projects,
     })
     return InstallResult(method_id=entry["id"], method_tuples=tuples, warnings=warnings, report=report)
 
@@ -543,6 +550,21 @@ def uninstall(method_id: str) -> int:
 
 
 # ── Listing ──────────────────────────────────────────────────────────────────
+
+
+#: The one-sentence factor source every ``bundled_ef`` entry shows. True for each
+#: of them: the data is bw2io's ``lcia_39_ecoinvent.zip``.
+BUNDLED_FACTOR_SOURCE = (
+    "The characterisation factors come from the ecoinvent 3.9 LCIA implementation bundled with the installed "
+    "software; flows that ecoinvent added after 3.9 have no factors, factors on flows removed or renamed since "
+    "are skipped, and the install report shows how many factors were linked and skipped for this project."
+)
+#: Rows for methods that were already in the project (not installed by this app).
+PRESENT_FACTOR_SOURCE = (
+    "Already in this project and not installed by this app; the demo project gets them from the ecoinvent 3.9 "
+    "LCIA implementation bundled with the installed software."
+)
+CUSTOM_FACTOR_SOURCE = "The characterisation factors come from the Excel file you uploaded; flows it names that biosphere3 lacks are reported as unmatched."
 
 
 BUNDLED_FAMILY_HINTS: dict[str, dict[str, Any]] = {
@@ -587,6 +609,7 @@ def _bundled_families() -> list[dict]:
             "installed": True,
             "category_count": len(tuples),
             "description": BUNDLED_FAMILY_HINTS.get(fam, {}).get("description", ""),
+            "factor_source": PRESENT_FACTOR_SOURCE,
         }
         for fam, tuples in sorted(families.items())
     ]
@@ -615,6 +638,7 @@ def _custom_entries() -> list[dict]:
             "installed": len(live_tuples) > 0,
             "category_count": len(live_tuples),
             "unit": m.get("unit", ""),
+            "factor_source": CUSTOM_FACTOR_SOURCE,
         })
     return out
 
@@ -651,6 +675,8 @@ def list_library() -> list[dict]:
             "available_variants": sorted((entry.get("variants") or {}).keys())
                 if entry.get("installer") == "bw2package" else None,
             "offline": entry.get("installer") == "bundled_ef",
+            "factor_source": BUNDLED_FACTOR_SOURCE if entry.get("installer") == "bundled_ef"
+                else entry.get("factor_source"),
         })
     return _bundled_families() + downloadable + _custom_entries()
 

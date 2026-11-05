@@ -141,7 +141,12 @@ def _routes_taking_a_case_field():
     for f in sorted(BACKEND.rglob("*.py")):
         src = f.read_text(encoding="utf-8")
         lines = src.splitlines()
-        for n in ast.walk(ast.parse(src)):
+        tree = ast.parse(src)
+        by_name = {
+            n.name: n for n in ast.walk(tree)
+            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+        }
+        for n in ast.walk(tree):
             if not isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 continue
             if not any("router." in ast.unparse(d) for d in n.decorator_list):
@@ -153,6 +158,14 @@ def _routes_taking_a_case_field():
                 ln for ln in lines[n.lineno - 1: (n.end_lineno or n.lineno)]
                 if not ln.lstrip().startswith(("import ", "from "))
             )
+            # A heavy route (mapper.api.heavy) is a thin hand-off; the check
+            # lives at the top of the body it hands off to.
+            sync = by_name.get(f"_{n.name}_sync")
+            if sync is not None:
+                body += "\n" + "\n".join(
+                    ln for ln in lines[sync.lineno - 1: (sync.end_lineno or sync.lineno)]
+                    if not ln.lstrip().startswith(("import ", "from "))
+                )
             # ``.as_posix()`` -- a Windows ``\`` key breaks every exemption.
             key = f"{f.relative_to(BACKEND).as_posix()}:{n.name}"
             yield key, body

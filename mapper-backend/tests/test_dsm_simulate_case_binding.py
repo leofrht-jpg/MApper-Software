@@ -145,7 +145,8 @@ def test_impact_calculate_passes_its_case_to_the_dsm_sim(wired, monkeypatch):
 
 def test_material_flows_passes_its_case_to_the_dsm_sim(wired):
     import inspect
-    src = inspect.getsource(bom_api.material_flows)
+    # The route hands off to its sync body (mapper.api.heavy); the body is what calls the sim.
+    src = inspect.getsource(bom_api._material_flows_sync)
     tail = src.split("simulate_for_scenario(")[1][:200]
     assert "body.parameter_scenario" in tail, (
         "material_flows calls simulate_for_scenario without forwarding "

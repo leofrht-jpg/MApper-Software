@@ -147,40 +147,103 @@ def configure_logging() -> Path:
     return LOG_FILE
 
 
+#: The most ``read_log_lines`` reads from disk for one request, across the
+#: active file and its rotated siblings. A log line is ~200 bytes, so 2 MB is
+#: about 10,000 lines against the 5,000 the route allows.
+_TAIL_MAX_BYTES = 2_000_000
+
+
+def _read_tail(path: Path, max_bytes: int) -> tuple[list[str], int]:
+    """The last lines of ``path`` that fit in ``max_bytes``, oldest first, and
+    how many bytes were read.
+
+    Splits on exactly what text-mode reading splits on (``\\n``, ``\\r\\n``,
+    ``\\r``), so a line here is a line there. When the window starts inside a
+    line, that partial line is dropped rather than returned cut.
+    """
+    with path.open("rb") as fh:
+        size = fh.seek(0, os.SEEK_END)
+        start = max(0, size - max_bytes)
+        partial = False
+        if start > 0:
+            fh.seek(start - 1)
+            partial = fh.read(1) != b"\n"
+        else:
+            fh.seek(0)
+        data = fh.read()
+    text = data.decode("utf-8", errors="replace")
+    if partial:
+        nl = text.find("\n")
+        text = text[nl + 1:] if nl != -1 else ""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    if lines and lines[-1] == "":
+        lines.pop()
+    return lines, len(data)
+
+
 def read_log_lines(max_lines: int = 200, level: str | None = None) -> tuple[list[str], int]:
-    """Return the most recent ``max_lines`` entries from the active log file,
-    **newest first**.
+    """Return the most recent ``max_lines`` entries from the log, **newest first**.
+
+    Only the tail is read: the end of the active file, then the end of each
+    rotated sibling while more lines are needed, up to ``_TAIL_MAX_BYTES`` in
+    all. The returned lines are the same ones a read of every file would
+    return. ``total`` is the number of matching lines in what was read: the
+    full count when fewer than ``max_lines`` lines match, otherwise a lower
+    bound that is at least ``max_lines``.
 
     ``level`` filters to entries at or above the given level (case-insensitive).
     The filter is line-prefix based — fine for our ``[LEVEL]`` format.
-    Returns ``(lines, total_matching)``.
+    Returns ``(lines, total_matching)``. ``max_lines <= 0`` means everything:
+    the whole of every file is read, as before.
     """
     if not LOG_FILE.is_file():
         return [], 0
 
-    # Include rotated siblings so a freshly rotated file doesn't appear empty.
+    # Newest first. Includes rotated siblings so a freshly rotated file doesn't
+    # appear empty.
     paths = [LOG_FILE]
     for i in range(1, _BACKUP_COUNT + 1):
         p = LOG_FILE.with_name(f"{LOG_FILE.name}.{i}")
         if p.is_file():
             paths.append(p)
 
-    lines: list[str] = []
-    # Oldest rotated file first, so the active log comes last (chronological).
-    for p in reversed(paths):
+    wanted = _levels_at_or_above(level) if level else None
+
+    if not max_lines or max_lines <= 0:
+        lines: list[str] = []
+        # Oldest rotated file first, so the active log comes last (chronological).
+        for p in reversed(paths):
+            try:
+                with p.open("r", encoding="utf-8", errors="replace") as fh:
+                    lines.extend(line.rstrip("\n") for line in fh)
+            except OSError:
+                continue
+        if wanted is not None:
+            lines = [ln for ln in lines if _line_level(ln) in wanted]
+        total = len(lines)
+        lines.reverse()
+        return lines, total
+
+    chunks: list[list[str]] = []  # newest file first, each oldest-first
+    budget = _TAIL_MAX_BYTES
+    matched = 0
+    for p in paths:
+        if budget <= 0 or matched >= max_lines:
+            break
         try:
-            with p.open("r", encoding="utf-8", errors="replace") as fh:
-                lines.extend(line.rstrip("\n") for line in fh)
+            chunk, used = _read_tail(p, budget)
         except OSError:
             continue
+        budget -= used
+        if wanted is not None:
+            chunk = [ln for ln in chunk if _line_level(ln) in wanted]
+        chunks.append(chunk)
+        matched += len(chunk)
 
-    if level:
-        wanted = _levels_at_or_above(level)
-        lines = [ln for ln in lines if _line_level(ln) in wanted]
-
+    # Chronological: the oldest file's lines first, the active log's last.
+    lines = [ln for chunk in reversed(chunks) for ln in chunk]
     total = len(lines)
-    if max_lines and max_lines > 0:
-        lines = lines[-max_lines:]
+    lines = lines[-max_lines:]
     # Newest-first for the in-app viewer.
     lines.reverse()
     return lines, total

@@ -19,6 +19,7 @@ import uuid
 from typing import Optional
 
 import bw2data
+from mapper.api.heavy import run_heavy
 from mapper.core.upload_guard import refuse_if_nothing_resolved
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import Response
@@ -1633,6 +1634,14 @@ async def simulate(
         ),
     ),
 ) -> SimulationResult:
+    return await run_heavy(_simulate_sync, system_id=system_id, scenario_id=scenario_id, case=case)
+
+
+def _simulate_sync(
+    system_id: str,
+    scenario_id: str | None = None,
+    case: str | None = None,
+) -> SimulationResult:
     from mapper.core.compute_metrics import measure_compute
     from mapper.api.parameters import validate_parameter_scenarios
 
@@ -1686,6 +1695,12 @@ async def simulate_scenarios(
     byte-identical output per scenario — we compute once and alias the Base
     result across cases to avoid redundant work.
     """
+    return await run_heavy(_simulate_scenarios_sync, system_id=system_id, body=body)
+
+
+def _simulate_scenarios_sync(
+    system_id: str, body: SimulateScenariosRequest
+) -> MultiScenarioSimulationResult:
     from mapper.api import parameters as _params
     from mapper.core.compute_metrics import measure_compute
     from mapper.core.parameter_engine import ParameterEngine

@@ -265,7 +265,7 @@ _RESOLVE_CALLS = RESOLVE_CALLS | {"_resolve_archetype_parameters"}
 DEMAND_BUILDERS = {
     ("api/lca.py", "_build_archetype_source_demand"),
     ("api/lca.py", "_build_archetype_demand"),
-    ("api/bom.py", "standalone_lca"),
+    ("api/bom.py", "_standalone_lca_sync"),  # the route hands off to this body (mapper.api.heavy)
     ("api/bom.py", "flatten_archetype"),
 }
 

@@ -25,6 +25,7 @@ import threading
 import uuid
 
 import bw2data
+from mapper.api.heavy import run_heavy
 from mapper.core.upload_guard import refuse_if_nothing_resolved
 from mapper.api.cohort_export import strip_cohort_prefix
 from fastapi import APIRouter, Depends, File, Header, HTTPException, UploadFile
@@ -1107,6 +1108,14 @@ async def compute_subsystem(
     subsystem_id: str,
     body: ComputeRequest | None = None,
 ) -> SimulationResult:
+    return await run_heavy(_compute_subsystem_sync, system_id=system_id, subsystem_id=subsystem_id, body=body)
+
+
+def _compute_subsystem_sync(
+    system_id: str,
+    subsystem_id: str,
+    body: ComputeRequest | None = None,
+) -> SimulationResult:
     if subsystem_id == system_id:
         # Primary is computed via the DSM /simulate endpoint.
         return _require_primary_result(system_id)
@@ -1144,6 +1153,12 @@ async def compute_all_subsystems(
     Returns a map of ``{subsystem_id → SimulationResult}``. Errors in one
     subsystem are surfaced with its id in the message but abort the batch.
     """
+    return await run_heavy(_compute_all_subsystems_sync, system_id=system_id, body=body)
+
+
+def _compute_all_subsystems_sync(
+    system_id: str, body: ComputeRequest | None = None
+) -> ComputeAllResponse:
     primary_def = _get_system(system_id)
     primary_result = _require_primary_result(system_id)
     subs = _sys_subs(system_id)

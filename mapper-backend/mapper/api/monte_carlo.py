@@ -28,6 +28,7 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
+from mapper.api.heavy import run_heavy
 from mapper.api import tasks as task_registry
 from mapper.api.tasks import CancelledOperation
 from mapper.core import monte_carlo_engine as mce
@@ -1444,6 +1445,15 @@ async def get_pedigree_coverage(
     reports how much of the ANSWER is assessed, which is where the next hour of
     scoring is worth spending and what makes a reported GSD^2 legible.
     """
+    return await run_heavy(_get_pedigree_coverage_sync, archetype_id=archetype_id, method=method, scope=scope, compute_database=compute_database)
+
+
+def _get_pedigree_coverage_sync(
+    archetype_id: str,
+    method: str,
+    scope: str = "all",
+    compute_database: str | None = None,
+) -> PedigreeCoverage:
     from mapper.api.lca import _build_archetype_source_demand, _translate_demand_to_database
     from mapper.core.bw2_wrapper import PersistentLCARunner
     from mapper.core.material_pedigree_storage import load_library

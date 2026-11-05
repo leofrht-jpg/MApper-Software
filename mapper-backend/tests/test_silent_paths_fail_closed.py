@@ -762,7 +762,7 @@ def test_the_display_only_check_would_notice_a_computing_function():
     fn = next(
         n for n in ast.walk(tree)
         if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and n.name == "run_dsm_lca"
+        and n.name == "_run_dsm_lca_sync"  # the route hands off to this body (mapper.api.heavy)
     )
     assert _calls_compute(fn), "the heuristic cannot see a real compute call"
 

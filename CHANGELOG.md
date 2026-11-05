@@ -12,6 +12,10 @@ at 0.3.1 and is kept from here on.
 
 ## [Unreleased]
 
+### Fixed
+
+- **An ecoinvent import no longer silently loses biosphere exchanges.** Importing a release into a project whose `biosphere3` came from an older release dropped every exchange on a flow the old `biosphere3` lacked, with no warning (3.11 into a 3.10-era `biosphere3`: 41,915 of 541,321 exchanges, 7.7%). Both import routes now add the release's missing flows to `biosphere3` (never changing an existing one, and stopping with a clear message if one disagrees), and report how many biosphere exchanges were found, linked and dropped, with a warning when any were dropped.
+
 ### Changed
 
 - **Windows LCA runs factorise the technosphere once.** Without UMFPACK the runner ran a full SuperLU `spsolve` for every solve (about 71 for a 70-process product). It now factorises once with `splu` and reuses the factor, re-factorising whenever the matrix changes.

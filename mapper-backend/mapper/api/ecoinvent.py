@@ -15,7 +15,8 @@ from fastapi import APIRouter, HTTPException, WebSocket
 
 import ecoinvent_interface as ei
 
-from mapper.core.tasks import Task, create_task, run_in_thread
+from mapper.core.ecoinvent_biosphere import BiosphereAudit, BiosphereConflict, find_elementary_exchanges_xml
+from mapper.core.tasks import Task, create_task, get_task, run_in_thread
 from mapper.models.schemas import (
     BrowseFolderRequest,
     BrowseFolderResponse,
@@ -59,7 +60,28 @@ async def validate_credentials(body: ValidateCredentialsRequest) -> ValidateCred
     return ValidateCredentialsResponse(valid=valid, versions=versions, message=message)
 
 
-def _import_worker(task: Task, username: str, password: str, version: str, system_model: str) -> None:
+def _reconcile_biosphere(task: Task, audit: BiosphereAudit, xml_path: Path | None) -> None:
+    """Add the release's flows that the project's biosphere3 lacks, or stop.
+
+    Shared by both import routes. A conflict is put in the progress message
+    before it is raised, because that message is what the wizard shows when the
+    task then fails.
+    """
+    task.update("biosphere", 0.30, "Comparing the release's elementary flows with biosphere3…")
+    try:
+        audit.reconcile(xml_path)
+    except BiosphereConflict as exc:
+        task.update("biosphere", 0.30, str(exc))
+        raise
+    if audit.flows_added:
+        task.update(
+            "biosphere", 0.33,
+            f"Added {audit.flows_added:,} flows from this release to '{audit.bio_db_name}' "
+            f"(it had {audit.existing_flow_count:,}, the release lists {audit.release_flow_count:,}).",
+        )
+
+
+def _import_worker(task: Task, username: str, password: str, version: str, system_model: str) -> dict:
     import bw2data
     import bw2io
 
@@ -86,7 +108,10 @@ def _import_worker(task: Task, username: str, password: str, version: str, syste
         bio_import.write_database()
         bw2data.preferences["biosphere_database"] = bio_db_name
     else:
-        task.update("biosphere", 0.35, "Biosphere database already exists, skipping…")
+        task.update("biosphere", 0.35, "Biosphere database already exists, checking it covers this release…")
+
+    audit = BiosphereAudit(bio_db_name)
+    _reconcile_biosphere(task, audit, lci_path / "MasterData" / "ElementaryExchanges.xml")
 
     task.update("importing", 0.45, f"Importing ecoinvent {version} {system_model} activities…")
     db_name = f"ecoinvent-{version}-{system_model}"
@@ -95,22 +120,50 @@ def _import_worker(task: Task, username: str, password: str, version: str, syste
         db_name=db_name,
         biosphere_database_name=bio_db_name,
     )
+    audit.count_found(ei_import.data)
 
     task.update("strategies", 0.60, "Applying strategies…")
     ei_import.apply_strategies()
+    audit.after_strategies(ei_import.data)
 
     task.update("matching", 0.75, "Matching databases…")
     ei_import.match_database(bio_db_name, fields=["name", "unit", "categories"])
+    audit.drop_unlinked(ei_import.data)
 
     task.update("writing", 0.90, "Writing database…")
     ei_import.write_database()
+    audit.after_write(db_name)
 
     # Biosphere flows now exist: rebuild any authored database that was
     # waiting for them (e.g. after a modelling-only project import).
     from mapper.api.authored import reconcile_current_project
 
     reconcile_current_project()
-    task.update("done", 1.0, f"ecoinvent {version} {system_model} imported successfully.")
+    return _finish(task, audit, f"ecoinvent {version} {system_model} imported successfully.")
+
+
+def _finish(task: Task, audit: BiosphereAudit, headline: str) -> dict:
+    """Publish the biosphere counts as the task result and in the final message.
+
+    ``task.result`` is set before the ``done`` update: the wizard reads it as
+    soon as it sees ``done``, and ``run_in_thread`` only assigns it after the
+    worker returns.
+    """
+    summary = audit.summary()
+    task.result = summary
+    task.update("done", 1.0, f"{headline} {audit.message}")
+    return summary
+
+
+@router.get("/ecoinvent/import-summary/{task_id}")
+async def import_summary(task_id: str) -> dict:
+    """The biosphere counts of a finished import (``found``, ``linked``, ``dropped``, flows added, warning)."""
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Unknown import task")
+    if not isinstance(task.result, dict):
+        raise HTTPException(status_code=404, detail="This import has no summary (not finished, or it failed)")
+    return task.result
 
 
 @router.post("/ecoinvent/import", response_model=TaskStartedResponse)
@@ -146,7 +199,7 @@ async def browse_folder(body: BrowseFolderRequest) -> BrowseFolderResponse:
     return BrowseFolderResponse(valid=True, spold_count=count, path=str(path), message="ok")
 
 
-def _import_local_worker(task: Task, db_name: str, dirpath: str) -> None:
+def _import_local_worker(task: Task, db_name: str, dirpath: str) -> dict:
     """Import ecospold2 activities from a local folder.
 
     Keeping ``use_mp=False`` is mandatory — multiprocessing crashes on macOS
@@ -166,13 +219,12 @@ def _import_local_worker(task: Task, db_name: str, dirpath: str) -> None:
 
     task.update("biosphere", 0.05, "Checking biosphere database…")
     bio_db_name = "biosphere3"
+    # Look for ElementaryExchanges.xml alongside or above the datasets folder.
+    bio_xml = find_elementary_exchanges_xml(
+        path.parent / "MasterData" / "ElementaryExchanges.xml",
+        path.parent.parent / "MasterData" / "ElementaryExchanges.xml",
+    )
     if bio_db_name not in bw2data.databases:
-        # Look for ElementaryExchanges.xml alongside or above the datasets folder.
-        candidates = [
-            path.parent / "MasterData" / "ElementaryExchanges.xml",
-            path.parent.parent / "MasterData" / "ElementaryExchanges.xml",
-        ]
-        bio_xml = next((c for c in candidates if c.exists()), None)
         if bio_xml is None:
             raise RuntimeError(
                 "biosphere3 database missing and ElementaryExchanges.xml not found next to the datasets folder. "
@@ -187,6 +239,9 @@ def _import_local_worker(task: Task, db_name: str, dirpath: str) -> None:
         bio_import.write_database()
         bw2data.preferences["biosphere_database"] = bio_db_name
 
+    audit = BiosphereAudit(bio_db_name)
+    _reconcile_biosphere(task, audit, bio_xml)
+
     task.update("importing", 0.20, f"Reading {spold_count:,} .spold files…")
     ei_import = bw2io.SingleOutputEcospold2Importer(
         dirpath=str(path),
@@ -194,16 +249,21 @@ def _import_local_worker(task: Task, db_name: str, dirpath: str) -> None:
         biosphere_database_name=bio_db_name,
         use_mp=False,
     )
+    audit.count_found(ei_import.data)
 
     task.update("strategies", 0.55, "Applying strategies…")
     ei_import.apply_strategies()
+    audit.after_strategies(ei_import.data)
 
     # Drop exchanges that didn't resolve to any activity. Unlinked exchanges
-    # cause write_database() to fail.
+    # cause write_database() to fail. Biosphere exchanges are left for
+    # match_database and the audit below, which counts what is dropped there.
     dropped = 0
     for ds in ei_import.data:
         before = len(ds.get("exchanges", []))
-        ds["exchanges"] = [exc for exc in ds.get("exchanges", []) if exc.get("input")]
+        ds["exchanges"] = [
+            exc for exc in ds.get("exchanges", []) if exc.get("input") or exc.get("type") == "biosphere"
+        ]
         dropped += before - len(ds["exchanges"])
 
     task.update(
@@ -211,6 +271,7 @@ def _import_local_worker(task: Task, db_name: str, dirpath: str) -> None:
         f"Matching databases… ({dropped:,} unlinked exchanges filtered)" if dropped else "Matching databases…",
     )
     ei_import.match_database(bio_db_name, fields=["name", "unit", "categories"])
+    audit.drop_unlinked(ei_import.data)
 
     # Heartbeat during the long-running write step: update the task every 5s
     # with the same 0.90 progress but a refreshed message so the WebSocket
@@ -231,13 +292,14 @@ def _import_local_worker(task: Task, db_name: str, dirpath: str) -> None:
     finally:
         stop.set()
         hb.join(timeout=1.0)
+    audit.after_write(db_name)
 
     # Biosphere flows now exist: rebuild any authored database that was
     # waiting for them (e.g. after a modelling-only project import).
     from mapper.api.authored import reconcile_current_project
 
     reconcile_current_project()
-    task.update("done", 1.0, f"ecoinvent '{db_name}' imported successfully ({spold_count:,} datasets).")
+    return _finish(task, audit, f"ecoinvent '{db_name}' imported successfully ({spold_count:,} datasets).")
 
 
 @router.post("/ecoinvent/import-local", response_model=TaskStartedResponse)

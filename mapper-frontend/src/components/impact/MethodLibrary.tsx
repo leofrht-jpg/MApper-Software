@@ -19,6 +19,7 @@ import {
   uninstallLcaMethod,
   uploadCustomLcaMethod,
   type LCIAInstallMessage,
+  type LCIAInstallReport,
   type LCIALibraryResponse,
   type LCIAMethodInfo,
 } from '../../api/client'
@@ -41,6 +42,7 @@ interface InstallProgress {
   stopping: boolean
   warnings: string[]
   method_tuples: string[][]
+  report: LCIAInstallReport | null
   startedAt: number
 }
 
@@ -116,6 +118,7 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
         stopping: false,
         warnings: [],
         method_tuples: [],
+        report: null,
         startedAt: Date.now(),
       },
     }))
@@ -136,7 +139,7 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
               ...prev,
               [methodIdOrCustom]: {
                 ...t, done: true, pct: 1, stage: 'done',
-                method_tuples: msg.method_tuples, warnings: msg.warnings,
+                method_tuples: msg.method_tuples, warnings: msg.warnings, report: msg.report ?? null,
               },
             }
           }
@@ -175,7 +178,7 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
           method_id: method.id, task_id: '', stage: 'error', pct: 0,
           done: true, error: e instanceof Error ? e.message : 'Install failed',
           cancelled: false, stopping: false,
-          warnings: [], method_tuples: [], startedAt: Date.now(),
+          warnings: [], method_tuples: [], report: null, startedAt: Date.now(),
         },
       }))
     }
@@ -297,7 +300,7 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
 
           {tab === 'library' && (
             <>
-              <Section title="Downloadable methods" subtitle="One-click install from Zenodo / PyPI. Requires internet at install time.">
+              <Section title="Downloadable methods" subtitle="One-click install. Most download from Zenodo / PyPI and need internet; entries marked Offline install from the software already on this computer.">
                 {downloadableMethods.length === 0 && <EmptyRow text="None available." />}
                 {downloadableMethods.map((m) => (
                   <MethodRow
@@ -339,7 +342,7 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
                       method_id: '__custom__', task_id: '', stage: 'error', pct: 0,
                       done: true, error: e instanceof Error ? e.message : 'Upload failed',
                       cancelled: false, stopping: false,
-                      warnings: [], method_tuples: [], startedAt: Date.now(),
+                      warnings: [], method_tuples: [], report: null, startedAt: Date.now(),
                     },
                   }))
                 }
@@ -455,7 +458,9 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
             </div>
           )}
           <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-            {method.installer && <span>Installer: {method.installer}</span>}
+            {method.offline
+              ? <span>Offline: installs from the installed software</span>
+              : method.installer && <span>Installer: {method.installer}</span>}
             {method.size_mb != null && <span>~{method.size_mb.toFixed(1)} MB</span>}
             {method.available_variants && (
               <span>ei versions: {method.available_variants.join(', ')}</span>
@@ -465,9 +470,16 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
           {method.installed ? (
-            <Button variant="ghost" onClick={onUninstall} style={{ color: 'var(--danger)' }}>
-              <Trash2 size={14} style={{ marginRight: 6 }} /> Uninstall
-            </Button>
+            <>
+              <div data-testid={`installed-${method.id}`} style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success, #10b981)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+                <CheckCircle2 size={14} /> Installed
+              </div>
+              {method.removable !== false && (
+                <Button variant="ghost" onClick={onUninstall} style={{ color: 'var(--danger)' }}>
+                  <Trash2 size={14} style={{ marginRight: 6 }} /> Uninstall
+                </Button>
+              )}
+            </>
           ) : isInstalling ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
               <Loader2 size={14} className="animate-spin" /> {task!.stage}
@@ -543,6 +555,18 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
         </div>
       )}
 
+      {isDone && task!.report && (
+        <div data-testid={`install-report-${method.id}`} style={{
+          padding: 'var(--space-2) var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+          backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
+        }}>
+          {task!.report.methods_registered} method{task!.report.methods_registered === 1 ? '' : 's'} registered ·{' '}
+          {task!.report.cfs_found.toLocaleString()} characterisation factors found ·{' '}
+          {task!.report.cfs_linked.toLocaleString()} linked ·{' '}
+          {task!.report.cfs_skipped.toLocaleString()} skipped
+        </div>
+      )}
+
       {isDone && task!.warnings.length > 0 && (
         <div style={{
           padding: 'var(--space-2) var(--space-3)',
@@ -550,7 +574,7 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
           border: '1px solid var(--warning, #f59e0b)', borderRadius: 'var(--radius-sm)',
           color: 'var(--warning, #f59e0b)', fontSize: 'var(--text-xs)',
         }}>
-          <div style={{ fontWeight: 600, marginBottom: 4 }}>Installed with warnings:</div>
+          <div role="alert" data-testid={`install-warnings-${method.id}`} style={{ fontWeight: 600, marginBottom: 4 }}>Installed with warnings:</div>
           <ul style={{ margin: 0, paddingLeft: 16 }}>
             {task!.warnings.map((w, i) => <li key={i}>{w}</li>)}
           </ul>

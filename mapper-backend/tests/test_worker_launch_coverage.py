@@ -64,8 +64,6 @@ KNOWN_UNCOVERED: dict[str, str] = {
         "needs a live ecoinvent archive + credentials; no fixture exists",
     "ecoinvent.py:start_local_import":
         "needs a real 7z/spold archive on disk",
-    "lcia_methods.py:post_install":
-        "downloads a .bw2package from Zenodo",
     "lcia_methods.py:post_install_custom":
         "needs a user-supplied .xlsx",
     "lca.py:calculate_lca":

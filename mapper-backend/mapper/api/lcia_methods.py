@@ -67,6 +67,10 @@ class LCIAMethodInfo(BaseModel):
     detected_ei_version: str | None = None
     available_variants: list[str] | None = None
     unit: str | None = None
+    # True when the entry installs from the installed software with no download.
+    offline: bool = False
+    # False for an installed entry whose methods this app did not register (no Uninstall).
+    removable: bool | None = None
 
 
 class LibraryResponse(BaseModel):
@@ -96,6 +100,7 @@ class _TaskState:
         self.error: str | None = None
         self.method_tuples: list[list[str]] = []
         self.warnings: list[str] = []
+        self.report: dict | None = None
         self.subscribers: list[asyncio.Queue] = []
         self.cancelled: bool = False
 
@@ -159,11 +164,13 @@ async def post_install(body: InstallRequest) -> InstallTaskResponse:
             )
             task.method_tuples = [list(t) for t in result.method_tuples]
             task.warnings = list(result.warnings)
+            task.report = result.report
             task.done = True
             loop.call_soon_threadsafe(_notify, task, {
                 "type": "done",
                 "method_tuples": task.method_tuples,
                 "warnings": task.warnings,
+                "report": task.report,
             })
         except CancelledOperation:
             task.cancelled = True
@@ -306,6 +313,7 @@ async def ws_progress(websocket: WebSocket, task_id: str) -> None:
                 "type": "done",
                 "method_tuples": task.method_tuples,
                 "warnings": task.warnings,
+                "report": task.report,
             })
         await websocket.close()
         return

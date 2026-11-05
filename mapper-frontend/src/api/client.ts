@@ -4696,6 +4696,24 @@ export interface LCIAMethodInfo {
   detected_ei_version: string | null
   available_variants: string[] | null
   unit: string | null
+  /** Installs from the installed software, no download. */
+  offline?: boolean
+  /** False for an installed entry whose methods this app did not register: no Uninstall. */
+  removable?: boolean | null
+}
+
+/** What installing a family that links factors to biosphere3 did with its factors. */
+export interface LCIAInstallReport {
+  family: string
+  methods_registered: number
+  methods_already_present: number
+  cfs_found: number
+  cfs_linked: number
+  cfs_linked_by_code: number
+  cfs_linked_by_name: number
+  cfs_skipped: number
+  skipped_flows: number
+  top_skipped: { name: string; categories: string[]; cfs: number }[]
 }
 
 export interface LCIALibraryResponse {
@@ -4711,7 +4729,7 @@ export interface LCIAInstallTask {
 
 export type LCIAInstallMessage =
   | { type: 'progress'; stage: string; pct: number }
-  | { type: 'done'; method_tuples: string[][]; warnings: string[] }
+  | { type: 'done'; method_tuples: string[][]; warnings: string[]; report?: LCIAInstallReport | null }
   | { type: 'error'; error: string }
   | { type: 'cancelled'; task_id: string }
 

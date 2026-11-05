@@ -8,8 +8,11 @@
 
 """LCIA Method Library — installation engine for downloadable LCIA methods.
 
-Three install paths, one install contract:
+Four install paths, one install contract:
 
+  - ``bundled_ef``   EF v3.1 — one family taken from the characterisation factors
+                     that ship inside the installed bw2io, linked to the project's
+                     existing biosphere3 (see ``lcia_ef_install``). Works offline.
   - ``bw2package``   IMPACT World+ — download a versioned ``.bw2package`` from
                      Zenodo and import it via ``bw2io.BW2Package.import_file``.
                      Per-ecoinvent-version variants are published; the active
@@ -41,6 +44,8 @@ from typing import Any, Callable, Literal
 
 import bw2data
 import platformdirs
+
+from mapper.core import lcia_ef_install
 
 
 logger = logging.getLogger(__name__)
@@ -127,14 +132,47 @@ def _write_manifest(method_id: str, payload: dict) -> None:
         json.dump(payload, fh, indent=2)
 
 
+def _manifest_tuples(manifest: dict) -> list:
+    """The tuples a manifest says were installed, for the CURRENT project.
+
+    The manifest lives in the user's data dir, not in the project. A manifest
+    with a ``projects`` map (bundled families) keeps one entry per project, so
+    an install in one project never makes another project's identical methods
+    (the demo's, from ``bw2setup``) look removable.
+    """
+    if "projects" in manifest:
+        return (manifest["projects"].get(str(bw2data.projects.current)) or {}).get("method_tuples", [])
+    return manifest.get("method_tuples", [])
+
+
 def _method_tuples_for(method_id: str) -> list[tuple]:
     """Return the currently-registered bw2 method tuples that belong to this id."""
     manifest = _read_manifest(method_id) or {}
-    tuples = [tuple(t) for t in manifest.get("method_tuples", [])]
+    tuples = [tuple(t) for t in _manifest_tuples(manifest)]
     return [t for t in tuples if t in bw2data.methods]
 
 
+def _bundled_ef_entry(method_id: str) -> dict | None:
+    entry = _registry_entry(method_id)
+    return entry if entry and entry.get("installer") == "bundled_ef" else None
+
+
+def _live_tuples(entry: dict) -> list[tuple]:
+    """The method tuples of a registry entry that are in the current project.
+
+    A bundled-family entry (EF v3.1) is judged by the project's methods, not by a
+    manifest: a project made by ``bw2setup`` (the demo) has the same tuples and
+    must read as installed, not offer a reinstall.
+    """
+    if entry.get("installer") == "bundled_ef":
+        return lcia_ef_install.installed_tuples(entry["bundled_family"])
+    return _method_tuples_for(entry["id"])
+
+
 def is_installed(method_id: str) -> bool:
+    entry = _bundled_ef_entry(method_id)
+    if entry is not None:
+        return lcia_ef_install.is_complete(entry["bundled_family"])
     return len(_method_tuples_for(method_id)) > 0
 
 
@@ -163,6 +201,7 @@ class InstallResult:
     method_id: str
     method_tuples: list[tuple]  # newly registered tuples
     warnings: list[str] = field(default_factory=list)
+    report: dict | None = None  # counts for installers that link factors (bundled_ef)
 
 
 class InstallError(RuntimeError):
@@ -454,6 +493,27 @@ def install_excel(
     return InstallResult(method_id=method_id, method_tuples=new_tuples, warnings=warnings)
 
 
+def install_bundled_ef(entry: dict, on_progress: ProgressCallback | None = None) -> InstallResult:
+    """Install the family named by ``entry["bundled_family"]`` from bw2io's own data."""
+    family = entry["bundled_family"]
+    try:
+        tuples, warnings, report = lcia_ef_install.install_family(family, on_progress=on_progress)
+    except lcia_ef_install.EFInstallError as exc:
+        raise InstallError(str(exc)) from exc
+    if not tuples:
+        raise InstallError(f"{entry['name']} is already installed in this project.")
+    manifest = _read_manifest(entry["id"]) or {}
+    projects = dict(manifest.get("projects") or {})
+    projects[str(bw2data.projects.current)] = {
+        "method_tuples": [list(t) for t in tuples],
+        "report": report,
+    }
+    _write_manifest(entry["id"], {
+        "method_id": entry["id"], "installer": "bundled_ef", "family": family, "projects": projects,
+    })
+    return InstallResult(method_id=entry["id"], method_tuples=tuples, warnings=warnings, report=report)
+
+
 def _hash(s: str) -> str:
     return hashlib.sha1(s.encode("utf-8")).hexdigest()[:10]
 
@@ -474,7 +534,10 @@ def uninstall(method_id: str) -> int:
                 logger.warning("Could not remove method %s", t)
     # Clear the manifest's tuple list but keep the cached file for quick re-install.
     manifest = _read_manifest(method_id) or {}
-    manifest["method_tuples"] = []
+    if "projects" in manifest:
+        manifest["projects"].pop(str(bw2data.projects.current), None)
+    else:
+        manifest["method_tuples"] = []
     _write_manifest(method_id, manifest)
     return removed
 
@@ -498,10 +561,9 @@ def _bundled_families() -> list[dict]:
     A family is "bundled" (i.e. installed via ecoinvent's LCIA pack) if its
     tuples are not claimed by any downloadable or custom entry.
     """
-    downloadable_ids = {e["id"] for e in _load_registry()}
     claimed: set[tuple] = set()
-    for entry_id in downloadable_ids:
-        claimed.update(_method_tuples_for(entry_id))
+    for entry in _load_registry():
+        claimed.update(_live_tuples(entry))
     # Also exclude custom-uploaded methods.
     for manifest_dir in CACHE_ROOT.glob("*/manifest.json") if CACHE_ROOT.is_dir() else []:
         try:
@@ -577,7 +639,9 @@ def list_library() -> list[dict]:
             "long_description": entry.get("long_description", ""),
             "source": "downloadable",
             "installed": installed,
-            "category_count": len(_method_tuples_for(entry["id"])) if installed else None,
+            "category_count": len(_live_tuples(entry)) if installed else None,
+            # False for tuples this app did not install (a bw2setup project): no Uninstall.
+            "removable": len(_method_tuples_for(entry["id"])) > 0 if installed else None,
             "size_mb": size_mb,
             "source_url": entry.get("source_url"),
             "citation": entry.get("citation"),
@@ -586,6 +650,7 @@ def list_library() -> list[dict]:
             "detected_ei_version": resolved_variant,
             "available_variants": sorted((entry.get("variants") or {}).keys())
                 if entry.get("installer") == "bw2package" else None,
+            "offline": entry.get("installer") == "bundled_ef",
         })
     return _bundled_families() + downloadable + _custom_entries()
 
@@ -608,4 +673,6 @@ def install_method(
         return install_bw2package(entry, ecoinvent_version=ecoinvent_version, on_progress=on_progress)
     if installer == "pip":
         return install_pip(entry, on_progress=on_progress)
+    if installer == "bundled_ef":
+        return install_bundled_ef(entry, on_progress=on_progress)
     raise InstallError(f"Unsupported installer: {installer!r}")

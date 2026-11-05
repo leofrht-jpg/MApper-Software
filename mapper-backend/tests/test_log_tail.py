@@ -15,8 +15,9 @@ rotated sibling only while more lines are needed, and never more than
 ``_TAIL_MAX_BYTES`` in all.
 
 The contract kept: the same lines come back, newest first, with the same level
-filtering. ``total`` changes meaning only when the cap is hit (it counts what was
-read); while the whole log fits in the window it is the full count as before.
+filtering. ``total`` is unchanged: the exact count of matching lines over every
+file, even when the cap on lines returned is hit.
+
 The reference implementation below is the OLD one, copied verbatim, so these
 tests compare against what the panel used to show rather than against the new
 code's own idea of it.
@@ -92,12 +93,9 @@ def test_same_lines_and_total_as_the_full_read(log_dir, newline, trailing, max_l
     want_lines, want_total = _reference(paths, max_lines, level)
     got_lines, got_total = log_config.read_log_lines(max_lines=max_lines, level=level)
     assert got_lines == want_lines
-    # Older files are read only while more lines are needed, so total counts
-    # what was read: a lower bound, and the full count once fewer than
-    # max_lines lines match.
-    assert len(got_lines) <= got_total <= want_total
-    if want_total <= max_lines:
-        assert got_total == want_total
+    # 2 newline styles x 2 trailing x 6 max_lines x 5 levels = 120 combinations:
+    # N is the old implementation's total, exactly.
+    assert got_total == want_total
 
 
 def test_no_log_file_is_empty(log_dir):
@@ -143,7 +141,8 @@ def test_it_reads_at_most_the_cap_and_returns_the_last_lines(log_dir, monkeypatc
     assert sum(read) < p.stat().st_size / 5, "the whole file was read"
     want, _ = _reference([p], 50, None)
     assert got == want
-    assert 50 <= total < 4000
+    # Only the tail was read, but N still counts the whole file.
+    assert total == 4000
 
 
 @pytest.mark.parametrize("cap", [1, 7, 200, 1999, 20_001, 33_333])
@@ -199,5 +198,25 @@ def test_route_returns_the_same_lines_for_a_fixture(log_dir, monkeypatch):
         body = r.json()
         want_lines, want_total = _reference(paths, lines, level)
         assert body["lines"] == want_lines
-        assert len(want_lines) <= body["total"] <= want_total
+        assert body["total"] == want_total
         assert body["log_path"] == str(log_dir / "mapper.log")
+
+
+@pytest.mark.parametrize("level", [None, "WARNING"])
+def test_total_is_exact_when_the_cap_hides_older_files(log_dir, monkeypatch, level):
+    paths = _write_log(log_dir, per_file=60)
+    monkeypatch.setattr(log_config, "_TAIL_MAX_BYTES", 500)
+    _, want_total = _reference(paths, 5, level)
+    got, total = log_config.read_log_lines(5, level)
+    assert total == want_total
+    # The cap limits what is returned, never N: fewer lines, all of them the newest.
+    assert got == _reference(paths, 5, level)[0][: len(got)]
+
+
+@pytest.mark.parametrize("raw", [b"", b"\n", b"a", b"a\n", b"a\r", b"a\rb", b"a\r\nb\r\n", b"\n\n\r\r\n", b"a\r\n\rb"])
+def test_line_count_matches_text_mode_iteration(log_dir, raw):
+    p = log_dir / "x.log"
+    p.write_bytes(raw)
+    with p.open("r", encoding="utf-8", errors="replace") as fh:
+        want = sum(1 for _ in fh)
+    assert log_config._count_lines(p, None) == want

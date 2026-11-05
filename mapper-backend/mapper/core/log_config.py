@@ -181,15 +181,34 @@ def _read_tail(path: Path, max_bytes: int) -> tuple[list[str], int]:
     return lines, len(data)
 
 
+def _count_lines(path: Path, wanted: set[str] | None) -> int:
+    """Lines in ``path`` (matching ``wanted`` levels when given), counted the way
+    text-mode iteration splits them: ``\\n``, ``\\r\\n`` or ``\\r``, plus a final
+    unterminated line.
+
+    Without a level filter this is a byte count, no decoding. With one, each
+    line's level is needed, so the file is streamed line by line and nothing is
+    kept.
+    """
+    if wanted is None:
+        raw = path.read_bytes()
+        n = raw.count(b"\n") + raw.count(b"\r") - raw.count(b"\r\n")
+        if raw and not raw.endswith((b"\n", b"\r")):
+            n += 1
+        return n
+    with path.open("r", encoding="utf-8", errors="replace") as fh:
+        return sum(1 for ln in fh if _line_level(ln.rstrip("\n")) in wanted)
+
+
 def read_log_lines(max_lines: int = 200, level: str | None = None) -> tuple[list[str], int]:
     """Return the most recent ``max_lines`` entries from the log, **newest first**.
 
     Only the tail is read: the end of the active file, then the end of each
     rotated sibling while more lines are needed, up to ``_TAIL_MAX_BYTES`` in
     all. The returned lines are the same ones a read of every file would
-    return. ``total`` is the number of matching lines in what was read: the
-    full count when fewer than ``max_lines`` lines match, otherwise a lower
-    bound that is at least ``max_lines``.
+    return. ``total`` is still the exact number of matching lines across the
+    active file and every rotated sibling, counted without keeping them, so it
+    is not limited by ``_TAIL_MAX_BYTES``.
 
     ``level`` filters to entries at or above the given level (case-insensitive).
     The filter is line-prefix based — fine for our ``[LEVEL]`` format.
@@ -242,7 +261,12 @@ def read_log_lines(max_lines: int = 200, level: str | None = None) -> tuple[list
 
     # Chronological: the oldest file's lines first, the active log's last.
     lines = [ln for chunk in reversed(chunks) for ln in chunk]
-    total = len(lines)
+    total = 0
+    for p in paths:
+        try:
+            total += _count_lines(p, wanted)
+        except OSError:
+            continue
     lines = lines[-max_lines:]
     # Newest-first for the in-app viewer.
     lines.reverse()

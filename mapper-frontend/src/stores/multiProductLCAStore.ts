@@ -54,6 +54,11 @@ interface MultiProductLCAState {
   // export — NOT the live `selectedItems` (which can change/clear after a run,
   // e.g. on a mode switch, and would wrongly disable Line on line-able results).
   multiVintageCoords: VintageCoordMap | null
+  /** What the shown results were calculated with, frozen at compute: a per-Calculate id (a
+   *  supply chain tree belongs to ONE run) and, per activity item, the inputs the results do
+   *  not echo. An archetype item's inputs ARE echoed by its result (stage_amounts, scope,
+   *  parameter_scenario, compute_database), so only activities are kept here. */
+  multiRun: MultiRunSnapshot | null
   multiLoading: boolean
   // Top-level error (the whole POST failed). DISTINCT from per-item
   // errors, which live inside multiResult.items[].error_message.
@@ -102,6 +107,14 @@ interface MultiProductLCAState {
 // Results-aligned vintage coords (mirrors the activity item's structured
 // fields). Keyed by item_id ("{database}|{code}"). Structurally compatible with
 // MultiProductLineChart's VintageCoord and the export's activity_vintage_meta.
+export interface MultiRunSnapshot {
+  id: number
+  computeDatabase: string | null
+  /** Keyed by item_id ("{database}|{code}"). */
+  activities: Record<string, { database: string; code: string; amount: number; year: number | null }>
+}
+let _runCounter = 0
+
 export type VintageCoordMap = Record<string, {
   label: string
   database: string
@@ -151,6 +164,7 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
   stageAmountsByItem: {},
   multiResult: null,
   multiVintageCoords: null,
+  multiRun: null,
   multiByCase: null,
   multiCaseOrder: [],
   multiLoading: false,
@@ -181,7 +195,7 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
   clearItems: () => set({ selectedItems: [] }),
 
   clearResults: () => set({
-    multiResult: null, multiVintageCoords: null, multiError: null,
+    multiResult: null, multiVintageCoords: null, multiError: null, multiRun: null,
     multiByCase: null, multiCaseOrder: [],
   }),
 
@@ -201,9 +215,13 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
     // item_id — results-aligned, so the Line gate/chart/export don't depend on
     // the live selection after the run.
     const vintageCoords: VintageCoordMap = {}
+    const runActivities: MultiRunSnapshot['activities'] = {}
     for (const it of selectedItems) {
       if (it.type !== 'activity') continue
       const a = it as ActivityProductItem
+      runActivities[`${a.database}|${a.code}`] = {
+        database: a.database, code: a.code, amount: a.amount ?? 1, year: a.year ?? null,
+      }
       vintageCoords[`${a.database}|${a.code}`] = {
         label: a.vintage_label ?? '',
         database: a.database,
@@ -234,6 +252,7 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
       const result = byCase['Base']
       set({
         multiResult: result, multiVintageCoords: vintageCoords,
+        multiRun: { id: ++_runCounter, computeDatabase: computeDatabase ?? null, activities: runActivities },
         multiByCase: byCase, multiCaseOrder: cases, multiLoading: false,
       })
     } catch (e) {
@@ -242,6 +261,7 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
         multiError: e instanceof Error ? e.message : String(e),
         multiResult: null,
         multiVintageCoords: null,
+        multiRun: null,
       })
     }
   },
@@ -251,6 +271,7 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
     stageAmountsByItem: {},
     multiResult: null,
     multiVintageCoords: null,
+    multiRun: null,
     multiByCase: null,
     multiCaseOrder: [],
     multiLoading: false,

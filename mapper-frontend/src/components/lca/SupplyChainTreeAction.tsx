@@ -14,8 +14,13 @@ import { ComputeProgress } from '../ui/ComputeProgress'
 interface Props {
   /** Prefix of the test ids: 'lca-activity' or 'lca-archetype'. */
   testId: string
+  /** Prefix of the control test ids (button, hint, notes). 'lca' keeps the LCA Architect ids;
+   *  Impact Assessment passes one per item so several instances on a page stay distinct. */
+  idPrefix?: string
   /** A tree request is in flight. The button is disabled meanwhile: one at a time. */
   running: boolean
+  /** ANOTHER tree on the page is in flight (Impact Assessment, one button per item). */
+  buildDisabled?: boolean
   /** Why the last attempt failed, for this very target and indicator. */
   error: string | null
   /** The previous request was discarded on the client (a recalculation, another indicator). */
@@ -35,7 +40,7 @@ interface Props {
  * holds the compute lock until then, so a new calculation may queue behind it.
  */
 export function SupplyChainTreeAction({
-  testId, running, error, discarded, databaseNote, onBuild, onDiscard,
+  testId, idPrefix = 'lca', running, buildDisabled = false, error, discarded, databaseNote, onBuild, onDiscard,
 }: Props) {
   return (
     <div
@@ -49,14 +54,14 @@ export function SupplyChainTreeAction({
       <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
         <Button
           variant="secondary"
-          data-testid="lca-build-tree"
-          disabled={running}
+          data-testid={`${idPrefix}-build-tree`}
+          disabled={running || buildDisabled}
           onClick={onBuild}
         >
           <Network size={14} />
           {error ? 'Try again' : 'Build supply chain tree'}
         </Button>
-        <span data-testid="lca-tree-hint" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+        <span data-testid={`${idPrefix}-tree-hint`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
           Can take up to a minute on large databases.
         </span>
       </div>
@@ -71,26 +76,26 @@ export function SupplyChainTreeAction({
             cancelLabel="Discard"
             data-testid={`${testId}-contribution-progress`}
           />
-          <span data-testid="lca-tree-discard-note" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+          <span data-testid={`${idPrefix}-tree-discard-note`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
             Discard stops waiting for the result. The server may keep computing until it finishes.
           </span>
         </>
       )}
 
       {!running && discarded && (
-        <span data-testid="lca-tree-discarded" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+        <span data-testid={`${idPrefix}-tree-discarded`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
           The previous request was discarded. The server may still be computing it, so the next one can take longer.
         </span>
       )}
 
       {error && !running && (
-        <div role="alert" data-testid="lca-tree-error" style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>
+        <div role="alert" data-testid={`${idPrefix}-tree-error`} style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>
           Contribution analysis failed: {error}
         </div>
       )}
 
       {databaseNote && (
-        <span data-testid="lca-tree-database-note" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+        <span data-testid={`${idPrefix}-tree-database-note`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
           {databaseNote}
         </span>
       )}

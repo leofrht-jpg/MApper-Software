@@ -16,7 +16,10 @@ import {
   exportSingleProductStatic,
   BASE_SCENARIO,
   type ArchetypeLCACalculateResult,
+  type ContributionAnalysisRequest,
 } from '../../api/client'
+import { useSupplyChainTrees } from '../../hooks/useSupplyChainTrees'
+import { SupplyChainTreeBlock } from './SupplyChainTreeBlock'
 import { toStageAmountsMeta, useSingleProductImpactStore } from '../../stores/singleProductImpactStore'
 import { useSessionState } from '../../stores/sessionStateStore'
 import { useParameterStore } from '../../stores/parameterStore'
@@ -32,6 +35,10 @@ import { ComputeOverlay } from '../ui/ComputeOverlay'
 import { stageAmountsEqual } from './StageAmountsEditor'
 import { useMonteCarloStore } from '../../stores/monteCarloStore'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
+
+// A supply chain tree belongs to ONE Calculate. Each run takes a new id, so a recalculation
+// (parameters or database edited in between) never reuses a tree built for earlier numbers.
+let _staticRunCounter = 0
 
 interface Props {
   archetypeId: string | null
@@ -106,6 +113,8 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   >(`${runKey}.results`, {})
   const [scenarioOrder, setScenarioOrder] = useSessionState<string[]>(`${runKey}.order`, [])
   const [activeScenario, setActiveScenario] = useSessionState<string | null>(`${runKey}.active`, null)
+  const [runId, setRunId] = useSessionState<number | null>(`${runKey}.runId`, null)
+  const [treeMethod, setTreeMethod] = useState<string | null>(null)
 
   const valueFormat = useNumberFormatter()
   const setStoreStaticResult = useSingleProductImpactStore((s) => s.setStaticResult)
@@ -193,6 +202,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
         setProgress({ done: i + 1, total: scenariosToRun.length })
       }
       setStaticRunMeta(runMeta)
+      setRunId(++_staticRunCounter)
       setResultsByScenario(acc)
       setScenarioOrder(scenariosToRun)
       setActiveScenario(scenariosToRun[0])
@@ -203,7 +213,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
       setProgress(null)
     }
   }, [archetypeId, scope, selectedMethods, currentStageAmounts, stageAmountsByArc, setStaticRunMeta,
-      setResultsByScenario, setScenarioOrder, setActiveScenario, effectiveCases])
+      setResultsByScenario, setScenarioOrder, setActiveScenario, setRunId, effectiveCases])
 
   const isMulti = scenarioOrder.length > 1
   // Same derivation the Sensitivity cases checklist uses, so a case marked
@@ -215,6 +225,36 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   )
   const activeResult = activeScenario ? resultsByScenario[activeScenario] : null
   const hasResults = scenarioOrder.length > 0 && activeResult != null
+
+  // ── Supply chain tree (explicit button; Static, the active sensitivity case) ──
+  // Built from the SHOWN result's own echo (archetype, scope, stage amounts), never from the
+  // live editor, and from the case it was calculated under. One tree per Calculate run,
+  // indicator and case. Any change of those drops the request in flight.
+  const treeResult = hasResults && activeResult && activeResult.results.length > 0 ? activeResult : null
+  const treeMethodResult = treeResult
+    ? treeResult.results.find((r) => methodKey(r.method) === treeMethod) ?? treeResult.results[0]
+    : null
+  const treeKey = treeResult && treeMethodResult
+    ? `static|${treeResult.archetype_id}|${runId ?? 0}|${activeScenario ?? BASE_SCENARIO}|${methodKey(treeMethodResult.method)}`
+    : null
+  const trees = useSupplyChainTrees(`${runKey}.trees`, treeKey)
+  const handleBuildTree = useCallback(() => {
+    if (!treeResult || !treeMethodResult || !treeKey) return
+    const body: ContributionAnalysisRequest = {
+      target_type: 'archetype',
+      archetype_id: treeResult.archetype_id,
+      scope: treeResult.scope as ContributionAnalysisRequest['scope'],
+      stage_amounts: treeResult.stage_amounts,
+      parameter_scenario: activeScenario === null || activeScenario === BASE_SCENARIO ? null : activeScenario,
+      compute_database: treeResult.compute_database ?? null,
+      year: null,
+      method: treeMethodResult.method,
+      limit: 20,
+      cutoff: 0.001,
+      max_depth: 5,
+    }
+    void trees.build(treeKey, body)
+  }, [treeResult, treeMethodResult, treeKey, activeScenario, trees])
 
   const setMonteCarloHandoff = useMonteCarloStore((st) => st.setHandoff)
 
@@ -559,6 +599,23 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
               </tbody>
             </table>
             </CollapsibleBlock>
+            {treeResult && treeMethodResult && treeKey && (
+              <SupplyChainTreeBlock
+                idPrefix="single-product-static"
+                indicators={treeResult.results.map((r) => ({
+                  key: methodKey(r.method), label: r.method_label, title: r.method.join(' › '),
+                }))}
+                indicatorKey={methodKey(treeMethodResult.method)}
+                onIndicatorChange={setTreeMethod}
+                anyRunning={trees.running}
+                running={trees.runningKey === treeKey}
+                error={trees.errorFor(treeKey)}
+                discarded={trees.discardedFor(treeKey)}
+                result={trees.resultFor(treeKey)}
+                onBuild={handleBuildTree}
+                onDiscard={() => trees.discard()}
+              />
+            )}
           </div>
         </CollapsibleCard>
       )}

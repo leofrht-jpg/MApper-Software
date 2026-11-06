@@ -73,7 +73,7 @@ export const useLCAStore = create<LCAStore>((set, get) => ({
           (msg: TaskProgressMessage) => {
             set({ progress: msg })
             if (msg.step === 'done') resolve()
-            else if (msg.step === 'error') reject(new Error(msg.message))
+            else if (msg.step === 'error') reject(new Error(msg.error || msg.message))
           },
           () => reject(new Error('WebSocket error')),
         )

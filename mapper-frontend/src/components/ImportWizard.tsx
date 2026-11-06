@@ -14,6 +14,7 @@ import {
   browseEcoinventFolder,
   connectToTask,
   getEcoinventImportSummary,
+  getTaskState,
   startEcoinventImport,
   startEcoinventLocalImport,
   validateEcoinventCredentials,
@@ -30,7 +31,13 @@ const SYSTEM_MODELS = [
   { id: 'consequential', label: 'Consequential', description: 'Consequential, built for decision support' },
 ]
 
-const STEPS = ['connecting', 'biosphere', 'importing', 'strategies', 'matching', 'writing', 'done']
+const STEPS = ['connecting', 'downloading', 'biosphere', 'importing', 'strategies', 'matching', 'writing', 'done']
+
+/** How often a lost progress socket is replaced by a look at the task's state. */
+const POLL_MS = 3000
+
+const CONNECTION_LOST =
+  'Connection lost. The import may still be running; check Database Explorer.'
 
 function ProgressStepper({ currentStep, progress, message }: { currentStep: string; progress: number; message: string }) {
   return (
@@ -108,8 +115,17 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
   const [importError, setImportError] = useState('')
   // Biosphere counts of the finished import; null while unknown or if the fetch failed.
   const [summary, setSummary] = useState<EcoinventImportSummary | null>(null)
+  // The progress socket dropped before the task ended; the state is being polled instead.
+  const [connectionLost, setConnectionLost] = useState(false)
   const wsRef = useRef<WebSocket | null>(null)
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const finalRef = useRef(false)
+  const closedRef = useRef(false)
   const { fetchDatabases } = useProjectStore()
+
+  const stopPolling = () => {
+    if (pollRef.current !== null) { clearInterval(pollRef.current); pollRef.current = null }
+  }
 
   useEffect(() => {
     const handleKey = (e: KeyboardEvent) => {
@@ -121,6 +137,8 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
     document.addEventListener('keydown', handleKey)
     return () => {
       document.removeEventListener('keydown', handleKey)
+      closedRef.current = true
+      stopPolling()
       wsRef.current?.close()
     }
   }, [onClose])
@@ -172,27 +190,87 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
     setStep(3)
     setImportError('')
     setSummary(null)
+    setConnectionLost(false)
+    stopPolling()
     setTaskProgress({ step: '', progress: 0, message: '' })
     try {
       const started = method === 'local'
         ? await startEcoinventLocalImport(dbName.trim(), folderInfo?.path ?? folderPath.trim())
         : await startEcoinventImport(username, password, selectedVersion, selectedModel)
-      wsRef.current = connectToTask(
-        `/ws/import/${started.task_id}`,
-        (msg) => {
-          setTaskProgress(msg)
-          if (msg.step === 'done') {
-            setImportDone(true)
-            setStep(4)
-            void (async () => {
-              try { setSummary(await getEcoinventImportSummary(started.task_id)) } catch { setSummary(null) }
-            })()
-            fetchDatabases()
-          } else if (msg.step === 'error') {
-            setImportError(msg.message)
+      const taskId = started.task_id
+      finalRef.current = false
+      setConnectionLost(false)
+
+      // One place for "the task ended", whether the socket or the poll saw it.
+      const handleMessage = (msg: TaskProgressMessage) => {
+        if (finalRef.current) return
+        setTaskProgress(msg)
+        if (msg.step === 'done') {
+          finalRef.current = true
+          stopPolling()
+          setConnectionLost(false)
+          setImportDone(true)
+          setStep(4)
+          void (async () => {
+            try { setSummary(await getEcoinventImportSummary(taskId)) } catch { setSummary(null) }
+          })()
+          fetchDatabases()
+        } else if (msg.step === 'error') {
+          finalRef.current = true
+          stopPolling()
+          setImportError(msg.error || msg.message || 'Import failed')
+        } else if (msg.step === 'cancelled') {
+          finalRef.current = true
+          stopPolling()
+          setImportError('The import was cancelled.')
+        }
+      }
+
+      const openSocket = () => {
+        const ws = connectToTask(
+          `/ws/import/${taskId}`,
+          (msg) => { setConnectionLost(false); handleMessage(msg) },
+          () => lost(),
+          () => lost(),
+        )
+        wsRef.current = ws
+      }
+
+      const poll = async () => {
+        if (finalRef.current || closedRef.current) return
+        try {
+          const state = await getTaskState(taskId)
+          if (finalRef.current || closedRef.current) return
+          if (state === null) {
+            // the backend restarted (or never knew the task): nothing more to wait for
+            finalRef.current = true
+            stopPolling()
+            setImportError(
+              'The backend no longer knows this import (it may have restarted). Check Database Explorer to see whether the database was written.',
+            )
+            return
           }
-        },
-      )
+          if (state.status === 'done' || state.status === 'error' || state.status === 'cancelled') {
+            handleMessage(state)
+          } else {
+            setTaskProgress({ step: state.step, progress: state.progress, message: state.message })
+            // still running: try to get the live socket back
+            const rs = wsRef.current?.readyState
+            if (rs !== WebSocket.OPEN && rs !== WebSocket.CONNECTING) openSocket()
+          }
+        } catch {
+          /* backend unreachable for now: keep the message up and try again */
+        }
+      }
+
+      // The socket's onerror and onclose both land here; the first one starts the poll.
+      const lost = () => {
+        if (finalRef.current || closedRef.current) return
+        setConnectionLost(true)
+        if (pollRef.current === null) pollRef.current = setInterval(() => { void poll() }, POLL_MS)
+      }
+
+      openSocket()
     } catch (e: unknown) {
       setImportError(e instanceof Error ? e.message : 'Import failed')
     }
@@ -525,7 +603,15 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
                   <Button variant="secondary" onClick={() => setStep(2)}>Go Back</Button>
                 </div>
               ) : (
-                <ProgressStepper currentStep={taskProgress.step} progress={taskProgress.progress} message={taskProgress.message} />
+                <>
+                  {connectionLost && (
+                    <p role="alert" data-testid="import-connection-lost"
+                       style={{ color: 'var(--warning)', fontSize: 'var(--text-sm)', fontWeight: 600, marginBottom: 'var(--space-4)' }}>
+                      {CONNECTION_LOST}
+                    </p>
+                  )}
+                  <ProgressStepper currentStep={taskProgress.step} progress={taskProgress.progress} message={taskProgress.message} />
+                </>
               )}
             </div>
           )}

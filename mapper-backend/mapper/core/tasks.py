@@ -7,10 +7,13 @@
 # Lead developer: Leonardo Ferhati
 
 """Simple in-process task store for background jobs (import, LCA)."""
+import logging
 import threading
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -68,11 +71,7 @@ class Task:
                 pass
 
     def _notify(self) -> None:
-        payload = {
-            "step": self.step,
-            "progress": self.progress,
-            "message": self.message,
-        }
+        payload = self.current_payload()
         subs = list(self.subscribers)
         for cb in subs:
             try:
@@ -81,7 +80,19 @@ class Task:
                 pass
 
     def current_payload(self) -> dict:
-        return {"step": self.step, "progress": self.progress, "message": self.message}
+        """What a subscriber is sent. ``message`` is always the last progress
+        line (consumers that only read ``step``/``progress``/``message`` keep
+        working); a failed task also carries the failure text in ``error``, so
+        a client does not have to guess that the last progress line is the cause."""
+        payload = {"step": self.step, "progress": self.progress, "message": self.message}
+        if self.status == "error":
+            payload["error"] = self.error
+        return payload
+
+    def state(self) -> dict:
+        """The task as a poll sees it: the payload plus ``status``."""
+        with self._lock:
+            return {"task_id": self.task_id, "status": self.status, **self.current_payload()}
 
 
 _tasks: dict[str, Task] = {}
@@ -118,10 +129,11 @@ def run_in_thread(task: Task, fn: Callable, *args, **kwargs) -> None:
             if type(exc).__name__ == "CancelledOperation":
                 task.mark_cancelled()
                 return
-            if isinstance(exc, Exception):
-                task.fail(str(exc))
-                return
-            raise
+            # Every other BaseException (KeyboardInterrupt, SystemExit, ...) is a
+            # failure too: re-raising it in a daemon thread left the task
+            # "running" forever and the client waiting.
+            logger.error("Task %s failed: %s: %s", task.task_id, type(exc).__name__, exc, exc_info=exc)
+            task.fail(str(exc) or type(exc).__name__)
 
     t = threading.Thread(target=_run, daemon=True)
     t.start()

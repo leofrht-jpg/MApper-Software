@@ -6,9 +6,11 @@
 # © Copyright 2026 Technical University of Denmark
 # Lead developer: Leonardo Ferhati
 
+import logging
 import os
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, WebSocket
@@ -29,6 +31,51 @@ from mapper.models.schemas import (
 from mapper.ws.progress import stream_task_progress
 
 router = APIRouter()
+
+logger = logging.getLogger(__name__)
+
+#: Seconds between heartbeat updates of a long step.
+HEARTBEAT_SECONDS = 5.0
+#: A step that has run this long gets "no progress for N minutes" in its message
+#: and in the log. The work is never killed: a big release legitimately takes a long time.
+STALL_WARNING_SECONDS = 10 * 60.0
+
+
+@contextmanager
+def _heartbeat(task: Task, step: str, progress: float, text: str):
+    """Refresh the task every ``HEARTBEAT_SECONDS`` while a long call that reports nothing
+    runs (a download, a 7z extraction, reading the .spold files, a write), so the
+    WebSocket stays alive and the wizard shows elapsed time. After
+    ``STALL_WARNING_SECONDS`` the message says nothing has progressed for N minutes
+    and a warning is logged; the call itself keeps running.
+    """
+    stop = threading.Event()
+    started = time.monotonic()
+    warned = False
+
+    def _beat() -> None:
+        nonlocal warned
+        while not stop.wait(HEARTBEAT_SECONDS):
+            elapsed = time.monotonic() - started
+            message = f"{text} ({int(elapsed)}s elapsed)"
+            if elapsed >= STALL_WARNING_SECONDS:
+                message += (
+                    f" - no progress for {int(elapsed // 60)} minutes. It may be stuck, "
+                    "but it is still running; check Database Explorer before starting it again."
+                )
+                if not warned:
+                    warned = True
+                    logger.warning("Import step '%s' has shown no progress for %d minutes", step, int(elapsed // 60))
+            task.update(step, progress, message)
+
+    task.update(step, progress, text)
+    thread = threading.Thread(target=_beat, daemon=True)
+    thread.start()
+    try:
+        yield
+    finally:
+        stop.set()
+        thread.join(timeout=1.0)
 
 
 def _count_spold_files(path: Path) -> int:
@@ -90,48 +137,61 @@ def _import_worker(task: Task, username: str, password: str, version: str, syste
     release = ei.EcoinventRelease(settings)
     release.login()
 
-    task.update("downloading", 0.10, f"Downloading ecoinvent {version} {system_model}…")
-    lci_path = release.get_release(
-        version=version,
-        system_model=system_model,
-        release_type=ei.ReleaseType.ecospold,
-    )
+    # get_release downloads the archive and extracts it in one call and reports
+    # neither: only the elapsed time is known.
+    with _heartbeat(
+        task, "downloading", 0.10,
+        f"Downloading and extracting ecoinvent {version} {system_model} (several minutes; the size is not reported)…",
+    ):
+        lci_path = release.get_release(
+            version=version,
+            system_model=system_model,
+            release_type=ei.ReleaseType.ecospold,
+        )
 
-    task.update("biosphere", 0.35, "Importing biosphere database…")
     bio_db_name = "biosphere3"
     if bio_db_name not in bw2data.databases:
-        bio_import = bw2io.importers.ecospold2_biosphere.Ecospold2BiosphereImporter(
-            name=bio_db_name,
-            filepath=str(lci_path / "MasterData" / "ElementaryExchanges.xml"),
-        )
-        bio_import.apply_strategies()
-        bio_import.write_database()
-        bw2data.preferences["biosphere_database"] = bio_db_name
+        with _heartbeat(task, "biosphere", 0.35, "Importing biosphere database…"):
+            bio_import = bw2io.importers.ecospold2_biosphere.Ecospold2BiosphereImporter(
+                name=bio_db_name,
+                filepath=str(lci_path / "MasterData" / "ElementaryExchanges.xml"),
+            )
+            bio_import.apply_strategies()
+            bio_import.write_database()
+            bw2data.preferences["biosphere_database"] = bio_db_name
     else:
         task.update("biosphere", 0.35, "Biosphere database already exists, checking it covers this release…")
 
     audit = BiosphereAudit(bio_db_name)
     _reconcile_biosphere(task, audit, lci_path / "MasterData" / "ElementaryExchanges.xml")
 
-    task.update("importing", 0.45, f"Importing ecoinvent {version} {system_model} activities…")
+    spold_count = _count_spold_files(lci_path / "datasets")
     db_name = f"ecoinvent-{version}-{system_model}"
-    ei_import = bw2io.SingleOutputEcospold2Importer(
-        dirpath=str(lci_path / "datasets"),
-        db_name=db_name,
-        biosphere_database_name=bio_db_name,
-    )
+    # use_mp=False, as in the local-folder import: a multiprocessing pool has no
+    # timeout and crashes on macOS inside a FastAPI worker. Reading is sequential,
+    # so it is slower, and the constructor is where the .spold files are read.
+    with _heartbeat(
+        task, "importing", 0.45,
+        f"Reading {spold_count:,} .spold files of ecoinvent {version} {system_model}…",
+    ):
+        ei_import = bw2io.SingleOutputEcospold2Importer(
+            dirpath=str(lci_path / "datasets"),
+            db_name=db_name,
+            biosphere_database_name=bio_db_name,
+            use_mp=False,
+        )
     audit.count_found(ei_import.data)
 
-    task.update("strategies", 0.60, "Applying strategies…")
-    ei_import.apply_strategies()
+    with _heartbeat(task, "strategies", 0.60, "Applying strategies…"):
+        ei_import.apply_strategies()
     audit.after_strategies(ei_import.data)
 
-    task.update("matching", 0.75, "Matching databases…")
-    ei_import.match_database(bio_db_name, fields=["name", "unit", "categories"])
+    with _heartbeat(task, "matching", 0.75, "Matching databases…"):
+        ei_import.match_database(bio_db_name, fields=["name", "unit", "categories"])
     audit.drop_unlinked(ei_import.data)
 
-    task.update("writing", 0.90, "Writing database…")
-    ei_import.write_database()
+    with _heartbeat(task, "writing", 0.90, "Writing database…"):
+        ei_import.write_database()
     audit.after_write(db_name)
 
     # Biosphere flows now exist: rebuild any authored database that was

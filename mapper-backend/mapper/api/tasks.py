@@ -61,6 +61,8 @@ from typing import Iterable
 
 from fastapi import APIRouter, HTTPException
 
+from mapper.core.tasks import get_task
+
 # "/tasks", not "/api/tasks": main.py mounts the whole API router under /api.
 # With "/api/tasks" the cancel route lived at /api/api/tasks/{id}/cancel, the
 # frontend's POST to /api/tasks/{id}/cancel was a 404, and every Stop button
@@ -174,6 +176,21 @@ def active_task_ids() -> Iterable[str]:
     health endpoint; not part of the worker hot path."""
     with _lock:
         return list(_events.keys())
+
+
+@router.get("/{task_id}")
+def task_state(task_id: str) -> dict:
+    """The state of a ``core.tasks`` task (an ecoinvent import, a single-year
+    LCA): ``status`` (pending | running | done | error | cancelled), ``step``,
+    ``progress``, ``message`` and, once it has failed, ``error``. Same fields the
+    progress WebSocket sends, for a client whose socket was lost and has to poll.
+
+    404 for an unknown id (never existed, or the backend restarted).
+    """
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"unknown task_id: {task_id}")
+    return task.state()
 
 
 @router.post("/{task_id}/cancel", status_code=200)

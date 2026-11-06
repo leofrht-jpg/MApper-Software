@@ -19,6 +19,7 @@ from __future__ import annotations
 import gc
 import logging
 import shutil
+import threading
 import time
 import uuid
 
@@ -32,7 +33,7 @@ from mapper.core.tasks import Task, create_task, run_in_thread
 from ecoinvent_release_fixture import write_release
 
 
-def _wait(task: Task, timeout: float = 5.0) -> None:
+def _wait(task: Task, timeout: float = 30.0) -> None:
     deadline = time.monotonic() + timeout
     while task.status in ("pending", "running") and time.monotonic() < deadline:
         time.sleep(0.01)
@@ -197,11 +198,43 @@ def bw_project():
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
+class _BeatWaiter:
+    """Lets a fake slow step wait until the heartbeat has really fired, instead of
+    sleeping for a time that only suffices on a machine that schedules threads on
+    time. A runner that stalls for 200 ms gave one beat in a 250 ms sleep."""
+
+    HARD_TIMEOUT = 30.0  # only ever reached when the heartbeat is broken
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._counts: dict[str, int] = {}
+        self._events: dict[tuple[str, int], threading.Event] = {}
+
+    def feed(self, payload: dict) -> None:
+        if "s elapsed)" not in payload["message"]:
+            return
+        with self._lock:
+            n = self._counts[payload["step"]] = self._counts.get(payload["step"], 0) + 1
+            for (step, wanted), event in self._events.items():
+                if step == payload["step"] and n >= wanted:
+                    event.set()
+
+    def wait(self, step: str, beats: int = 2) -> None:
+        with self._lock:
+            event = self._events.setdefault((step, beats), threading.Event())
+            if self._counts.get(step, 0) >= beats:
+                event.set()
+        if not event.wait(self.HARD_TIMEOUT):
+            raise AssertionError(f"no {beats} heartbeats for step '{step}' within {self.HARD_TIMEOUT}s")
+
+
+_WAITER = _BeatWaiter()
+
+
 class _FakeRelease:
     """Stands in for ecoinvent_interface.EcoinventRelease: no network, no credentials."""
 
     path = None
-    delay = 0.0
 
     def __init__(self, settings):
         pass
@@ -210,20 +243,23 @@ class _FakeRelease:
         pass
 
     def get_release(self, **kw):
-        time.sleep(self.delay)
+        _WAITER.wait("downloading")  # a slow download/extract: returns once 2 beats were seen
         return _FakeRelease.path
 
 
 @pytest.fixture()
 def credentials_import(monkeypatch, tmp_path, bw_project):
-    """The credentials worker on a synthetic release, every slow step slowed down a little."""
+    """The credentials worker on a synthetic release. The two slow steps (download/extract and
+    reading the .spold files) last exactly until the heartbeat has fired twice."""
     import bw2io
 
+    global _WAITER
+    _WAITER = _BeatWaiter()
     release = write_release(tmp_path / "release")
-    _FakeRelease.path, _FakeRelease.delay = release.parent, 0.25
+    _FakeRelease.path = release.parent
     monkeypatch.setattr(ei_api.ei, "Settings", lambda **kw: object())
     monkeypatch.setattr(ei_api.ei, "EcoinventRelease", _FakeRelease)
-    monkeypatch.setattr(ei_api, "HEARTBEAT_SECONDS", 0.05)
+    monkeypatch.setattr(ei_api, "HEARTBEAT_SECONDS", 0.005)
 
     calls: dict = {}
     real = bw2io.SingleOutputEcospold2Importer
@@ -231,7 +267,7 @@ def credentials_import(monkeypatch, tmp_path, bw_project):
     class Spy(real):
         def __init__(self, *a, **kw):
             calls["kwargs"] = kw
-            time.sleep(0.25)
+            _WAITER.wait("importing")  # reading the files: returns once 2 beats were seen
             super().__init__(*a, **kw)
 
     monkeypatch.setattr(bw2io, "SingleOutputEcospold2Importer", Spy)
@@ -241,6 +277,7 @@ def credentials_import(monkeypatch, tmp_path, bw_project):
 def _run_credentials(task=None):
     task = task or Task(task_id="t")
     seen = _frames(task)
+    task.subscribe(_WAITER.feed)
     result = ei_api._import_worker(task, "user", "not-a-real-password", "fixture", "cutoff")
     return task, seen, result
 
@@ -275,7 +312,7 @@ def test_every_stage_reports_a_message(credentials_import):
 
 
 def test_a_step_with_no_progress_for_minutes_is_warned_about_not_killed(credentials_import, monkeypatch, caplog):
-    monkeypatch.setattr(ei_api, "STALL_WARNING_SECONDS", 0.1)
+    monkeypatch.setattr(ei_api, "STALL_WARNING_SECONDS", 0.0)  # the first beat of a step is already "stalled"
     with caplog.at_level(logging.WARNING, logger="mapper.api.ecoinvent"):
         _, seen, result = _run_credentials()
 

@@ -24,6 +24,8 @@ at 0.3.1 and is kept from here on.
 
 - **Long imports and other background tasks report progress and failures honestly.** A failed task now sends its error text (`error`, next to the unchanged `message`) instead of only the last progress line, logs the full traceback, and ends in a failed state on any exception instead of staying "running"; the credentials import no longer uses a multiprocessing pool and shows elapsed time with a "no progress for N minutes" warning; the import wizard shows "Connection lost", polls the new `GET /api/tasks/{id}` when its socket drops, shows the final state or error it finds, and highlights the downloading step.
 
+- **Database Explorer list no longer overlaps rows or jumps back while it loads.** A search that shrinks the result set resets the scroll and focus to the top; appending the next page no longer scrolls back to the focused row; a page or search answered after a newer search is ignored (the previous request is aborted); rows are keyed by database and code; ties in the list order are broken by activity code, so pages never repeat or skip a row; and the count reads "146 matching activities" instead of "146 matching filters".
+
 - **An ecoinvent import no longer silently loses biosphere exchanges.** Importing a release into a project whose `biosphere3` came from an older release dropped every exchange on a flow the old `biosphere3` lacked, with no warning (3.11 into a 3.10-era `biosphere3`: 41,915 of 541,321 exchanges, 7.7%). Both import routes now add the release's missing flows to `biosphere3` (never changing an existing one, and stopping with a clear message if one disagrees), and report how many biosphere exchanges were found, linked and dropped, with a warning when any were dropped.
 
 ### Changed

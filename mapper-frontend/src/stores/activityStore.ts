@@ -69,6 +69,21 @@ interface ActivityStore {
 
 const PAGE_SIZE = 50
 
+// Which query the list currently belongs to. A search, a filter, a sort or a
+// database change starts a new generation; a page response is applied only if
+// it was asked for in the current one. Without this a slow page of the previous
+// query landed on the new query's rows (and its `finally` cleared `isLoading`
+// while the new request was still running, which let a second page request
+// start for the same offset).
+let generation = 0
+let inflight: AbortController | null = null
+
+function supersede(): void {
+  generation += 1
+  inflight?.abort()
+  inflight = null
+}
+
 const INITIAL_DISTINCT: ActivityDistinctValues = { locations: [], units: [] }
 
 export const useActivityStore = create<ActivityStore>((set, get) => ({
@@ -116,24 +131,44 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
   },
 
   fetchActivities: async (append = false) => {
-    const { selectedDatabase, searchQuery, offset, selectedLocations, selectedUnits, sortBy } = get()
+    const { selectedDatabase, searchQuery, selectedLocations, selectedUnits, sortBy } = get()
     if (!selectedDatabase) return
+    // A fresh load replaces whatever is in flight; a page append belongs to the
+    // query it was asked for and is dropped if that query has been replaced.
+    if (!append) supersede()
+    const gen = generation
+    const controller = new AbortController()
+    inflight = controller
+    // The next page starts after the rows actually held, not after a counter
+    // that a stale response could have moved.
+    const offset = append ? get().activities.length : 0
     set({ isLoading: true })
     try {
       const page = await getActivities(
         selectedDatabase,
-        append ? offset : 0,
+        offset,
         PAGE_SIZE,
         searchQuery || undefined,
         { locations: selectedLocations, units: selectedUnits, sortBy },
+        controller.signal,
       )
-      set((s) => ({
-        activities: append ? [...s.activities, ...page.items] : page.items,
-        totalActivities: page.total,
-        offset: append ? offset + page.items.length : page.items.length,
-      }))
+      if (gen !== generation) return
+      set((s) => {
+        if (!append) return { activities: page.items, totalActivities: page.total, offset: page.items.length }
+        // Append, never replace; a row already held (same database + code) is not added twice.
+        const held = new Set(s.activities.map((a) => a.key))
+        const next = [...s.activities, ...page.items.filter((a) => !held.has(a.key))]
+        return { activities: next, totalActivities: page.total, offset: next.length }
+      })
+    } catch (e) {
+      // An aborted request belongs to a query that was replaced: not an error.
+      if (gen !== generation || (e instanceof DOMException && e.name === 'AbortError')) return
+      throw e
     } finally {
-      set({ isLoading: false })
+      if (gen === generation) {
+        set({ isLoading: false })
+        if (inflight === controller) inflight = null
+      }
     }
   },
 
@@ -248,23 +283,26 @@ export const useActivityStore = create<ActivityStore>((set, get) => ({
     await get().fetchActivities(true)
   },
 
-  reset: () => set({
-    selectedDatabase: null,
-    activities: [],
-    totalActivities: 0,
-    offset: 0,
-    searchQuery: '',
-    selectedLocations: [],
-    selectedUnits: [],
-    distinctValues: INITIAL_DISTINCT,
-    isLoadingDistinct: false,
-    selectedKeys: [],
-    selectedActivitiesByKey: {},
-    lastClickIndex: null,
-    selectedActivity: null,
-    isLoadingDetail: false,
-    isLoading: false,
-  }),
+  reset: () => {
+    supersede()
+    set({
+      selectedDatabase: null,
+      activities: [],
+      totalActivities: 0,
+      offset: 0,
+      searchQuery: '',
+      selectedLocations: [],
+      selectedUnits: [],
+      distinctValues: INITIAL_DISTINCT,
+      isLoadingDistinct: false,
+      selectedKeys: [],
+      selectedActivitiesByKey: {},
+      lastClickIndex: null,
+      selectedActivity: null,
+      isLoadingDetail: false,
+      isLoading: false,
+    })
+  },
 }))
 
 // Reset when project changes.

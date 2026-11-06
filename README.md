@@ -70,6 +70,13 @@ MApper couples all four in one **cohort-preserving** pipeline: a time-resolved m
     the default — a variance and its source — and the basis follows the number
     into every result and workbook, so a reader comparing two GSD² values is
     told when they describe different quantities.
+  - **Excel import and export** — download a template, fill in your process
+    inventories (the flow by code, or by exact name and compartment), and import
+    it from the Database Explorer. The whole file is checked first and imported
+    only if there is no error; every error names its sheet, row and column, and
+    "Validate" shows a preview without writing anything. An authored database
+    can be exported to the same format to edit or share. An existing database is
+    never overwritten. Comment fields are not supported yet.
 
 - **Dynamic Stock Modelling** — Cohort-based stock dynamics with Weibull survival
   and system-level projections. Material flow quantification grouped by material,

@@ -73,7 +73,7 @@ from mapper.core.subsystem_engine import (
     compute_subsystem_result,
     subsystem_has_stock_source,
 )
-from mapper.core.method_labels import disambiguated_labels, method_path
+from mapper.core.method_labels import disambiguated_labels, display_indicator, display_method, method_path
 from mapper.models.bom_schemas import (
     ImpactAssessmentMeta,
     ImpactAssessmentRequest,
@@ -999,7 +999,7 @@ async def post_compare(body: ImpactCompareRequest) -> ImpactCompareResult:
         total_delta = total_p - total_s
         methods_out.append(ImpactCompareMethodResult(
             method=list(mkey),
-            method_label=s_res.method_label or " › ".join(mkey),
+            method_label=s_res.method_label or " › ".join(display_method(mkey)),
             unit=p_res.unit or s_res.unit,
             points=points,
             total_static=total_s,
@@ -2685,8 +2685,8 @@ def _sp_short_method(method: list[str], among: list | None = None) -> str:
     if not method:
         return "?"
     if among:
-        return disambiguated_labels(among).get(tuple(method), method[-1])
-    return method[-1]
+        return disambiguated_labels(among).get(tuple(method), display_indicator(method))
+    return display_indicator(method)
 
 
 def _build_single_product_static_workbook(

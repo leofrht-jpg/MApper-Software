@@ -8,7 +8,7 @@
  */
 
 import { CollapsibleBlock } from '../ui/CollapsibleBlock'
-import { methodKey } from '../../utils/methodLabels'
+import { methodKey, methodPath } from '../../utils/methodLabels'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, Loader2, Dice5 } from 'lucide-react'
 import {
@@ -603,7 +603,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
               <SupplyChainTreeBlock
                 idPrefix="single-product-static"
                 indicators={treeResult.results.map((r) => ({
-                  key: methodKey(r.method), label: r.method_label, title: r.method.join(' › '),
+                  key: methodKey(r.method), label: r.method_label, title: methodPath(r.method),
                 }))}
                 indicatorKey={methodKey(treeMethodResult.method)}
                 onIndicatorChange={setTreeMethod}

@@ -46,6 +46,7 @@ import { tightStackedDomain } from '../charts/yAxisDomain'
 import { MultiScenarioImpactChart } from '../charts/MultiScenarioImpactChart'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
+import { indicatorLabel, methodPath } from '../../utils/methodLabels'
 
 
 const fmtCount = (n: number) => {
@@ -1532,12 +1533,12 @@ function ProjectedImpactPanelImpl() {
                 <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 600, overflowY: 'auto' }}>
                   {projectedResult.results.map((r, i) => {
                     const active = i === selectedResultIdx
-                    const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
+                    const label = indicatorLabel(r.method) || r.method_label || `Method ${i + 1}`
                     return (
                       <button
                         key={i}
                         onClick={() => setSelectedResultIdx(i)}
-                        title={r.method.join(' › ')}
+                        title={methodPath(r.method)}
                         style={{
                           width: '100%', textAlign: 'left', padding: '8px 10px',
                           background: active ? 'color-mix(in srgb, var(--mod-plca) 10%, transparent)' : 'transparent',
@@ -1633,7 +1634,7 @@ function ProjectedImpactPanelImpl() {
             <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
               <div>
                 <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-                  Cumulative impact ({selectedResult.scope}, {selectedResult.method.join(' › ')})
+                  Cumulative impact ({selectedResult.scope}, {methodPath(selectedResult.method)})
                 </div>
                 {selectedResult.stages_included && selectedResult.stages_included.length > 0 && (
                   <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4 }}>

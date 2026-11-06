@@ -25,6 +25,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from mapper.api.project_guard import verify_project_state
 from mapper.core import authored_engine as eng
 from mapper.core import authored_storage as store
+from mapper.core.method_labels import display_method
 from mapper.core.bw2_wrapper import get_current_project
 from mapper.models.authored_schemas import (
     ActivityInput,
@@ -135,7 +136,7 @@ async def reached_indicators(body: ReachedIndicatorsRequest) -> ReachedIndicator
     return ReachedIndicatorsResponse(
         families=families,
         default_family=pick_family(None, families) if families else None,
-        indicators=[ReachedIndicator(method=list(m), family=m[0], label=" › ".join(m[1:])) for m in items],
+        indicators=[ReachedIndicator(method=list(m), family=m[0], label=" › ".join(display_method(m)[1:])) for m in items],
     )
 
 

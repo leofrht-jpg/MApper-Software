@@ -36,6 +36,7 @@ import {
 import { exportMonteCarloMulti } from '../api/client'
 import { CoverageGapNote } from '../components/authored/CoverageMarkers'
 import { exportMonteCarlo, getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
+import { indicatorLabel } from '../utils/methodLabels'
 
 const DEFAULT_ITERATIONS = 1000
 /** The bound the old <input max> declared; kept so the run payload range is unchanged. */
@@ -759,7 +760,7 @@ function MultiItemMode({
                 <CoverageGapNote
                   key={it.archetype_id}
                   gaps={it.coverage_gaps}
-                  labelFor={(m) => `${m[m.length - 1]} (${it.archetype_name})`}
+                  labelFor={(m) => `${indicatorLabel(m)} (${it.archetype_name})`}
                   testId={`mc-coverage-note-${it.archetype_id}`}
                 />
               ))}

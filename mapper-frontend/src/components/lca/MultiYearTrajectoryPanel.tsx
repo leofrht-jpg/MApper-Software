@@ -35,6 +35,7 @@ import { NumberFormatControl } from '../charts/NumberFormatControl'
 import { useNumberFormatter } from '../charts/numberFormat'
 import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 import { ContributionAnalysisPanel } from './ContributionAnalysisPanel'
+import { indicatorLabel, methodPath } from '../../utils/methodLabels'
 
 type View = 'trajectory' | 'evolution' | 'snapshot'
 
@@ -139,7 +140,7 @@ export function MultiYearTrajectoryPanel({ result, loadingPhase: _loadingPhase, 
         · {result.years.length} year{result.years.length === 1 ? '' : 's'}
       </span>
       <span style={{ color: 'var(--text-tertiary)' }}>
-        · {result.method[result.method.length - 1] ?? result.method.join(' › ')}
+        · {indicatorLabel(result.method) ?? methodPath(result.method)}
       </span>
     </>
   )
@@ -175,7 +176,7 @@ export function MultiYearTrajectoryPanel({ result, loadingPhase: _loadingPhase, 
       actions={actions}
     >
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-3)' }}>
-        {result.target_label} · {result.method.join(' › ')}
+        {result.target_label} · {methodPath(result.method)}
         {result.compute_database_pattern && (
           <span style={{ marginLeft: 8 }} title={result.compute_database_pattern}>
             · pattern: {shortenPattern(result.compute_database_pattern)}

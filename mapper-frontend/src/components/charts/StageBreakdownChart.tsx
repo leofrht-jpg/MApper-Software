@@ -25,7 +25,7 @@ interface MethodRow {
   unit: string
 }
 
-import { methodKey } from '../../utils/methodLabels'
+import { methodKey, methodPath } from '../../utils/methodLabels'
 
 interface Props {
   // Patch 4B — per-method × per-stage subtotal of impact (scope=all only).
@@ -136,7 +136,7 @@ export function StageBreakdownChart({ stageBreakdown, methods, format, filenameB
               <div
                 key={methodKey(m.method)}
                 data-testid={`stage-breakdown-row-${m.method_label}`}
-                title={m.method.join(' › ')}
+                title={methodPath(m.method)}
                 style={{ display: 'flex', alignItems: 'center', gap: 12 }}
               >
                 <div style={{ width: 200, flexShrink: 0 }}>

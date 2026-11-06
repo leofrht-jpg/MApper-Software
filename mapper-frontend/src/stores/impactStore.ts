@@ -26,6 +26,7 @@ import {
   startImpactScenarios,
 } from '../api/client'
 import { useProjectStore } from './projectStore'
+import { methodPath } from '../utils/methodLabels'
 
 export interface ImpactJob {
   taskId: string
@@ -947,7 +948,7 @@ function buildCompareClientSide(
     const totalDelta = totalP - totalS
     methodsOut.push({
       method: pr.method,
-      method_label: pr.method_label || pr.method.join(' › '),
+      method_label: pr.method_label || methodPath(pr.method),
       unit: pr.unit || sr.unit,
       points,
       total_static: totalS,

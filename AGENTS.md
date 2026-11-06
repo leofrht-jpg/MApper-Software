@@ -2624,6 +2624,23 @@ Validation order is structural → database existence → code resolution →
 name/location consistency. Cheapest checks first; later checks short-circuit
 when an earlier one already errored on the same row.
 
+### Two link problems that used to surface late (`biosphere_link`, `waste_sign`)
+
+- **`biosphere_link` (error).** A BOM row cannot link a biosphere flow (only an activity can be
+  demanded). Checked BEFORE the code-shape checks, so the 36-character flow uuid is no longer
+  reported as `code_truncated`. The **import refuses the whole file** in a pre-flight, before
+  anything is persisted (422 `bom_biosphere_link`: sheet, row, columns, nothing written), and
+  the compute path answers 422 (`_refuse_on_biosphere_link`) instead of a 500. The fix is an
+  authored activity that carries the emission as a biosphere exchange.
+- **`waste_sign` (warning).** A POSITIVE quantity on an activity with a NEGATIVE production amount
+  (a waste treatment; ecoinvent writes inputs to those as negative) comes out as a credit. A
+  warning at import and on the editor row; never an error. A negative quantity on an ordinary
+  activity is a legitimate avoided burden and is not flagged. Expression rows are skipped. The
+  production amount is read once per distinct `(db, code)` per pass.
+- Editing a row's quantity or link re-runs the validator on that ONE row (`_revalidate_node`) so
+  the editor row follows the edit; it leaves the status alone when the database is absent.
+  This is the one place validation runs outside upload, and it is per edited row, not per compute.
+
 ### Caching
 
 Within a single `validate_bom()` call, `(db, code)` lookups against bw2 are

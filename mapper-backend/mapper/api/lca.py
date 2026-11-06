@@ -357,6 +357,24 @@ class _ArchetypeDemand(NamedTuple):
     total_demand: dict[tuple[str, str], float]
 
 
+def _refuse_on_biosphere_link(arc_name: str, materials: list, scope: str) -> None:
+    """Compute-path twin of the upload check: a BOM row cannot link a biosphere flow.
+
+    Such a row used to reach the solver and come back as an HTTP 500 ("Can't find key
+    'Carbon dioxide, fossil' ... in product dictionary"). It is a refusal and nothing else: a
+    row that is not a biosphere link is not changed, so no successful calculation moves.
+    """
+    from mapper.core.bom_validator import BiosphereLinkError, refuse_on_biosphere_link
+
+    try:
+        refuse_on_biosphere_link(f"'{arc_name}' (scope '{scope}')", materials)
+    except BiosphereLinkError as e:
+        raise HTTPException(
+            status_code=422,
+            detail={"error": "biosphere_link", "message": str(e), "archetype": arc_name, "scope": scope},
+        ) from e
+
+
 def _refuse_on_unit_mismatch(arc_name: str, materials: list, scope: str) -> None:
     """Compute-path unit check. Warns at upload (#64), refuses here.
 
@@ -577,6 +595,7 @@ def _build_archetype_source_demand(
 
     # Refuse on ANY unlinked row, not just on all of them being unlinked.
     _refuse_on_unlinked(arc.name, all_materials, scope)
+    _refuse_on_biosphere_link(arc.name, all_materials, scope)
     _refuse_on_unit_mismatch(arc.name, all_materials, scope)
     linked = [m for m in all_materials if m.ecoinvent_activity is not None]
     if not linked:
@@ -1214,6 +1233,7 @@ def _build_archetype_demand(
     # path open behind a guard that looks closed.
     _all_flat = [m for root in scope_roots for m in flatten_bom(root)]
     _refuse_on_unlinked(arc.name, _all_flat, scope)
+    _refuse_on_biosphere_link(arc.name, _all_flat, scope)
     _refuse_on_unit_mismatch(arc.name, _all_flat, scope)
     for root in scope_roots:
         flat = flatten_bom(root)

@@ -33,6 +33,18 @@ const ERROR_TYPE_LABELS: Record<ValidationErrorType, string> = {
   location_mismatch: 'Location mismatch',
   unit_mismatch: 'Unit mismatch',
   stage_scope_defaulted: 'Stage scope defaulted to inflows',
+  biosphere_link: 'Row links a biosphere flow',
+  waste_sign: 'Positive quantity on a waste treatment',
+}
+
+/** One line of explanation for the types whose label alone does not say what to do. */
+const ERROR_TYPE_HELP: Partial<Record<ValidationErrorType, string>> = {
+  waste_sign:
+    'These are waste treatment activities. ecoinvent enters waste inputs with a negative quantity, so a ' +
+    'positive quantity gives a credit, not a burden. Only a warning: the row still computes as entered.',
+  biosphere_link:
+    'A BOM row cannot link a biosphere flow. Create an authored activity that carries the emission as a ' +
+    'biosphere exchange and link the row to that activity.',
 }
 
 export function ValidationReportPanel({ report, archetypeName, onAccept, onReupload }: Props) {
@@ -184,6 +196,11 @@ function GroupRow({ group }: { group: ValidationGroup }) {
           </span>
         )}
       </button>
+      {ERROR_TYPE_HELP[group.error_type] && (
+        <div data-testid="validation-group-help" style={{ margin: '4px 0 0 17px', color: 'var(--text-tertiary)' }}>
+          {ERROR_TYPE_HELP[group.error_type]}
+        </div>
+      )}
       {open && (
         <ul style={{ margin: '6px 0 0 22px', paddingLeft: 0, listStyle: 'none' }}>
           {group.affected.map((a, i) => (

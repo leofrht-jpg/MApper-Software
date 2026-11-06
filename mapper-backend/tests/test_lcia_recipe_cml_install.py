@@ -441,3 +441,24 @@ def test_real_cml_against_a_biosphere_missing_flows_counts_what_is_skipped(proje
     assert result.report["cfs_skipped"] == expected > 0
     assert result.report["skipped_flows"] == 30
     assert result.warnings and "were skipped" in result.warnings[0]
+
+
+# ── what the library says about skipped metal factors ────────────────────────
+
+
+@pytest.mark.parametrize("entry_id", ["ef_v3_1", *ENTRIES])
+def test_the_library_text_says_what_was_measured_about_metals(entry_id):
+    text = lme._registry_entry(entry_id)["long_description"]
+    # the claim that was not measured is gone ...
+    assert "more than half" not in text and "loses more" not in text
+    # ... replaced by what was: obsolete flows nobody uses, and the real gap
+    assert "no ecoinvent 3.10 or 3.11 exchange uses" in text
+    for gap in ("rare earths", "hafnium", "scandium", "graphite", "platinum-group"):
+        assert gap in text, f"{entry_id}: the real gap ({gap}) is not named"
+    assert "about 26%" in text and "about 0.005%" in text and "NMC811" in text
+
+
+def test_the_skipped_indicator_warning_does_not_say_results_are_incomplete(sproject):
+    result = lme.install_method("cml_v4_8_2016")
+    header = next(w for w in result.warnings if w.startswith("Indicators that lost at least"))
+    assert "least complete" not in header and "depends on whether your inventory uses the skipped flows" in header

@@ -256,7 +256,7 @@ def install_family(
         if worst:
             warnings.append(
                 f"Indicators that lost at least {WORST_METHOD_SHARE:.0%} of their factors "
-                f"(they are the least complete, read their results with care):"
+                f"(whether their results lose anything depends on whether your inventory uses the skipped flows):"
             )
             warnings.extend(
                 f"{' / '.join(m['name'][1:])} ({m['name'][0]}): {m['cfs_skipped']} of {m['cfs_found']} factors skipped"

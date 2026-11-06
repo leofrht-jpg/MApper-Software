@@ -22,6 +22,8 @@ at 0.3.1 and is kept from here on.
 
 - **Supply chain tree in Impact Assessment.** Single item > Static and the Multi-item results now offer the same explicit "Build supply chain tree" button as LCA Architect (nothing is built until you click; "Discard" and "Try again" work the same, with a real elapsed counter). A tree is for one indicator and one sensitivity case, picked next to the button, and is built from the result as it was calculated (archetype, scope, stage amounts, case, database; for an activity, its database, code, amount and vintage year), never from what the page holds now. Multi-item has one button per item and builds one tree at a time. System-level, Comparison and Projected are unchanged.
 
+- **Long help sits behind an (i), warnings and details behind a "Details" toggle.** The Method Library entry shows its name, a one-line description and its status; the long description, factor counts, skipped-factor explanation and the offline note are in Details. "Installed with warnings" is one line ("9.1% of factors skipped") with its list behind Details. The supply chain tree notes ("Can take up to a minute…", "one at a time", "Discard stops waiting…") moved behind an (i). New shared controls `InfoButton` and `DetailsToggle`; the UI templates (Export, Discard/Delete/Remove, Cancel, primary) are written down in `mapper-frontend/CLAUDE.md`, and a test fails on any new raw or off-template button (today's list is the baseline).
+
 ### Fixed
 
 - **ReCiPe 2016 midpoint climate indicators are shown under the name of the factors they hold.** The bundled data calls the climate indicator of the hierarchist and individualist perspectives "GWP1000", but the hierarchist one holds 100-year factors (CH4 36, N2O 298) and the individualist one 20-year factors (CH4 85, N2O 264); only the egalitarian one is 1000-year. Picking "ReCiPe (I) GWP1000" therefore gave 20-year results. MApper now shows GWP100 and GWP20 in the method picker, results, charts and export labels (the "no LT" variants too), and the Method Library entry explains it. Display only: no method is renamed, no factor changes, existing projects and stored results are untouched, and a project that already has the corrected names is not corrected twice. Path columns in exports keep the registered tuple so the method can be found again.
@@ -43,6 +45,12 @@ at 0.3.1 and is kept from here on.
 - **Database Explorer list no longer overlaps rows or jumps back while it loads.** A search that shrinks the result set resets the scroll and focus to the top; appending the next page no longer scrolls back to the focused row; a page or search answered after a newer search is ignored (the previous request is aborted); rows are keyed by database and code; ties in the list order are broken by activity code, so pages never repeat or skip a row; and the count reads "146 matching activities" instead of "146 matching filters".
 
 - **An ecoinvent import no longer silently loses biosphere exchanges.** Importing a release into a project whose `biosphere3` came from an older release dropped every exchange on a flow the old `biosphere3` lacked, with no warning (3.11 into a 3.10-era `biosphere3`: 41,915 of 541,321 exchanges, 7.7%). Both import routes now add the release's missing flows to `biosphere3` (never changing an existing one, and stopping with a clear message if one disagrees), and report how many biosphere exchanges were found, linked and dropped, with a warning when any were dropped.
+
+- **Uninstalling a method clears its install report.** The "Installed with warnings" box and the factor counts stayed on screen after Uninstall; they are removed with the method (the backend manifest already dropped the project's entry, now pinned by a test).
+
+- **Discard on the supply chain tree is red like the other destructive buttons**, and Uninstall in the Method Library is the same filled red `danger` button.
+
+- **Single-product LCA shows the full-screen elapsed overlay while it calculates**, the same one Impact Assessment uses (a real counter, no invented progress). It used to show only a small inline line.
 
 ### Changed
 

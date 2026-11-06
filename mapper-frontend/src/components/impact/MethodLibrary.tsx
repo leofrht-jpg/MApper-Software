@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Download, Trash2, Upload, AlertTriangle, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { DetailsToggle } from '../ui/DetailsToggle'
 import { ElapsedCounter } from '../ui/ElapsedCounter'
 import {
   cancelTask,
@@ -214,6 +215,15 @@ export function MethodLibrary({ onClose }: MethodLibraryProps) {
     })) return
     try {
       await uninstallLcaMethod(method.id)
+      // The install report and its warnings describe an install that no longer exists.
+      try { socketsRef.current[method.id]?.close() } catch { /* ignore */ }
+      delete socketsRef.current[method.id]
+      setTasks((prev) => {
+        if (!(method.id in prev)) return prev
+        const next = { ...prev }
+        delete next[method.id]
+        return next
+      })
       window.dispatchEvent(new CustomEvent('lcia-library-changed'))
       await reload()
     } catch (e) {
@@ -379,29 +389,50 @@ function EmptyRow({ text }: { text: string }) {
   )
 }
 
+const oneLine: React.CSSProperties = { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
+
+/** The one line a warning box shows while collapsed: the skipped share when the install report has it. */
+function warningSummary(task: InstallProgress): string {
+  const r = task.report
+  if (r && r.cfs_found > 0 && r.cfs_skipped > 0) {
+    return `${(100 * r.cfs_skipped / r.cfs_found).toFixed(1)}% of factors skipped`
+  }
+  const n = task.warnings.length
+  return `${n} warning${n === 1 ? '' : 's'}`
+}
+
 function BundledRow({ method }: { method: LCIAMethodInfo }) {
   return (
-    <div style={{
+    <div data-testid={`method-row-${method.id}`} style={{
       border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)',
       padding: 'var(--space-3) var(--space-4)',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)',
+      display: 'flex', flexDirection: 'column', gap: 'var(--space-2)',
     }}>
-      <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)' }}>{method.name}</div>
-        {method.category_count != null && (
-          <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2 }}>
-            {method.category_count} indicator{method.category_count === 1 ? '' : 's'}
-          </div>
-        )}
-        {method.factor_source && (
-          <div data-testid={`factor-source-${method.id}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.5 }}>
-            {method.factor_source}
-          </div>
-        )}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 'var(--space-3)' }}>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 500, color: 'var(--text-primary)', ...oneLine }}>{method.name}</div>
+          {method.description && (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 2, ...oneLine }}>{method.description}</div>
+          )}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success, #10b981)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
+          <CheckCircle2 size={14} /> Installed
+        </div>
       </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--success, #10b981)', fontSize: 'var(--text-xs)', fontWeight: 600 }}>
-        <CheckCircle2 size={14} /> Installed
-      </div>
+      {(method.category_count != null || method.factor_source) && (
+        <DetailsToggle data-testid={`method-details-${method.id}`}>
+          {method.category_count != null && (
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+              {method.category_count} indicator{method.category_count === 1 ? '' : 's'}
+            </div>
+          )}
+          {method.factor_source && (
+            <div data-testid={`factor-source-${method.id}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2, lineHeight: 1.5 }}>
+              {method.factor_source}
+            </div>
+          )}
+        </DetailsToggle>
+      )}
     </div>
   )
 }
@@ -431,51 +462,19 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
   }
 
   return (
-    <div style={{
+    <div data-testid={`method-row-${method.id}`} style={{
       border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-md)',
       padding: 'var(--space-4)',
       display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>{method.name}</div>
-            {method.source_url && (
-              <a href={method.source_url} target="_blank" rel="noreferrer"
-                 style={{ color: 'var(--text-tertiary)', display: 'flex' }} title="Source">
-                <ExternalLink size={12} />
-              </a>
-            )}
-          </div>
+          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', ...oneLine }}>{method.name}</div>
           {method.description && (
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4 }}>
+            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4, ...oneLine }}>
               {method.description}
             </div>
           )}
-          {method.long_description && (
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4, lineHeight: 1.5 }}>
-              {method.long_description}
-            </div>
-          )}
-          {method.factor_source && (
-            <div data-testid={`factor-source-${method.id}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 6, lineHeight: 1.5 }}>
-              {method.factor_source}
-            </div>
-          )}
-          {method.notes && (
-            <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 6, fontStyle: 'italic' }}>
-              {method.notes}
-            </div>
-          )}
-          <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-            {method.offline
-              ? <span>Offline: installs from the installed software</span>
-              : method.installer && <span>Installer: {method.installer}</span>}
-            {method.size_mb != null && <span>~{method.size_mb.toFixed(1)} MB</span>}
-            {method.available_variants && (
-              <span>ei versions: {method.available_variants.join(', ')}</span>
-            )}
-          </div>
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 6, alignItems: 'flex-end' }}>
@@ -485,8 +484,8 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
                 <CheckCircle2 size={14} /> Installed
               </div>
               {method.removable !== false && (
-                <Button variant="ghost" onClick={onUninstall} style={{ color: 'var(--danger)' }}>
-                  <Trash2 size={14} style={{ marginRight: 6 }} /> Uninstall
+                <Button variant="danger" size="sm" onClick={onUninstall}>
+                  <Trash2 size={14} /> Uninstall
                 </Button>
               )}
             </>
@@ -504,9 +503,14 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
               />
             </div>
           ) : (
-            <Button variant="primary" onClick={installClick} style={{ backgroundColor: 'var(--mod-lca)' }}>
-              <Download size={14} style={{ marginRight: 6 }} /> Install
-            </Button>
+            <>
+              <div data-testid={`not-installed-${method.id}`} style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-tertiary)' }}>
+                Not installed
+              </div>
+              <Button variant="primary" onClick={installClick} style={{ backgroundColor: 'var(--mod-lca)' }}>
+                <Download size={14} /> Install
+              </Button>
+            </>
           )}
           {needsEiPick && versionPickerOpen && !method.installed && !isInstalling && (
             <div style={{
@@ -542,15 +546,19 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
       )}
 
       {hasError && (
-        <div style={{
-          display: 'flex', alignItems: 'flex-start', gap: 8,
+        <div data-testid={`install-error-${method.id}`} style={{
           padding: 'var(--space-2) var(--space-3)',
           backgroundColor: 'rgba(239,68,68,0.08)',
           border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)',
           color: 'var(--danger)', fontSize: 'var(--text-xs)',
         }}>
-          <AlertTriangle size={14} style={{ flexShrink: 0, marginTop: 1 }} />
-          <span style={{ whiteSpace: 'pre-wrap' }}>{task!.error}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
+            <span role="alert" style={{ fontWeight: 600 }}>Install failed</span>
+          </div>
+          <DetailsToggle data-testid={`install-error-details-${method.id}`}>
+            <span style={{ whiteSpace: 'pre-wrap' }}>{task!.error}</span>
+          </DetailsToggle>
         </div>
       )}
 
@@ -565,18 +573,6 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
         </div>
       )}
 
-      {isDone && task!.report && (
-        <div data-testid={`install-report-${method.id}`} style={{
-          padding: 'var(--space-2) var(--space-3)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
-          backgroundColor: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)', borderRadius: 'var(--radius-sm)',
-        }}>
-          {task!.report.methods_registered} method{task!.report.methods_registered === 1 ? '' : 's'} registered ·{' '}
-          {task!.report.cfs_found.toLocaleString()} characterisation factors found ·{' '}
-          {task!.report.cfs_linked.toLocaleString()} linked ·{' '}
-          {task!.report.cfs_skipped.toLocaleString()} skipped
-        </div>
-      )}
-
       {isDone && task!.warnings.length > 0 && (
         <div style={{
           padding: 'var(--space-2) var(--space-3)',
@@ -584,12 +580,60 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
           border: '1px solid var(--warning, #f59e0b)', borderRadius: 'var(--radius-sm)',
           color: 'var(--warning, #f59e0b)', fontSize: 'var(--text-xs)',
         }}>
-          <div role="alert" data-testid={`install-warnings-${method.id}`} style={{ fontWeight: 600, marginBottom: 4 }}>Installed with warnings:</div>
-          <ul style={{ margin: 0, paddingLeft: 16 }}>
-            {task!.warnings.map((w, i) => <li key={i}>{w}</li>)}
-          </ul>
+          <div role="alert" data-testid={`install-warnings-${method.id}`} style={{ fontWeight: 600 }}>
+            Installed with warnings: {warningSummary(task!)}
+          </div>
+          <DetailsToggle data-testid={`install-warnings-details-${method.id}`}>
+            <ul style={{ margin: 0, paddingLeft: 16 }}>
+              {task!.warnings.map((w, i) => <li key={i}>{w}</li>)}
+            </ul>
+          </DetailsToggle>
         </div>
       )}
+
+      <DetailsToggle data-testid={`method-details-${method.id}`}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6, fontSize: 'var(--text-xs)', lineHeight: 1.5 }}>
+          {method.source_url && (
+            <a href={method.source_url} target="_blank" rel="noreferrer"
+               style={{ color: 'var(--text-tertiary)', display: 'inline-flex', alignItems: 'center', gap: 4 }} title="Source">
+              <ExternalLink size={12} /> Source
+            </a>
+          )}
+          {method.long_description && (
+            <div style={{ color: 'var(--text-tertiary)' }}>{method.long_description}</div>
+          )}
+          {method.category_count != null && (
+            <div style={{ color: 'var(--text-secondary)' }}>
+              {method.category_count} indicator{method.category_count === 1 ? '' : 's'}
+            </div>
+          )}
+          {method.factor_source && (
+            <div data-testid={`factor-source-${method.id}`} style={{ color: 'var(--text-secondary)' }}>
+              {method.factor_source}
+            </div>
+          )}
+          {method.notes && (
+            <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{method.notes}</div>
+          )}
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: 'var(--text-tertiary)' }}>
+            {method.offline
+              ? <span>Offline: installs from the installed software</span>
+              : method.installer && <span>Installer: {method.installer}</span>}
+            {method.size_mb != null && <span>~{method.size_mb.toFixed(1)} MB</span>}
+            {method.available_variants && (
+              <span>ei versions: {method.available_variants.join(', ')}</span>
+            )}
+          </div>
+          {isDone && task!.report && (
+            <div data-testid={`install-report-${method.id}`} style={{ color: 'var(--text-secondary)' }}>
+              {task!.report.methods_registered} method{task!.report.methods_registered === 1 ? '' : 's'} registered ·{' '}
+              {task!.report.cfs_found.toLocaleString()} characterisation factors found ·{' '}
+              {task!.report.cfs_linked.toLocaleString()} linked ·{' '}
+              {task!.report.cfs_skipped.toLocaleString()} skipped
+            </div>
+          )}
+        </div>
+      </DetailsToggle>
     </div>
   )
 }

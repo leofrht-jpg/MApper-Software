@@ -271,6 +271,9 @@ describe('Static: abort, late responses, errors', () => {
     run().mockReturnValue(d.promise)
     render(<SingleProductStaticPanel archetypeId="a1" />)
     fireEvent.click(buildBtn(S)!)
+    // The note sits behind the (i) next to Discard: not on screen until it is opened.
+    expect(screen.queryByTestId(`${S}-tree-discard-note`)).toBeNull()
+    fireEvent.click(screen.getByTestId(`${S}-tree-discard-info`))
     expect(screen.getByTestId(`${S}-tree-discard-note`).textContent).toContain('server may keep computing')
     fireEvent.click(screen.getByText('Discard'))
     expect((run().mock.calls[0][1] as AbortSignal).aborted).toBe(true)
@@ -296,7 +299,7 @@ describe('Static: abort, late responses, errors', () => {
     seedStatic({ Base: archRes('a1', 'BEV') })
     render(<SingleProductStaticPanel archetypeId="a1" />)
     expect(buildBtn(S)!.textContent).toContain('Build supply chain tree')
-    expect(screen.getByTestId(`${S}-tree-hint`).textContent).toBe('Can take up to a minute on large databases.')
+    expect(screen.getByTestId(`${S}-tree-hint`).textContent).toBe('Up to a minute on large databases.')
   })
 })
 
@@ -335,7 +338,11 @@ describe('Multi-item: one button per item, one tree at a time', () => {
     expect(buildBtn(mid('arc-b'))).not.toBeNull()
     expect(run()).not.toHaveBeenCalled()
     expect(screen.queryByTestId('tree-panel')).toBeNull()
+    // The note is behind an (i), not permanently on the screen.
+    expect(screen.queryByTestId('multi-product-trees-note')).toBeNull()
+    fireEvent.click(screen.getByTestId('multi-product-trees-info'))
     expect(screen.getByTestId('multi-product-trees-note').textContent).toContain('one at a time')
+    expect(screen.getByTestId('multi-product-trees-note').textContent).toContain('up to a minute on a large database')
   })
 
   it('builds A then B: each keeps its own tree, B never shows A\'s, and every button waits while one runs', async () => {

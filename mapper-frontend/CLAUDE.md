@@ -261,6 +261,35 @@ the outcome, and still clipped — superseded above.)
 - [Multi-item export records per-item stage amounts] Thread them from the frontend store via `stage_amounts_meta`; fall back to "—" when absent, never guess.
 - [Within-type multi-item comparison + per-item vintages] (Patch 5Z: grouping uses the structured `(base_db, iam, ssp)` coords, not string-parsing; the shared `<ScenarioYearPicker>` is selection-agnostic — changing it must keep both single-item and multi-item behavior-preserving.)
 
+## UI templates: new UI is built from these
+
+Derived from what the app does today (counts from `src/`, 2026-11-06), not invented. Use the primitives; never hand-roll a button or a help text.
+
+| Need | Use | Evidence |
+|---|---|---|
+| Export | `<Button variant="secondary">` + `<Download size={14} />` | `ContributionAnalysisPanel`, `MultiYearTrajectoryPanel`, `SingleProductStaticPanel`, `MultiProductLCA`, `MaterialFlowPanel`, `AuthoredExcel` |
+| Discard, Delete, Remove, Uninstall | `<Button variant="danger">` (filled red). Red text on a ghost/secondary is NOT the template | `Button.tsx` documents it; `dialogs.tsx` renders every destructive confirm with it; `SupplyChainTreeAction`, `MethodLibrary` |
+| Cancel | `<Button variant="ghost">` | 26 ghost vs 4 secondary (`BOMTree`, `EcoinventLinker`, `AuthoredDatabaseControls`, ...). The shared dialogs use `secondary`; leave them |
+| The one main action | `<Button variant="primary">`, one per surface | skill `mapper-ui-conventions` (5G) |
+| Supporting action | `<Button variant="secondary">` | same |
+| Long help | `<InfoButton label="About x">` (`components/ui/InfoButton.tsx`): the text is not on screen until opened | `SupplyChainTreeAction`, `MultiProductLCA` |
+| Details, long warnings, long errors | `<DetailsToggle>` (`components/ui/DetailsToggle.tsx`), collapsed, body stays mounted | `MethodLibrary` |
+| A long calculation | `<ComputeOverlay>`; the inline `<ComputeProgress>` only for a non-blocking job | Impact Assessment, `LCACalculator` |
+
+**Texts are laconic.** One line is visible; the rest is behind an (i) or a Details toggle. A warning or an error shows a one-line summary ("9.1% of factors skipped", "Install failed") and its full text behind Details, collapsed by default. Nothing is deleted: every fact stays reachable.
+
+**UI checklist before opening a PR**
+- [ ] Every button is `components/ui/Button.tsx` with the variant above; icon-only controls have an `aria-label`.
+- [ ] No red text hand-set on a button; Discard/Delete/Remove/Uninstall are `danger`.
+- [ ] No sentence of help is permanently on screen: it is behind an `InfoButton` or a `DetailsToggle`.
+- [ ] Warnings and errors: a one-line summary, the rest behind Details, collapsed.
+- [ ] A calculation over about 10 s uses `<ComputeOverlay>` with a real elapsed counter and no invented percentage.
+- [ ] Hide/show uses `display: none`, not conditional mount (state survives).
+- [ ] `tests/uiButtonConformance.test.ts` passes without growing `uiButtonConformance.baseline.json`.
+- [ ] `npm run type-check` (`tsc -b`) and the tests for the touched files pass.
+
+**The ratchet.** `tests/uiButtonConformance.test.ts` scans `src/` for raw `<button>` and for export/discard/delete/remove/cancel buttons off-template. Today's violations are in `tests/uiButtonConformance.baseline.json`; a new one fails the test and prints the list; fixing one asks you to refresh the baseline (`UI_CONFORMANCE_UPDATE=1`). `UI_CONFORMANCE_REPORT=1` prints every violation with file:line. Fix violations in the surface you touch; never add to the baseline to make a test pass.
+
 ## Frontend type-check (canonical gate)
 
 The canonical per-patch type-check is **`npm run type-check`** (= `tsc -b`),

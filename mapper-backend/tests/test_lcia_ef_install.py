@@ -313,6 +313,24 @@ def test_uninstall_removes_exactly_what_the_install_registered(small_project):
     assert list(bw2data.methods) == [("Other", "x", "y")]
 
 
+def test_uninstall_also_clears_the_stored_install_report_of_this_project_only(small_project):
+    """The manifest keeps the install report (counts, skipped flows) per project. Uninstalling must
+    drop it, or a stale "installed with warnings" report outlives the methods it describes."""
+    lme.install_method("ef_v3_1")
+    manifest = lme._read_manifest("ef_v3_1")
+    here = str(bw2data.projects.current)
+    assert manifest["projects"][here]["report"]["cfs_found"] > 0
+    manifest["projects"]["another-project"] = {"method_tuples": [["Other", "x", "y"]], "report": {"cfs_found": 7}}
+    lme._write_manifest("ef_v3_1", manifest)
+
+    lme.uninstall("ef_v3_1")
+
+    after = lme._read_manifest("ef_v3_1")
+    assert here not in after["projects"], "the report of the uninstalled project is still stored"
+    assert after["projects"]["another-project"]["report"] == {"cfs_found": 7}, "another project's report was touched"
+    assert not lme.is_installed("ef_v3_1")
+
+
 def _finished_frames(client, task_id):
     """Wait for the install thread, then read the frames a late subscriber gets.
 

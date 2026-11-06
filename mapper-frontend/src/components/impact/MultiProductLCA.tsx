@@ -43,6 +43,7 @@ import { MultiProductLineChart } from './MultiProductLineChart'
 import { shortenByCommonPrefix } from '../../utils/labelPrefix'
 import { StageAmountsEditor, YearsInput, canApplyLifetime, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
 import { ComputeOverlay } from '../ui/ComputeOverlay'
+import { InfoButton } from '../ui/InfoButton'
 import { useBOMStore } from '../../stores/bomStore'
 import { useParameterStore } from '../../stores/parameterStore'
 import { SensitivityCases, hasVaryingParameters, varyingCases } from './SensitivityCases'
@@ -1162,11 +1163,13 @@ function ResultsSection({
               </select>
             )}
           </div>
-          <span data-testid="multi-product-trees-note" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-            Each tree is a separate request for one item and one indicator, and can take up to a
-            minute on a large database. They are built one at a time: while one runs, the other
-            buttons wait.
-          </span>
+          <InfoButton label="About building the trees" data-testid="multi-product-trees-info">
+            <span data-testid="multi-product-trees-note">
+              Each tree is a separate request for one item and one indicator, and can take up to a
+              minute on a large database. They are built one at a time: while one runs, the other
+              buttons wait.
+            </span>
+          </InfoButton>
           {treeItems.map(({ item, key, body }) => (
             <SupplyChainTreeBlock
               key={item.item_id}

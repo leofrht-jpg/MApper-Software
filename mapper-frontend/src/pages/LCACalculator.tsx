@@ -33,6 +33,7 @@ import { Badge } from '../components/ui/Badge'
 import { ChartExportButton } from '../components/charts/ChartExportButton'
 import { ChartExportContainer } from '../components/charts/ChartExportContainer'
 import { ContributionAnalysisPanel } from '../components/lca/ContributionAnalysisPanel'
+import { SupplyChainTreeAction } from '../components/lca/SupplyChainTreeAction'
 import { DatabaseSelector, buildDatabasePatterns } from '../components/lca/DatabaseSelector'
 import { MultiYearTrajectoryPanel } from '../components/lca/MultiYearTrajectoryPanel'
 import {
@@ -133,12 +134,16 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   const [configOpen, setConfigOpen] = useState(true)
   const [resultsOpen, setResultsOpen] = useState(true)
 
-  // Contribution analysis cache + loading state, keyed by `${targetSig}::${methodSig}`.
+  // Contribution analysis (the supply chain tree). It is built ONLY when the user clicks
+  // "Build supply chain tree", never as a side effect of Calculate. The cache is keyed by
+  // the Calculate-time snapshot + indicator, so a cached tree shows without a request.
   const [caCache, setCaCache] = useSessionState<Record<string, ContributionAnalysisResult>>('lcaCalculator.caCache', {})
-  const [caLoadingKey, setCaLoadingKey] = useState<string | null>(null)
-  const [caPhase, setCaPhase] = useState<string | null>(null)
-  const [caStartedAt, setCaStartedAt] = useState<number | null>(null)
-  const [caError, setCaError] = useState<string | null>(null)
+  // The tree request in flight: one at a time. Aborting frees the client only; the server
+  // keeps computing (a thread cannot be cancelled) and holds its compute lock until done.
+  const caAbortRef = useRef<AbortController | null>(null)
+  const [caRunning, setCaRunning] = useState(false)
+  const [caError, setCaError] = useState<{ key: string; message: string } | null>(null)
+  const [caDiscarded, setCaDiscarded] = useState(false)
 
   // Archetype mode state (multi-archetype)
   const [arcResults, setArcResults] = useSessionState<ArchetypeLCACalculateResult[]>('lcaCalculator.arcResults', [])
@@ -150,6 +155,23 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   // Activity mode state (multi-activity)
   interface DemandEntry { act: ActivitySummary; amount: number }
   const [actDemand, setActDemand] = useSessionState<DemandEntry[]>('lcaCalculator.actDemand', [])
+  // What the SHOWN result was calculated with, frozen at Calculate: the compute-against
+  // database and year, and in activity mode the demand. The tree is built from this,
+  // never from the live inputs, so it always belongs to the score on screen even if
+  // an amount is edited afterwards.
+  interface CASnapshot { computeDatabase: string | null; computeYear: number | null; demand: DemandEntry[] | null }
+  const [caSnapshot, setCaSnapshot] = useSessionState<CASnapshot | null>('lcaCalculator.caSnapshot', null)
+
+  // Drop the tree request in flight on the client: its late response is ignored.
+  const discardCa = useCallback((notify = true) => {
+    const running = caAbortRef.current
+    if (running) {
+      running.abort()
+      caAbortRef.current = null
+      setCaRunning(false)
+      if (notify) setCaDiscarded(true)
+    }
+  }, [])
   // Patch 4AH — activity feed for the new <MultiItemSelector>. Parent
   // owns the result of the debounced backend search (kept as plain
   // ActivitySummary[] so downstream code that consumes
@@ -534,6 +556,9 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
     setArcCalculating(true)
     setArcError(null)
     setArcResults([])
+    discardCa(false)
+    setCaError(null)
+    setCaDiscarded(false)
     try {
       const results = await Promise.all(
         selectedArchetypes.map((arc) => {
@@ -544,6 +569,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
       )
       setArcResults(results)
       setArcResultIndex(0)
+      setCaSnapshot({ computeDatabase, computeYear, demand: null })
     } catch (e: unknown) {
       setArcError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -557,6 +583,9 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
     setActCalculating(true)
     setActError(null)
     setActResult(null)
+    discardCa(false)
+    setCaError(null)
+    setCaDiscarded(false)
     try {
       const activities: ActivityDemandItem[] = actDemand.map((d) => ({
         database: d.act.database,
@@ -566,6 +595,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
       const result = await calculateActivityLCA(activities, selectedMethods)
       setActResult(result)
       setActResultIndex(0)
+      setCaSnapshot({ computeDatabase, computeYear, demand: actDemand.map((d) => ({ ...d })) })
     } catch (e: unknown) {
       setActError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -615,10 +645,10 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
     setActError(null)
     setActResultIndex(0)
     setCaCache({})
+    discardCa(false)
     setCaError(null)
-    setCaPhase(null)
-    setCaLoadingKey(null)
-    setCaStartedAt(null)
+    setCaDiscarded(false)
+    setCaSnapshot(null)
   }
 
   const archetypesWithErrors = useMemo(
@@ -653,6 +683,12 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
 
   const hasAnyResult = (fuMode === 'archetype' && arcResults.length > 0) || (fuMode === 'activity' && actResult !== null)
 
+  // The activities the SHOWN activity result was calculated for (frozen at Calculate), so
+  // the result header, the single/multi branch and the tree never follow later edits.
+  const resultDemand: DemandEntry[] = actResult && caSnapshot?.demand ? caSnapshot.demand : actDemand
+  // Sessions saved before the snapshot existed fall back to the live inputs.
+  const snap: CASnapshot = caSnapshot ?? { computeDatabase, computeYear, demand: null }
+
   // ── Contribution-analysis target signature for the active result ──
   const caTarget = useMemo(() => {
     if (fuMode === 'archetype' && arcResult && activeArcResult && !isMultiMode) {
@@ -667,16 +703,16 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
           scope: arcResult.scope as 'inflows' | 'stock' | 'outflows' | 'all',
           stage_amounts: stageAmounts,
           method: activeArcResult.method,
-          compute_database: computeDatabase,
-          year: computeYear,
+          compute_database: snap.computeDatabase,
+          year: snap.computeYear,
           limit: 20,
           cutoff: 0.001,
           max_depth: 5,
         },
       }
     }
-    if (fuMode === 'activity' && actDemand.length === 1 && activeActResult) {
-      const d = actDemand[0]
+    if (fuMode === 'activity' && resultDemand.length === 1 && activeActResult) {
+      const d = resultDemand[0]
       const sig = `act:${d.act.database}:${d.act.code}:${d.amount}`
       return {
         sig,
@@ -687,8 +723,8 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
           code: d.act.code,
           amount: d.amount,
           method: activeActResult.method,
-          compute_database: computeDatabase,
-          year: computeYear,
+          compute_database: snap.computeDatabase,
+          year: snap.computeYear,
           limit: 20,
           cutoff: 0.001,
           max_depth: 5,
@@ -696,57 +732,58 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
       }
     }
     return null
-  }, [fuMode, arcResult, activeArcResult, isMultiMode, actDemand, activeActResult, computeDatabase, computeYear])
+  }, [fuMode, arcResult, activeArcResult, isMultiMode, resultDemand, activeActResult, snap.computeDatabase, snap.computeYear])
 
-  // Cache key includes compute_database so switching DB invalidates instead
-  // of serving the previous DB's cached result.
+  // Cache key: the snapshot's target + the indicator + the compute database it was
+  // calculated against, so switching any of them shows the button again, never a stale tree.
   const caKey = caTarget
-    ? `${caTarget.sig}::${caTarget.methodSig}::${computeDatabase ?? 'auto'}`
+    ? `${caTarget.sig}::${caTarget.methodSig}::${snap.computeDatabase ?? 'auto'}`
     : null
 
-  useEffect(() => {
-    if (!caTarget || !caKey) return
-    if (caCache[caKey]) { setCaError(null); return }
-    let cancelled = false
-    const phases = [
-      'Computing inventory…',
-      'Top processes…',
-      'Top emissions…',
-      'Building supply chain tree…',
-    ]
-    let phaseIdx = 0
-    setCaLoadingKey(caKey)
-    setCaPhase(phases[0])
-    setCaStartedAt(Date.now())
+  // A different target, indicator or snapshot (or leaving the page) drops the request in
+  // flight on the client; its late response is ignored. The cleanup runs on a key change
+  // and on unmount.
+  useEffect(() => () => discardCa(), [caKey, discardCa])
+
+  const handleBuildTree = useCallback(async () => {
+    if (!caTarget || !caKey || caAbortRef.current) return // one at a time
+    const key = caKey
+    const controller = new AbortController()
+    caAbortRef.current = controller
+    setCaRunning(true)
     setCaError(null)
-    const phaseTimer = setInterval(() => {
-      phaseIdx = Math.min(phaseIdx + 1, phases.length - 1)
-      setCaPhase(phases[phaseIdx])
-    }, 700)
-    runContributionAnalysis(caTarget.request)
-      .then((res) => {
-        if (cancelled) return
-        setCaCache((prev) => ({ ...prev, [caKey]: res }))
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return
-        setCaError(e instanceof Error ? e.message : String(e))
-      })
-      .finally(() => {
-        if (cancelled) return
-        clearInterval(phaseTimer)
-        setCaLoadingKey((k) => (k === caKey ? null : k))
-        setCaPhase(null)
-        setCaStartedAt(null)
-      })
-    return () => {
-      cancelled = true
-      clearInterval(phaseTimer)
+    setCaDiscarded(false)
+    try {
+      const res = await runContributionAnalysis(caTarget.request, controller.signal)
+      if (controller.signal.aborted) return
+      setCaCache((prev) => ({ ...prev, [key]: res }))
+    } catch (e: unknown) {
+      if (controller.signal.aborted) return
+      setCaError({ key, message: e instanceof Error ? e.message : String(e) })
+    } finally {
+      if (caAbortRef.current === controller) {
+        caAbortRef.current = null
+        setCaRunning(false)
+      }
     }
-  }, [caKey, caTarget, caCache])
+  }, [caTarget, caKey, setCaCache])
 
   const caResult = caKey ? caCache[caKey] ?? null : null
-  const caLoading = caKey != null && caLoadingKey === caKey
+  const caErrorMessage = caError && caError.key === caKey ? caError.message : null
+  const caDatabaseNote = caTarget && caSnapshot && computeDatabase !== caSnapshot.computeDatabase
+    ? `The tree uses the database chosen at Calculate (${caSnapshot.computeDatabase ?? 'automatic'}). Calculate again to use ${computeDatabase ?? 'the new selection'}.`
+    : null
+  const treeAction = (testId: 'lca-activity' | 'lca-archetype') => (
+    <SupplyChainTreeAction
+      testId={testId}
+      running={caRunning}
+      error={caErrorMessage}
+      discarded={caDiscarded}
+      databaseNote={caDatabaseNote}
+      onBuild={() => { void handleBuildTree() }}
+      onDiscard={() => discardCa()}
+    />
+  )
 
   // ── Multi-year contribution analysis (Session 3 backend) ──────────────────
   const myCancel = useCancellableTask()
@@ -1483,7 +1520,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
               onToggle={() => setResultsOpen((v) => !v)}
               summary={!resultsOpen ? (
                 <span style={{ fontFamily: 'var(--font-mono)' }}>
-                  {actDemand[0]?.act.name ?? `${actDemand.length} activities`}
+                  {resultDemand[0]?.act.name ?? `${resultDemand.length} activities`}
                   {' · '}{actResult.results.length} indicator{actResult.results.length === 1 ? '' : 's'}
                   {actResult.elapsed_seconds > 0 ? ` · ${actResult.elapsed_seconds.toFixed(2)}s` : ''}
                 </span>
@@ -1494,14 +1531,14 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
                   <h3 style={{ fontSize: 'var(--text-base)', fontWeight: 600, color: 'var(--text-primary)' }}>Activity LCA Results</h3>
-                  {actDemand.length === 1 && (
+                  {resultDemand.length === 1 && (
                     <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
-                      {[actDemand[0].act.name, actDemand[0].act.location, actDemand[0].act.database].filter(Boolean).join(' | ')}
+                      {[resultDemand[0].act.name, resultDemand[0].act.location, resultDemand[0].act.database].filter(Boolean).join(' | ')}
                     </p>
                   )}
                   {actResult.elapsed_seconds > 0 && (
                     <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 2 }}>
-                      {actDemand.length} activit{actDemand.length === 1 ? 'y' : 'ies'} | {actResult.elapsed_seconds.toFixed(2)}s
+                      {resultDemand.length} activit{resultDemand.length === 1 ? 'y' : 'ies'} | {actResult.elapsed_seconds.toFixed(2)}s
                     </p>
                   )}
                 </div>
@@ -1550,26 +1587,13 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                 <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: 'var(--space-4)' }}>
                   {/* Single-activity: full contribution analysis panel.
                       Multi-activity: per-activity bar chart (CA only runs for n=1). */}
-                  {actDemand.length === 1 ? (
+                  {resultDemand.length === 1 ? (
                     yearMode === 'multi' ? (
                       multiYearSection
                     ) : caResult ? (
-                      <ContributionAnalysisPanel
-                        result={caResult}
-                        loadingPhase={caLoading ? caPhase : null}
-                        loadingStartedAt={caLoading ? caStartedAt : null}
-                      />
-                    ) : caError ? (
-                      <div style={{ ...cardStyle, color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>
-                        Contribution analysis failed: {caError}
-                      </div>
+                      <ContributionAnalysisPanel result={caResult} />
                     ) : (
-                      <ComputeProgress
-                        active
-                        label={caPhase ?? 'Loading contribution analysis…'}
-                        bar="none"
-                        data-testid="lca-activity-contribution-progress"
-                      />
+                      treeAction('lca-activity')
                     )
                   ) : (
                     <>
@@ -1745,7 +1769,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                     </p>
                   )}
                 </div>
-                <Button variant="ghost" onClick={handleExport} disabled={isExporting} style={{ gap: 6 }}>
+                <Button variant="secondary" onClick={handleExport} disabled={isExporting}>
                   <Download size={14} /> {isExporting ? 'Exporting…' : 'Export XLSX'}
                 </Button>
               </div>
@@ -1816,23 +1840,9 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                       {yearMode === 'multi' ? (
                         multiYearSection
                       ) : caResult ? (
-                        <ContributionAnalysisPanel
-                          result={caResult}
-                          loadingPhase={caLoading ? caPhase : null}
-                          loadingStartedAt={caLoading ? caStartedAt : null}
-                          stageBreakdown={stageData}
-                        />
-                      ) : caError ? (
-                        <div style={{ ...cardStyle, color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>
-                          Contribution analysis failed: {caError}
-                        </div>
+                        <ContributionAnalysisPanel result={caResult} stageBreakdown={stageData} />
                       ) : (
-                        <ComputeProgress
-                          active
-                          label={caPhase ?? 'Loading contribution analysis…'}
-                          bar="none"
-                          data-testid="lca-archetype-contribution-progress"
-                        />
+                        treeAction('lca-archetype')
                       )}
 
                       {/* All indicators summary table */}

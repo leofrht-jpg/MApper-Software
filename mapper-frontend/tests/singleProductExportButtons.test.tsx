@@ -15,7 +15,12 @@ import { SingleProductComparisonPanel } from '../src/components/impact/SinglePro
 import { useSingleProductImpactStore } from '../src/stores/singleProductImpactStore'
 import { useParameterStore } from '../src/stores/parameterStore'
 import { usePLCAStore } from '../src/stores/plcaStore'
-import { exportSingleProductComparison, type ArchetypeLCACalculateResult } from '../src/api/client'
+import {
+  exportSingleProductComparison, exportSingleProductProspective, exportSingleProductStatic,
+  type ArchetypeLCACalculateResult,
+} from '../src/api/client'
+import { Button } from '../src/components/ui/Button'
+import { useSessionStateStore } from '../src/stores/sessionStateStore'
 
 // Patch 4G — Smoke tests for the Export button on each Single-product
 // sub-tab Results card. Walks the rendering surface only — the
@@ -66,6 +71,7 @@ beforeEach(() => {
   // @ts-expect-error - jsdom stub
   globalThis.ResizeObserver = class { observe(){} unobserve(){} disconnect(){} }
   useSingleProductImpactStore.getState().reset()
+  useSessionStateStore.getState().reset()
   useParameterStore.setState({ table: null, selectedScenarios: [] })
   usePLCAStore.setState({
     databases: [{
@@ -155,4 +161,94 @@ describe('Single-product Export buttons (Patch 4G)', () => {
       amounts: { Manufacturing: 1, 'Use Phase': 16, Maintenance: 16, 'End of Life': 1 },
     })
   })
+})
+
+
+// The three Export buttons used to be hand-rolled <button> elements (32 px, own colours).
+// They are now the standard <Button variant="secondary">, like the Export XLSX header
+// button in LCA Architect. This block locks the behaviour, not the markup: the test ids,
+// the click, the disabled state while exporting and the spinner. What a button LOOKS like is
+// checked against a reference <Button variant="secondary"> rendered here, so a hand-rolled
+// style or another variant fails it.
+describe('Single-product Export buttons use the standard Button (secondary)', () => {
+  const PROJECTED_RUN = {
+    dbName: 'ei310-remind-ssp2-2030', year: 2030, iam: 'remind', ssp: 'SSP2-PkBudg1150',
+    result: { ...STATIC_RESULT, compute_database: 'ei310-remind-ssp2-2030' },
+  }
+
+  beforeEach(() => {
+    vi.mocked(exportSingleProductStatic).mockClear()
+    vi.mocked(exportSingleProductProspective).mockClear()
+    vi.mocked(exportSingleProductComparison).mockClear()
+  })
+
+  function referenceStyle(): string {
+    const ref = render(<Button variant="secondary">x</Button>)
+    const css = (ref.container.querySelector('button') as HTMLElement).style.cssText
+    ref.unmount()
+    return css
+  }
+
+  function seedStatic() {
+    const set = useSessionStateStore.getState().setValue
+    useSingleProductImpactStore.getState().setArchetypeId('arc-1')
+    set('singleProduct.static.arc-1.results', { Base: STATIC_RESULT })
+    set('singleProduct.static.arc-1.order', ['Base'])
+    set('singleProduct.static.arc-1.active', 'Base')
+  }
+  function seedProjected() {
+    useSingleProductImpactStore.getState().setArchetypeId('arc-1')
+    const set = useSessionStateStore.getState().setValue
+    set('singleProduct.projected.arc-1.runs', [PROJECTED_RUN])
+    set('singleProduct.projected.arc-1.active', 0)
+  }
+  function seedComparison() {
+    useSingleProductImpactStore.getState().setArchetypeId('arc-1')
+    useSingleProductImpactStore.getState().setStaticResult(STATIC_RESULT)
+    useSingleProductImpactStore.getState().setProjectedRuns([PROJECTED_RUN])
+  }
+
+  const CASES = [
+    { name: 'Static', id: 'single-product-static-export', seed: seedStatic,
+      ui: () => <SingleProductStaticPanel archetypeId="arc-1" />, api: exportSingleProductStatic },
+    { name: 'Projected', id: 'single-product-projected-export', seed: seedProjected,
+      ui: () => <SingleProductProjectedPanel archetypeId="arc-1" />, api: exportSingleProductProspective },
+    { name: 'Comparison', id: 'single-product-compare-export', seed: seedComparison,
+      ui: () => <SingleProductComparisonPanel archetypeId="arc-1" />, api: exportSingleProductComparison },
+  ]
+
+  for (const c of CASES) {
+    it(`${c.name}: standard secondary Button, same test id, label and title`, () => {
+      c.seed()
+      const reference = referenceStyle()
+      const { getByTestId } = render(c.ui())
+      const btn = getByTestId(c.id) as HTMLButtonElement
+      expect(btn.tagName).toBe('BUTTON')
+      expect(btn.type).toBe('button')
+      expect(btn.style.cssText).toBe(reference)          // exactly the Button's own style, nothing added
+      expect(btn.textContent).toBe('Export')
+      expect(btn.title).toBe('Download Excel workbook')
+      expect(btn.disabled).toBe(false)
+      expect(btn.querySelector('svg')).not.toBeNull()
+    })
+
+    it(`${c.name}: click exports once; disabled with the spinner while it runs, then back`, async () => {
+      c.seed()
+      let finish: () => void = () => {}
+      vi.mocked(c.api as never).mockImplementationOnce((() => new Promise<void>((r) => { finish = r })) as never)
+      const { getByTestId } = render(c.ui())
+      const btn = getByTestId(c.id) as HTMLButtonElement
+
+      await act(async () => { fireEvent.click(btn) })
+      expect(vi.mocked(c.api as never)).toHaveBeenCalledTimes(1)
+      expect(btn.disabled).toBe(true)
+      expect(btn.querySelector('svg.lca-spin')).not.toBeNull()        // the contribution panel's spinner
+      await act(async () => { fireEvent.click(btn) })                 // a second click does nothing
+      expect(vi.mocked(c.api as never)).toHaveBeenCalledTimes(1)
+
+      await act(async () => { finish() })
+      expect(btn.disabled).toBe(false)
+      expect(btn.querySelector('svg.lca-spin')).toBeNull()
+    })
+  }
 })

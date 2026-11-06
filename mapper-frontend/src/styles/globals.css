@@ -34,3 +34,9 @@
     background: var(--text-secondary);
   }
 }
+
+/* Spinner for the export buttons (ContributionAnalysisPanel, MultiYearTrajectoryPanel, the three
+   Single-product exports). `className="lca-spin"` was in use but no rule defined it, so the icon
+   never turned. */
+@keyframes lca-spin { to { transform: rotate(360deg); } }
+.lca-spin { animation: lca-spin 1s linear infinite; }

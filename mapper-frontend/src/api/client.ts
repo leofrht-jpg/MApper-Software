@@ -1744,13 +1744,17 @@ export async function getProspectiveYears(
   return request<ProspectiveYearsResponse>(`/lca/prospective-years?database=${q}`)
 }
 
+/** `signal` frees the CLIENT only: the server finishes the computation anyway (a thread
+ *  cannot be cancelled) and holds its compute lock until then. */
 export async function runContributionAnalysis(
   body: ContributionAnalysisRequest,
+  signal?: AbortSignal,
 ): Promise<ContributionAnalysisResult> {
   return request<ContributionAnalysisResult>('/lca/contribution-analysis', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    ...(signal ? { signal } : {}),
   })
 }
 

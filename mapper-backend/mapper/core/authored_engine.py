@@ -607,6 +607,17 @@ def links_into(archetypes: dict, database: str, codes: set[str] | None = None) -
 # ── The real backend ───────────────────────────────────────────────────────
 
 
+def _has_output_index(sql) -> bool:
+    """True when the ``exchangedataset_output`` index exists in the current project's database.
+
+    A read of the SQLite catalogue; it creates nothing and changes no result."""
+    row = sql.execute_sql(
+        "select 1 from sqlite_master where type='index' and name='exchangedataset_output' "
+        "and tbl_name='exchangedataset'"
+    ).fetchone()
+    return row is not None
+
+
 class Bw2Backend:
     """Brightway access for the CURRENT project."""
 
@@ -677,10 +688,17 @@ class Bw2Backend:
         # ecoinvent 3.10's 445,588 biosphere exchanges. A per-flow query is
         # 4-11 s EACH on a project carrying premise copies, because the input
         # index then walks every copy of the flow's exchanges.
+        #
+        # The hint is only valid where the index exists. bw2data builds it only when ONE write
+        # carries 100 or more activities (an ecoinvent or biosphere import), so a brand-new
+        # project with a small biosphere has none and `INDEXED BY` raises "no such index". In that
+        # case the hint is left out: the query returns the same rows, and a project that small
+        # has nothing to scan. The database is not touched (no index is created here).
+        hint = "indexed by exchangedataset_output " if _has_output_index(sql) else ""
         for b in base:
             rows = sql.execute_sql(
                 "select input_database, input_code, data from exchangedataset "
-                "indexed by exchangedataset_output where output_database=? and type='biosphere'",
+                f"{hint}where output_database=? and type='biosphere'",
                 (b,),
             ).fetchall()
             for idb, icode, blob in rows:

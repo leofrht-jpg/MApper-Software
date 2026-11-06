@@ -680,31 +680,17 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
                 onChange={setViewMode}
                 accent="var(--mod-plca)"
               />
-              <button
+              <Button
                 type="button"
+                variant="secondary"
                 data-testid="single-product-projected-export"
                 onClick={handleExport}
                 disabled={isExporting}
                 title="Download Excel workbook"
-                style={{
-                  height: 32, padding: '0 12px',
-                  border: '1px solid var(--border-default)',
-                  borderRadius: 'var(--radius-md)',
-                  backgroundColor: 'var(--bg-elevated)',
-                  color: 'var(--text-primary)',
-                  fontSize: 'var(--text-sm)', fontWeight: 500,
-                  cursor: isExporting ? 'wait' : 'pointer',
-                  display: 'inline-flex', alignItems: 'center', gap: 6,
-                  opacity: isExporting ? 0.7 : 1,
-                }}
               >
-                {isExporting ? (
-                  <Loader2 size={14} style={{ animation: 'dsm-spin 1s linear infinite' }} />
-                ) : (
-                  <Download size={14} />
-                )}
-                <span>Export</span>
-              </button>
+                {isExporting ? <Loader2 size={14} className="lca-spin" /> : <Download size={14} />}
+                Export
+              </Button>
             </div>
           }
         >

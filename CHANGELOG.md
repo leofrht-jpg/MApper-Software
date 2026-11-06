@@ -20,6 +20,10 @@ at 0.3.1 and is kept from here on.
 
 ### Fixed
 
+- **LCA Architect no longer builds the supply chain tree by itself after Calculate.** It is built when you click "Build supply chain tree" (with the hint that it can take up to a minute), from a snapshot taken at Calculate so the tree always belongs to the score shown, even if an amount is edited afterwards. One run at a time, a real elapsed counter instead of invented phases, "Discard" (it ends the client's wait; the server may keep computing until it finishes), "Try again" after an error; a recalculation or leaving the page drops the request in flight. Removes the unused, auto-fetching `lcaStore`.
+
+- **The Export buttons use the standard button style.** "Export XLSX" in LCA Architect and the Export buttons of Impact Assessment > Single-product (Static, Projected, Comparison) are now the standard secondary `Button`, with one export spinner that actually turns (the `lca-spin` class had no rule, so the contribution-analysis export spinner never moved).
+
 - **Long imports and other background tasks report progress and failures honestly.** A failed task now sends its error text (`error`, next to the unchanged `message`) instead of only the last progress line, logs the full traceback, and ends in a failed state on any exception instead of staying "running"; the credentials import no longer uses a multiprocessing pool and shows elapsed time with a "no progress for N minutes" warning; the import wizard shows "Connection lost", polls the new `GET /api/tasks/{id}` when its socket drops, shows the final state or error it finds, and highlights the downloading step.
 
 - **Database Explorer list no longer overlaps rows or jumps back while it loads.** A search that shrinks the result set resets the scroll and focus to the top; appending the next page no longer scrolls back to the focused row; a page or search answered after a newer search is ignored (the previous request is aborted); rows are keyed by database and code; ties in the list order are broken by activity code, so pages never repeat or skip a row; and the count reads "146 matching activities" instead of "146 matching filters".

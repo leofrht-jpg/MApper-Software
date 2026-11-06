@@ -3795,12 +3795,18 @@ because the frontend already has the result objects in
 `MApper_Impact_SingleProduct_<Static|Prospective|Comparison>_<archetype>_<date>.xlsx`,
 sanitised via `_sanitize_filename`.
 
-**Frontend wiring**: each Single-product Results card has a
-`<button data-testid="single-product-{static,projected,compare}-export">`
-in the CollapsibleCard `actions` slot. The button is absent (not
-disabled) before a result exists — the Results card itself is gated
-on `hasResults`, so a no-data state shows the empty state, not a
-greyed-out button. Loading state during export shows a spinner.
+**Frontend wiring**: each Single-product Results card has a standard
+`<Button variant="secondary" data-testid="single-product-{static,projected,compare}-export">`
+(`components/ui/Button.tsx`, default size, a 14 px `Download` icon and the
+label "Export"; no hand-rolled style) in the CollapsibleCard `actions` slot.
+The button is absent (not disabled) before a result exists — the Results
+card itself is gated on `hasResults`, so a no-data state shows the empty
+state, not a greyed-out button. While exporting it is disabled and the icon
+becomes a `<Loader2 className="lca-spin">` spinner (the same one the
+contribution-analysis export uses; the `.lca-spin` rule lives in
+`styles/globals.css`). `tests/singleProductExportButtons.test.tsx` locks the
+test ids, the disabled and loading states and that the style is exactly the
+standard secondary Button's.
 
 #### What NOT to do
 
@@ -4573,6 +4579,21 @@ preserved; `data-testid="lca-config-body"` added. Locked by
 — evidently clickable but subordinate to the filled primary "Calculate" CTA
 (per the 5G convention). Not `primary` (it's not the compute trigger), not
 `ghost`/bare text. `data-testid="lca-new-calculation"`.
+
+**The supply chain tree is built on a click, never by Calculate.** In
+`LCACalculator` the contribution analysis (one slow call: about 15 s to a minute on
+ecoinvent) starts only from `<SupplyChainTreeAction>` ("Build supply chain tree",
+`data-testid="lca-build-tree"`, with the hint "Can take up to a minute on large
+databases."). It is built from the snapshot taken at Calculate (`caSnapshot`:
+compute database/year and, in activity mode, the demand), so the tree always belongs
+to the score on screen even if an amount is edited afterwards. One run at a time (the
+button is disabled meanwhile); the wait shows `<ComputeProgress>` with its real
+elapsed counter and NO invented phases. A recalculation, another indicator or target,
+or leaving the page aborts the request on the CLIENT and ignores its late response.
+The control is called **Discard**, never Stop/Cancel: the server cannot cancel the
+computation (`run_heavy` runs it on a thread), so it finishes anyway and holds
+`compute_lock` until then. An error keeps the red line and offers "Try again". Locked
+by `tests/lcaSupplyChainButton.test.tsx`.
 
 #### What NOT to do
 

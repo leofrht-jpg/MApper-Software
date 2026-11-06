@@ -1,0 +1,99 @@
+/* SPDX-License-Identifier: MPL-2.0
+ * This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at https://mozilla.org/MPL/2.0/.
+ *
+ * © Copyright 2026 Technical University of Denmark
+ * Lead developer: Leonardo Ferhati
+ */
+
+import { Network } from 'lucide-react'
+import { Button } from '../ui/Button'
+import { ComputeProgress } from '../ui/ComputeProgress'
+
+interface Props {
+  /** Prefix of the test ids: 'lca-activity' or 'lca-archetype'. */
+  testId: string
+  /** A tree request is in flight. The button is disabled meanwhile: one at a time. */
+  running: boolean
+  /** Why the last attempt failed, for this very target and indicator. */
+  error: string | null
+  /** The previous request was discarded on the client (a recalculation, another indicator). */
+  discarded: boolean
+  /** The database selected now differs from the one the shown result was calculated with. */
+  databaseNote: string | null
+  onBuild: () => void
+  onDiscard: () => void
+}
+
+/**
+ * The supply chain tree is a separate, slow request (about 15 s to a minute on a large
+ * ecoinvent database), so it is asked for explicitly instead of after every Calculate.
+ *
+ * "Discard" is deliberately not "Stop": it ends the client's wait and ignores the late
+ * response, but the server cannot cancel a running computation. It finishes anyway and
+ * holds the compute lock until then, so a new calculation may queue behind it.
+ */
+export function SupplyChainTreeAction({
+  testId, running, error, discarded, databaseNote, onBuild, onDiscard,
+}: Props) {
+  return (
+    <div
+      data-testid={`${testId}-tree-action`}
+      style={{
+        backgroundColor: 'var(--bg-surface)', border: '1px solid var(--border-subtle)',
+        borderRadius: 'var(--radius-lg)', padding: 'var(--space-5)',
+        display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+        <Button
+          variant="secondary"
+          data-testid="lca-build-tree"
+          disabled={running}
+          onClick={onBuild}
+        >
+          <Network size={14} />
+          {error ? 'Try again' : 'Build supply chain tree'}
+        </Button>
+        <span data-testid="lca-tree-hint" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+          Can take up to a minute on large databases.
+        </span>
+      </div>
+
+      {running && (
+        <>
+          <ComputeProgress
+            active
+            label="Building the supply chain tree…"
+            bar="none"
+            onCancel={onDiscard}
+            cancelLabel="Discard"
+            data-testid={`${testId}-contribution-progress`}
+          />
+          <span data-testid="lca-tree-discard-note" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+            Discard stops waiting for the result. The server may keep computing until it finishes.
+          </span>
+        </>
+      )}
+
+      {!running && discarded && (
+        <span data-testid="lca-tree-discarded" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+          The previous request was discarded. The server may still be computing it, so the next one can take longer.
+        </span>
+      )}
+
+      {error && !running && (
+        <div role="alert" data-testid="lca-tree-error" style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>
+          Contribution analysis failed: {error}
+        </div>
+      )}
+
+      {databaseNote && (
+        <span data-testid="lca-tree-database-note" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
+          {databaseNote}
+        </span>
+      )}
+    </div>
+  )
+}

@@ -53,24 +53,39 @@ describe('LCACalculator timers migrated to <ComputeProgress>', () => {
     expect(src).toContain('<StopButton taskId={myCancel.taskId}')
   })
 
-  it('activity / archetype / contribution loaders have no fabricated bar (none)', () => {
-    for (const id of [
-      'activity-lca-progress',
-      'archetype-lca-progress',
-      'lca-activity-contribution-progress',
-      'lca-archetype-contribution-progress',
-    ]) {
+  it('activity / archetype loaders have no fabricated bar (none)', () => {
+    for (const id of ['activity-lca-progress', 'archetype-lca-progress']) {
       expect(blocks[id], `${id} present`).toBeTruthy()
       expect(blocks[id], `${id} bar=none`).toContain('bar="none"')
     }
   })
 
-  it('drops the dead per-timer startedAt state (caStartedAt is the only one kept)', () => {
+  it('the supply chain tree loader is a bar-less ComputeProgress with a real elapsed counter only', () => {
+    // Moved out of LCACalculator with the explicit "Build supply chain tree" button.
+    const tree = read('src/components/lca/SupplyChainTreeAction.tsx')
+    const block = tree.match(/<ComputeProgress\b[\s\S]*?\/>/)?.[0] ?? ''
+    expect(block).toContain('bar="none"')
+    expect(block).toContain('data-testid={`${testId}-contribution-progress`}')
+    // "Discard", never "Stop"/"Cancel": the server cannot cancel the computation.
+    expect(block).toContain('cancelLabel="Discard"')
+    // No bespoke timer and no invented phases anywhere around it.
+    expect(tree).not.toContain('setInterval')
+    for (const phase of ['Computing inventory', 'Top processes', 'Top emissions']) {
+      expect(src).not.toContain(phase)
+      expect(tree).not.toContain(phase)
+    }
+    expect(src).not.toContain('phaseTimer')
+    expect(src).not.toContain('phaseIdx')
+  })
+
+  it('drops the dead per-timer state, including the fabricated tree phases', () => {
     expect(src).not.toContain('actStartedAt')
     expect(src).not.toContain('arcStartedAt')
     expect(src).not.toContain('myStartedAt')
-    // caStartedAt stays — still passed to ContributionAnalysisPanel.loadingStartedAt.
-    expect(src).toContain('caStartedAt')
+    // The tree's own elapsed counter is <ComputeProgress>'s; nothing is kept here.
+    expect(src).not.toContain('caStartedAt')
+    expect(src).not.toContain('caPhase')
+    expect(src).not.toContain('caLoadingKey')
   })
 })
 

@@ -154,7 +154,24 @@ export interface TaskStartedResponse {
 export interface TaskProgressMessage {
   step: string
   progress: number
+  /** The last progress line. */
   message: string
+  /** Why the task failed; only present on a failed task. */
+  error?: string
+}
+
+/** A task as GET /tasks/{id} returns it: the progress payload plus its status. */
+export interface TaskState extends TaskProgressMessage {
+  task_id: string
+  status: 'pending' | 'running' | 'done' | 'error' | 'cancelled'
+}
+
+/** Poll a task's state; null when the backend does not know the id (it restarted, or it never existed). */
+export async function getTaskState(taskId: string): Promise<TaskState | null> {
+  const res = await fetch(`${API_BASE}/tasks/${encodeURIComponent(taskId)}`, _withProjectHeader())
+  if (res.status === 404) return null
+  if (!res.ok) throw new HttpError(res.status, await res.text())
+  return res.json()
 }
 
 // ── Phase 1C: LCA ─────────────────────────────────────────────────────────────
@@ -3105,6 +3122,7 @@ export function connectToTask(
   path: string,
   onMessage: (data: TaskProgressMessage) => void,
   onError?: (e: Event) => void,
+  onClose?: (e: CloseEvent) => void,
 ): WebSocket {
   const ws = new WebSocket(`${WS_BASE}${path}`)
   ws.onmessage = (e) => {
@@ -3113,6 +3131,7 @@ export function connectToTask(
     } catch { /* ignore malformed frames */ }
   }
   if (onError) ws.onerror = onError
+  if (onClose) ws.onclose = onClose
   return ws
 }
 

@@ -40,6 +40,7 @@ from mapper.models.dsm_schemas import SimulationResult, YearResult
 from mapper.models.subsystem_schemas import Subsystem
 
 from mapper.core.bom_validator import refuse_on_unit_mismatch
+from mapper.core.method_labels import display_method
 from mapper.core.bom_engine import (
     compute_demand_vector,
     flatten_roots_for_scope,
@@ -522,7 +523,7 @@ class DSMLCAPipeline:
                 DSMLCAResult(
                     mfa_system_id=self.sim.system_id,
                     method=list(m),
-                    method_label=" › ".join(m),
+                    method_label=" › ".join(display_method(m)),
                     scope=scope,
                     unit=per_method_unit[m],
                     years=per_method_years[m],

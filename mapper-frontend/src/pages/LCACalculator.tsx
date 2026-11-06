@@ -69,6 +69,7 @@ import type {
 import { CHART_PALETTE as CHART_COLORS } from '../utils/chartColors'
 import { StopButton } from '../components/ui/StopButton'
 import { useCancellableTask } from '../hooks/useCancellableTask'
+import { indicatorLabel, methodPath } from '../utils/methodLabels'
 
 type FUMode = 'archetype' | 'activity'
 type Scope = 'inflows' | 'stock' | 'outflows' | 'all'
@@ -1558,12 +1559,12 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                     <div style={{ maxHeight: 500, overflowY: 'auto' }}>
                       {actResult.results.map((r, i) => {
                         const active = i === actResultIndex
-                        const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
+                        const label = indicatorLabel(r.method) || r.method_label || `Method ${i + 1}`
                         return (
                           <button
                             key={i}
                             onClick={() => setActResultIndex(i)}
-                            title={r.method.join(' › ')}
+                            title={methodPath(r.method)}
                             style={{
                               display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer',
                               textAlign: 'left', borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
@@ -1600,7 +1601,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                   {/* Score card */}
                   <div style={cardStyle}>
                     <p style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-                      {activeActResult.method.join(' › ')}
+                      {methodPath(activeActResult.method)}
                     </p>
                     <div style={{ marginTop: 8, display: 'flex', alignItems: 'baseline', gap: 10 }}>
                       <span style={{ fontSize: 'var(--text-2xl)', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent)' }}>
@@ -1696,7 +1697,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                           </thead>
                           <tbody>
                             {actResult.results.map((r, i) => {
-                              const label = r.method[r.method.length - 1] || r.method_label
+                              const label = indicatorLabel(r.method) || r.method_label
                               return (
                                 <tr
                                   key={i}
@@ -1788,12 +1789,12 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                     <div style={{ maxHeight: 500, overflowY: 'auto' }}>
                       {arcResult.results.map((r, i) => {
                         const active = i === arcResultIndex
-                        const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
+                        const label = indicatorLabel(r.method) || r.method_label || `Method ${i + 1}`
                         return (
                           <button
                             key={i}
                             onClick={() => setArcResultIndex(i)}
-                            title={r.method.join(' › ')}
+                            title={methodPath(r.method)}
                             style={{
                               display: 'block', width: '100%', padding: '8px 12px', background: 'none', border: 'none', cursor: 'pointer',
                               textAlign: 'left', borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
@@ -1821,7 +1822,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                       {/* Score card */}
                       <div style={cardStyle}>
                         <p style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-                          {activeArcResult.method.join(' › ')}
+                          {methodPath(activeArcResult.method)}
                         </p>
                         <div style={{ marginTop: 8, display: 'flex', alignItems: 'baseline', gap: 10 }}>
                           <span style={{ fontSize: 'var(--text-2xl)', fontFamily: 'var(--font-mono)', fontWeight: 700, color: 'var(--accent)' }}>
@@ -1860,7 +1861,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                               </thead>
                               <tbody>
                                 {arcResult.results.map((r, i) => {
-                                  const label = r.method[r.method.length - 1] || r.method_label
+                                  const label = indicatorLabel(r.method) || r.method_label
                                   return (
                                     <tr
                                       key={i}
@@ -1893,7 +1894,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                         <div style={cardStyle}>
                           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 'var(--space-3)' }}>
                             <h4 style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)' }}>
-                              {activeArcResult.method[activeArcResult.method.length - 1]} · {activeArcResult.unit}
+                              {indicatorLabel(activeArcResult.method)} · {activeArcResult.unit}
                             </h4>
                             <ChartExportButton chartRef={comparisonBarRef} filename={`calc_comparison_${activeArcResult.method.join('_')}`} />
                           </div>
@@ -1967,7 +1968,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                               </thead>
                               <tbody>
                                 {arcResult.results.map((r, mi) => {
-                                  const label = r.method[r.method.length - 1] || r.method_label
+                                  const label = indicatorLabel(r.method) || r.method_label
                                   const scores = comparisonTable.map((ct) => ct.scores[mi]?.score ?? 0)
                                   const minVal = Math.min(...scores)
                                   const maxVal = Math.max(...scores)

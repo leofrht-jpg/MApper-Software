@@ -1522,10 +1522,12 @@ def _short_method_label(method: list[str], among: list | None = None) -> str:
     if not method:
         return "method"
     if among:
-        from mapper.core.method_labels import disambiguated_labels
+        from mapper.core.method_labels import disambiguated_labels, display_indicator
 
-        return disambiguated_labels(among).get(tuple(method), method[-1])
-    return method[-1]
+        return disambiguated_labels(among).get(tuple(method), display_indicator(method))
+    from mapper.core.method_labels import display_indicator
+
+    return display_indicator(method)
 
 
 def sanitize_filename_part(name: str, fallback: str = "file", max_len: int = 100) -> str:

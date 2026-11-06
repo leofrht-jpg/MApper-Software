@@ -8,7 +8,7 @@
  */
 
 import { CollapsibleBlock } from './ui/CollapsibleBlock'
-import { disambiguatedLabels, methodKey } from '../utils/methodLabels'
+import { disambiguatedLabels, displayMethod, indicatorLabel, methodKey, methodPath } from '../utils/methodLabels'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { CheckSquare, Square } from 'lucide-react'
 import { getMethods, type MethodFamily } from '../api/client'
@@ -283,8 +283,8 @@ export function IndicatorChecklist({
                   }}
                 >
                   <input type="checkbox" checked={checked} onChange={() => toggle(ind.tuple)} style={{ accentColor: accent }} />
-                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ind.indicator}>
-                    {ind.indicator}
+                  <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={displayMethod(ind.tuple)[2] ?? ind.indicator}>
+                    {displayMethod(ind.tuple)[2] ?? ind.indicator}
                   </span>
                 </label>
               )
@@ -349,7 +349,7 @@ export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelect
           {selection.droppedSeed.length} previously selected indicator
           {selection.droppedSeed.length === 1 ? ' is' : 's are'} not installed in
           this project and {selection.droppedSeed.length === 1 ? 'was' : 'were'}{' '}
-          removed: {selection.droppedSeed.slice(0, 3).map((t) => t.join(' | ')).join(', ')}
+          removed: {selection.droppedSeed.slice(0, 3).map((t) => displayMethod(t).join(' | ')).join(', ')}
           {selection.droppedSeed.length > 3 && ` (and ${selection.droppedSeed.length - 3} more)`}
         </div>
       )}
@@ -363,8 +363,8 @@ export function MethodPicker({ onChange, accent = 'var(--accent)', initialSelect
               color: accent, borderRadius: 'var(--radius-sm)',
               border: `1px solid color-mix(in srgb, ${accent} 20%, transparent)`,
               maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-            }} title={tuple.join(' › ')} data-testid="method-chip">
-              {chipLabels.get(methodKey(tuple)) ?? tuple[tuple.length - 1]}
+            }} title={methodPath(tuple)} data-testid="method-chip">
+              {chipLabels.get(methodKey(tuple)) ?? indicatorLabel(tuple)}
             </span>
           ))}
           {count > 5 && <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', padding: '2px 4px' }}>+{count - 5} more</span>}

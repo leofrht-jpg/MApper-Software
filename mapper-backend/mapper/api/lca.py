@@ -33,7 +33,7 @@ from mapper.core.bw2_wrapper import (
     run_lca,
 )
 import bw2calc
-from mapper.core.method_labels import disambiguated_labels
+from mapper.core.method_labels import disambiguated_labels, display_indicator, display_method
 from mapper.core.bom_engine import (
     filter_roots_by_scope,
     flatten_roots,
@@ -1012,7 +1012,7 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
                 d.archetype_name,
                 r.method[0] if r.method else "",
                 r.method[1] if len(r.method) > 1 else "",
-                r.method[-1] if r.method else "",
+                display_indicator(r.method),
                 r.score,
                 r.unit,
             ])
@@ -1025,7 +1025,7 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
     indicators = data[0].results if data else []
     headers = ["Archetype", "Material", "Stage", "Component"]
     for r in indicators:
-        label = r.method[-1] if r.method else "?"
+        label = display_indicator(r.method) or "?"
         headers += [f"{label} Qty", f"{label} Unit", f"{label} Impact ({r.unit})", f"{label} %"]
     ws3.append(headers)
     _style_header(ws3, len(headers))
@@ -1064,7 +1064,7 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
     ws4 = wb.create_sheet("Contributions by stage")
     headers4 = ["Archetype", "Stage"]
     for r in (data[0].results if data else []):
-        label = r.method[-1] if r.method else "?"
+        label = display_indicator(r.method) or "?"
         headers4.append(f"{label} ({r.unit})")
     ws4.append(headers4)
     _style_header(ws4, len(headers4))
@@ -1933,7 +1933,7 @@ def _build_contribution_workbook(result: ContributionAnalysisResult):
                 mx = max(mx, len(val))
             ws.column_dimensions[letter].width = min(mx + 3, 50)
 
-    method_label = " › ".join(result.method)
+    method_label = " › ".join(display_method(result.method))
 
     # Sheet 1: Summary
     ws = wb.active
@@ -2077,7 +2077,7 @@ def _build_multi_year_workbook(result: MultiYearContributionResult):
                 mx = max(mx, len(val))
             ws.column_dimensions[letter].width = min(mx + 3, 50)
 
-    method_label = " › ".join(result.method)
+    method_label = " › ".join(display_method(result.method))
 
     # Summary
     ws = wb.active

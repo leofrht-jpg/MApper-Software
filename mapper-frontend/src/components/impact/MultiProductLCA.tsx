@@ -50,10 +50,13 @@ import { useProjectSettingsStore } from '../../stores/projectSettingsStore'
 import { useActivityStore } from '../../stores/activityStore'
 import { useProjectStore } from '../../stores/projectStore'
 import { usePLCAStore } from '../../stores/plcaStore'
-import { useMultiProductLCAStore } from '../../stores/multiProductLCAStore'
+import { useMultiProductLCAStore, type MultiRunSnapshot } from '../../stores/multiProductLCAStore'
+import { useSupplyChainTrees } from '../../hooks/useSupplyChainTrees'
+import { SupplyChainTreeBlock } from './SupplyChainTreeBlock'
+import { treeSelectStyle } from './treeSelectStyle'
 import { methodColumns, methodKey, methodPath } from '../../utils/methodLabels'
 import { type AmountPreset, type ArchetypeStageAmounts } from '../../stores/singleProductImpactStore'
-import type { ArchetypeSummary } from '../../api/client'
+import type { ArchetypeSummary, ContributionAnalysisRequest } from '../../api/client'
 import { productItemKey, type ActivityProductItem, type ArchetypeProductItem, type ProductItem } from '../shared/productItem'
 import {
   exportMultiProductComparison,
@@ -124,6 +127,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
   const setStageAmountsMap = useMultiProductLCAStore((s) => s.setStageAmountsMap)
   const multiResult = useMultiProductLCAStore((s) => s.multiResult)
   const multiByCase = useMultiProductLCAStore((s) => s.multiByCase)
+  const multiRun = useMultiProductLCAStore((s) => s.multiRun)
   const multiCaseOrder = useMultiProductLCAStore((s) => s.multiCaseOrder)
   // Results-aligned vintage coords, snapshotted at compute time — the source for
   // the Line gate / chart / export (NOT the live selection).
@@ -750,7 +754,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
             ) : undefined
           }
         >
-          <ResultsSection result={multiResult} scope={scope} stageAmountsMeta={stageAmountsMeta} activityVintageMeta={activityVintageMeta} byCase={multiByCase} caseOrder={multiCaseOrder} />
+          <ResultsSection result={multiResult} scope={scope} stageAmountsMeta={stageAmountsMeta} activityVintageMeta={activityVintageMeta} byCase={multiByCase} caseOrder={multiCaseOrder} run={multiRun} />
         </CollapsibleCard>
       )}
     </div>
@@ -759,11 +763,56 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
 
 // ── Results section (Patch 4AG.4) ──────────────────────────────────
 
+/**
+ * The tree request for ONE result item, built from what that result carries (an archetype's
+ * own echo of archetype, scope, stage amounts, sensitivity case and database) or from the
+ * run snapshot taken at compute (an activity's database, code, amount and vintage year).
+ * Never from the live selection or the live stage-amount editor. null = cannot be built
+ * faithfully (a failed or empty item, or an activity result with no snapshot).
+ */
+function treeRequestForItem(
+  item: MultiProductItemResult,
+  caseName: string,
+  method: string[],
+  run: MultiRunSnapshot | null,
+): ContributionAnalysisRequest | null {
+  if (item.status !== 'success') return null
+  const base = { method, limit: 20, cutoff: 0.001, max_depth: 5 }
+  if (item.type === 'archetype') {
+    const r = item.archetype_result
+    if (!r || r.results.length === 0) return null
+    return {
+      ...base,
+      target_type: 'archetype',
+      archetype_id: r.archetype_id,
+      scope: r.scope as ContributionAnalysisRequest['scope'],
+      stage_amounts: r.stage_amounts,
+      parameter_scenario: r.parameter_scenario ?? caseName,
+      compute_database: r.compute_database ?? null,
+      year: null,
+    }
+  }
+  const r = item.activity_result
+  const snap = run?.activities[item.item_id]
+  if (!r || r.results.length === 0 || !snap) return null
+  return {
+    ...base,
+    target_type: 'activity',
+    database: snap.database,
+    code: snap.code,
+    amount: snap.amount,
+    compute_database: run?.computeDatabase ?? null,
+    year: snap.year,
+  }
+}
+
 function ResultsSection({
   byCase,
   caseOrder,
+  run,
   result, scope, stageAmountsMeta, activityVintageMeta,
 }: {
+  run: MultiRunSnapshot | null
   result: import('../../api/client').MultiProductLCAResult
   scope: 'inflows' | 'stock' | 'outflows' | 'all'
   stageAmountsMeta: Record<string, ArchetypeStageAmounts>
@@ -805,6 +854,28 @@ function ResultsSection({
   }, [methodCols, selectedMethod])
 
   const fmt = useNumberFormatter()
+
+  // ── Supply chain trees (explicit, one button per item, one tree at a time) ──
+  // The tree follows the indicator chosen above and the sensitivity case chosen here
+  // (Base unless several ran). One tree per item, indicator, case and Calculate run.
+  const [treeCase, setTreeCase] = useState('Base')
+  const effectiveCase = caseOrder.includes(treeCase) ? treeCase : 'Base'
+  const treeEnvelope = (byCase?.[effectiveCase]) ?? result
+  const treeWatchKey = selectedMethod ? `multi|${run?.id ?? 0}|${effectiveCase}|${selectedMethod}` : null
+  const trees = useSupplyChainTrees('multiProduct.trees', treeWatchKey)
+  const treeItems = useMemo(() => {
+    if (!selectedMethod) return []
+    const out: { item: MultiProductItemResult; method: string[]; key: string; body: ContributionAnalysisRequest }[] = []
+    for (const item of treeEnvelope.items) {
+      const mr = (item.archetype_result?.results ?? item.activity_result?.results ?? [])
+        .find((m) => methodKey(m.method) === selectedMethod)
+      if (!mr) continue
+      const body = treeRequestForItem(item, effectiveCase, mr.method, run)
+      if (!body) continue
+      out.push({ item, method: mr.method, key: `${treeWatchKey}|${item.item_id}`, body })
+    }
+    return out
+  }, [treeEnvelope, selectedMethod, effectiveCase, run, treeWatchKey])
 
   // Per-item score by case for the active method. Built from the per-case
   // envelopes; items that failed in a case simply have no entry there.
@@ -1051,6 +1122,66 @@ function ResultsSection({
         )
       ) : (
         <ResultsTable result={result} />
+      )}
+
+      {treeItems.length > 0 && (
+        <div
+          data-testid="multi-product-trees"
+          style={{
+            display: 'flex', flexDirection: 'column', gap: 'var(--space-3)',
+            borderTop: '1px solid var(--border-subtle)', paddingTop: 'var(--space-3)',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-3)', flexWrap: 'wrap' }}>
+            <span style={{
+              fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)',
+              textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
+            }}>
+              Supply chain trees
+            </span>
+            <select
+              data-testid="multi-product-tree-indicator"
+              aria-label="Indicator for the supply chain trees"
+              value={selectedMethod ?? ''}
+              onChange={(e) => setSelectedMethod(e.target.value)}
+              style={treeSelectStyle}
+            >
+              {methodCols.map((c) => (
+                <option key={c.key} value={c.key} title={methodPath(c.method)}>{c.label}</option>
+              ))}
+            </select>
+            {caseOrder.length > 1 && (
+              <select
+                data-testid="multi-product-tree-case"
+                aria-label="Sensitivity case for the supply chain trees"
+                value={effectiveCase}
+                onChange={(e) => setTreeCase(e.target.value)}
+                style={treeSelectStyle}
+              >
+                {caseOrder.map((c) => <option key={c} value={c}>{c}</option>)}
+              </select>
+            )}
+          </div>
+          <span data-testid="multi-product-trees-note" style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
+            Each tree is a separate request for one item and one indicator, and can take up to a
+            minute on a large database. They are built one at a time: while one runs, the other
+            buttons wait.
+          </span>
+          {treeItems.map(({ item, key, body }) => (
+            <SupplyChainTreeBlock
+              key={item.item_id}
+              idPrefix={`multi-tree-${item.item_id}`}
+              heading={item.label}
+              anyRunning={trees.running}
+              running={trees.runningKey === key}
+              error={trees.errorFor(key)}
+              discarded={trees.discardedFor(key)}
+              result={trees.resultFor(key)}
+              onBuild={() => { void trees.build(key, body) }}
+              onDiscard={() => trees.discard()}
+            />
+          ))}
+        </div>
       )}
     </div>
   )

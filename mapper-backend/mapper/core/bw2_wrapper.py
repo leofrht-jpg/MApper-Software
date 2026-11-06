@@ -376,6 +376,12 @@ def get_activities(
     if sort_by == "relevance":
         if not q:
             sort_by = "name_asc"
+    # Pages are cut from this list by offset, so its order must be the same on
+    # every request. Activities with equal sort keys ("market for steel" in 40
+    # locations) came out in whatever order the database iteration gave, which
+    # SQLite does not promise; sorting by code first and then by the key (a stable
+    # sort) fixes ties by code, in both directions.
+    matches.sort(key=lambda a: str(a.get("code", "") or ""))
     if sort_by in _SORT_KEYS:
         keyfn, reverse = _SORT_KEYS[sort_by]
         matches.sort(key=keyfn, reverse=reverse)

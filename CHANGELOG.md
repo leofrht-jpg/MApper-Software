@@ -20,6 +20,10 @@ at 0.3.1 and is kept from here on.
 
 ### Fixed
 
+- **A BOM row linked to a biosphere flow is refused with the real reason.** It used to be reported as a "truncated code" (a flow's uuid is 36 characters), or reached the solver and failed with an HTTP 500. The import now refuses the file naming the sheet, row and column, writes nothing, and points to authored activities for direct emissions; the same row reaching a calculation answers a clear 422 instead of a 500. Calculations that succeed are unchanged.
+
+- **A positive quantity on a waste-treatment activity now warns.** ecoinvent enters waste inputs with a negative quantity, and MApper uses the quantity as given, so a positive one silently gave a credit instead of a burden. The import report and the editor row now say so (a warning: the import still succeeds). A negative quantity on an ordinary activity, a legitimate avoided burden, is not flagged. Expression rows are not checked.
+
 - **LCA Architect no longer builds the supply chain tree by itself after Calculate.** It is built when you click "Build supply chain tree" (with the hint that it can take up to a minute), from a snapshot taken at Calculate so the tree always belongs to the score shown, even if an amount is edited afterwards. One run at a time, a real elapsed counter instead of invented phases, "Discard" (it ends the client's wait; the server may keep computing until it finishes), "Try again" after an error; a recalculation or leaving the page drops the request in flight. Removes the unused, auto-fetching `lcaStore`.
 
 - **The Export buttons use the standard button style.** "Export XLSX" in LCA Architect and the Export buttons of Impact Assessment > Single-product (Static, Projected, Comparison) are now the standard secondary `Button`, with one export spinner that actually turns (the `lca-spin` class had no rule, so the contribution-analysis export spinner never moved).

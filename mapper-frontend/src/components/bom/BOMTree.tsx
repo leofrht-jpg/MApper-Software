@@ -602,6 +602,19 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
                     </span>
                     {linked.location && <Badge label={linked.location} />}
                     <Badge label={linked.database} variant="lca" />
+                    {/* The row's validation status from the last check (import, or this row's last
+                        edit): a link problem, a unit mismatch, or the waste-treatment sign warning. */}
+                    {(node.validation_status === 'warning' || node.validation_status === 'error') && node.validation_message && (
+                      <span
+                        data-testid="bom-row-validation"
+                        data-status={node.validation_status}
+                        title={node.validation_message}
+                        aria-label={node.validation_message}
+                        style={{ display: 'inline-flex', color: node.validation_status === 'error' ? 'var(--danger)' : 'var(--warning)' }}
+                      >
+                        <AlertCircle size={13} />
+                      </span>
+                    )}
                     <button
                       onClick={() => setLinkerOpen(true)}
                       title="Change linked activity"

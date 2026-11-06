@@ -223,6 +223,14 @@ ValidationErrorType = Literal[
     "stage_scope_defaulted",  # warning: the stage name matched no keyword and
                               # no explicit scope was set, so it was counted as
                               # inflows (production) by default
+    "biosphere_link",      # error: the row links a biosphere FLOW, which a BOM
+                           # row cannot do (only a technosphere activity can be
+                           # demanded). Checked before the code-shape checks so
+                           # the real reason is the one shown.
+    "waste_sign",          # warning: a POSITIVE quantity on an activity whose
+                           # production amount is NEGATIVE (a waste treatment).
+                           # ecoinvent enters waste inputs as negative amounts,
+                           # so a positive one comes out as a credit.
 ]
 
 

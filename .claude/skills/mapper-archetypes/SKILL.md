@@ -442,6 +442,41 @@ Validation order is structural → database existence → code resolution →
 name/location consistency. Cheapest checks first; later checks short-circuit
 when an earlier one already errored on the same row.
 
+### `biosphere_link` and `waste_sign` — two link problems that surfaced late
+
+**A BOM row cannot link a biosphere flow.** Only an activity can be demanded. A flow's code is a
+36-character uuid, so it used to be reported as `code_truncated` ("likely a typo"), a
+32-character one as `code_not_found`, and one that got past validation reached the solver and
+failed as an HTTP 500 ("Can't find key 'Carbon dioxide, fossil' ... in product dictionary").
+Now: the **import refuses the whole file** (422 `bom_biosphere_link`, rows with sheet, row and
+column, nothing written, replace mode does not wipe) via `find_biosphere_link_rows`, run in the
+import pre-flight before anything is persisted; the validator reports `biosphere_link` **before
+the code-shape checks**; and the compute path answers **422** `biosphere_link`
+(`_refuse_on_biosphere_link` beside `_refuse_on_unit_mismatch`, both builders). The fix for the
+user is an authored activity carrying the emission as a biosphere exchange. The biosphere check
+looks at the database NAME, and queries `biosphere3` only for a code that is not 32 characters,
+so an ordinary row costs no lookup.
+
+**A positive quantity on a waste-treatment activity is a credit.** ecoinvent writes a treatment's
+production amount as negative (3.11: 4,619 activities) and every input pointing at one as
+negative (45,778 of 45,778). The quantity goes straight into the demand, so a positive one
+comes out negated (measured: +0.5 gave -0.15, -0.5 gave +0.15). `waste_sign` is a **warning**
+(`quantity > 0` and production amount `< 0`), at import and on the editor row; the import still
+succeeds. A NEGATIVE quantity on an ordinary activity is a legitimate avoided-burden entry and is
+never flagged. Expression rows have no value until parameters resolve and are skipped. The
+production amount is read once per distinct `(db, code)` per pass (about 0.6 ms each on 3.11).
+Editing a row's quantity or link re-runs the validator on that ONE row (`_revalidate_node`), so
+fixing the sign clears the warning; it leaves the status alone when the database is absent from
+the project.
+
+#### What NOT to do
+
+- **Don't put the biosphere check after `code_truncated`.** The point is the real reason is the
+  one shown.
+- **Don't turn `waste_sign` into an error, or flag a negative quantity on a normal activity.**
+  Credits are legitimate; the check is for the one silent inversion.
+- **Don't read the production amount per row without the per-pass cache.**
+
 ### Caching
 
 Within a single `validate_bom()` call, `(db, code)` lookups against bw2 are

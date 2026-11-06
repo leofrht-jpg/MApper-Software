@@ -2611,6 +2611,8 @@ export type ValidationErrorType =
   | 'location_mismatch'
   | 'unit_mismatch'
   | 'stage_scope_defaulted'
+  | 'biosphere_link'
+  | 'waste_sign'
 
 export interface ValidationIssue {
   severity: ValidationSeverity
@@ -2705,7 +2707,9 @@ export async function importArchetype(
   }))
   if (!res.ok) {
     const detail = await res.text()
-    throw new Error(detail || `HTTP ${res.status}`)
+    // An HttpError (still an Error with the same message) so the caller can read a structured
+    // refusal such as `bom_biosphere_link` with `structuredErrorDetail`.
+    throw new HttpError(res.status, detail)
   }
   return res.json()
 }

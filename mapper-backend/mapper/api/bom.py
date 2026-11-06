@@ -45,7 +45,10 @@ from mapper.core.bom_engine import (
     validate_roots,
     validation_error_count,
 )
-from mapper.core.bom_validator import BOMValidationRow, issues_by_node_key, validate_bom
+from mapper.core.bom_validator import (
+    BOMValidationRow, find_biosphere_link_rows, issues_by_node_key, validate_bom,
+    BIOSPHERE_LINK_HELP,
+)
 from mapper.core.bw2_wrapper import PersistentLCARunner, run_archetype_lca, run_lca_multi_method
 from mapper.core.dsm_engine import all_cohort_keys
 from mapper.core.material_flow_engine import compute_material_flows
@@ -597,9 +600,43 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
                     detail="Only material leaves can carry an evolution.",
                 )
             node.evolution = body.evolution
+    if body.quantity is not None or body.ecoinvent_activity is not None:
+        _revalidate_node(arc, node)
     arc.updated_at = _now_iso()
     _persist_archetype(_current_project(), arc)
     return node
+
+
+def _revalidate_node(arc: Archetype, node: BOMNode) -> None:
+    """Re-run the row validator on ONE edited material, so the editor's row status follows the
+    edit (fixing a quantity's sign must clear its waste warning; relinking must replace the old
+    link's messages). The upload validator stays the only full pass.
+
+    Skipped when the link cannot be checked here (database not in this project): the stored
+    status is then left exactly as it was rather than flipped to an error by an environment
+    problem. The per-stage ``stage_scope_defaulted`` warning belongs to the stage, not the row,
+    and is not recomputed.
+    """
+    link = node.ecoinvent_activity
+    if node.node_type != "material" or link is None:
+        return
+    stage = next((r.name for r in arc.bom if find_node_in_roots([r], node.id or "") is not None), "")
+    row = BOMValidationRow(
+        archetype=arc.name, stage=stage, row_idx=0, name=node.name,
+        database=link.database, code=link.code,
+        ecoinvent_name=link.name or "", ecoinvent_location=link.location or "",
+        unit=node.unit or "",
+        quantity=node.quantity, quantity_is_expression=bool(node.quantity_expression),
+    )
+    try:
+        report = validate_bom([row], project_name=_current_project())
+    except Exception:  # pragma: no cover - never fail an edit over a status refresh
+        return
+    issues = [i for i in report.issues if i.error_type != "stage_scope_defaulted"]
+    if any(i.error_type == "database_missing" for i in issues):
+        return
+    node.validation_status = "error" if any(i.severity == "error" for i in issues) else ("warning" if issues else "ok")
+    node.validation_message = "; ".join(i.message for i in issues) or None
 
 
 @router.delete("/bom/archetypes/{arc_id}/nodes/{node_id}", response_model=Archetype)
@@ -3180,6 +3217,8 @@ async def download_bom_template() -> Response:
     instructions.append(["Type", "'component' or 'material'. Materials are leaves and may link to ecoinvent. A 'unit' of an archetype is whatever your system tracks: a discrete item (vehicle, building, machine, device) or a continuous quantity (kg, kWh, m³)."])
     instructions.append(["Quantity / Unit", "Numeric quantity (e.g. 53.0) OR a parameter expression (e.g. material_mass * 0.35). Expressions resolve against the active ParameterSet at pipeline time. Operators: + - * / ** ( ). Functions: min, max, abs, round, sum. Use whatever unit fits the material (kg, kWh, m³, kg-CO₂eq, …)."])
     instructions.append(["Ecoinvent *", "Populate Database + Code for materials to link them. Name and Location are informational."])
+    instructions.append(["Ecoinvent * (what can be linked)", "Link an ACTIVITY (a process). A row cannot link a biosphere flow (CO2, ammonia, ...): the import refuses the whole file and names the sheet, row and column. For a direct emission, create an authored activity (Database Explorer > New authored database) that carries the emission as a biosphere exchange, and link the row to that activity."])
+    instructions.append(["Quantity sign for waste", "ecoinvent enters waste inputs with a NEGATIVE quantity: a waste-treatment activity has a negative production amount. A POSITIVE quantity on such an activity gives a credit, not a burden; the import warns but still imports. Enter waste-treatment rows with a negative quantity. A negative quantity on an ordinary activity is an avoided burden and is not flagged."])
     instructions.append(["Evolution Method", "One of 'fixed' (or blank), 'learning_rate', 'rebound_effect', 'milestones'. Materials only."])
     instructions.append(["Learning Rate / Base Year", "For 'learning_rate': Quantity(year) = Quantity × (1 + rate)^(year − base_year). Typically negative (efficiency gain)."])
     instructions.append(["Rebound Rate / Base Year", "For 'rebound_effect': annual fractional *increase* in consumption (e.g. 0.02 = +2%/yr). Typically positive. Mutually exclusive with Learning Rate and Milestones. Example: a product becomes more efficient (less consumption per unit of service) but users compensate by using it more, so net consumption grows ~2%/yr in the early transition years."])
@@ -3414,6 +3453,8 @@ def _parse_bom_workbook(
                     ecoinvent_name=ec_name,
                     ecoinvent_location=ec_loc,
                     unit=unit,
+                    quantity=qty,
+                    quantity_is_expression=qty_expr is not None,
                     # Stage roots are processed first (the sort above), so the
                     # root exists by the time any of its material rows is read.
                     stage_scope=(stages[stage].scope if stage in stages else None),
@@ -3802,6 +3843,36 @@ async def import_archetype(
     else:
         pre_single = _parse_bom_workbook(wb)
 
+    # ── A BOM row cannot link a biosphere flow: refuse BEFORE anything is written ──
+    # Parsed once here (the multi format reuses these results in the loop below). Only
+    # this one class refuses the whole file: every other link problem is reported per
+    # row and the archetype still imports, but a biosphere link can never compute, and
+    # saying so at the door beats a 500 at the first Calculate.
+    pre_multi: dict[str, tuple] = {}
+    if pre_meta is not None:
+        for _m in pre_meta:
+            pre_multi[_m["name"]] = _parse_bom_workbook(wb, archetype_filter=_m["name"])
+        _bio_rows = [r for _p in pre_multi.values() for r in find_biosphere_link_rows(_p[2])]
+    else:
+        assert pre_single is not None
+        _bio_rows = find_biosphere_link_rows(pre_single[2])
+    if _bio_rows:
+        from mapper.core.bom_validator import biosphere_link_message
+
+        raise HTTPException(status_code=422, detail={
+            "error": "bom_biosphere_link",
+            "message": (
+                f"{len(_bio_rows)} row(s) in the BOM sheet link a biosphere flow, so nothing was "
+                "imported and your project is unchanged. " + BIOSPHERE_LINK_HELP
+            ),
+            "rows": [{
+                "sheet": "BOM", "row": r.row_idx, "columns": ["Ecoinvent Database", "Ecoinvent Code"],
+                "archetype": r.archetype, "stage": r.stage, "name": r.name,
+                "database": r.database, "code": r.code,
+                "message": biosphere_link_message(r.archetype, r.stage, r.name, r.row_idx, r.database or "", r.code or ""),
+            } for r in _bio_rows],
+        })
+
     # Snapshot the library BEFORE replace wipes it. Both modes then upsert by
     # NAME, so an archetype whose name is in the workbook keeps its id.
     #
@@ -3883,7 +3954,7 @@ async def import_archetype(
         meta = pre_meta or []
 
         for m in meta:
-            roots, wrn, vrows = _parse_bom_workbook(wb, archetype_filter=m["name"])
+            roots, wrn, vrows = pre_multi[m["name"]]   # parsed once, in the pre-flight above
             if not roots:
                 warnings.append(f"Archetype '{m['name']}': no BOM rows found; skipped.")
                 continue

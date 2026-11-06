@@ -64,6 +64,12 @@ class BOMValidationRow:
     stage_scope: str | None = None      # explicit scope on this row's STAGE
                                         # root, if the sheet declared one. None
                                         # means the stage name decides.
+    quantity: float | None = None       # the row's literal quantity, for the
+                                        # waste-sign check. None = not supplied
+                                        # (older callers), so the check is skipped.
+    quantity_is_expression: bool = False  # a parameter expression: its value is
+                                        # only known once parameters resolve, so
+                                        # the sign check skips it.
 
 
 @dataclass
@@ -74,6 +80,11 @@ class _ValidationContext:
     code_cache: dict[tuple[str, str], dict | None] = field(default_factory=dict)
     # db → bool   (cached database existence)
     db_cache: dict[str, bool] = field(default_factory=dict)
+    # code -> True when `biosphere3` holds a flow with that code. Per call, like
+    # the other caches.
+    bio_cache: dict[str, bool] = field(default_factory=dict)
+    # (db, code) -> production amount of the activity (None = unreadable)
+    production_cache: dict[tuple[str, str], float | None] = field(default_factory=dict)
     bw2_lookups: int = 0
     cache_hits: int = 0
 
@@ -220,6 +231,140 @@ def refuse_on_unit_mismatch(
     )
 
 
+# ── A BOM row cannot link a biosphere flow ───────────────────────────────────
+
+BIOSPHERE_NAME = "biosphere3"
+#: bw2 flow types that are never technosphere activities.
+_FLOW_TYPES = frozenset({"emission", "natural resource", "economic", "social", "inventory indicator"})
+
+BIOSPHERE_LINK_HELP = (
+    "A BOM row cannot link a biosphere flow: only an activity can be demanded, and a flow "
+    "has no inputs to supply. To include a direct emission, create an authored activity "
+    "(Database Explorer > New authored database) that carries the emission as a biosphere "
+    "exchange, and link this row to that activity."
+)
+
+
+class BiosphereLinkError(ValueError):
+    """A BOM row's link points at a biosphere flow."""
+
+
+def _is_biosphere_database(db: str) -> bool:
+    return "biosphere" in (db or "").casefold()
+
+
+def _code_is_biosphere_flow(code: str, bio_cache: dict[str, bool] | None = None) -> bool:
+    """True when the project's ``biosphere3`` holds a flow with this code. One lookup per code."""
+    cache = bio_cache if bio_cache is not None else {}
+    if code not in cache:
+        try:
+            import bw2data
+
+            cache[code] = BIOSPHERE_NAME in bw2data.databases and (BIOSPHERE_NAME, code) in bw2data.Database(BIOSPHERE_NAME)
+        except Exception:
+            cache[code] = False
+    return cache[code]
+
+
+def is_biosphere_link(db: str, code: str, bio_cache: dict[str, bool] | None = None) -> bool:
+    """The link is a biosphere flow: the database IS a biosphere database, or the code is a
+    flow of the project's ``biosphere3`` even though the row names another database
+    (a flow uuid pasted under an ecoinvent database name).
+
+    The ``biosphere3`` lookup is made only for a code that is NOT 32 characters. A flow's code
+    is a 36-character uuid, an ecoinvent activity's is 32 hex characters, so the ordinary row
+    costs no query here. (A 32-character flow code under a non-biosphere database name is
+    caught by the row validator, which has resolved the code anyway.)"""
+    if _is_biosphere_database(db):
+        return True
+    return bool(code) and len(code) != _EXPECTED_CODE_LENGTH and _code_is_biosphere_flow(code, bio_cache)
+
+
+def biosphere_link_message(archetype: str, stage: str, name: str, row_idx: int, db: str, code: str) -> str:
+    return (
+        f"BOM sheet, row {row_idx} ({archetype}, {stage}, {name}), columns 'Ecoinvent Database' / "
+        f"'Ecoinvent Code' ('{db}' / '{code}'): this link points at a biosphere flow. "
+        + BIOSPHERE_LINK_HELP
+    )
+
+
+def refuse_on_biosphere_link(context: str, materials: Iterable[Any]) -> None:
+    """Raise :class:`BiosphereLinkError` if any linked row points at a biosphere flow.
+
+    The compute-path twin of the upload check. Without it such a row reached the solver and
+    came back as an HTTP 500 ("Can't find key ... in product dictionary"). It adds a refusal
+    only: a row that is not a biosphere link is not examined beyond its database name and one
+    cached ``biosphere3`` membership test, so no successful calculation changes.
+    """
+    bio_cache: dict[str, bool] = {}
+    bad: list[tuple[str, str, str]] = []
+    for m in materials:
+        link = getattr(m, "ecoinvent_activity", None)
+        if link is None:
+            continue
+        if is_biosphere_link(link.database, link.code, bio_cache):
+            bad.append((getattr(m, "name", "?"), link.database, link.code))
+    if not bad:
+        return
+    shown, extra = bad[:10], max(0, len(bad) - 10)
+    rows = "; ".join(f"{n!r} ({d} / {c})" for n, d, c in shown)
+    raise BiosphereLinkError(
+        f"{context}: {len(bad)} row(s) link a biosphere flow -- {rows}"
+        + (f"; and {extra} more" if extra else "")
+        + ". " + BIOSPHERE_LINK_HELP
+    )
+
+
+def find_biosphere_link_rows(rows: Iterable[BOMValidationRow]) -> list[BOMValidationRow]:
+    """The rows whose link is a biosphere flow. Used by the import pre-flight, before anything
+    is written."""
+    cache: dict[str, bool] = {}
+    out = []
+    for r in rows:
+        db, code = (r.database or "").strip(), (r.code or "").strip()
+        if db and code and is_biosphere_link(db, code, cache):
+            out.append(r)
+    return out
+
+
+# ── Waste-treatment sign ─────────────────────────────────────────────────────
+
+WASTE_SIGN_TEXT = (
+    "this activity is a waste treatment activity (its production amount is negative). ecoinvent "
+    "enters waste inputs with a NEGATIVE quantity, so a positive quantity here gives a credit, "
+    "not a burden."
+)
+
+
+def _production_amount(db: str, code: str, ctx: "_ValidationContext") -> float | None:
+    """The activity's production amount, read once per ``(db, code)`` per validation pass."""
+    key = (db, code)
+    if key in ctx.production_cache:
+        ctx.cache_hits += 1
+        return ctx.production_cache[key]
+    amount: float | None = None
+    try:
+        import bw2data
+
+        act = bw2data.get_activity(key)
+        total, seen = 0.0, False
+        for exc in act.production():
+            total += float(exc.get("amount", 0.0) or 0.0)
+            seen = True
+        amount = total if seen else None
+    except Exception:
+        amount = None
+    ctx.production_cache[key] = amount
+    ctx.bw2_lookups += 1
+    return amount
+
+
+def waste_sign_applies(quantity: float | None, production_amount: float | None) -> bool:
+    """A positive quantity on a negative-production activity. The reverse (a negative quantity
+    on a normal activity) is a legitimate avoided-burden entry and is never flagged."""
+    return quantity is not None and production_amount is not None and quantity > 0 and production_amount < 0
+
+
 # ── Public API ───────────────────────────────────────────────────────────────
 
 
@@ -268,6 +413,21 @@ def validate_bom(
             error_row_keys.add(key)
             continue
 
+        # ── A biosphere flow is not an activity ─────────────────────────
+        # BEFORE the code-shape checks: a flow's uuid is 36 characters, so it used to
+        # be reported as "truncated", which sends the user hunting for a typo that is
+        # not there. Only a database named biosphere, or a code that is a flow of
+        # biosphere3, is treated this way; 32-character codes go the normal route.
+        if _is_biosphere_database(db_raw) or (
+            len(code_raw) != _EXPECTED_CODE_LENGTH and _code_is_biosphere_flow(code_raw, ctx.bio_cache)
+        ):
+            ctx.issues.append(_issue(
+                row, "error", "biosphere_link", code_raw,
+                biosphere_link_message(row.archetype, row.stage, row.name, row.row_idx, db_raw, code_raw),
+            ))
+            error_row_keys.add(key)
+            continue
+
         # ── Structural: code length ─────────────────────────────────────
         if len(code_raw) != _EXPECTED_CODE_LENGTH:
             ctx.issues.append(_issue(
@@ -292,6 +452,14 @@ def validate_bom(
 
         # ── Code resolution ─────────────────────────────────────────────
         activity = _resolve_code(db_raw, code_raw, ctx)
+        if activity is None and _code_is_biosphere_flow(code_raw, ctx.bio_cache):
+            # a 32-character flow code under a non-biosphere database name
+            ctx.issues.append(_issue(
+                row, "error", "biosphere_link", code_raw,
+                biosphere_link_message(row.archetype, row.stage, row.name, row.row_idx, db_raw, code_raw),
+            ))
+            error_row_keys.add(key)
+            continue
         if activity is None:
             ctx.issues.append(_issue(
                 row, "error", "code_not_found", code_raw,
@@ -347,6 +515,18 @@ def validate_bom(
                 f"charging the wrong quantity.",
             ))
             row_had_warning = True
+
+        # ── Waste-treatment sign (warning, never an error) ──────────────
+        # Only a literal quantity is judged: an expression has no value until the
+        # parameters resolve, so those rows are skipped rather than guessed.
+        if row.quantity is not None and not row.quantity_is_expression and row.quantity > 0:
+            if waste_sign_applies(row.quantity, _production_amount(db_raw, code_raw, ctx)):
+                ctx.issues.append(_issue(
+                    row, "warning", "waste_sign", f"{row.quantity:g}",
+                    f"Row {row.row_idx} ({row.archetype}, {row.stage}, {row.name}), column "
+                    f"'Quantity' ({row.quantity:g}): '{actual_name}' - {WASTE_SIGN_TEXT}",
+                ))
+                row_had_warning = True
 
         if row_had_warning:
             warning_row_keys.add(key)

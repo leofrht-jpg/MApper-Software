@@ -339,3 +339,55 @@ A silent downgrade to the STRICTER default is the worst shape this can take,
 because the resulting screen looks correct.
 `test_authored_basis_survives_the_response.py` pins that link, over both bases,
 with an anti-vacuity case proving a dropped field is detectable.
+
+## Authored databases through Excel (template, import, export)
+
+`core/authored_excel.py` + routes under `/api/authored-databases/excel/*` and `/{name}/export`; UI in
+`components/authored/AuthoredExcel.tsx` (Database Explorer header: **Import from Excel**,
+**Download template**; on an authored database: **Export to Excel**).
+
+The workbook hands the SAME inputs to the SAME engine. Nothing here validates a rule of its own:
+an exchange is judged by `resolve_exchange`, an activity by `build_activity`, the database name by
+`validate_database_name`, and the write is `materialize` then `save_definitions` (the create
+route's `_commit`). The module only reads cells safely, resolves a flow from name + compartment,
+attributes each engine verdict to a **sheet, row and column**, and refuses the whole file on any
+error.
+
+- **Sheets:** `Read me`, `Database`, `Activities`, `Exchanges`, `Lists` (dropdown values). The
+  template has frozen headers, widths, dropdowns and ONE marked example per sheet (CO2, fossil and
+  ammonia to air per kg). Rows whose Activity key starts with `EXAMPLE` are refused on import.
+- **All or nothing + dry run:** `POST /excel/validate` returns every error and a preview (counts,
+  partial scopes, flows resolved by name) and writes nothing; `POST /excel/import` validates
+  AGAIN (the preview never authorises the write) and returns 422 `authored_excel_invalid` with the
+  error list. Both run through `run_heavy`; import carries `verify_project_state`.
+- **An existing database name is refused** (`validate_database_name`). There is no replace path
+  and none was invented: the engine only has per-activity edit/delete, and a replace would
+  re-mint codes and break BOM links.
+- **Flow:** `Flow code` (+ `Flow database`, default biosphere3), or `Flow name` + `Compartment`
+  looked up through `Backend.find_flows` (exact name, full compartment path; `air` is not
+  `air / non-urban air ...`); zero or several matches are refused and the candidates are listed.
+  A code that contradicts a given name or compartment is refused; the `Unit` column is only
+  checked against the flow's unit (`kg` = `kilogram`), never converted.
+- **Basic variance:** blank for flows ecoinvent measures (entering one is refused,
+  `bv_not_settable`); for flows it does not measure a value AND a reason are required. Export
+  writes variance and reason only when the user supplied them (`user_entered` / `supplied`).
+- **Round trip:** export then import under a new name gives the same activities and exchanges
+  (flow codes, amounts, pedigree, variance and reason, uncertainty basis, floor reason, scope,
+  scope note, complete indicators, activity comment, database description). Activity codes are
+  minted new. **Not carried, because the stored model has no field for them:** an activity
+  description and an exchange comment (a follow-up; the Read me says so).
+- **Safety:** size and zip checks before parsing (`check_file`: 5 MB, part count, expanded size,
+  compression ratio), 5,000 rows per sheet, formulas rejected (a formula cell is reported, never
+  evaluated). On export, text starting with `=`, `+`, `-` or `@` gets one leading apostrophe and
+  is stored as a string cell; import removes exactly that apostrophe (`neutralise` / `restore`
+  are injective, so the round trip is exact even for text that already starts with `'`).
+
+#### What NOT to do
+
+- **Don't write an exchange or activity rule in the Excel layer.** Call the engine and map its
+  codes to columns (`_CODE_COLUMN`); the tests revert each protection and fail by name.
+- **Don't add a replace-on-import without new engine behaviour that keeps activity codes.**
+- **Don't write a workbook cell with `cell.value = text` alone:** a string starting with `=` becomes
+  a formula cell. Use `_put` (neutralise, then set the cell type to string).
+- **Don't let the template's example rows import.** They are marked, coloured and refused.
+

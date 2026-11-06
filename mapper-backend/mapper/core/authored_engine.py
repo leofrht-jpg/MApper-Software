@@ -136,6 +136,10 @@ class Backend(Protocol):
     def delete(self, name: str) -> None: ...
     #: Method tuples at least one of these flows is characterised by.
     def reached_methods(self, flow_keys: Iterable[tuple[str, str]]) -> set[tuple[str, ...]]: ...
+    #: Read-only lookup used by the Excel import to find a flow from its exact name and, when
+    #: given, its full compartment path ("air" or "air / non-urban air or from high stacks").
+    #: Optional: a backend without it cannot resolve a flow by name, and the import says so.
+    def find_flows(self, database: str, name: str, compartment: str | None) -> list[FlowInfo]: ...
 
 
 def now_iso() -> str:
@@ -637,6 +641,32 @@ class Bw2Backend:
             categories=tuple(f.get("categories") or ()), unit=f.get("unit", ""),
             type=f.get("type", ""),
         )
+
+    #: (project, database, modified) -> {casefolded name: [FlowInfo]}; one pass per database.
+    _flow_name_cache: dict = {}
+
+    def find_flows(self, database: str, name: str, compartment: str | None) -> list[FlowInfo]:
+        """Flows of ``database`` whose name equals ``name`` (case-insensitive, exact) and, when
+        ``compartment`` is given, whose full category path equals it. Read-only."""
+        if database not in self._bd.databases:
+            return []
+        stamp = (self._bd.projects.current, database, str(self._bd.databases[database].get("modified")))
+        index = Bw2Backend._flow_name_cache.get(stamp)
+        if index is None:
+            index = {}
+            for f in self._bd.Database(database):
+                info = FlowInfo(
+                    database=database, code=f["code"], name=f.get("name", ""),
+                    categories=tuple(f.get("categories") or ()), unit=f.get("unit", ""), type=f.get("type", ""),
+                )
+                index.setdefault(info.name.casefold(), []).append(info)
+            Bw2Backend._flow_name_cache.clear()
+            Bw2Backend._flow_name_cache[stamp] = index
+        hits = [f for f in index.get((name or "").strip().casefold(), []) if f.type in ALLOWED_FLOW_TYPES]
+        if compartment:
+            want = compartment.strip().casefold()
+            hits = [f for f in hits if " / ".join(f.categories).casefold() == want]
+        return sorted(hits, key=lambda f: (f.categories, f.code))
 
     def _base_databases(self) -> list[str]:
         from mapper.core.project_storage import _GENERATED_DATABASES, _PREMISE_MARKER

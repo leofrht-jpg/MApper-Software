@@ -1215,6 +1215,76 @@ export async function deleteAuthoredActivity(db: string, code: string): Promise<
   return request(`/authored-databases/${encodeURIComponent(db)}/activities/${code}`, { method: 'DELETE' })
 }
 
+// ── Authored databases through Excel ─────────────────────────────────────────
+
+/** One finding about the workbook: where it is and what is wrong. */
+export interface AuthoredExcelError {
+  sheet: string
+  row: number | null
+  column: string | null
+  code: string
+  message: string
+}
+
+export interface AuthoredExcelPreview {
+  database: string | null
+  description: string
+  activities: number
+  exchanges: number
+  partial: number
+  flows_resolved_by_name: number
+  resolved_by_name: { row: number; name: string; compartment: string; code: string }[]
+  activity_list: { key: string; name: string; scope: string; exchanges: number }[]
+}
+
+export interface AuthoredExcelValidation {
+  ok: boolean
+  errors: AuthoredExcelError[]
+  warnings: string[]
+  preview: AuthoredExcelPreview
+}
+
+export interface AuthoredExcelImportResult {
+  database: AuthoredDatabase
+  preview: AuthoredExcelPreview
+  warnings: string[]
+}
+
+async function authoredExcelUpload<T>(path: 'validate' | 'import', file: File, name?: string): Promise<T> {
+  const form = new FormData()
+  form.append('file', file)
+  const qs = name ? `?name=${encodeURIComponent(name)}` : ''
+  const res = await fetch(`${API_BASE}/authored-databases/excel/${path}${qs}`, _withProjectHeader({ method: 'POST', body: form }))
+  if (!res.ok) {
+    const detail = await res.text()
+    if (res.status === 409 && detail.includes('project_state_mismatch') && _onProjectMismatch) {
+      _onProjectMismatch(_extractDetail(detail))
+    }
+    throw new HttpError(res.status, detail || `HTTP ${res.status}`)
+  }
+  return res.json()
+}
+
+/** Dry run: every error with sheet, row and column, plus a preview. Writes nothing. */
+export const validateAuthoredExcel = (file: File, name?: string) =>
+  authoredExcelUpload<AuthoredExcelValidation>('validate', file, name)
+
+/** The real import. All or nothing: the server validates again and refuses on any error. */
+export const importAuthoredExcel = (file: File, name?: string) =>
+  authoredExcelUpload<AuthoredExcelImportResult>('import', file, name)
+
+async function authoredExcelDownload(path: string, filename: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/authored-databases/${path}`, _withProjectHeader())
+  if (!res.ok) throw new Error(await res.text())
+  downloadBlob(await res.blob(), filename)
+}
+
+export const downloadAuthoredTemplate = () =>
+  authoredExcelDownload('excel/template', 'mapper_authored_database_template.xlsx')
+
+export const exportAuthoredDatabase = (name: string) =>
+  authoredExcelDownload(`${encodeURIComponent(name)}/export`, `${name.replace(/[^\w.-]+/g, '_')}_authored.xlsx`)
+
 export async function reconcileAuthoredDatabases(): Promise<MaterialisationStatus[]> {
   return request<MaterialisationStatus[]>('/authored-databases/reconcile', { method: 'POST' })
 }

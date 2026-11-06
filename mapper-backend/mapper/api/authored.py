@@ -20,9 +20,13 @@ archetype refuse to compute, far from the action that caused it.
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from pydantic import BaseModel
 
+from mapper.api.cohort_export import excel_response_from_bytes
+from mapper.api.heavy import run_heavy
 from mapper.api.project_guard import verify_project_state
+from mapper.core import authored_excel as xl
 from mapper.core import authored_engine as eng
 from mapper.core import authored_storage as store
 from mapper.core.bw2_wrapper import get_current_project
@@ -88,6 +92,107 @@ def _commit(project: str, defs, db: AuthoredDatabase, backend: eng.Backend) -> N
     except eng.AuthoredError as err:
         raise _invalid(err) from err
     store.save_definitions(project, defs)
+
+
+# ── Excel: template, validate, import, export ────────────────────────────────
+#
+# The workbook hands the SAME inputs to the SAME engine (`core/authored_excel.py`): nothing is
+# written around `build_activity` / `materialize`. The import is all or nothing, and an existing
+# database name is refused (there is no replace path in the engine, and none is invented here).
+
+
+class ExcelErrorItem(BaseModel):
+    sheet: str
+    row: int | None = None
+    column: str | None = None
+    code: str
+    message: str
+
+
+class ExcelValidateResponse(BaseModel):
+    ok: bool
+    errors: list[ExcelErrorItem]
+    warnings: list[str]
+    preview: dict
+
+
+class ExcelImportResponse(BaseModel):
+    database: AuthoredDatabase
+    preview: dict
+    warnings: list[str]
+
+
+async def _read_upload(file: UploadFile) -> bytes:
+    data = await file.read(xl.MAX_BYTES + 1)
+    if len(data) > xl.MAX_BYTES:
+        raise HTTPException(status_code=413, detail={
+            "error": "authored_excel_rejected",
+            "message": f"The file is larger than the {xl.MAX_BYTES // (1024 * 1024)} MB limit.",
+        })
+    return data
+
+
+def _rejected(exc: xl.WorkbookRejected) -> HTTPException:
+    return HTTPException(status_code=exc.status, detail={"error": "authored_excel_rejected", "message": str(exc)})
+
+
+def _plan_sync(project: str, data: bytes, name: str | None):
+    defs = _load(project)
+    try:
+        plan = xl.validate_workbook(data, get_backend(project), defs, name_override=name)
+    except xl.WorkbookRejected as exc:
+        raise _rejected(exc) from exc
+    return defs, plan
+
+
+def _import_sync(project: str, data: bytes, name: str | None) -> ExcelImportResponse:
+    """Re-validate the uploaded file (never trusting an earlier dry run), then write through the
+    engine in the same order the create route uses: Brightway first, then the definition."""
+    defs, plan = _plan_sync(project, data, name)
+    if not plan.ok:
+        raise HTTPException(status_code=422, detail={
+            "error": "authored_excel_invalid",
+            "message": f"The workbook has {len(plan.errors)} error(s), so nothing was imported.",
+            "errors": [e.as_dict() for e in plan.errors],
+            "warnings": plan.warnings,
+        })
+    assert plan.database is not None
+    defs.databases.append(plan.database)
+    _commit(project, defs, plan.database, get_backend(project))
+    return ExcelImportResponse(database=plan.database, preview=plan.preview, warnings=plan.warnings)
+
+
+@router.get("/excel/template")
+async def download_excel_template():
+    data = xl.workbook_bytes(xl.build_template())
+    return excel_response_from_bytes(data, "mapper_authored_database_template.xlsx", kind="round_trip")
+
+
+@router.post("/excel/validate", response_model=ExcelValidateResponse)
+async def validate_excel(file: UploadFile = File(...), name: str | None = Query(None)) -> ExcelValidateResponse:
+    """Dry run: parse and validate the whole workbook and return every error plus a preview.
+    Writes nothing."""
+    data = await _read_upload(file)
+    _defs, plan = await run_heavy(_plan_sync, _project(), data, name)
+    return ExcelValidateResponse(
+        ok=plan.ok, errors=[ExcelErrorItem(**e.as_dict()) for e in plan.errors],
+        warnings=plan.warnings, preview=plan.preview,
+    )
+
+
+@router.post("/excel/import", response_model=ExcelImportResponse, dependencies=[Depends(verify_project_state)])
+async def import_excel(file: UploadFile = File(...), name: str | None = Query(None)) -> ExcelImportResponse:
+    data = await _read_upload(file)
+    return await run_heavy(_import_sync, _project(), data, name)
+
+
+@router.get("/{name}/export")
+async def export_authored_excel(name: str):
+    from mapper.api.bom import sanitize_filename_part
+
+    db = _db_or_404(_load(_project()), name)
+    data = xl.workbook_bytes(xl.export_database(db))
+    return excel_response_from_bytes(data, f"{sanitize_filename_part(db.name, 'authored')}_authored.xlsx", kind="round_trip")
 
 
 @router.get("", response_model=list[AuthoredDatabaseView])

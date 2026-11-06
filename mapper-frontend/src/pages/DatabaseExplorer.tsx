@@ -24,6 +24,7 @@ import { downloadBlob } from '../utils/download'
 import {
   AuthoredActivityActions, AuthoredDatabaseBar, NewAuthoredDatabaseModal, useAuthoredDatabases,
 } from '../components/authored/AuthoredDatabaseControls'
+import { AuthoredExcelButtons } from '../components/authored/AuthoredExcel'
 import {
   type ActivityDetail,
   type ActivityExportDetail,
@@ -912,6 +913,7 @@ export function DatabaseExplorer() {
           </h1>
         </div>
         <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
+        <AuthoredExcelButtons onImported={(name) => void refreshAuthored(name)} />
         <Button
           variant="secondary"
           data-testid="authored-new-db-open"

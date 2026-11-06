@@ -33,6 +33,7 @@ import {
   structuredErrorDetail,
 } from '../../api/client'
 import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
+import { ExportToExcelButton } from './AuthoredExcel'
 
 /** Authored databases of the current project; reloads on project change. */
 export function useAuthoredDatabases() {
@@ -113,6 +114,7 @@ export function AuthoredDatabaseBar({ view, onAddActivity, onChanged, onDeleted 
         <Button variant="secondary" data-testid="authored-add-activity" onClick={onAddActivity} disabled={busy}>
           <Plus size={14} /> Add activity
         </Button>
+        <ExportToExcelButton name={db.name} disabled={busy} />
         {confirming ? (
           <>
             <Button variant="secondary" data-testid="authored-db-delete-confirm" style={{ color: "var(--danger)" }} onClick={remove} disabled={busy}>Delete {db.name}</Button>

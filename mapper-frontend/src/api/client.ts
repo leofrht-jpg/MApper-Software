@@ -978,13 +978,14 @@ export async function getActivities(
   limit = 50,
   search?: string,
   opts?: { locations?: string[]; units?: string[]; sortBy?: ActivitySortBy },
+  signal?: AbortSignal,
 ): Promise<ActivityPage> {
   const params = new URLSearchParams({ offset: String(offset), limit: String(limit) })
   if (search) params.set('search', search)
   if (opts?.sortBy) params.set('sort_by', opts.sortBy)
   for (const l of opts?.locations ?? []) params.append('locations', l)
   for (const u of opts?.units ?? []) params.append('units', u)
-  return request<ActivityPage>(`/activities/${encodeURIComponent(database)}?${params}`)
+  return request<ActivityPage>(`/activities/${encodeURIComponent(database)}?${params}`, signal ? { signal } : undefined)
 }
 
 export async function searchAllActivities(

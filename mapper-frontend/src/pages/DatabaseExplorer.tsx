@@ -755,12 +755,29 @@ export function DatabaseExplorer() {
   // Reset search input when the active database changes.
   useEffect(() => { setSearchInput(searchQuery) }, [selectedDatabase]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Rows are keyed by database + code (the row's `key`), never by position, so a
+  // row keeps its identity while pages are appended and a replaced list cannot
+  // inherit the previous list's per-index state.
+  const getItemKey = useCallback((index: number) => activities[index]?.key ?? index, [activities])
   const rowVirtualizer = useVirtualizer({
     count: activities.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 40,
+    getItemKey,
     overscan: 10,
   })
+
+  // A new query (search, filter, sort or database) is a new list: back to the top, focus on
+  // the first row. The old scroll offset belongs to rows that are gone; left alone it
+  // is applied to the new, shorter list, and the visible rows no longer match it.
+  const queryKey = [
+    selectedDatabase, searchQuery, selectedLocations.join('\u0001'), selectedUnits.join('\u0001'), sortBy,
+  ].join('\u0000')
+  useEffect(() => {
+    setFocusedIndex(0)
+    if (parentRef.current) parentRef.current.scrollTop = 0
+    rowVirtualizer.scrollToOffset(0)
+  }, [queryKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleSearch = useCallback((value: string) => {
     setSearchInput(value)
@@ -832,12 +849,18 @@ export function DatabaseExplorer() {
     return () => window.removeEventListener('keydown', onKey)
   }, [activities, focusedIndex, selectedActivity, selectedKeys.length, toggleActivity, closeDetail, clearSelection])
 
-  // Keep the focused row visible when it changes via keyboard.
+  // Keep the focused row visible when the focus moves. Only when the focus moves: this
+  // used to also run whenever a page was appended (`activities.length` was a
+  // dependency), which scrolled back to the focused row every time the next page
+  // arrived, so the list jumped back while the user was scrolling on.
   useEffect(() => {
     if (activities.length === 0) return
     rowVirtualizer.scrollToIndex(focusedIndex, { align: 'auto' })
-  }, [focusedIndex, activities.length, rowVirtualizer])
+  }, [focusedIndex]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // What narrows the list. Sorting changes the order, not the rows, so it counts in
+  // the Filters badge but not in "matching".
+  const isNarrowed = !!searchQuery || selectedLocations.length > 0 || selectedUnits.length > 0
   const filterCount =
     (searchQuery ? 1 : 0) +
     (selectedLocations.length ? 1 : 0) +
@@ -1037,9 +1060,7 @@ export function DatabaseExplorer() {
 
             {/* Count indicator */}
             <div style={{ marginTop: 6, fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}>
-              {filterCount > 0
-                ? `${totalActivities.toLocaleString()} matching filters`
-                : `${totalActivities.toLocaleString()} activities`}
+              {`${totalActivities.toLocaleString()} ${isNarrowed ? 'matching ' : ''}${totalActivities === 1 ? 'activity' : 'activities'}`}
             </div>
           </div>
 
@@ -1081,6 +1102,8 @@ export function DatabaseExplorer() {
                   return (
                     <div
                       key={act.key}
+                      data-testid="db-row"
+                      data-activity-key={act.key}
                       onClick={(e) => handleRowClick(act, virtualRow.index, e)}
                       onDoubleClick={() => handleRowDoubleClick(act, virtualRow.index)}
                       style={{

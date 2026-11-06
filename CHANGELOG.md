@@ -24,6 +24,8 @@ at 0.3.1 and is kept from here on.
 
 ### Fixed
 
+- **Authoring works in a brand-new project.** Creating or editing an authored activity in a project that holds only a small biosphere failed with "no such index: exchangedataset_output": the statistics pass forced an SQLite index that Brightway builds only when one write carries 100 or more activities (an ecoinvent or biosphere import). The index is now used only where it exists. The query returns the same rows either way, nothing is created or changed in the project's database, and projects that have the index run exactly as before.
+
 - **LCA Architect no longer builds the supply chain tree by itself after Calculate.** It is built when you click "Build supply chain tree" (with the hint that it can take up to a minute), from a snapshot taken at Calculate so the tree always belongs to the score shown, even if an amount is edited afterwards. One run at a time, a real elapsed counter instead of invented phases, "Discard" (it ends the client's wait; the server may keep computing until it finishes), "Try again" after an error; a recalculation or leaving the page drops the request in flight. Removes the unused, auto-fetching `lcaStore`.
 
 - **The Export buttons use the standard button style.** "Export XLSX" in LCA Architect and the Export buttons of Impact Assessment > Single-product (Static, Projected, Comparison) are now the standard secondary `Button`, with one export spinner that actually turns (the `lca-spin` class had no rule, so the contribution-analysis export spinner never moved).

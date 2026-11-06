@@ -46,7 +46,7 @@ async def stream_task_progress(websocket: WebSocket, task_id: str) -> None:
                     break
             except asyncio.TimeoutError:
                 # Send heartbeat
-                await websocket.send_json({"step": task.step, "progress": task.progress, "message": task.message})
+                await websocket.send_json(task.current_payload())
                 if task.status in ("done", "error", "cancelled"):
                     break
     except WebSocketDisconnect:

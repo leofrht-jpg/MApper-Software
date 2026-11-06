@@ -51,7 +51,7 @@ const REPORT: client.LCIAInstallReport = {
 const WARNINGS = [
   '377 of 4,022 characterisation factors (9.4%) were skipped because their flow is not in this project\'s biosphere3. The 1 most frequent skipped flows:',
   'Chloroform [air / stratosphere]: 6 factors',
-  'Indicators that lost at least 25% of their factors (they are the least complete, read their results with care):',
+  'Indicators that lost at least 25% of their factors (whether their results lose anything depends on whether your inventory uses the skipped flows):',
   'material resources: metals/minerals / ADP elements (CML v4.8 2016): 80 of 129 factors skipped',
 ]
 

@@ -1410,6 +1410,22 @@ computation (`run_heavy` runs it on a thread), so it finishes anyway and holds
 `compute_lock` until then. An error keeps the red line and offers "Try again". Locked
 by `tests/lcaSupplyChainButton.test.tsx`.
 
+**Impact Assessment builds the same tree, only on two surfaces.** Single item > Static and the
+Multi-item results (`SingleProductStaticPanel`, `MultiProductLCA`'s `ResultsSection`), nothing
+else: not System-level assessment, not the Comparison tab, not the Projected tab (a follow-up).
+Same wording, `<SupplyChainTreeAction>` and `<ContributionAnalysisPanel>`, wrapped by
+`<SupplyChainTreeBlock>` and driven by `useSupplyChainTrees` (one request at a time across the
+page, an `AbortController`, a per-key cache of 12). A tree is for ONE indicator and ONE
+sensitivity case, so each surface has an indicator select (and a case select in Multi-item when
+several cases ran). The request is built from the SHOWN result's own echo (archetype, scope,
+`stage_amounts`, `parameter_scenario`, `compute_database`), or for a Multi-item activity from
+`multiRun` (database, code, amount, vintage year), snapshotted at compute. Never from the live
+stage-amount editor or the live selection. The cache key carries a per-Calculate run id, so a
+recalculation never shows an older tree. A failed or empty item, or an activity with no `multiRun`
+entry, gets no button. In Multi-item there is one button per item, all disabled while any tree
+runs. Locked by `tests/impactSupplyChainButton.test.tsx` and, on the backend,
+`tests/test_contribution_parameter_scenario.py`.
+
 #### What NOT to do
 
 - **Don't conditionally unmount a section body on collapse.** Use the

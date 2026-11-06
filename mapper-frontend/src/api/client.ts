@@ -1653,6 +1653,9 @@ export interface ContributionAnalysisRequest {
   archetype_id?: string
   scope?: 'inflows' | 'stock' | 'outflows' | 'all'
   stage_amounts?: Record<string, number> | null
+  /** Sensitivity case the BOM is resolved against (archetype targets). null and "Base"
+   *  both mean Base. Part of the backend cache key. Activity targets have no BOM and ignore it. */
+  parameter_scenario?: string | null
   year?: number | null
   // Database to compute against — when set and different from each demand
   // key's source DB, the backend translates keys to this DB (typically a
@@ -1712,6 +1715,8 @@ export interface ContributionAnalysisResult {
   year: number | null
   // Database the result was computed against (mirrors request.compute_database).
   compute_database?: string | null
+  /** Sensitivity case echoed from the request (null = Base). */
+  parameter_scenario?: string | null
   top_technosphere: ContributionsResponse
   top_biosphere: BiosphereContributionItem[]
   biosphere_rest_amount: number

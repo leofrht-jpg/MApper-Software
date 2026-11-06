@@ -21,8 +21,15 @@ import { confirmDialog, notify } from '../components/ui/dialogs'
 import {
   downloadBOMTemplate,
   exportAllArchetypes,
+  structuredErrorDetail,
   type MultiImportResult,
 } from '../api/client'
+
+/** A file refused whole because rows link a biosphere flow (nothing was imported). */
+interface ImportRefusal {
+  message: string
+  rows: { sheet: string; row: number; columns: string[]; archetype: string; stage: string; name: string }[]
+}
 
 type SortKey = 'name' | 'folder' | 'category' | 'material_count' | 'unlinked_count' | 'updated_at'
 type SortDir = 'asc' | 'desc'
@@ -39,6 +46,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
   const [exporting, setExporting] = useState(false)
   const [exportFolder, setExportFolder] = useState<string>('')
   const [result, setResult] = useState<MultiImportResult | null>(null)
+  const [refusal, setRefusal] = useState<ImportRefusal | null>(null)
   const [showAllArchetypes, setShowAllArchetypes] = useState(false)
   const [search, setSearch] = useState('')
   const [sortKey, setSortKey] = useState<SortKey>('updated_at')
@@ -79,12 +87,19 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
     }
     setImporting(true)
     setResult(null)
+    setRefusal(null)
     setShowAllArchetypes(false)
     try {
       const res = await importFromFile(file, importMode)
       setResult(res)
     } catch (err) {
-      notify(`Import failed: ${err instanceof Error ? err.message : err}`, { tone: 'error' })
+      const d = structuredErrorDetail(err)
+      if (d && d.error === 'bom_biosphere_link' && Array.isArray(d.rows)) {
+        // Shown in place, as a list, not as a toast: each row is the instruction for what to fix.
+        setRefusal({ message: String(d.message ?? ''), rows: d.rows as ImportRefusal['rows'] })
+      } else {
+        notify(`Import failed: ${err instanceof Error ? err.message : err}`, { tone: 'error' })
+      }
     } finally {
       setImporting(false)
     }
@@ -201,6 +216,29 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
                 : 'Same as Merge, and additionally deletes any archetype not in the file. Matched archetypes keep their identity, so cohort mappings and subsystem links survive.'}
             </span>
           </div>
+          {refusal && (
+            <div
+              data-testid="bom-import-refusal"
+              role="alert"
+              style={{
+                marginTop: 'var(--space-3)', padding: 'var(--space-3)',
+                border: '1px solid var(--danger)', borderRadius: 'var(--radius-md)',
+                backgroundColor: 'var(--bg-elevated)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--danger)', fontWeight: 600, marginBottom: 6 }}>
+                <AlertTriangle size={12} /> Import refused: nothing was imported
+              </div>
+              <div data-testid="bom-import-refusal-message">{refusal.message}</div>
+              <ul data-testid="bom-import-refusal-rows" style={{ margin: '6px 0 0 16px', padding: 0, maxHeight: 180, overflowY: 'auto' }}>
+                {refusal.rows.map((r, i) => (
+                  <li key={`${r.archetype}-${r.stage}-${r.row}-${i}`}>
+                    {r.sheet} sheet, row {r.row}, column {r.columns.join(' / ')}: {r.archetype ? `${r.archetype} › ` : ''}{r.stage} › {r.name}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           {result && (
             <div style={{
               marginTop: 'var(--space-3)',

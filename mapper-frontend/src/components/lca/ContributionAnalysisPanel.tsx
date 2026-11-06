@@ -27,6 +27,7 @@ import {
   type ContributionItem,
   type ContributionTreeNode,
 } from '../../api/client'
+import { indicatorLabel, methodPath } from '../../utils/methodLabels'
 
 type TopN = 5 | 10 | 20 | 'all'
 type Tab = 'activities' | 'flows' | 'supply' | 'stage'
@@ -108,7 +109,7 @@ export function ContributionAnalysisPanel({ result, loadingPhase, stageBreakdown
     [result.supply_chain_tree, depth, cutoff],
   )
 
-  const methodShort = result.method[result.method.length - 1] || result.method.join(' › ')
+  const methodShort = indicatorLabel(result.method) || methodPath(result.method)
   const summary = (
     <>
       <span style={{ color: 'var(--text-tertiary)' }}>{methodShort}</span>
@@ -129,7 +130,7 @@ export function ContributionAnalysisPanel({ result, loadingPhase, stageBreakdown
       <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginBottom: 'var(--space-3)' }}>
         {result.target_label}{result.scope && result.scope !== 'all' ? ` · scope: ${result.scope}` : ''}
         {result.year != null ? ` · year: ${result.year}` : ''}
-        <span style={{ marginLeft: 8 }}>· {result.method.join(' › ')}</span>
+        <span style={{ marginLeft: 8 }}>· {methodPath(result.method)}</span>
         {result.compute_database && (
           <span
             style={{ marginLeft: 8 }}
@@ -157,7 +158,7 @@ export function ContributionAnalysisPanel({ result, loadingPhase, stageBreakdown
             textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)',
             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
           }}>
-            {result.method.join(' › ')}
+            {methodPath(result.method)}
           </p>
           <div style={{ marginTop: 8, display: 'flex', alignItems: 'baseline', gap: 10 }}>
             <span style={{

@@ -50,6 +50,7 @@ import { StackedTotalTooltip } from '../charts/StackedTotalTooltip'
 import { tightStackedDomain } from '../charts/yAxisDomain'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 import { MultiScenarioImpactChart } from '../charts/MultiScenarioImpactChart'
+import { indicatorLabel, methodPath } from '../../utils/methodLabels'
 
 const COHORT_SEP = '|'
 
@@ -955,12 +956,12 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
                 <div style={{ display: 'flex', flexDirection: 'column', maxHeight: 600, overflowY: 'auto' }}>
                   {displayResults.map((r, i) => {
                     const active = i === selectedResultIndex
-                    const label = r.method[r.method.length - 1] || r.method_label || `Method ${i + 1}`
+                    const label = indicatorLabel(r.method) || r.method_label || `Method ${i + 1}`
                     return (
                       <button
                         key={i}
                         onClick={() => selectResultIndex(i)}
-                        title={r.method.join(' › ')}
+                        title={methodPath(r.method)}
                         style={{
                           width: '100%', textAlign: 'left', padding: '8px 10px',
                           background: active ? 'color-mix(in srgb, var(--mod-lca) 10%, transparent)' : 'transparent',
@@ -1022,7 +1023,7 @@ function DSMImpactPanelImpl({ onNavigate }: DSMImpactPanelProps = {}) {
           {/* Summary card */}
           <div style={cardStyle}>
             <div style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
-              Cumulative impact ({mfaLCAResult.scope}, {mfaLCAResult.method.join(' › ')})
+              Cumulative impact ({mfaLCAResult.scope}, {methodPath(mfaLCAResult.method)})
             </div>
             {mfaLCAResult.stages_included && mfaLCAResult.stages_included.length > 0 && (
               <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4 }}>

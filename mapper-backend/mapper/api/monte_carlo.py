@@ -32,6 +32,7 @@ from mapper.api.heavy import run_heavy
 from mapper.api import tasks as task_registry
 from mapper.api.tasks import CancelledOperation
 from mapper.core import monte_carlo_engine as mce
+from mapper.core.method_labels import display_method
 from mapper.core.monte_carlo_engine import (
     UncertaintyConfigError,
     collect_param_draws,
@@ -298,7 +299,7 @@ def _run_monte_carlo(
         distributions.append(
             ArchetypeLCAMethodDistribution(
                 method=list(m),
-                method_label=" | ".join(m[1:]) or m[0],
+                method_label=" | ".join(display_method(m)[1:]) or m[0],
                 unit=unit,
                 deterministic=det,
                 n_iterations=n,
@@ -790,7 +791,7 @@ def _run_monte_carlo_multi(
             st = summarize(it["samples"][m])
             det, unit = it["det"].get(m, (0.0, ""))
             dists.append(ArchetypeLCAMethodDistribution(
-                method=list(m), method_label=" | ".join(m[1:]) or m[0], unit=unit,
+                method=list(m), method_label=" | ".join(display_method(m)[1:]) or m[0], unit=unit,
                 deterministic=det, n_iterations=n, seed=seed,
                 samples=it["samples"][m] if body.keep_samples else None, **st,
             ))
@@ -871,7 +872,7 @@ def _pairwise_differences(items: list[dict], method_tuples: list[tuple]) -> list
                 det_a = a["det"].get(m, (0.0, ""))
                 det_b = b["det"].get(m, (0.0, ""))
                 out.append(PairwiseDifference(
-                    method=list(m), method_label=" | ".join(m[1:]) or m[0],
+                    method=list(m), method_label=" | ".join(display_method(m)[1:]) or m[0],
                     unit=det_a[1],
                     a_id=a["id"], a_name=a["name"], b_id=b["id"], b_name=b["name"],
                     deterministic=det_a[0] - det_b[0],
@@ -1529,7 +1530,7 @@ def _get_pedigree_coverage_sync(
         # parameter expression. 0% would tell the user they are missing
         # something fixable.
         impact_share=(covered / total) if by_name and total > 0 else None,
-        method_label=" | ".join(method_tuple[1:]) or method_tuple[0],
+        method_label=" | ".join(display_method(method_tuple)[1:]) or method_tuple[0],
         unit=unit_label,
         top_unscored=[
             UnscoredMaterial(name=k, share=(v / total) if total else 0.0, impact=v)

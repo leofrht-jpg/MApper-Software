@@ -55,6 +55,7 @@ from dataclasses import dataclass
 from typing import Iterable, Protocol
 
 from mapper.core.pedigree import gsd2_from_sigma, total_sigma
+from mapper.core.method_labels import display_method
 from mapper.models.authored_schemas import (
     ActivityInput,
     AuthoredActivity,
@@ -418,7 +419,7 @@ def build_activity(inp: ActivityInput, backend: Backend, code: str) -> AuthoredA
         for m in inp.complete_indicators:
             if tuple(m) not in reached:
                 problems.append(
-                    f"{' › '.join(m)}: no listed flow is characterised by this indicator, so "
+                    f"{' › '.join(display_method(m))}: no listed flow is characterised by this indicator, so "
                     "the activity cannot be declared complete for it"
                 )
                 codes.append("indicator_not_reached")

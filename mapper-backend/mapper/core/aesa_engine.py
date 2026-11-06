@@ -56,6 +56,7 @@ from mapper.models.bom_schemas import (
     ImpactAssessmentResult,
 )
 from mapper.models.schemas import ArchetypeLCACalculateResult
+from mapper.core.method_labels import display_method
 
 
 DATA_DIR = Path(__file__).resolve().parent.parent / "data" / "aesa"
@@ -1050,7 +1051,7 @@ class AESAEngine:
                     boundary_type=pb.boundary_type,
                     unit=pb.unit,
                     impact_by_cohort=dict(yr.impact_by_cohort),
-                    method_label=mres.method_label or " › ".join(mres.method),
+                    method_label=mres.method_label or " › ".join(display_method(mres.method)),
                 ))
 
         # Summary per year: count zones

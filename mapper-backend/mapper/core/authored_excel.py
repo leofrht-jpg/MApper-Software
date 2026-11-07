@@ -368,6 +368,7 @@ def validate_workbook(
     # ── Database ────────────────────────────────────────────────────────────
     db_rows = sheets[SHEET_DB].rows
     db_name: str | None = None
+    requested_name = ""      # what the file (or the override) asked for, valid or not
     description = ""
     if len(db_rows) != 1:
         plan.errors.append(CellError(SHEET_DB, 2, "Name", f"The Database sheet must hold exactly one row, found {len(db_rows)}.", "database_rows"))
@@ -375,11 +376,12 @@ def validate_workbook(
         row_no, vals = db_rows[0]
         raw_name = (name_override or _text(vals.get("Name")) or "").strip()
         description = _text(vals.get("Description")) or ""
+        requested_name = raw_name
         try:
             db_name = eng.validate_database_name(raw_name, backend.installed(), defs)
         except eng.AuthoredError as err:
-            for p in err.problems:
-                plan.errors.append(CellError(SHEET_DB, row_no, "Name", p, "database_name"))
+            for p, c in zip(err.problems, err.codes):
+                plan.errors.append(CellError(SHEET_DB, row_no, "Name", p, c if c == "database_name_taken" else "database_name"))
 
     # ── Activities ──────────────────────────────────────────────────────────
     acts: dict[str, dict] = {}
@@ -524,7 +526,7 @@ def validate_workbook(
 
     # ── Build through the engine, only when every cell was clean ─────────────
     if plan.errors or db_name is None:
-        plan.preview = _preview(acts, by_name, resolved_by_name, db_name, description)
+        plan.preview = _preview(acts, by_name, resolved_by_name, db_name, description, requested_name)
         return plan
     built: list[AuthoredActivity] = []
     for key, a in acts.items():
@@ -543,7 +545,7 @@ def validate_workbook(
                 plan.errors.append(CellError(SHEET_ACT, a["row"], col, p, c))
         except (ValidationError, ValueError) as err:
             plan.errors.append(CellError(SHEET_ACT, a["row"], None, str(err).splitlines()[0], "invalid"))
-    plan.preview = _preview(acts, by_name, resolved_by_name, db_name, description)
+    plan.preview = _preview(acts, by_name, resolved_by_name, db_name, description, requested_name)
     if plan.errors:
         return plan
     ts = eng.now_iso()
@@ -554,9 +556,12 @@ def validate_workbook(
     return plan
 
 
-def _preview(acts: dict, by_name: int, resolved: list[dict], db_name: str | None, description: str) -> dict:
+def _preview(acts: dict, by_name: int, resolved: list[dict], db_name: str | None, description: str,
+             requested_name: str = "") -> dict:
     return {
         "database": db_name,
+        # The name the file asked for, kept when it was refused, so the dialog can prefill it.
+        "requested_name": requested_name,
         "description": description,
         "activities": len(acts),
         "exchanges": sum(len(a["exchanges"]) for a in acts.values()),

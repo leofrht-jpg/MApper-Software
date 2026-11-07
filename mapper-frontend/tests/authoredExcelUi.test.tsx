@@ -138,6 +138,35 @@ describe('the buttons', () => {
 })
 
 describe('the import dialog: validate first, confirm second', () => {
+  it('a taken database name is ONE line with a clear text, and the name box is prefilled with the file\'s name', async () => {
+    vi.mocked(client.validateAuthoredExcel).mockResolvedValue({
+      ok: false, warnings: [],
+      errors: [{ sheet: 'Database', row: 2, column: 'Name', code: 'database_name_taken',
+                 message: "A database named 'walk-auth' already exists. Choose another name." }],
+      preview: { ...GOOD.preview, database: null, requested_name: 'walk-auth' },
+    })
+    const { body, choose } = await renderOn()
+    await choose()
+    await waitFor(() => body.getByTestId('authored-xl-error-count'))
+    const items = body.getAllByTestId('authored-xl-errors-item')
+    expect(items).toHaveLength(1)                                              // once, not twice
+    expect(within(items[0]).getByTestId('authored-xl-errors-item-summary'))
+      .toHaveTextContent('A database with this name already exists. Choose another name.')
+    expect(items[0].getAttribute('data-code')).toBe('database_name_taken')
+    // the original text, with the name in it, is behind Details
+    expect(items[0]).toHaveTextContent("A database named 'walk-auth' already exists. Choose another name.")
+    // the box is not empty: the user edits the file's name instead of retyping it
+    expect((body.getByTestId('authored-xl-name') as HTMLInputElement).value).toBe('walk-auth')
+  })
+
+  it('the accepted name still fills the box, and an override is never overwritten by the answer', async () => {
+    vi.mocked(client.validateAuthoredExcel).mockResolvedValue(GOOD)
+    const { body, choose } = await renderOn()
+    await choose()
+    await waitFor(() => body.getByTestId('authored-xl-preview'))
+    expect((body.getByTestId('authored-xl-name') as HTMLInputElement).value).toBe('cathode-db')
+  })
+
   it('each error is ONE line (marker, summary, Help) with the original text behind Details; an unknown code is expanded', async () => {
     vi.mocked(client.validateAuthoredExcel).mockResolvedValue(BAD)
     const { body, choose } = await renderOn()

@@ -69,7 +69,11 @@ describe('EF v3.1 library entry', () => {
   it('says it is offline and offers a one-click Install', async () => {
     render(<MethodLibrary onClose={() => {}} />)
     expect(await screen.findByText('EF v3.1')).toBeTruthy()
-    expect(screen.getByText(/Offline: installs from the installed software/)).toBeTruthy()
+    // "Offline" is said ONCE, in the (i): the entry's note, not the note plus the generic line
+    await click(screen.getByTestId('method-info-ef_v3_1'))
+    const about = screen.getByTestId('method-about-ef_v3_1').textContent ?? ''
+    expect(about.match(/Offline/g)).toHaveLength(1)
+    expect(screen.queryByText(/Offline: installs from the installed software/)).toBeNull()
     expect(screen.getByRole('button', { name: /Install/ })).toBeTruthy()
     expect(screen.queryByTestId('installed-ef_v3_1')).toBeNull()
   })

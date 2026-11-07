@@ -12,6 +12,7 @@ import { X, Download, Trash2, Upload, AlertTriangle, CheckCircle2, ExternalLink,
 import { Button } from '../ui/Button'
 import { DetailsToggle } from '../ui/DetailsToggle'
 import { Diagnostic } from '../ui/Diagnostic'
+import { InfoButton } from '../ui/InfoButton'
 import { ElapsedCounter } from '../ui/ElapsedCounter'
 import {
   cancelTask,
@@ -455,6 +456,9 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
   const hasError = !!task?.error
   const isDone = !!task?.done && !task.error
   const needsEiPick = method.available_variants && method.available_variants.length > 0
+  // Long help goes behind the (i); the entry's Details keeps only the source, the count and the report.
+  const hasAbout = !!(method.long_description || method.factor_source || method.notes || method.offline
+    || method.installer || method.size_mb != null || method.available_variants)
 
   const installClick = () => {
     if (!needsEiPick) { onInstall(); return }
@@ -470,7 +474,26 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 'var(--space-4)' }}>
         <div style={{ minWidth: 0, flex: 1 }}>
-          <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', ...oneLine }}>{method.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ fontSize: 'var(--text-sm)', fontWeight: 600, color: 'var(--text-primary)', ...oneLine }}>{method.name}</div>
+            {hasAbout && (
+              <InfoButton label={`About ${method.name}`} data-testid={`method-info-${method.id}`}>
+                <div data-testid={`method-about-${method.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {method.long_description && <div>{method.long_description}</div>}
+                  {method.factor_source && <div data-testid={`factor-source-${method.id}`}>{method.factor_source}</div>}
+                  {method.notes && <div style={{ fontStyle: 'italic' }}>{method.notes}</div>}
+                  <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: 'var(--text-tertiary)' }}>
+                    {/* Said once: the note already starts with "Offline" when there is one. */}
+                    {method.offline && !method.notes
+                      ? <span>Offline: installs from the installed software</span>
+                      : !method.offline && method.installer && <span>Installer: {method.installer}</span>}
+                    {method.size_mb != null && <span>~{method.size_mb.toFixed(1)} MB</span>}
+                    {method.available_variants && <span>ei versions: {method.available_variants.join(', ')}</span>}
+                  </div>
+                </div>
+              </InfoButton>
+            )}
+          </div>
           {method.description && (
             <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', marginTop: 4, ...oneLine }}>
               {method.description}
@@ -584,31 +607,11 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
               <ExternalLink size={12} /> Source
             </a>
           )}
-          {method.long_description && (
-            <div style={{ color: 'var(--text-tertiary)' }}>{method.long_description}</div>
-          )}
           {method.category_count != null && (
             <div style={{ color: 'var(--text-secondary)' }}>
               {method.category_count} indicator{method.category_count === 1 ? '' : 's'}
             </div>
           )}
-          {method.factor_source && (
-            <div data-testid={`factor-source-${method.id}`} style={{ color: 'var(--text-secondary)' }}>
-              {method.factor_source}
-            </div>
-          )}
-          {method.notes && (
-            <div style={{ color: 'var(--text-tertiary)', fontStyle: 'italic' }}>{method.notes}</div>
-          )}
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: 'var(--text-tertiary)' }}>
-            {method.offline
-              ? <span>Offline: installs from the installed software</span>
-              : method.installer && <span>Installer: {method.installer}</span>}
-            {method.size_mb != null && <span>~{method.size_mb.toFixed(1)} MB</span>}
-            {method.available_variants && (
-              <span>ei versions: {method.available_variants.join(', ')}</span>
-            )}
-          </div>
           {isDone && task!.report && (
             <div data-testid={`install-report-${method.id}`} style={{ color: 'var(--text-secondary)' }}>
               {task!.report.methods_registered} method{task!.report.methods_registered === 1 ? '' : 's'} registered ·{' '}

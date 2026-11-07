@@ -321,7 +321,7 @@ def test_codes_are_minted_not_derived_from_the_name():
     ("my biosphere data", "biosphere"),
     ("x_premise_y", "premise"),
     ("mapper-tailpipe", "reserved"),
-    ("ecoinvent-3.10-cutoff", "already installed"),
+    ("ecoinvent-3.10-cutoff", "already exists"),
     ("", "required"),
 ])
 def test_database_names_that_would_break_are_refused(bad, why):

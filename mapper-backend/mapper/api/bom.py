@@ -27,6 +27,7 @@ from mapper.api.dsm import _current_project, _get_system, _proj_results, _proj_s
 from mapper.core import dsm_storage
 from mapper.core.bom_engine import (
     add_child_in_roots,
+    assign_node_ids,
     assign_ids_to_roots,
     find_node_in_roots,
     find_root_containing,
@@ -46,7 +47,7 @@ from mapper.core.bom_engine import (
     validation_error_count,
 )
 from mapper.core.bom_validator import (
-    BOMValidationRow, find_biosphere_link_rows, issues_by_node_key, validate_bom,
+    BOMValidationRow, find_biosphere_link_rows, group_issues, issues_by_node_key, validate_bom,
     BIOSPHERE_LINK_HELP,
 )
 from mapper.core.bw2_wrapper import PersistentLCARunner, run_archetype_lca, run_lca_multi_method
@@ -80,6 +81,7 @@ from mapper.models.bom_schemas import (
     DSMLCARequest,
     DSMLCAResult,
     QuantityMilestone,
+    ValidationIssue,
     ValidationReport,
 )
 
@@ -512,12 +514,16 @@ async def move_archetype(body: MoveArchetypeBody) -> Archetype:
 @router.post("/bom/archetypes/{arc_id}/nodes", response_model=Archetype)
 async def add_bom_node(arc_id: str, body: BOMNodeCreate) -> Archetype:
     arc = _get_archetype(arc_id)
+    assign_node_ids(body.node)
     ok = add_child_in_roots(arc.bom, body.parent_node_id, body.node)
     if not ok:
         raise HTTPException(
             status_code=404,
             detail=f"Parent node '{body.parent_node_id}' not found in this archetype",
         )
+    # A new linked row is validated like an edited one, so its warning reaches the banner too.
+    for added in list(iter_all_materials([body.node])):
+        _revalidate_node(arc, added)
     arc.updated_at = _now_iso()
     _persist_archetype(_current_project(), arc)
     return arc
@@ -529,6 +535,7 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
     node = find_node_in_roots(arc.bom, node_id)
     if node is None:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    old_name = node.name
     if body.name is not None:
         node.name = body.name
     if body.quantity is not None:
@@ -600,29 +607,90 @@ async def update_bom_node(arc_id: str, node_id: str, body: BOMNodeUpdate) -> BOM
                     detail="Only material leaves can carry an evolution.",
                 )
             node.evolution = body.evolution
-    if body.quantity is not None or body.ecoinvent_activity is not None:
-        _revalidate_node(arc, node)
+    # Everything the row validator reads: the amount (literal or expression), the unit, the BOM
+    # name (name_mismatch) and the link itself.
+    if any(v is not None for v in (body.quantity, body.quantity_expression, body.unit, body.name,
+                                    body.ecoinvent_activity)):
+        _revalidate_node(arc, node, old_name=old_name)
     arc.updated_at = _now_iso()
     _persist_archetype(_current_project(), arc)
     return node
 
 
-def _revalidate_node(arc: Archetype, node: BOMNode) -> None:
-    """Re-run the row validator on ONE edited material, so the editor's row status follows the
-    edit (fixing a quantity's sign must clear its waste warning; relinking must replace the old
-    link's messages). The upload validator stays the only full pass.
+def _stage_of(arc: Archetype, node: BOMNode) -> str:
+    return next((r.name for r in arc.bom if find_node_in_roots([r], node.id or "") is not None), "")
+
+
+def _is_linked(node: BOMNode) -> bool:
+    link = node.ecoinvent_activity
+    return bool(link and ((link.database or "").strip() or (link.code or "").strip()))
+
+
+def _sync_validation_report(
+    arc: Archetype, replace: dict[tuple[str, str], list[ValidationIssue]],
+) -> None:
+    """Keep the STORED report (the banner, "View report" and the counts) in step with an edit.
+
+    ``replace`` maps an edited row, ``(stage, name)``, to its fresh findings; those rows' old
+    findings are dropped first. Findings of rows that no longer exist are dropped too (a deleted
+    row). Every other finding, with the sheet row it came from, is left as the import wrote it,
+    so only the edited rows are re-validated. The per-stage ``stage_scope_defaulted`` advisory
+    belongs to the stage and is never touched here. Grouping uses the validator's own rule.
+    """
+    base = arc.validation_report
+    live = {(root.name, m.name) for root in arc.bom for m in iter_all_materials([root])}
+    stages = {root.name for root in arc.bom}
+    kept = [
+        i for i in (base.issues if base else [])
+        if (i.error_type == "stage_scope_defaulted" and i.stage in stages)
+        or (i.error_type != "stage_scope_defaulted" and (i.stage, i.name) in live
+            and (i.stage, i.name) not in replace)
+    ]
+    issues = kept + [i for fresh in replace.values() for i in fresh]
+    if base is None and not issues:
+        return
+    rows = [i for i in issues if i.error_type != "stage_scope_defaulted"]
+    err = {(i.stage, i.name) for i in rows if i.severity == "error"}
+    warn = {(i.stage, i.name) for i in rows if i.severity == "warning"} - err
+    # An archetype that was never validated knows only the rows seen so far; one that was
+    # imported counts every linked row, all of which the import (or an add) has checked.
+    total = (sum(1 for root in arc.bom for m in iter_all_materials([root]) if _is_linked(m))
+             if base is not None else len(err) + len(warn))
+    arc.validation_report = ValidationReport(
+        total_rows=total,
+        valid_rows=max(0, total - len(err) - len(warn)) if base is not None else 0,
+        error_rows=len(err),
+        warning_rows=len(warn),
+        issues=issues,
+        groups=group_issues(issues),
+        project_name=(base.project_name if base else None) or _current_project(),
+        bw2_lookups=base.bw2_lookups if base else 0,
+        cache_hits=base.cache_hits if base else 0,
+    )
+
+
+def _revalidate_node(arc: Archetype, node: BOMNode, old_name: str | None = None) -> None:
+    """Re-run the row validator on ONE edited material, so the editor's row status AND the stored
+    report (banner, "View report", counts) follow the edit (fixing a quantity's sign must clear
+    its waste warning; relinking must replace the old link's messages). The upload validator
+    stays the only full pass.
 
     Skipped when the link cannot be checked here (database not in this project): the stored
-    status is then left exactly as it was rather than flipped to an error by an environment
-    problem. The per-stage ``stage_scope_defaulted`` warning belongs to the stage, not the row,
-    and is not recomputed.
+    status and report are then left exactly as they were rather than flipped to an error by an
+    environment problem. The per-stage ``stage_scope_defaulted`` warning belongs to the stage,
+    not the row, and is not recomputed.
     """
     link = node.ecoinvent_activity
     if node.node_type != "material" or link is None:
         return
-    stage = next((r.name for r in arc.bom if find_node_in_roots([r], node.id or "") is not None), "")
+    stage = _stage_of(arc, node)
+    old_key = (stage, old_name if old_name is not None else node.name)
+    # Keep the sheet row the finding came from (it is in the stored report); a row with no
+    # finding yet has none, and a synthetic 0 is what the validator documents for that.
+    prior = next((i.row_idx for i in (arc.validation_report.issues if arc.validation_report else [])
+                  if (i.stage, i.name) == old_key and i.error_type != "stage_scope_defaulted"), 0)
     row = BOMValidationRow(
-        archetype=arc.name, stage=stage, row_idx=0, name=node.name,
+        archetype=arc.name, stage=stage, row_idx=prior, name=node.name,
         database=link.database, code=link.code,
         ecoinvent_name=link.name or "", ecoinvent_location=link.location or "",
         unit=node.unit or "",
@@ -637,6 +705,10 @@ def _revalidate_node(arc: Archetype, node: BOMNode) -> None:
         return
     node.validation_status = "error" if any(i.severity == "error" for i in issues) else ("warning" if issues else "ok")
     node.validation_message = "; ".join(i.message for i in issues) or None
+    # A rename moves the findings to the new name: drop the old key's, store the new key's.
+    if old_key != (stage, node.name):
+        _sync_validation_report(arc, {old_key: []})
+    _sync_validation_report(arc, {(stage, node.name): issues})
 
 
 @router.delete("/bom/archetypes/{arc_id}/nodes/{node_id}", response_model=Archetype)
@@ -645,6 +717,7 @@ async def delete_bom_node(arc_id: str, node_id: str) -> Archetype:
     ok = remove_node_in_roots(arc.bom, node_id)
     if not ok:
         raise HTTPException(status_code=404, detail=f"Node '{node_id}' not found")
+    _sync_validation_report(arc, {})          # the deleted rows' findings go with them
     arc.updated_at = _now_iso()
     _persist_archetype(_current_project(), arc)
     return arc

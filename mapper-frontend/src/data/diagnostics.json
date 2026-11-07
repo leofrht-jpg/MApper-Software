@@ -421,11 +421,21 @@
   },
   "database_name": {
     "title": "Database name",
-    "summary": "{where}: database name not usable",
-    "cause": "The name is empty, taken, or has characters that are not allowed.",
-    "fix": "Use a new name made of letters, digits, space, _ or -.",
+    "summary": "{where}: database name not allowed",
+    "cause": "The name is empty, too long, reserved, or contains 'biosphere' or 'premise'.",
+    "fix": "Choose another name in the field below.",
     "severity": "error",
     "anchor": "diag-database-name",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "database_name_taken": {
+    "title": "Database name already taken",
+    "summary": "A database with this name already exists. Choose another name.",
+    "cause": "A database with this name is already in the project. An existing database is never overwritten.",
+    "fix": "Type another name in the field below and check again.",
+    "severity": "error",
+    "anchor": "diag-database-name-taken",
     "origin": "backend",
     "surface": "authored-excel"
   },

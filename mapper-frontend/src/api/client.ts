@@ -1228,6 +1228,8 @@ export interface AuthoredExcelError {
 
 export interface AuthoredExcelPreview {
   database: string | null
+  /** The name the file asked for, kept when it was refused, so the dialog can prefill it. */
+  requested_name?: string
   description: string
   activities: number
   exchanges: number

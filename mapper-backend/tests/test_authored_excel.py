@@ -282,7 +282,7 @@ def test_the_import_writes_through_the_engine_and_only_the_engine(client, monkey
     ("missing amount", None, [E(amount=None)], ("mydb", ""), "Exchanges", 2, "Amount", "amount_required"),
     ("non-biosphere flow database", None, [E(db="ecoinvent-3.10-cutoff", code="x")], ("mydb", ""), "Exchanges", 2, "Flow database", "not_biosphere"),
     ("database name with 'biosphere'", None, None, ("my-biosphere-copy", ""), "Database", 2, "Name", "database_name"),
-    ("database name already installed", None, None, ("ecoinvent-3.10-cutoff", ""), "Database", 2, "Name", "database_name"),
+    ("database name already installed", None, None, ("ecoinvent-3.10-cutoff", ""), "Database", 2, "Name", "database_name_taken"),
     ("unit mismatch", None, [E(unit="megajoule")], ("mydb", ""), "Exchanges", 2, "Unit", "unit_mismatch"),
     ("duplicate activity key", [A("a1", "x"), A("a1", "y")], [E("a1")], ("mydb", ""), "Activities", 3, "Activity key", "duplicate_key"),
     ("exchange for an unknown activity", None, [E("zzz")], ("mydb", ""), "Exchanges", 2, "Activity key", "unknown_activity"),
@@ -368,6 +368,43 @@ def test_an_existing_database_name_is_refused_and_the_first_is_untouched(client)
     for route in api.router.routes:
         assert "replace" not in route.path.lower()
         assert all("replace" not in p.name.lower() for p in getattr(route, "dependant", None).query_params) if getattr(route, "dependant", None) else True
+
+
+def test_a_taken_database_name_is_reported_once_with_a_clear_text(client):
+    """An authored database is both an installed bw2 database and an authored definition, so the
+    two name checks fired together and the same clash came back as two errors."""
+    assert up(client, "import", book()).status_code == 200
+    r = up(client, "validate", book(acts=[A("a1", "other")]))
+    body = r.json()
+    name_errors = [e for e in body["errors"] if e["sheet"] == "Database"]
+    assert len(name_errors) == 1                                   # once, not twice
+    e = name_errors[0]
+    assert (e["row"], e["column"], e["code"]) == (2, "Name", "database_name_taken")
+    assert e["message"] == "A database named 'mydb' already exists. Choose another name."
+    # the name the file asked for is kept, so the dialog can prefill it
+    assert body["preview"]["requested_name"] == "mydb" and body["preview"]["database"] is None
+
+
+def test_a_name_installed_in_the_project_alone_is_also_one_error(client):
+    r = up(client, "validate", book(db=("ecoinvent-3.10-cutoff", "")))
+    name_errors = [e for e in r.json()["errors"] if e["sheet"] == "Database"]
+    assert [e["code"] for e in name_errors] == ["database_name_taken"]
+    assert r.json()["preview"]["requested_name"] == "ecoinvent-3.10-cutoff"
+
+
+def test_other_name_problems_keep_their_own_code_and_still_come_once(client):
+    r = up(client, "validate", book(db=("my-biosphere-copy", "")))
+    name_errors = [e for e in r.json()["errors"] if e["sheet"] == "Database"]
+    assert [e["code"] for e in name_errors] == ["database_name"]
+
+
+def test_an_accepted_name_is_the_database_and_the_requested_name(client):
+    body = up(client, "validate", book(db=("fresh", ""))).json()
+    assert body["ok"] is True
+    assert body["preview"]["database"] == "fresh" and body["preview"]["requested_name"] == "fresh"
+    # an override is what was requested
+    body = up(client, "validate", book(db=("fresh", "")), name="other").json()
+    assert body["preview"]["requested_name"] == "other"
 
 
 def test_the_import_name_can_be_overridden_and_is_still_checked(client):

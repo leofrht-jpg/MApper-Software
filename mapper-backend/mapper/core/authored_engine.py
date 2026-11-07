@@ -165,25 +165,33 @@ def validate_database_name(name: str, installed: Iterable[str], defs: AuthoredDe
 
     n = (name or "").strip()
     problems: list[str] = []
+    codes: list[str] = []
     if not n:
         problems.append("a database name is required")
+        codes.append("database_name")
     elif _BIOSPHERE in n.casefold():
         problems.append(
             f"{n!r} contains 'biosphere'. MApper refuses to link to databases whose "
             "name contains that word, so its activities would be unusable."
         )
+        codes.append("database_name")
     if n and _PREMISE_MARKER in n:
         problems.append(f"{n!r} contains {_PREMISE_MARKER!r}, which marks premise databases")
+        codes.append("database_name")
     if n and n in _GENERATED_DATABASES:
         problems.append(f"{n!r} is reserved for a generated database")
-    if n and n in set(installed):
-        problems.append(f"a database named {n!r} is already installed in this project")
-    if n and defs.get(n) is not None:
-        problems.append(f"an authored database named {n!r} already exists")
+        codes.append("database_name")
+    # ONE problem for a name that is taken. An authored database is both an installed bw2
+    # database and an authored definition, so the two checks used to fire together and the
+    # same clash was reported twice.
+    if n and (n in set(installed) or defs.get(n) is not None):
+        problems.append(f"A database named {n!r} already exists. Choose another name.")
+        codes.append("database_name_taken")
     if len(n) > 100:
         problems.append("database name is longer than 100 characters")
+        codes.append("database_name")
     if problems:
-        raise AuthoredError(problems)
+        raise AuthoredError(problems, codes)
     return n
 
 

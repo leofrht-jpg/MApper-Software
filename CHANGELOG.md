@@ -12,6 +12,8 @@ at 0.3.1 and is kept from here on.
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-11-07
+
 ### Added
 
 - **Warnings and errors are one line, with Help.** The BOM validation report, the Method Library install warning and failure, the BOM import refusal, the authored Excel errors, the ecoinvent import failure and the DSM simulation warnings now show ONE visible line (a marker, the count and a summary), never hidden; the full original message is behind "Details". A warning with no help entry yet is shown in full. Settings has a new collapsed section, "Most frequent warnings/errors", with a search box: each entry gives the cause and the fix, and the Help link on a warning opens its entry. 72 entries cover every code the backend emits; a test fails if a new code has none. The other screens follow in later releases.

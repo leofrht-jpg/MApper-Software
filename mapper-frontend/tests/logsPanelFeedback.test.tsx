@@ -30,7 +30,7 @@ import { useLogStore } from '../src/stores/logStore'
 const COPY_ALL = /copy all|^copied$/i
 
 async function mount() {
-  render(<LogsPanel version="0.3.2" />)
+  render(<LogsPanel version="0.4.0" />)
   await waitFor(() => expect(screen.getByRole('button', { name: COPY_ALL })).toBeTruthy())
 }
 

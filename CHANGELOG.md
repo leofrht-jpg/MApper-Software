@@ -28,6 +28,10 @@ at 0.3.1 and is kept from here on.
 
 ### Fixed
 
+- **The sheet row is in the warning line.** A BOM validation warning or error, and the "import refused" line for biosphere links, now name the row in the visible summary: "Activity code has the wrong length (row 5)", "(rows 5, 9, 12)", and "(rows 5, 9, 12 +4 more)" past three. The full original message is unchanged behind "Details". With no row the line reads as before.
+
+- **A disabled button looks disabled.** The shared button had no disabled style, so "Continue" in the ecoinvent import wizard looked active after a failed "Verify" and did nothing when clicked. A disabled button is now dimmed with a "not allowed" cursor everywhere, and "Continue" stays disabled until the folder is verified (and again as soon as the path changes).
+
 - **The Years box says what it needs, and LCA Architect can meet it.** Years stay available only when every stage has a basis (no number changed; a stage with no basis still counts once), but the hint now reads "Years need a basis on every stage. For Manufacturing and End of Life choose per unit (counted once).", and LCA Architect > Single-product LCA gets the per-stage basis dropdown that Impact Assessment already had (it stores the same stage basis), so the hint no longer points at a control that was not on that screen. In Multi-item, typing years now says which items did not take them ("Years not applied to: ...") and the box is disabled when none can. While no years are entered, the stage amounts say "Annual stages count 1 year".
 
 - **The archetype validation banner follows your edits.** "This archetype has 1 validation warning", its "View report" and the counts were written once, at import, so after you fixed a row (for example a waste treatment's quantity from 0.5 to -0.5) the row's icon cleared but the banner stayed. Editing a row (amount, expression, unit, name or link), adding a row or deleting one now re-checks just those rows with the same validator and updates the banner, the report and the counts. Every other finding keeps the sheet row it came from. No validation rule changed.

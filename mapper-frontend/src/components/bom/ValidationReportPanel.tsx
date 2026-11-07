@@ -150,7 +150,7 @@ function GroupRow({ group, issues }: { group: ValidationGroup; issues: Validatio
       code={group.error_type}
       severity={group.severity}
       count={group.count}
-      params={{ count: group.count, value: group.bad_value, name: group.bom_name }}
+      params={{ count: group.count, value: group.bad_value, name: group.bom_name, row: group.affected.map((a) => a.row_idx) }}
       message={groupMessage(group, issues)}
       data-testid="validation-group"
     />

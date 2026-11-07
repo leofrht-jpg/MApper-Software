@@ -35,7 +35,7 @@ describe('registry entries are well formed', () => {
     for (const f of ['title', 'summary', 'cause', 'fix'] as const) expect(e[f].trim().length, f).toBeGreaterThan(3)
     expect(e.summary).not.toContain('\n')
     expect(e.summary.length).toBeLessThanOrEqual(80)
-    expect([...e.summary.matchAll(/\{([a-z_]+)\}/g)].map((m) => m[1]).every((k) => ['count', 'value', 'name', 'where'].includes(k))).toBe(true)
+    expect([...e.summary.matchAll(/\{([a-z_]+)\}/g)].map((m) => m[1]).every((k) => ['count', 'value', 'name', 'where', 'row'].includes(k))).toBe(true)
     expect(e.cause.split(/(?<=[.!?])\s+/).length).toBeLessThanOrEqual(3)
     expect(e.fix.split(/(?<=[.!?])\s+/).length).toBeLessThanOrEqual(3)
     expect(['error', 'warning']).toContain(e.severity)

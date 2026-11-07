@@ -94,10 +94,10 @@ describe('the multiplier follows the declaration, never the scope', () => {
 })
 
 describe('lifetime availability', () => {
-  it('is blocked while any stage is undeclared, and names them', () => {
+  it('is blocked while any stage is undeclared; the stages are listed by undeclaredStages and the reason says what to pick', () => {
     expect(canApplyLifetime(UNSET)).toBe(false)
     expect(undeclaredStages(UNSET)).toEqual(['Manufacturing', 'Use Phase', 'End of Life'])
-    expect(lifetimeBlockedReason(UNSET)).toContain('Use Phase')
+    expect(lifetimeBlockedReason(UNSET)).toBe('Years need a basis on every stage. For Manufacturing and End of Life choose per unit (counted once).')
   })
 
   it('is available for a fully declared archetype with a per_year stage', () => {
@@ -139,7 +139,7 @@ describe('declaring a basis in-app', () => {
     const { getByTestId } = render(
       <StageAmountsEditor archetype={UNSET} value={{ ...value, preset: 'custom', lifetime: null }} onChange={() => {}} />,
     )
-    expect(getByTestId('stage-amounts-years-note').textContent).toMatch(/declare a basis/i)
+    expect(getByTestId('stage-amounts-years-note').textContent).toMatch(/years need a basis/i)
     expect((getByTestId('stage-amounts-lifetime') as HTMLInputElement).disabled).toBe(true)
   })
 

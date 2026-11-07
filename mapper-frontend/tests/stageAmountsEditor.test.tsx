@@ -91,7 +91,7 @@ describe('StageAmountsEditor', () => {
     const value = { preset: 'custom' as const, lifetime: null, amounts: { Manufacturing: 1, 'Use Phase': 1 } }
     const { getByTestId } = render(<StageAmountsEditor archetype={arc} value={value} onChange={() => {}} />)
     expect((getByTestId('stage-amounts-lifetime') as HTMLInputElement).disabled).toBe(true)
-    expect(getByTestId('stage-amounts-years-note').textContent).toContain('Declare a basis for Manufacturing')
+    expect(getByTestId('stage-amounts-years-note').textContent).toContain('Years need a basis on every stage. For Manufacturing and End of Life choose per unit (counted once).')
   })
 
   it('returns null UI when archetype has no stages', () => {

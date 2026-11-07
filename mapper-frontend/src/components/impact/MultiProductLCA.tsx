@@ -253,6 +253,14 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
     setStageAmountsMap(next)
   }
 
+  // Which items can take the global years at all: only those whose every stage resolves to a basis.
+  // The rest keep no years (their own card says what to declare); this says so out loud.
+  const yearsRows = archetypeItems
+    .map((item) => ({ item, arc: archetypes.find((a) => a.id === item.archetype_id) }))
+    .filter((r): r is { item: ArchetypeProductItem; arc: ArchetypeSummary } => !!r.arc && (r.arc.stages?.length ?? 0) > 0)
+  const yearsSkipped = yearsRows.filter((r) => !canApplyLifetime(r.arc, projectBasis)).map((r) => r.item.display_name)
+  const noItemTakesYears = yearsRows.length > 0 && yearsSkipped.length === yearsRows.length
+
   // Per-item stage-amount provenance for the export, keyed by item_id
   // (= archetype_id for archetype items, matching the workbook). Patch 5J.
   const stageAmountsMeta = useMemo(() => {
@@ -535,9 +543,27 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
                 <YearsInput
                   value={globalLifetime}
                   onChange={(y) => applyGlobalPreset('custom', y)}
+                  disabled={noItemTakesYears}
                   testId="multi-product-global-lifetime"
                 />
-                <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>applies to every item whose stages declare a basis</span>
+                {noItemTakesYears ? (
+                  <span data-testid="multi-product-years-none" style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                    No selected item can take years yet
+                  </span>
+                ) : globalLifetime != null && yearsSkipped.length > 0 ? (
+                  <span data-testid="multi-product-years-skipped" style={{ fontSize: 10, color: 'var(--warning)' }}>
+                    Years not applied to: {yearsSkipped.join(', ')} (declare a basis for Manufacturing and End of Life)
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>applies to every item whose stages declare a basis</span>
+                )}
+                {yearsSkipped.length > 0 && (
+                  <InfoButton label="About years and bases" data-testid="multi-product-years-info">
+                    Years need a basis on every stage. For Manufacturing and End of Life choose per unit (counted once).
+                    Open an item below and pick the basis of each stage; the years then apply to it. An item whose stages
+                    have no basis yet is counted at 1 year for its annual stages.
+                  </InfoButton>
+                )}
               </div>
             )}
             <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>· per-item overridable below</span>

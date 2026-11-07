@@ -25,6 +25,8 @@ import {
 } from 'recharts'
 import { useSessionState } from '../stores/sessionStateStore'
 import { useBOMStore } from '../stores/bomStore'
+import { StageBasisSelect } from '../components/impact/StageBasisSelect'
+import { ONE_YEAR_NOTE, annualStagesCountOneYear } from '../components/impact/oneYearNote'
 import { useProjectSettingsStore } from '../stores/projectSettingsStore'
 import { YearsInput, canApplyLifetime, lifetimeBlockedReason, stageAmountsForPreset, stageBasis } from '../components/impact/StageAmountsEditor'
 import { Button } from '../components/ui/Button'
@@ -115,7 +117,7 @@ interface LCACalculatorProps {
 }
 
 export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: LCACalculatorProps) {
-  const { archetypes, folders, fetchArchetypes } = useBOMStore()
+  const { archetypes, folders, fetchArchetypes, setStageBasis } = useBOMStore()
 
   // ── State ──
   const [fuMode, setFuMode] = useSessionState<FUMode>('lcaCalculator.fuMode', 'archetype')
@@ -366,6 +368,27 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
       return { ...prev, [arcId]: { preset, lifetime: y, amounts: stageAmountsForPreset(arc, preset, y, entry.amounts, projectBasis) } }
     })
   }, [initArcAmounts, projectBasis])
+
+  // Declare a stage's basis from here, the same call and the same stored field as Impact Assessment's
+  // Stage amounts editor (the stage root's `basis`, via PUT /bom/archetypes/{id}/nodes/{stageId}). Then
+  // the picked archetypes are refreshed from the store, and years already entered follow the new basis.
+  const declareBasis = useCallback(async (arc: ArchetypeSummary, stage: string, basis: 'per_unit' | 'per_year' | 'unset') => {
+    const nodeId = arc.stage_ids?.[stage]
+    if (!nodeId) return
+    await setStageBasis(arc.id, nodeId, basis)
+    const fresh = useBOMStore.getState().archetypes.find((a) => a.id === arc.id)
+    if (!fresh) return
+    setSelectedArchetypes((prev) => prev.map((a) => (a.id === arc.id ? { ...a, ...fresh } : a)))
+    setArcAmountsMap((prev) => {
+      const entry = prev[arc.id]
+      if (!entry || entry.lifetime == null) return prev
+      // Years that can no longer apply (a stage lost its basis) are dropped and every stage returns to x1.
+      const y = canApplyLifetime(fresh, projectBasis) ? entry.lifetime : null
+      return { ...prev, [arc.id]: { ...entry, lifetime: y, amounts: y == null
+        ? stageAmountsForPreset(fresh, '1year', null)
+        : stageAmountsForPreset(fresh, 'custom', y, entry.amounts, projectBasis) } }
+    })
+  }, [setStageBasis, setSelectedArchetypes, setArcAmountsMap, projectBasis])
 
   const stageInScope = useCallback((stage: string) => {
     if (scope === 'all') return true
@@ -1164,6 +1187,14 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                                       annual
                                     </span>
                                   )}
+                                  {arc.stage_ids?.[stage] && (
+                                    <StageBasisSelect
+                                      data-testid={`lca-basis-select-${arc.id}-${stage}`}
+                                      basis={stageBasis(arc, stage, projectBasis)}
+                                      suggestion={arc.stage_annual?.[stage] ? 'per_year' : 'per_unit'}
+                                      onChange={(b) => { void declareBasis(arc, stage, b) }}
+                                    />
+                                  )}
                                   <NumberInput
                                     value={entry.amounts[stage] ?? 1}
                                     onChange={(v) => {
@@ -1195,6 +1226,11 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                               )
                             })}
                           </div>
+                          {annualStagesCountOneYear(stages.filter((st) => stageBasis(arc, st, projectBasis) === 'per_year'), entry) && (
+                            <div data-testid={`lca-one-year-note-${arc.id}`} style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4 }}>
+                              {ONE_YEAR_NOTE}
+                            </div>
+                          )}
                         </div>
                       )
                     })}

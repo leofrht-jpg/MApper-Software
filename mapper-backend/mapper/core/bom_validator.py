@@ -692,6 +692,12 @@ def _group_issues(issues: list[ValidationIssue]) -> list[ValidationGroup]:
 # ── Helpers for callers ──────────────────────────────────────────────────────
 
 
+def group_issues(issues: list[ValidationIssue]) -> list[ValidationGroup]:
+    """The report's grouped view of an issue list (the one grouping rule, for callers that patch a
+    stored report after an edit rather than re-running the whole validator)."""
+    return _group_issues(issues)
+
+
 def issues_by_row(report: ValidationReport) -> dict[tuple[str, str, int], list[ValidationIssue]]:
     """Re-key the report's issue list by ``(archetype, stage, row_idx)`` so the
     upload endpoint can stamp ``validation_status`` / ``validation_message``

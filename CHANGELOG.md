@@ -28,6 +28,8 @@ at 0.3.1 and is kept from here on.
 
 ### Fixed
 
+- **The archetype validation banner follows your edits.** "This archetype has 1 validation warning", its "View report" and the counts were written once, at import, so after you fixed a row (for example a waste treatment's quantity from 0.5 to -0.5) the row's icon cleared but the banner stayed. Editing a row (amount, expression, unit, name or link), adding a row or deleting one now re-checks just those rows with the same validator and updates the banner, the report and the counts. Every other finding keeps the sheet row it came from. No validation rule changed.
+
 - **Authored Excel import: a taken database name is one clear error, and the name box is filled in.** A name that already existed was reported twice (an authored database is both an installed database and an authored one, and each check raised its own error) with a vague text. It is now one error, "A database named 'x' already exists. Choose another name.", and the "Database name" box shows the name from the file instead of being empty, so you can edit it.
 
 - **Method Library entries keep their long text behind an (i).** The long description, the factor source, the note and the install facts (size, versions) are in the (i) next to the name; Details keeps the source link, the indicator count and the install report line, and stays collapsed. "Offline" is said once instead of twice.

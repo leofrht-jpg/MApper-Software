@@ -44,8 +44,20 @@ afterEach(() => cleanup())
 
 const sectionHeader = () => screen.getByText(new RegExp(`Most frequent warnings/errors \\(${N}\\)`))
 const body = () => screen.getByTestId('diagnostics-section-body')
-const visibleEntries = () =>
-  Object.keys(DIAGNOSTICS).filter((c) => (screen.getByTestId(`diagnostic-entry-${c}`) as HTMLElement).style.display !== 'none')
+// ONE DOM query for all entries (the page holds one entry per registry code, so a getByTestId per
+// code made every call a few hundred queries and the search test crept to its 5 s limit on CI).
+// An entry is the element whose id is exactly `diagnostic-entry-<code>`; its own parts
+// (`-summary`, `-details`, ...) carry longer ids. A missing entry throws, as getByTestId did.
+const visibleEntries = () => {
+  const byId = new Map<string, HTMLElement>()
+  document.querySelectorAll<HTMLElement>('[data-testid^="diagnostic-entry-"]')
+    .forEach((el) => byId.set(el.getAttribute('data-testid') as string, el))
+  return Object.keys(DIAGNOSTICS).filter((c) => {
+    const el = byId.get(`diagnostic-entry-${c}`)
+    if (!el) throw new Error(`no entry on the page for ${c}`)
+    return el.style.display !== 'none'
+  })
+}
 
 describe('the Settings section', () => {
   it('is collapsed by default and shows the number of entries in its header', async () => {
@@ -92,7 +104,7 @@ describe('the search', () => {
     expect(visibleEntries()).toEqual(expect.arrayContaining(['waste_sign', 'negative_amount']))
     expect(visibleEntries()).not.toContain('code_truncated')
     expect(screen.getByTestId('diagnostics-count').textContent).toMatch(/^\d+ of \d+ entries$/)
-  })
+  }, 15000)   // backstop: it renders the whole Settings page and is the slowest test on a loaded CI runner
 
   it('every word must match, in any order, any case', () => {
     render(<SettingsPage />)

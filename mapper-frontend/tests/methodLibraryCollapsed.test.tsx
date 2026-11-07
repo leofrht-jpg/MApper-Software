@@ -73,28 +73,51 @@ async function installedWithWarnings() {
   await screen.findByTestId(`install-warnings-${ID}`)
 }
 
-describe('an entry shows name, one-line description and status; the rest is behind Details', () => {
-  it('collapsed by default: the long text, notes, source, counts and the offline note are not visible', async () => {
+describe('an entry shows name, one-line description and status; the long text is behind the (i), the rest behind Details', () => {
+  it('collapsed by default: nothing long is on screen, the (i) is closed and Details is collapsed', async () => {
     render(<MethodLibrary onClose={() => {}} />)
     expect(await screen.findByText('EF v3.1')).toBeVisible()
     expect(screen.getByText('Environmental Footprint 3.1')).toBeVisible()
     expect(screen.getByTestId(`not-installed-${ID}`)).toBeVisible()
-    for (const hidden of [/LONG: installs/, /NOTE: offline/, /FACTOR SOURCE/, /Offline: installs from the installed software/]) {
-      expect(screen.getByText(hidden)).not.toBeVisible()
-    }
+    // the long text is not rendered until the (i) is opened
+    expect(screen.queryByText(/LONG: installs/)).toBeNull()
+    expect(screen.getByTestId(`method-info-${ID}`).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByTestId(`method-details-${ID}-toggle`).getAttribute('aria-expanded')).toBe('false')
     expect(screen.getByTestId(`method-details-${ID}-body`)).not.toBeVisible()
   })
 
-  it('Details shows every fact that used to be on the entry, and toggles back', async () => {
+  it('the (i) holds the long description, the factor source, the note and the facts, and nothing else is repeated', async () => {
     render(<MethodLibrary onClose={() => {}} />)
     await screen.findByText('EF v3.1')
+    await click(screen.getByTestId(`method-info-${ID}`))
+    const about = screen.getByTestId(`method-about-${ID}`)
+    for (const t of [/LONG: installs/, /NOTE: offline/, /FACTOR SOURCE/]) expect(within(about).getByText(t)).toBeVisible()
+    // the note says "offline" already: the generic "Offline: installs from the installed software" line is not added
+    expect(screen.queryByText(/Offline: installs from the installed software/)).toBeNull()
+    await click(screen.getByTestId(`method-info-${ID}`))
+    expect(screen.queryByText(/LONG: installs/)).toBeNull()
+  })
+
+  it('Details keeps only the source link and the indicator count (and the install report line), and toggles back', async () => {
+    library = [{ ...EF, installed: true, category_count: 25, removable: true }]
+    render(<MethodLibrary onClose={() => {}} />)
+    await screen.findByText('EF v3.1')
+    const body = screen.getByTestId(`method-details-${ID}-body`)
     await click(screen.getByTestId(`method-details-${ID}-toggle`))
-    for (const shown of [/LONG: installs/, /NOTE: offline/, /FACTOR SOURCE/, /Offline: installs from the installed software/]) {
-      expect(screen.getByText(shown)).toBeVisible()
-    }
-    expect(screen.getByRole('link', { name: /Source/ })).toBeVisible()
+    expect(body).toBeVisible()
+    expect(within(body).getByRole('link', { name: /Source/ })).toBeVisible()
+    expect(body.textContent).toContain('25 indicators')
+    expect(body.textContent).not.toMatch(/LONG|NOTE|FACTOR SOURCE|Offline/)
     await click(screen.getByTestId(`method-details-${ID}-toggle`))
-    expect(screen.getByTestId(`method-details-${ID}-body`)).not.toBeVisible()
+    expect(body).not.toBeVisible()
+  })
+
+  it('an entry whose note is missing still says "Offline" once, from the generic line', async () => {
+    library = [{ ...EF, notes: null }]
+    render(<MethodLibrary onClose={() => {}} />)
+    await screen.findByText('EF v3.1')
+    await click(screen.getByTestId(`method-info-${ID}`))
+    expect((screen.getByTestId(`method-about-${ID}`).textContent ?? '').match(/Offline/g)).toHaveLength(1)
   })
 
   it('the description is one line (nowrap, ellipsis), not a paragraph', async () => {
@@ -133,6 +156,27 @@ describe('"Installed with warnings" is one line, collapsed by default', () => {
     expect(screen.getByText(/no 'biosphere3'/)).not.toBeVisible()
     await click(screen.getByTestId(`install-error-${ID}-details-toggle`))
     expect(screen.getByText(/no 'biosphere3'/)).toBeVisible()
+  })
+})
+
+describe('Details stays collapsed: by default, after an install, and on a fresh mount', () => {
+  it('after an install finishes (with a report) the entry\'s Details is still collapsed and the report is inside it', async () => {
+    await installedWithWarnings()
+    expect(screen.getByTestId(`method-details-${ID}-toggle`).getAttribute('aria-expanded')).toBe('false')
+    expect(screen.getByTestId(`method-details-${ID}-body`)).not.toBeVisible()
+    expect(screen.getByTestId(`install-report-${ID}`)).not.toBeVisible()
+    expect(screen.getByTestId(`install-warnings-${ID}-summary`)).toBeVisible()    // the one line is
+  })
+
+  it('opening it is not remembered: a fresh mount is collapsed again', async () => {
+    const first = render(<MethodLibrary onClose={() => {}} />)
+    await screen.findByText('EF v3.1')
+    await click(screen.getByTestId(`method-details-${ID}-toggle`))
+    expect(screen.getByTestId(`method-details-${ID}-body`)).toBeVisible()
+    first.unmount()
+    render(<MethodLibrary onClose={() => {}} />)
+    await screen.findByText('EF v3.1')
+    expect(screen.getByTestId(`method-details-${ID}-body`)).not.toBeVisible()
   })
 })
 

@@ -73,11 +73,21 @@ afterEach(() => { cleanup(); vi.restoreAllMocks() })
 
 const click = async (el: Element) => { await act(async () => { fireEvent.click(el) }) }
 
+/** Open an entry's (i), read its text, close it again (one popover at a time). */
+async function aboutText(id: string): Promise<string> {
+  await click(screen.getByTestId(`method-info-${id}`))
+  const text = screen.getByTestId(`method-about-${id}`).textContent ?? ''
+  await click(screen.getByTestId(`method-info-${id}`))
+  return text
+}
+
 describe('the four new entries', () => {
   it('are listed, each offline with its own one-click Install', async () => {
     render(<MethodLibrary onClose={() => {}} />)
     for (const e of [MID, END, CML, CML_NOLT]) expect(await screen.findByText(e.name)).toBeTruthy()
-    expect(screen.getAllByText(/Offline: installs from the installed software/)).toHaveLength(4)
+    for (const e of [MID, END, CML, CML_NOLT]) {
+      expect((await aboutText(e.id)).match(/Offline/g)).toHaveLength(1)     // said once, behind the (i)
+    }
     expect(screen.getAllByRole('button', { name: /Install/ })).toHaveLength(5) // four offline + IMPACT World+
   })
 
@@ -107,18 +117,25 @@ describe('the factor-source sentence', () => {
   it('is shown on every entry', async () => {
     render(<MethodLibrary onClose={() => {}} />)
     await screen.findByText(MID.name)
-    for (const e of [MID, END, CML, CML_NOLT, IW]) expect(screen.getByTestId(`factor-source-${e.id}`)).toBeTruthy()
+    for (const e of [MID, END, CML, CML_NOLT, IW]) {
+      await click(screen.getByTestId(`method-info-${e.id}`))
+      expect(screen.getByTestId(`factor-source-${e.id}`)).toBeTruthy()
+      await click(screen.getByTestId(`method-info-${e.id}`))
+    }
   })
 
   it('is the ecoinvent 3.9 bundled sentence on the offline entries, and the real source on the others', async () => {
     render(<MethodLibrary onClose={() => {}} />)
     await screen.findByText(MID.name)
     for (const e of [MID, END, CML, CML_NOLT]) {
+      await click(screen.getByTestId(`method-info-${e.id}`))
       const text = screen.getByTestId(`factor-source-${e.id}`).textContent ?? ''
+      await click(screen.getByTestId(`method-info-${e.id}`))
       expect(text).toContain('ecoinvent 3.9 LCIA implementation bundled with the installed software')
       expect(text).toContain('flows that ecoinvent added after 3.9 have no factors')
       expect(text).toContain('how many factors were linked and skipped for this project')
     }
+    await click(screen.getByTestId('method-info-impact_world_plus_2_2_1'))
     const iw = screen.getByTestId('factor-source-impact_world_plus_2_2_1').textContent ?? ''
     expect(iw).toContain('Zenodo')
     expect(iw).not.toContain('ecoinvent 3.9')

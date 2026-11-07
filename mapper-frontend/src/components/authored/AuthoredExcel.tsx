@@ -96,7 +96,9 @@ function ImportDialog({ file, onClose, onImported }: {
   const settle = useCallback((id: number, answer: Promise<AuthoredExcelValidation>, override?: string) => {
     answer.then((v) => {
       if (id !== run.current) return
-      if (!override && v.preview.database) setName(v.preview.database)
+      // The accepted name, or the one the file asked for when it was refused (so the box is never empty).
+      const known = v.preview.database ?? v.preview.requested_name
+      if (!override && known) setName(known)
       setPhase({ kind: 'result', v })
     }).catch((e) => {
       if (id !== run.current) return

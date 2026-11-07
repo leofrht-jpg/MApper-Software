@@ -3244,6 +3244,7 @@ async def download_bom_template() -> Response:
     instructions.append(["Scope", "Explicit DSM scope for the stage: 'inflows' (manufacturing / one-time), 'stock' (per-year use-phase / maintenance), 'outflows' (end-of-life). Set ONLY on the stage root row; child rows leave it blank. If empty, the system falls back to keyword-matching on the stage name."])
     instructions.append(["Parent", "Direct parent component name within the same Stage. Empty for stage roots."])
     instructions.append(["Name", "Node name."])
+    instructions.append(["Description", "Optional free text for this row: a source, a modelling assumption. Informational only: it is kept, shown and exported again, and is not used in any calculation."])
     instructions.append(["Type", "'component' or 'material'. Materials are leaves and may link to ecoinvent. A 'unit' of an archetype is whatever your system tracks: a discrete item (vehicle, building, machine, device) or a continuous quantity (kg, kWh, m³)."])
     instructions.append(["Quantity / Unit", "Numeric quantity (e.g. 53.0) OR a parameter expression (e.g. material_mass * 0.35). Expressions resolve against the active ParameterSet at pipeline time. Operators: + - * / ** ( ). Functions: min, max, abs, round, sum. Use whatever unit fits the material (kg, kWh, m³, kg-CO₂eq, …)."])
     instructions.append(["Ecoinvent *", "Populate Database + Code for materials to link them. Name and Location are informational."])
@@ -3329,17 +3330,21 @@ def _parse_bom_workbook(
     # Assumes names are unique within a stage; duplicates trigger a warning.
     node_by_name: dict[tuple[str, str], BOMNode] = {}
 
-    all_rows = list(ws.iter_rows(min_row=2, values_only=True))
+    # Every row keeps its 1-based Excel sheet row (header = 1, first data row = 2)
+    # from the moment it is read. Filtering and the roots-first sort below reorder
+    # rows, so a position computed AFTER them is not the row the user sees in Excel:
+    # every row number in a message, warning or refusal is this one.
+    all_rows = list(enumerate(ws.iter_rows(min_row=2, values_only=True), start=2))
     if archetype_filter is not None and arc_col_idx is not None:
         rows = [
-            r for r in all_rows
+            (n, r) for n, r in all_rows
             if len(r) > arc_col_idx and r[arc_col_idx] is not None
             and str(r[arc_col_idx]).strip() == archetype_filter
         ]
     else:
         rows = all_rows
     # Process stage roots (empty Parent) first so children resolve.
-    rows.sort(key=lambda r: 0 if not str(col(r, "Parent") or "").strip() else 1)
+    rows.sort(key=lambda nr: 0 if not str(col(nr[1], "Parent") or "").strip() else 1)
 
     def _ensure_stage_root(
         stage_name: str,
@@ -3372,7 +3377,7 @@ def _parse_bom_workbook(
         node_by_name[(stage_name, stage_name)] = stage_root
         return stage_root
 
-    for r_idx, row in enumerate(rows, start=2):
+    for r_idx, row in rows:
         if all(v is None or str(v).strip() == "" for v in row):
             continue
         stage = str(col(row, "Stage") or "").strip()

@@ -41,6 +41,18 @@ updates:
       runtime-minor:
         dependency-type: production
         update-types: [minor, patch]
+    ignore:
+      # svg2pdf.js 2.8.0 and later ship a UMD main that throws on import
+      # ("Cannot read properties of undefined (reading 'jsPDF')") and break
+      # chartExport.ts. Pinned at 2.7.0: see the note in
+      # mapper-frontend/package.json and closed PR #86.
+      - dependency-name: "svg2pdf.js"
+        versions: [">2.7.0"]
+      # @tanstack/react-virtual 3.14.26 makes the Database Explorer list render
+      # no rows in tests (tests/databaseExplorerListStability.test.tsx). Held at
+      # 3.14.10 until checked in the real app.
+      - dependency-name: "@tanstack/react-virtual"
+        versions: [">3.14.10"]
     commit-message:
       prefix: "chore(deps)"
 

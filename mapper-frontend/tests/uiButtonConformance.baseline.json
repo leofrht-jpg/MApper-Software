@@ -67,7 +67,6 @@
   "src/components/bom/EcoinventLinker.tsx | raw-button | ": 1,
   "src/components/bom/FlattenedBOM.tsx | raw-button | ": 1,
   "src/components/bom/TimelinePreviewModal.tsx | raw-button | ": 1,
-  "src/components/bom/ValidationReportPanel.tsx | raw-button | × )} )}": 1,
   "src/components/bom/ValidationReportPanel.tsx | raw-button | Accept and view archetype": 1,
   "src/components/bom/ValidationReportPanel.tsx | raw-button | Re-upload corrected file": 1,
   "src/components/CarbonBadge.tsx | raw-button | Computation carbon footprint": 1,

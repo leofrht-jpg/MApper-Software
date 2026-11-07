@@ -834,8 +834,14 @@ carries a collapse toggle (Chevron, mirrors `<CollapsibleCard>`'s icons)
 and a **persistent count** — `Simulation warnings (N)` — so collapsing
 hides the body without erasing the signal that warnings exist.
 
-- **Default expanded.** Warnings flag real data issues the user
-  shouldn't miss; collapse is a manual action once they've read them.
+- **Collapsed by default, never hidden.** The body is collapsed, but
+  the header keeps the count and a warning marker, and ONE visible
+  summary line says what the warnings are (`3 retirement shortfalls ·
+  1 fleet-level advisory`). The full text of every warning is behind the
+  toggle. (Rewritten in the diagnostics PR: this said "Default
+  expanded" while the code had already defaulted to collapsed, and the
+  old rule below forbade collapsing at all. Collapsing is allowed
+  because something is always visible; hiding everything is not.)
 - **Visibility-toggle, not unmount.** The body is `display: none` when
   collapsed (per the codebase-wide convention) so re-expanding is
   instant and scroll/row state is preserved. Locked by
@@ -848,12 +854,13 @@ hides the body without erasing the signal that warnings exist.
   the neutral card.
 
 Warning data is a **flat `string[]`** (`simulationResult.summary.warnings`)
-with no severity/type field, so summary-vs-per-cohort lines are only
-distinguishable positionally — the panel collapses the whole body
-uniformly rather than pinning the first "fleet stock drifted" summary
-line. If a future patch adds a structured warning shape (type/severity),
-keeping the summary line visible while collapsing the repetitive
-per-cohort lines becomes worthwhile.
+with no code or severity field, so the panel cannot use the diagnostics
+registry. The visible summary line counts the two known per-cohort
+formats (`isPerCohortWarning`) and counts EVERYTHING else as a
+"fleet-level advisory", so a warning of a kind nobody has classified is
+a visible count, never silent. The durable fix is a structured
+`{code, severity, message}` shape from the backend, at which point this
+panel becomes a list of `<Diagnostic>`.
 
 **Patch 5B+ — advisory vs per-cohort font color.** Within the body,
 advisory/summary warnings render in the warning accent
@@ -879,9 +886,11 @@ which point the UI should read the field instead of pattern-matching.
 - **Don't conditional-unmount the warning body on collapse.** Use
   `display: none`; the rows stay mounted so re-expand is instant. The
   test asserts the body node persists across a collapse/expand round-trip.
-- **Don't default the panel to collapsed.** Warnings signal data
-  problems; hiding them by default risks users shipping analyses with
-  unaddressed issues.
+- **Don't leave a collapsed panel with nothing visible.** Collapsed by
+  default is right only because the header keeps the count and the
+  warning marker and the summary line stays on screen. Warnings signal
+  data problems; a user must always see that they exist and what kind
+  they are, without clicking.
 - **Don't classify the advisory warning by position (`warnings[0]`) or by
   matching its specific wording.** Both break under backend changes —
   reordering shifts the position; rephrasing the "drifted/baseline/Verify"
@@ -1605,4 +1614,6 @@ The table, the checklist and the ratchet live in `mapper-frontend/CLAUDE.md` > "
 - **Don't hand-roll a button or colour its text red.** `danger` is the one destructive style; `tests/uiButtonConformance.test.ts` fails on a new off-template button.
 - **Don't leave a sentence of help permanently on screen.** One line visible; the rest behind an (i) or Details.
 - **Don't show a whole warning list by default.** Summary line, Details collapsed. Keep every fact reachable: moving text behind a toggle never deletes it.
+- **Don't hand-roll a warning or error box.** Use `<Diagnostic code message params>`: one visible line with the count, the original text behind Details, Help to the Settings entry. The registry (`src/data/diagnostics.json`) is keyed on the code; never match message text. A code with no entry is shown expanded: add the entry, do not collapse it.
+- **Don't emit a backend warning/error code without a registry entry.** `test_diagnostics_registry.py` fails on it, and on an entry nothing emits.
 - **Don't add to `uiButtonConformance.baseline.json`.** It only shrinks.

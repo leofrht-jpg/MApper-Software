@@ -11,6 +11,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { X, Download, Trash2, Upload, AlertTriangle, CheckCircle2, ExternalLink, Loader2 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { DetailsToggle } from '../ui/DetailsToggle'
+import { Diagnostic } from '../ui/Diagnostic'
 import { ElapsedCounter } from '../ui/ElapsedCounter'
 import {
   cancelTask,
@@ -546,20 +547,12 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
       )}
 
       {hasError && (
-        <div data-testid={`install-error-${method.id}`} style={{
-          padding: 'var(--space-2) var(--space-3)',
-          backgroundColor: 'rgba(239,68,68,0.08)',
-          border: '1px solid var(--danger)', borderRadius: 'var(--radius-sm)',
-          color: 'var(--danger)', fontSize: 'var(--text-xs)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <AlertTriangle size={14} style={{ flexShrink: 0 }} />
-            <span role="alert" style={{ fontWeight: 600 }}>Install failed</span>
-          </div>
-          <DetailsToggle data-testid={`install-error-details-${method.id}`}>
-            <span style={{ whiteSpace: 'pre-wrap' }}>{task!.error}</span>
-          </DetailsToggle>
-        </div>
+        <Diagnostic
+          code="method_install_failed"
+          severity="error"
+          message={task!.error ?? ''}
+          data-testid={`install-error-${method.id}`}
+        />
       )}
 
       {task?.cancelled && (
@@ -574,21 +567,13 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
       )}
 
       {isDone && task!.warnings.length > 0 && (
-        <div style={{
-          padding: 'var(--space-2) var(--space-3)',
-          backgroundColor: 'rgba(245,158,11,0.08)',
-          border: '1px solid var(--warning, #f59e0b)', borderRadius: 'var(--radius-sm)',
-          color: 'var(--warning, #f59e0b)', fontSize: 'var(--text-xs)',
-        }}>
-          <div role="alert" data-testid={`install-warnings-${method.id}`} style={{ fontWeight: 600 }}>
-            Installed with warnings: {warningSummary(task!)}
-          </div>
-          <DetailsToggle data-testid={`install-warnings-details-${method.id}`}>
-            <ul style={{ margin: 0, paddingLeft: 16 }}>
-              {task!.warnings.map((w, i) => <li key={i}>{w}</li>)}
-            </ul>
-          </DetailsToggle>
-        </div>
+        <Diagnostic
+          code="method_install_warnings"
+          severity="warning"
+          params={{ value: warningSummary(task!) }}
+          message={task!.warnings.join('\n')}
+          data-testid={`install-warnings-${method.id}`}
+        />
       )}
 
       <DetailsToggle data-testid={`method-details-${method.id}`}>

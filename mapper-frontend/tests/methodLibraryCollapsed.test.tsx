@@ -110,11 +110,11 @@ describe('"Installed with warnings" is one line, collapsed by default', () => {
     await installedWithWarnings()
     const box = screen.getByTestId(`install-warnings-${ID}`)
     expect(box).toBeVisible()
-    expect(box.textContent).toBe('Installed with warnings: 9.1% of factors skipped')
+    expect(screen.getByTestId(`install-warnings-${ID}-summary`).textContent).toBe('Installed with warnings: 9.1% of factors skipped')
     // the detailed list is collapsed
     expect(screen.getByText(/1,039 of 11,414 characterisation factors/)).not.toBeVisible()
     expect(screen.getByText(/Flow 0 \[air \/ stratosphere\]/)).not.toBeVisible()
-    await click(screen.getByTestId(`install-warnings-details-${ID}-toggle`))
+    await click(screen.getByTestId(`install-warnings-${ID}-details-toggle`))
     expect(screen.getByText(/1,039 of 11,414 characterisation factors/)).toBeVisible()
     expect(screen.getByText(/Flow 0 \[air \/ stratosphere\]/)).toBeVisible()
     // the factor counts sit in the entry's Details
@@ -131,7 +131,7 @@ describe('"Installed with warnings" is one line, collapsed by default', () => {
     await act(async () => { onMessage({ type: 'error', error: "This project has no 'biosphere3'." }) })
     expect(await screen.findByText('Install failed')).toBeVisible()
     expect(screen.getByText(/no 'biosphere3'/)).not.toBeVisible()
-    await click(screen.getByTestId(`install-error-details-${ID}-toggle`))
+    await click(screen.getByTestId(`install-error-${ID}-details-toggle`))
     expect(screen.getByText(/no 'biosphere3'/)).toBeVisible()
   })
 })

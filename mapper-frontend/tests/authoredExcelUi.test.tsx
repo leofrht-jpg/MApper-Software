@@ -138,6 +138,26 @@ describe('the buttons', () => {
 })
 
 describe('the import dialog: validate first, confirm second', () => {
+  it('each error is ONE line (marker, summary, Help) with the original text behind Details; an unknown code is expanded', async () => {
+    vi.mocked(client.validateAuthoredExcel).mockResolvedValue(BAD)
+    const { body, choose } = await renderOn()
+    await choose()
+    await waitFor(() => body.getByTestId('authored-xl-error-count'))
+    const items = body.getAllByTestId('authored-xl-errors-item')
+    expect(items).toHaveLength(3)
+    // registered: a one-line summary with where it is; the original message is collapsed
+    expect(within(items[0]).getByTestId('authored-xl-errors-item-summary'))
+      .toHaveTextContent('Exchanges, row 2, column Flow code: flow not found')
+    expect(within(items[0]).getByTestId('authored-xl-errors-item-message')).not.toBeVisible()
+    expect(items[1].getAttribute('data-code')).toBe('scope_note_required')
+    // code 'x' is in no registry: its original message is shown in full, not collapsed
+    expect(items[2].getAttribute('data-registered')).toBe('false')
+    expect(within(items[2]).getByTestId('authored-xl-errors-item-message')).toBeVisible()
+    expect(items[2]).toHaveTextContent('Database: file-level problem')
+    // the count line above the list is still visible
+    expect(body.getByTestId('authored-xl-error-count')).toBeVisible()
+  })
+
   it('shows a busy state while validating, then every error with sheet, row and column in a scrollable list', async () => {
     const d = deferred<AuthoredExcelValidation>()
     vi.mocked(client.validateAuthoredExcel).mockReturnValue(d.promise)

@@ -8,7 +8,7 @@
  */
 
 import { useState } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { AlertTriangle, ChevronDown, ChevronRight } from 'lucide-react'
 
 interface SimulationWarningsPanelProps {
   warnings: string[]
@@ -41,9 +41,12 @@ export function isPerCohortWarning(msg: string): boolean {
  * collapse toggle and the persistent count so the body can be tucked away
  * without losing the signal that warnings exist.
  *
- * Default state is collapsed — the long repetitive per-cohort lines otherwise
- * push the results/charts far down the page; the persistent count in the
- * header keeps the signal that warnings exist, and one click reveals them.
+ * Default state is collapsed, but never hidden: the header keeps the count and a
+ * warning marker, and ONE visible summary line says what the warnings are
+ * ("12 retirement shortfalls · 1 fleet-level advisory"). The full text of every
+ * warning sits behind the toggle, mounted. A warning that matches neither known
+ * per-cohort format is counted as an advisory in that line, so a new kind of
+ * warning is always visible as a count, never silent.
  * Collapse uses the visibility-toggle convention (display:none, not unmount)
  * so expanding is instant and scroll position is preserved.
  */
@@ -53,6 +56,12 @@ export function SimulationWarningsPanel({ warnings }: SimulationWarningsPanelPro
   if (warnings.length === 0) return null
 
   const toggle = () => setCollapsed((v) => !v)
+  const perCohortCount = warnings.filter(isPerCohortWarning).length
+  const advisoryCount = warnings.length - perCohortCount
+  const summary = [
+    perCohortCount > 0 ? `${perCohortCount} retirement shortfall${perCohortCount === 1 ? '' : 's'}` : null,
+    advisoryCount > 0 ? `${advisoryCount} fleet-level advisor${advisoryCount === 1 ? 'y' : 'ies'}` : null,
+  ].filter(Boolean).join(' · ')
 
   return (
     <div
@@ -89,6 +98,14 @@ export function SimulationWarningsPanel({ warnings }: SimulationWarningsPanelPro
         <strong style={{ fontSize: 'var(--text-xs)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)' }}>
           Simulation warnings ({warnings.length})
         </strong>
+      </div>
+      <div
+        role="status"
+        data-testid="simulation-warnings-summary"
+        style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 'var(--text-xs)', color: 'var(--text-primary)', fontWeight: 600 }}
+      >
+        <span role="img" aria-label="Warning" style={{ display: 'inline-flex', color: 'var(--warning)' }}><AlertTriangle size={13} /></span>
+        {summary}
       </div>
       <div
         data-testid="simulation-warnings-body"

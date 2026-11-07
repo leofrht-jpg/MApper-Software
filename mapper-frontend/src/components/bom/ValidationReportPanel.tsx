@@ -7,11 +7,12 @@
  * Lead developer: Leonardo Ferhati
  */
 
-import { useMemo, useState } from 'react'
-import { AlertCircle, AlertTriangle, CheckCircle, ChevronDown, ChevronRight } from 'lucide-react'
+import { useMemo } from 'react'
+import { AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react'
+import { Diagnostic } from '../ui/Diagnostic'
 import type {
-  ValidationErrorType,
   ValidationGroup,
+  ValidationIssue,
   ValidationReport,
   ValidationSeverity,
 } from '../../api/client'
@@ -21,30 +22,6 @@ interface Props {
   archetypeName?: string
   onAccept?: () => void
   onReupload?: () => void
-}
-
-const ERROR_TYPE_LABELS: Record<ValidationErrorType, string> = {
-  code_truncated: 'Truncated code',
-  code_not_found: 'Code not in database',
-  database_missing: 'Database not installed',
-  code_no_database: 'Code without database',
-  database_no_code: 'Database without code',
-  name_mismatch: 'Name mismatch',
-  location_mismatch: 'Location mismatch',
-  unit_mismatch: 'Unit mismatch',
-  stage_scope_defaulted: 'Stage scope defaulted to inflows',
-  biosphere_link: 'Row links a biosphere flow',
-  waste_sign: 'Positive quantity on a waste treatment',
-}
-
-/** One line of explanation for the types whose label alone does not say what to do. */
-const ERROR_TYPE_HELP: Partial<Record<ValidationErrorType, string>> = {
-  waste_sign:
-    'These are waste treatment activities. ecoinvent enters waste inputs with a negative quantity, so a ' +
-    'positive quantity gives a credit, not a burden. Only a warning: the row still computes as entered.',
-  biosphere_link:
-    'A BOM row cannot link a biosphere flow. Create an authored activity that carries the emission as a ' +
-    'biosphere exchange and link the row to that activity.',
 }
 
 export function ValidationReportPanel({ report, archetypeName, onAccept, onReupload }: Props) {
@@ -79,10 +56,10 @@ export function ValidationReportPanel({ report, archetypeName, onAccept, onReupl
       )}
 
       {errGroups.length > 0 && (
-        <GroupList severity="error" groups={errGroups} />
+        <GroupList severity="error" groups={errGroups} issues={report.issues} />
       )}
       {warnGroups.length > 0 && (
-        <GroupList severity="warning" groups={warnGroups} />
+        <GroupList severity="warning" groups={warnGroups} issues={report.issues} />
       )}
 
       {(onAccept || onReupload) && (
@@ -136,7 +113,7 @@ function Stat({ dotColor, icon, label, highlight }: {
   )
 }
 
-function GroupList({ severity, groups }: { severity: ValidationSeverity; groups: ValidationGroup[] }) {
+function GroupList({ severity, groups, issues }: { severity: ValidationSeverity; groups: ValidationGroup[]; issues: ValidationIssue[] }) {
   const color = severity === 'error' ? 'var(--danger)' : 'var(--warning)'
   const heading = severity === 'error'
     ? `Errors: ${groups.length} unique issue${groups.length === 1 ? '' : 's'} (block compute)`
@@ -151,70 +128,31 @@ function GroupList({ severity, groups }: { severity: ValidationSeverity; groups:
         {heading}
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-        {groups.map((g, idx) => <GroupRow key={`${severity}-${idx}`} group={g} />)}
+        {groups.map((g, idx) => <GroupRow key={`${severity}-${idx}`} group={g} issues={issues} />)}
       </div>
     </div>
   )
 }
 
-function GroupRow({ group }: { group: ValidationGroup }) {
-  const [open, setOpen] = useState(false)
-  const color = group.severity === 'error' ? 'var(--danger)' : 'var(--warning)'
+/** The original backend text of every row in a group: what the Details toggle shows. */
+function groupMessage(group: ValidationGroup, issues: ValidationIssue[]): string {
+  return group.affected.map((a) => {
+    const hit = issues.find((i) => i.error_type === group.error_type && i.archetype === a.archetype
+      && i.stage === a.stage && i.row_idx === a.row_idx && i.name === a.name)
+    return hit ? hit.message : `${a.archetype} / ${a.stage} · ${a.name} · row ${a.row_idx}`
+  }).join('\n')
+}
 
+/** One line per group (marker, count, summary, Help); the original messages behind Details. */
+function GroupRow({ group, issues }: { group: ValidationGroup; issues: ValidationIssue[] }) {
   return (
-    <div style={{
-      border: '1px solid var(--border-subtle)',
-      borderLeft: `3px solid ${color}`,
-      borderRadius: 'var(--radius-sm)',
-      backgroundColor: 'var(--bg-surface)',
-      padding: '6px 10px',
-    }}>
-      <button
-        onClick={() => setOpen((v) => !v)}
-        style={{
-          all: 'unset', cursor: 'pointer', display: 'flex',
-          alignItems: 'center', gap: 6, width: '100%',
-        }}
-      >
-        {open ? <ChevronDown size={11} /> : <ChevronRight size={11} />}
-        <strong style={{ color: 'var(--text-primary)' }}>
-          {group.count}× {ERROR_TYPE_LABELS[group.error_type]}
-        </strong>
-        {group.bad_value && (
-          <code style={{
-            fontFamily: 'var(--font-mono)', fontSize: 11,
-            padding: '1px 6px', backgroundColor: 'var(--bg-elevated)',
-            borderRadius: 'var(--radius-sm)', color: 'var(--text-secondary)',
-            maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-          }}>
-            {group.bad_value}
-          </code>
-        )}
-        {group.bom_name && (
-          <span style={{ color: 'var(--text-tertiary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            · {group.bom_name}
-          </span>
-        )}
-      </button>
-      {ERROR_TYPE_HELP[group.error_type] && (
-        <div data-testid="validation-group-help" style={{ margin: '4px 0 0 17px', color: 'var(--text-tertiary)' }}>
-          {ERROR_TYPE_HELP[group.error_type]}
-        </div>
-      )}
-      {open && (
-        <ul style={{ margin: '6px 0 0 22px', paddingLeft: 0, listStyle: 'none' }}>
-          {group.affected.map((a, i) => (
-            <li key={i} style={{ color: 'var(--text-tertiary)', padding: '1px 0' }}>
-              <span style={{ color: 'var(--text-secondary)' }}>{a.archetype}</span>
-              {' / '}
-              <span style={{ color: 'var(--text-secondary)' }}>{a.stage}</span>
-              {' · '}
-              <span>{a.name}</span>
-              <span style={{ color: 'var(--text-tertiary)', marginLeft: 6 }}>row {a.row_idx}</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
+    <Diagnostic
+      code={group.error_type}
+      severity={group.severity}
+      count={group.count}
+      params={{ count: group.count, value: group.bad_value, name: group.bom_name }}
+      message={groupMessage(group, issues)}
+      data-testid="validation-group"
+    />
   )
 }

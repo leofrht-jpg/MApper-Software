@@ -107,6 +107,10 @@ describe('ImportWizard task feedback', () => {
     await act(async () => { sock().onClose?.() })
     await tick()
     expect(screen.getByText(/Import failed: database is locked/)).toBeTruthy()
+    // one visible line; the original text is behind Details
+    expect(screen.getByTestId('import-error').getAttribute('data-code')).toBe('import_failed')
+    expect(screen.getByTestId('import-error-summary').textContent).toBe('Import failed')
+    expect(screen.getByTestId('import-error-message')).not.toBeVisible()
   })
 
   it('keeps the warning and keeps polling while the task runs, and re-opens the socket', async () => {
@@ -130,6 +134,7 @@ describe('ImportWizard task feedback', () => {
     await act(async () => { sock().onClose?.() })
     await tick()
     expect(screen.getByText(/backend no longer knows this import/)).toBeTruthy()
+    expect(screen.getByTestId('import-error').getAttribute('data-code')).toBe('import_task_lost')
   })
 
   it('shows the error text of a failure the socket delivers', async () => {

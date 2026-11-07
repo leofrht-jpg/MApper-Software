@@ -167,7 +167,7 @@ the outcome, and still clipped — superseded above.)
 - [Patch 5A+ — layout structure] Don't shorten or rewrite the subtitle / drop-zone text to "fix" wrapping.
 - [DSM Simulation warnings panel collapse] Don't drop the count from the header when collapsed.
 - [DSM Simulation warnings panel collapse] Don't conditional-unmount the warning body on collapse.
-- [DSM Simulation warnings panel collapse] Don't default the panel to collapsed. Warnings signal data problems; hiding them by default risks users shipping analyses with unaddressed issues.
+- [DSM Simulation warnings panel collapse] Don't leave a collapsed panel with nothing visible. Collapsed by default is right only because the header keeps the count and the warning marker and a one-line summary stays on screen.
 - [DSM Simulation warnings panel collapse] Don't classify the advisory warning by position (`warnings[0]`) or by matching its specific wording.
 - [DSM start/end stock figures — top-left KPI card] Don't source `start` from `Σ YearResult.stock` / `summary.totalStock`.
 - [DSM start/end stock figures — top-left KPI card] Don't compute `end` by reading the next year's record (`stock[year+1]`).
@@ -273,16 +273,19 @@ Derived from what the app does today (counts from `src/`, 2026-11-06), not inven
 | The one main action | `<Button variant="primary">`, one per surface | skill `mapper-ui-conventions` (5G) |
 | Supporting action | `<Button variant="secondary">` | same |
 | Long help | `<InfoButton label="About x">` (`components/ui/InfoButton.tsx`): the text is not on screen until opened | `SupplyChainTreeAction`, `MultiProductLCA` |
-| Details, long warnings, long errors | `<DetailsToggle>` (`components/ui/DetailsToggle.tsx`), collapsed, body stays mounted | `MethodLibrary` |
+| A warning or an error | `<Diagnostic code message params>` (`components/ui/Diagnostic.tsx`): ONE visible line (marker, count, summary, Help); the original text behind Details; a code not in the registry is shown expanded | `ValidationReportPanel`, `MethodLibrary`, `AuthoredExcel` |
+| Details (anything else long) | `<DetailsToggle>` (`components/ui/DetailsToggle.tsx`), collapsed, body stays mounted | `MethodLibrary` |
 | A long calculation | `<ComputeOverlay>`; the inline `<ComputeProgress>` only for a non-blocking job | Impact Assessment, `LCACalculator` |
 
 **Texts are laconic.** One line is visible; the rest is behind an (i) or a Details toggle. A warning or an error shows a one-line summary ("9.1% of factors skipped", "Install failed") and its full text behind Details, collapsed by default. Nothing is deleted: every fact stays reachable.
+
+**Warnings and errors are keyed on a code, never on the message text.** `src/data/diagnostics.json` is the one registry (title, one-line summary with `{placeholders}`, cause, fix, severity, anchor, surface). `<Diagnostic>` shows the summary as one visible line and keeps the backend's original message behind Details; its Help link opens the entry in Settings > "Most frequent warnings/errors". A new backend code needs a registry entry in the same PR: `mapper-backend/tests/test_diagnostics_registry.py` AST-scans the emitted codes and fails without it, and `tests/diagnosticsRegistry.test.ts` fails on a malformed entry or a wrong `surface`. A code with no entry is shown expanded, never collapsed: do not "fix" that by collapsing it.
 
 **UI checklist before opening a PR**
 - [ ] Every button is `components/ui/Button.tsx` with the variant above; icon-only controls have an `aria-label`.
 - [ ] No red text hand-set on a button; Discard/Delete/Remove/Uninstall are `danger`.
 - [ ] No sentence of help is permanently on screen: it is behind an `InfoButton` or a `DetailsToggle`.
-- [ ] Warnings and errors: a one-line summary, the rest behind Details, collapsed.
+- [ ] Warnings and errors use `<Diagnostic>` with a registry entry (title, summary, cause, fix): one visible line, the original message behind Details.
 - [ ] A calculation over about 10 s uses `<ComputeOverlay>` with a real elapsed counter and no invented percentage.
 - [ ] Hide/show uses `display: none`, not conditional mount (state survives).
 - [ ] `tests/uiButtonConformance.test.ts` passes without growing `uiButtonConformance.baseline.json`.

@@ -7,11 +7,12 @@
  * Lead developer: Leonardo Ferhati
  */
 
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { Topbar } from './Topbar'
 import { Sidebar } from './Sidebar'
 import { DemoBanner } from './DemoBanner'
 import { StatusBar } from './StatusBar'
+import { NAVIGATE_EVENT } from '../../stores/diagnosticHelpStore'
 
 interface ShellProps {
   children: (activeItem: string, setActiveItem: (id: string) => void) => React.ReactNode
@@ -20,6 +21,16 @@ interface ShellProps {
 
 export function Shell({ children, headerActions }: ShellProps) {
   const [activeItem, setActiveItem] = useState('databases')
+
+  // A Help link on a warning or error opens its entry in Settings from wherever it is rendered.
+  useEffect(() => {
+    const go = (e: Event) => {
+      const id = (e as CustomEvent<string>).detail
+      if (typeof id === 'string') setActiveItem(id)
+    }
+    window.addEventListener(NAVIGATE_EVENT, go)
+    return () => window.removeEventListener(NAVIGATE_EVENT, go)
+  }, [])
 
   return (
     <div

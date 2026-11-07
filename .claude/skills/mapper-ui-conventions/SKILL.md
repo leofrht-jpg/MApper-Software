@@ -1595,3 +1595,14 @@ amounts still come from the result echo. Same backward-compat fallback as
 - **Don't make the "Stage amounts" sheet replace or reorder existing
   sheets.** It's additive; existing tests assert sheets by name. Keep
   Configuration / Comparison (wide|long) / SB_* / Errors exactly as they are.
+
+### UI templates: buttons, help text, warnings (PR fix/ui-consistency)
+
+The table, the checklist and the ratchet live in `mapper-frontend/CLAUDE.md` > "UI templates"; read it before building UI. In short: every button is `components/ui/Button.tsx`: Export = `secondary` + `<Download>`; Discard, Delete, Remove, Uninstall = `danger`; Cancel = `ghost`; the one main action = `primary`. Long help goes behind `<InfoButton>`; details, warnings and errors behind `<DetailsToggle>`, collapsed, with a one-line summary visible. A long calculation uses `<ComputeOverlay>`.
+
+#### What NOT to do
+
+- **Don't hand-roll a button or colour its text red.** `danger` is the one destructive style; `tests/uiButtonConformance.test.ts` fails on a new off-template button.
+- **Don't leave a sentence of help permanently on screen.** One line visible; the rest behind an (i) or Details.
+- **Don't show a whole warning list by default.** Summary line, Details collapsed. Keep every fact reachable: moving text behind a toggle never deletes it.
+- **Don't add to `uiButtonConformance.baseline.json`.** It only shrinks.

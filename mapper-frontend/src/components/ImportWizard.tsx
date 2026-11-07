@@ -10,6 +10,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { CheckCircle, CheckCircle2, ChevronLeft, FolderOpen, KeyRound, X } from 'lucide-react'
 import { Button } from './ui/Button'
+import { Diagnostic } from './ui/Diagnostic'
 import {
   browseEcoinventFolder,
   connectToTask,
@@ -113,6 +114,8 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
   const [taskProgress, setTaskProgress] = useState<TaskProgressMessage>({ step: '', progress: 0, message: '' })
   const [_importDone, setImportDone] = useState(false)
   const [importError, setImportError] = useState('')
+  // Which kind of failure it is, known where it is raised (never read back from the message text).
+  const [importErrorCode, setImportErrorCode] = useState<'import_failed' | 'import_cancelled' | 'import_task_lost'>('import_failed')
   // Biosphere counts of the finished import; null while unknown or if the fetch failed.
   const [summary, setSummary] = useState<EcoinventImportSummary | null>(null)
   // The progress socket dropped before the task ended; the state is being polled instead.
@@ -218,10 +221,12 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
         } else if (msg.step === 'error') {
           finalRef.current = true
           stopPolling()
+          setImportErrorCode('import_failed')
           setImportError(msg.error || msg.message || 'Import failed')
         } else if (msg.step === 'cancelled') {
           finalRef.current = true
           stopPolling()
+          setImportErrorCode('import_cancelled')
           setImportError('The import was cancelled.')
         }
       }
@@ -245,6 +250,7 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
             // the backend restarted (or never knew the task): nothing more to wait for
             finalRef.current = true
             stopPolling()
+            setImportErrorCode('import_task_lost')
             setImportError(
               'The backend no longer knows this import (it may have restarted). Check Database Explorer to see whether the database was written.',
             )
@@ -272,6 +278,7 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
 
       openSocket()
     } catch (e: unknown) {
+      setImportErrorCode('import_failed')
       setImportError(e instanceof Error ? e.message : 'Import failed')
     }
   }
@@ -599,7 +606,14 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
             <div>
               {importError ? (
                 <div>
-                  <p style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)', marginBottom: 'var(--space-4)' }}>Import failed: {importError}</p>
+                  <div style={{ marginBottom: 'var(--space-4)' }}>
+                    <Diagnostic
+                      code={importErrorCode}
+                      severity={importErrorCode === 'import_cancelled' ? 'warning' : 'error'}
+                      message={importErrorCode === 'import_failed' ? `Import failed: ${importError}` : importError}
+                      data-testid="import-error"
+                    />
+                  </div>
                   <Button variant="secondary" onClick={() => setStep(2)}>Go Back</Button>
                 </div>
               ) : (

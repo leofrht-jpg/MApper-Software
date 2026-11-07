@@ -1,0 +1,722 @@
+{
+  "biosphere_link": {
+    "title": "Row links a biosphere flow",
+    "summary": "Row links a biosphere flow",
+    "cause": "A BOM row can only link an activity (a process), not an emission or resource flow.",
+    "fix": "Create an authored activity that carries the emission as a biosphere exchange, and link the row to it.",
+    "severity": "error",
+    "anchor": "diag-biosphere-link",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "bom_biosphere_link": {
+    "title": "File refused: biosphere link",
+    "summary": "Import refused: {count} row(s) link a biosphere flow",
+    "cause": "A BOM row can only link an activity, and a flow can never compute. Nothing was imported.",
+    "fix": "Fix the rows listed, or link an authored activity that carries the emission, then import again.",
+    "severity": "error",
+    "anchor": "diag-bom-biosphere-link",
+    "origin": "backend",
+    "surface": "bom-import-refusal"
+  },
+  "code_truncated": {
+    "title": "Truncated code",
+    "summary": "Activity code has the wrong length",
+    "cause": "An ecoinvent code has 32 characters. This one was cut short or mistyped.",
+    "fix": "Copy the code again from Database Explorer, or replace the placeholder with a real code.",
+    "severity": "error",
+    "anchor": "diag-code-truncated",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "code_not_found": {
+    "title": "Code not in database",
+    "summary": "Code not found in the database",
+    "cause": "The database exists, but it has no activity with this code.",
+    "fix": "Check the code and the database name, or pick the activity again in Database Explorer.",
+    "severity": "error",
+    "anchor": "diag-code-not-found",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "database_missing": {
+    "title": "Database not installed",
+    "summary": "Database not installed in this project",
+    "cause": "The row names a database this project does not hold.",
+    "fix": "Install that database, or change the row to a database you have.",
+    "severity": "error",
+    "anchor": "diag-database-missing",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "code_no_database": {
+    "title": "Code without database",
+    "summary": "Code given without a database",
+    "cause": "The row has an activity code but no database name.",
+    "fix": "Fill in Ecoinvent Database for the row.",
+    "severity": "error",
+    "anchor": "diag-code-no-database",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "database_no_code": {
+    "title": "Database without code",
+    "summary": "Database given without a code",
+    "cause": "The row has a database name but no activity code.",
+    "fix": "Fill in Ecoinvent Code, or clear the database to leave the row unlinked.",
+    "severity": "error",
+    "anchor": "diag-database-no-code",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "name_mismatch": {
+    "title": "Name mismatch",
+    "summary": "BOM name differs from the activity name",
+    "cause": "The name in the BOM is not the name of the linked activity.",
+    "fix": "Check you linked the right activity. The link is used as it is.",
+    "severity": "warning",
+    "anchor": "diag-name-mismatch",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "location_mismatch": {
+    "title": "Location mismatch",
+    "summary": "BOM location differs from the activity location",
+    "cause": "The location in the BOM is not the location of the linked activity.",
+    "fix": "Check you linked the right activity. The link is used as it is.",
+    "severity": "warning",
+    "anchor": "diag-location-mismatch",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "unit_mismatch": {
+    "title": "Unit mismatch",
+    "summary": "Unit differs from the activity unit",
+    "cause": "The row's unit measures something other than the activity's reference unit.",
+    "fix": "Change the unit, or link an activity that is measured in the same kind of unit.",
+    "severity": "warning",
+    "anchor": "diag-unit-mismatch",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "stage_scope_defaulted": {
+    "title": "Stage scope defaulted",
+    "summary": "Stage scope not set, counted as inflows",
+    "cause": "The stage name matched no keyword and has no Scope, so it counts as production.",
+    "fix": "Set Scope on the stage root row: inflows, stock or outflows.",
+    "severity": "warning",
+    "anchor": "diag-stage-scope-defaulted",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "waste_sign": {
+    "title": "Positive quantity on a waste treatment",
+    "summary": "Positive quantity on a waste treatment",
+    "cause": "ecoinvent enters waste inputs as negative amounts, so a positive one gives a credit, not a burden.",
+    "fix": "Enter the quantity as negative if you mean a burden. The row computes as entered.",
+    "severity": "warning",
+    "anchor": "diag-waste-sign",
+    "origin": "backend",
+    "surface": "bom-validation-report"
+  },
+  "unlinked_materials": {
+    "title": "Materials without a link",
+    "summary": "Calculation stopped: materials have no linked activity",
+    "cause": "Some materials have no ecoinvent activity. Computing would silently drop them.",
+    "fix": "Link them in Database Explorer, then calculate again.",
+    "severity": "error",
+    "anchor": "diag-unlinked-materials",
+    "origin": "backend",
+    "surface": "help-only"
+  },
+  "validation_failed": {
+    "title": "Unresolved links block the calculation",
+    "summary": "Calculation blocked: rows have unresolved links",
+    "cause": "Some BOM rows point at activities that do not resolve.",
+    "fix": "Open the validation report and fix the rows listed.",
+    "severity": "error",
+    "anchor": "diag-validation-failed",
+    "origin": "backend",
+    "surface": "help-only"
+  },
+  "project_state_mismatch": {
+    "title": "Project changed under you",
+    "summary": "The open project differs from the one the app is using",
+    "cause": "The window and the backend are on different projects, often after a restart.",
+    "fix": "Refresh the app or switch projects, then try again.",
+    "severity": "error",
+    "anchor": "diag-project-state-mismatch",
+    "origin": "backend",
+    "surface": "help-only"
+  },
+  "import_rejected": {
+    "title": "Configuration file rejected",
+    "summary": "Import rejected: the file has errors",
+    "cause": "The configuration workbook has problems, listed by sheet and field.",
+    "fix": "Fix the cells listed and import the file again.",
+    "severity": "error",
+    "anchor": "diag-import-rejected",
+    "origin": "backend",
+    "surface": "help-only"
+  },
+  "authored_validation_failed": {
+    "title": "Authored activity not valid",
+    "summary": "The activity is not valid",
+    "cause": "One or more rules about exchanges, pedigree or scope are not met.",
+    "fix": "Fix the problems listed, then save again.",
+    "severity": "error",
+    "anchor": "diag-authored-validation-failed",
+    "origin": "backend",
+    "surface": "help-only"
+  },
+  "authored_activity_linked": {
+    "title": "Activity is still linked",
+    "summary": "This activity is linked from BOM rows",
+    "cause": "Deleting it would leave those rows pointing at nothing.",
+    "fix": "Relink or remove those BOM rows first.",
+    "severity": "error",
+    "anchor": "diag-authored-activity-linked",
+    "origin": "backend",
+    "surface": "help-only"
+  },
+  "authored_database_linked": {
+    "title": "Database is still linked",
+    "summary": "This database is linked from BOM rows",
+    "cause": "Deleting it would leave those rows pointing at nothing.",
+    "fix": "Relink or remove those BOM rows first.",
+    "severity": "error",
+    "anchor": "diag-authored-database-linked",
+    "origin": "backend",
+    "surface": "help-only"
+  },
+  "authored_excel_rejected": {
+    "title": "Workbook rejected",
+    "summary": "The workbook could not be read",
+    "cause": "The file is not a usable .xlsx, or it is too large or unsafe.",
+    "fix": "Download the template and copy your data into it.",
+    "severity": "error",
+    "anchor": "diag-authored-excel-rejected",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "authored_excel_invalid": {
+    "title": "Workbook has errors",
+    "summary": "The workbook has errors: nothing was imported",
+    "cause": "Cells in the workbook break a rule. Each error names its sheet, row and column.",
+    "fix": "Fix every error listed, then import again.",
+    "severity": "error",
+    "anchor": "diag-authored-excel-invalid",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "negative_amount": {
+    "title": "Negative amount",
+    "summary": "{where}: amount is negative",
+    "cause": "An exchange amount must not be negative here.",
+    "fix": "Enter a positive amount.",
+    "severity": "error",
+    "anchor": "diag-negative-amount",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "amount_not_positive": {
+    "title": "Amount not positive",
+    "summary": "{where}: amount must be above zero",
+    "cause": "A zero or negative amount is not allowed for this exchange.",
+    "fix": "Enter an amount above zero.",
+    "severity": "error",
+    "anchor": "diag-amount-not-positive",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "not_biosphere": {
+    "title": "Not a biosphere flow",
+    "summary": "{where}: flow is not in the biosphere",
+    "cause": "An authored activity carries biosphere flows only.",
+    "fix": "Pick a flow from biosphere3.",
+    "severity": "error",
+    "anchor": "diag-not-biosphere",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "unknown_flow": {
+    "title": "Unknown flow",
+    "summary": "{where}: flow not found",
+    "cause": "This project has no biosphere flow with that code.",
+    "fix": "Search for the flow by name and pick it from the list.",
+    "severity": "error",
+    "anchor": "diag-unknown-flow",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "flow_type": {
+    "title": "Wrong flow type",
+    "summary": "{where}: not an emission or resource flow",
+    "cause": "The flow is of a type an exchange cannot use.",
+    "fix": "Pick an emission or resource flow.",
+    "severity": "error",
+    "anchor": "diag-flow-type",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "bv_not_settable": {
+    "title": "Variance not settable",
+    "summary": "{where}: variance cannot be set here",
+    "cause": "ecoinvent already measures this flow's variance.",
+    "fix": "Leave the basic variance blank.",
+    "severity": "error",
+    "anchor": "diag-bv-not-settable",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "bv_required": {
+    "title": "Variance required",
+    "summary": "{where}: variance required",
+    "cause": "ecoinvent does not measure this flow, so you must give a value.",
+    "fix": "Enter a basic variance and the reason for it.",
+    "severity": "error",
+    "anchor": "diag-bv-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "bv_invalid": {
+    "title": "Variance not valid",
+    "summary": "{where}: variance not valid",
+    "cause": "The basic variance must be a positive number.",
+    "fix": "Enter a number above zero.",
+    "severity": "error",
+    "anchor": "diag-bv-invalid",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "bv_reason_required": {
+    "title": "Variance reason required",
+    "summary": "{where}: reason for the variance missing",
+    "cause": "A supplied variance needs a reason, so it can be checked later.",
+    "fix": "Say where the value comes from.",
+    "severity": "error",
+    "anchor": "diag-bv-reason-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "below_floor": {
+    "title": "Variance below the floor",
+    "summary": "{where}: variance is below the minimum",
+    "cause": "The value is lower than the smallest ecoinvent uses for this kind of flow.",
+    "fix": "Raise it, or give a reason for keeping it lower.",
+    "severity": "error",
+    "anchor": "diag-below-floor",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "floor_reason_not_applicable": {
+    "title": "Floor reason not needed",
+    "summary": "{where}: floor reason not needed",
+    "cause": "A floor reason applies only to a variance below the floor.",
+    "fix": "Clear the floor reason.",
+    "severity": "error",
+    "anchor": "diag-floor-reason-not-applicable",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "indicator_not_reached": {
+    "title": "Indicator not reached",
+    "summary": "{where}: indicator is not reached by any flow",
+    "cause": "A complete indicator must be reached by at least one flow of the activity.",
+    "fix": "Untick the indicator, or add a flow that reaches it.",
+    "severity": "error",
+    "anchor": "diag-indicator-not-reached",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "no_exchanges": {
+    "title": "Activity without exchanges",
+    "summary": "{where}: activity has no exchanges",
+    "cause": "An authored activity needs at least one exchange.",
+    "fix": "Add an exchange for it on the Exchanges sheet.",
+    "severity": "error",
+    "anchor": "diag-no-exchanges",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "missing_sheet": {
+    "title": "Sheet missing",
+    "summary": "{where}: sheet is missing",
+    "cause": "The workbook lacks a sheet the import needs.",
+    "fix": "Start from the downloaded template.",
+    "severity": "error",
+    "anchor": "diag-missing-sheet",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "no_header": {
+    "title": "Header row missing",
+    "summary": "{where}: sheet has no header row",
+    "cause": "The first row must hold the column names.",
+    "fix": "Put the column names in row 1.",
+    "severity": "error",
+    "anchor": "diag-no-header",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "missing_column": {
+    "title": "Column missing",
+    "summary": "{where}: required column is missing",
+    "cause": "A column the import needs is not in the header row.",
+    "fix": "Add the column, or start from the template.",
+    "severity": "error",
+    "anchor": "diag-missing-column",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "template_version": {
+    "title": "Template version",
+    "summary": "Workbook is from another template version",
+    "cause": "The Read me sheet carries a template version this app does not know.",
+    "fix": "Download the current template and copy your data into it.",
+    "severity": "error",
+    "anchor": "diag-template-version",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "truncated": {
+    "title": "More errors not shown",
+    "summary": "More errors than shown",
+    "cause": "Only the first errors are listed.",
+    "fix": "Fix these and validate again to see the rest.",
+    "severity": "warning",
+    "anchor": "diag-truncated",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "too_long": {
+    "title": "Text too long",
+    "summary": "{where}: text is too long",
+    "cause": "The cell holds more characters than allowed.",
+    "fix": "Shorten the text.",
+    "severity": "error",
+    "anchor": "diag-too-long",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "formula": {
+    "title": "Formula not accepted",
+    "summary": "{where}: cell holds a formula",
+    "cause": "Formulas are never evaluated on import.",
+    "fix": "Paste the value instead of the formula.",
+    "severity": "error",
+    "anchor": "diag-formula",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "database_rows": {
+    "title": "Database sheet rows",
+    "summary": "Database sheet needs exactly one row",
+    "cause": "The Database sheet describes one database.",
+    "fix": "Keep one row on the Database sheet.",
+    "severity": "error",
+    "anchor": "diag-database-rows",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "database_name": {
+    "title": "Database name",
+    "summary": "{where}: database name not usable",
+    "cause": "The name is empty, taken, or has characters that are not allowed.",
+    "fix": "Use a new name made of letters, digits, space, _ or -.",
+    "severity": "error",
+    "anchor": "diag-database-name",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "key_required": {
+    "title": "Activity key required",
+    "summary": "{where}: activity key is empty",
+    "cause": "The Exchanges sheet uses the key to say which activity a row belongs to.",
+    "fix": "Give each activity a unique key.",
+    "severity": "error",
+    "anchor": "diag-key-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "duplicate_key": {
+    "title": "Duplicate activity key",
+    "summary": "{where}: activity key used twice",
+    "cause": "Two activities share one key.",
+    "fix": "Make each key unique.",
+    "severity": "error",
+    "anchor": "diag-duplicate-key",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "duplicate_name": {
+    "title": "Duplicate activity",
+    "summary": "{where}: two activities share a name and location",
+    "cause": "An activity is identified by its name and location.",
+    "fix": "Change the name or the location of one.",
+    "severity": "error",
+    "anchor": "diag-duplicate-name",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "example_row": {
+    "title": "Example row left in",
+    "summary": "{where}: example row still in the file",
+    "cause": "Rows whose key starts with EXAMPLE are the template's examples.",
+    "fix": "Delete the example rows or replace them with your own.",
+    "severity": "error",
+    "anchor": "diag-example-row",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "name_required": {
+    "title": "Name required",
+    "summary": "{where}: name is empty",
+    "cause": "Every activity needs a name.",
+    "fix": "Fill in the name.",
+    "severity": "error",
+    "anchor": "diag-name-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "unit_required": {
+    "title": "Unit required",
+    "summary": "{where}: unit is empty",
+    "cause": "Every activity needs a unit.",
+    "fix": "Fill in the unit.",
+    "severity": "error",
+    "anchor": "diag-unit-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "scope_invalid": {
+    "title": "Scope not valid",
+    "summary": "{where}: scope must be complete or partial",
+    "cause": "The scope says whether the listed flows are the whole inventory.",
+    "fix": "Write complete or partial.",
+    "severity": "error",
+    "anchor": "diag-scope-invalid",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "scope_note_required": {
+    "title": "Scope note required",
+    "summary": "{where}: a partial activity needs a scope note",
+    "cause": "A partial inventory must say what it leaves out.",
+    "fix": "Fill in the scope note.",
+    "severity": "error",
+    "anchor": "diag-scope-note-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "indicators_on_complete": {
+    "title": "Indicators on a complete activity",
+    "summary": "{where}: indicators apply to partial activities only",
+    "cause": "A complete activity already covers every indicator.",
+    "fix": "Clear the complete indicators, or set the scope to partial.",
+    "severity": "error",
+    "anchor": "diag-indicators-on-complete",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "no_activities": {
+    "title": "No activities",
+    "summary": "The Activities sheet is empty",
+    "cause": "A database needs at least one activity.",
+    "fix": "Add your activities.",
+    "severity": "error",
+    "anchor": "diag-no-activities",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "unknown_activity": {
+    "title": "Unknown activity key",
+    "summary": "{where}: no activity has this key",
+    "cause": "The Exchanges sheet names an activity the Activities sheet lacks.",
+    "fix": "Fix the key, or add the activity.",
+    "severity": "error",
+    "anchor": "diag-unknown-activity",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "flow_required": {
+    "title": "Flow required",
+    "summary": "{where}: no flow given",
+    "cause": "Each exchange needs a flow code, or a flow name with its compartment.",
+    "fix": "Fill in the flow.",
+    "severity": "error",
+    "anchor": "diag-flow-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "no_lookup": {
+    "title": "Lookup by name not available",
+    "summary": "{where}: flow lookup by name not available",
+    "cause": "Name lookup is not available here.",
+    "fix": "Give the flow code.",
+    "severity": "error",
+    "anchor": "diag-no-lookup",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "flow_not_found": {
+    "title": "Flow not found",
+    "summary": "{where}: no flow matches",
+    "cause": "No flow has that name and compartment.",
+    "fix": "Check the spelling, or give the flow code.",
+    "severity": "error",
+    "anchor": "diag-flow-not-found",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "flow_ambiguous": {
+    "title": "Several flows match",
+    "summary": "{where}: several flows match",
+    "cause": "More than one flow has that name and compartment.",
+    "fix": "Give the flow code to choose one.",
+    "severity": "error",
+    "anchor": "diag-flow-ambiguous",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "flow_name_mismatch": {
+    "title": "Flow name differs from code",
+    "summary": "{where}: name does not match the code",
+    "cause": "The code belongs to a flow with another name.",
+    "fix": "Fix the name or the code.",
+    "severity": "error",
+    "anchor": "diag-flow-name-mismatch",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "compartment_mismatch": {
+    "title": "Compartment differs from code",
+    "summary": "{where}: compartment does not match the code",
+    "cause": "The code belongs to a flow in another compartment.",
+    "fix": "Fix the compartment or the code.",
+    "severity": "error",
+    "anchor": "diag-compartment-mismatch",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "amount_required": {
+    "title": "Amount required",
+    "summary": "{where}: no amount",
+    "cause": "Each exchange needs an amount.",
+    "fix": "Fill in the amount.",
+    "severity": "error",
+    "anchor": "diag-amount-required",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "amount_not_number": {
+    "title": "Amount not a number",
+    "summary": "{where}: amount is not a number",
+    "cause": "The cell holds text where a number is needed.",
+    "fix": "Enter a number.",
+    "severity": "error",
+    "anchor": "diag-amount-not-number",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "pedigree_missing": {
+    "title": "Pedigree score missing",
+    "summary": "{where}: pedigree score missing",
+    "cause": "A missing score would count as no added uncertainty.",
+    "fix": "Set every pedigree score from 1 to 5.",
+    "severity": "error",
+    "anchor": "diag-pedigree-missing",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "pedigree_invalid": {
+    "title": "Pedigree score not valid",
+    "summary": "{where}: pedigree score not valid",
+    "cause": "A score must be a whole number from 1 to 5.",
+    "fix": "Enter 1, 2, 3, 4 or 5.",
+    "severity": "error",
+    "anchor": "diag-pedigree-invalid",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "basis_invalid": {
+    "title": "Uncertainty basis not valid",
+    "summary": "{where}: uncertainty basis not valid",
+    "cause": "The basis must be ecoinvent or supplied.",
+    "fix": "Write ecoinvent or supplied.",
+    "severity": "error",
+    "anchor": "diag-basis-invalid",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "bv_not_number": {
+    "title": "Variance not a number",
+    "summary": "{where}: variance is not a number",
+    "cause": "The cell holds text where a number is needed.",
+    "fix": "Enter a number.",
+    "severity": "error",
+    "anchor": "diag-bv-not-number",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "invalid": {
+    "title": "Problem in the file",
+    "summary": "{where}: problem",
+    "cause": "A rule was broken. The message says which.",
+    "fix": "Read the message and fix the cell.",
+    "severity": "error",
+    "anchor": "diag-invalid",
+    "origin": "backend",
+    "surface": "authored-excel"
+  },
+  "method_install_failed": {
+    "title": "Method install failed",
+    "summary": "Install failed",
+    "cause": "The installer stopped before it finished. The message says why.",
+    "fix": "Read the message, fix it and install again. Nothing half-installed stays.",
+    "severity": "error",
+    "anchor": "diag-method-install-failed",
+    "origin": "frontend",
+    "surface": "method-library"
+  },
+  "method_install_warnings": {
+    "title": "Installed with warnings",
+    "summary": "Installed with warnings: {value}",
+    "cause": "Some characterisation factors were skipped because their flow is not in this project's biosphere3.",
+    "fix": "The method works for the flows it found. Check the skipped list if a flow you need is missing.",
+    "severity": "warning",
+    "anchor": "diag-method-install-warnings",
+    "origin": "frontend",
+    "surface": "method-library"
+  },
+  "import_failed": {
+    "title": "Import failed",
+    "summary": "Import failed",
+    "cause": "The import stopped with an error. The message says why.",
+    "fix": "Read the message, fix the cause and import again.",
+    "severity": "error",
+    "anchor": "diag-import-failed",
+    "origin": "frontend",
+    "surface": "import-wizard"
+  },
+  "import_cancelled": {
+    "title": "Import cancelled",
+    "summary": "Import cancelled",
+    "cause": "You stopped the import before it finished.",
+    "fix": "Start it again if you still need it. Check Database Explorer for a partial database.",
+    "severity": "warning",
+    "anchor": "diag-import-cancelled",
+    "origin": "frontend",
+    "surface": "import-wizard"
+  },
+  "import_task_lost": {
+    "title": "Import status lost",
+    "summary": "Import status lost",
+    "cause": "The backend no longer knows this import, often after a restart.",
+    "fix": "Check Database Explorer to see whether the database was written.",
+    "severity": "error",
+    "anchor": "diag-import-task-lost",
+    "origin": "frontend",
+    "surface": "import-wizard"
+  }
+}

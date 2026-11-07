@@ -23,6 +23,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Download, FileSpreadsheet, Loader2 } from 'lucide-react'
 import { Button } from '../ui/Button'
+import { Diagnostic } from '../ui/Diagnostic'
+import { whereLabel } from '../../utils/diagnostics'
 import { notify } from '../ui/dialogs'
 import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 import {
@@ -39,14 +41,15 @@ type Phase =
   | { kind: 'validating' }
   | { kind: 'result'; v: AuthoredExcelValidation }
   | { kind: 'importing'; v: AuthoredExcelValidation }
-  | { kind: 'failed'; message: string; errors: AuthoredExcelError[] }
+  | { kind: 'failed'; message: string; code?: string; errors: AuthoredExcelError[] }
 
 /** What a failed request tells the user: the server's own list when it sent one. */
-function excelFailure(e: unknown): { message: string; errors: AuthoredExcelError[] } {
+function excelFailure(e: unknown): { message: string; code?: string; errors: AuthoredExcelError[] } {
   const d = structuredErrorDetail(e)
   if (d) {
     return {
       message: typeof d.message === 'string' ? d.message : 'The workbook could not be used.',
+      code: typeof d.error === 'string' ? d.error : undefined,
       errors: Array.isArray(d.errors) ? (d.errors as AuthoredExcelError[]) : [],
     }
   }
@@ -54,17 +57,27 @@ function excelFailure(e: unknown): { message: string; errors: AuthoredExcelError
 }
 
 function describeError(e: AuthoredExcelError): string {
-  const where = [e.sheet, e.row != null ? `row ${e.row}` : null, e.column ? `column ${e.column}` : null].filter(Boolean).join(', ')
-  return `${where}: ${e.message}`
+  return `${whereLabel(e)}: ${e.message}`
 }
 
+/** One line per error (marker, summary, Help); the sheet, row, column and the original message behind Details. */
 function ExcelErrorList({ errors, testId }: { errors: AuthoredExcelError[]; testId: string }) {
   return (
     <ul
       data-testid={testId}
-      style={{ margin: 0, padding: '0 0 0 16px', maxHeight: 220, overflowY: 'auto', fontSize: 'var(--text-xs)', color: 'var(--danger)' }}
+      style={{ margin: 0, padding: 0, listStyle: 'none', maxHeight: 220, overflowY: 'auto', display: 'grid', gap: 4 }}
     >
-      {errors.map((e, i) => <li key={i} style={{ marginBottom: 2 }}>{describeError(e)}</li>)}
+      {errors.map((e, i) => (
+        <li key={i}>
+          <Diagnostic
+            code={e.code}
+            severity="error"
+            params={{ where: whereLabel(e) }}
+            message={describeError(e)}
+            data-testid={`${testId}-item`}
+          />
+        </li>
+      ))}
     </ul>
   )
 }
@@ -143,15 +156,15 @@ function ImportDialog({ file, onClose, onImported }: {
         )}
 
         {phase.kind === 'failed' && (
-          <div role="alert" data-testid="authored-xl-failed" style={{ display: 'grid', gap: 6 }}>
-            <div style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)' }}>{phase.message}</div>
+          <div data-testid="authored-xl-failed" style={{ display: 'grid', gap: 6 }}>
+            <Diagnostic code={phase.code} severity="error" message={phase.message} data-testid="authored-xl-failed-diagnostic" />
             {phase.errors.length > 0 && <ExcelErrorList errors={phase.errors} testId="authored-xl-errors" />}
           </div>
         )}
 
         {v && !v.ok && (
-          <div role="alert" style={{ display: 'grid', gap: 6 }}>
-            <div data-testid="authored-xl-error-count" style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <div role="alert" data-testid="authored-xl-error-count" style={{ color: 'var(--danger)', fontSize: 'var(--text-sm)', fontWeight: 600 }}>
               {v.errors.length} error{v.errors.length === 1 ? '' : 's'}: nothing can be imported until they are fixed.
             </div>
             <ExcelErrorList errors={v.errors} testId="authored-xl-errors" />

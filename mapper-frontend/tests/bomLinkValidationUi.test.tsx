@@ -81,8 +81,13 @@ describe('a file with biosphere-flow rows is refused with sheet, row and column'
     const { choose } = show()
     await choose()
     const box = screen.getByTestId('bom-import-refusal')
-    expect(box).toHaveTextContent('Import refused: nothing was imported')
+    // one visible line with the count; the original message and the rows are behind Details
+    expect(screen.getByTestId('bom-import-refusal-summary')).toHaveTextContent('Import refused: 2 row(s) link a biosphere flow')
     expect(screen.getByTestId('bom-import-refusal-message')).toHaveTextContent('cannot link a biosphere flow')
+    expect(screen.getByTestId('bom-import-refusal-message')).not.toBeVisible()
+    await click(screen.getByTestId('bom-import-refusal-details-toggle'))
+    expect(screen.getByTestId('bom-import-refusal-message')).toBeVisible()
+    expect(box.getAttribute('data-code')).toBe('bom_biosphere_link')
     const items = within(screen.getByTestId('bom-import-refusal-rows')).getAllByRole('listitem')
     expect(items).toHaveLength(2)
     expect(items[0]).toHaveTextContent('BOM sheet, row 4, column Ecoinvent Database / Ecoinvent Code: Pack › End of Life › CO2 to air')
@@ -95,6 +100,7 @@ describe('a file with biosphere-flow rows is refused with sheet, row and column'
     importFromFile.mockRejectedValue(new HttpError(422, JSON.stringify(many)))
     const { choose } = show()
     await choose()
+    await click(screen.getByTestId('bom-import-refusal-details-toggle'))
     const list = screen.getByTestId('bom-import-refusal-rows') as HTMLElement
     expect(within(list).getAllByRole('listitem')).toHaveLength(60)
     expect(list.style.overflowY).toBe('auto')
@@ -144,28 +150,29 @@ describe('the waste-sign warning in the import result', () => {
     const { choose } = show()
     await choose()
     const panel = screen.getByText(/Validation report/).parentElement!.parentElement as HTMLElement   // the panel root
-    expect(panel).toHaveTextContent('1× Positive quantity on a waste treatment')
-    expect(panel).toHaveTextContent('0.5')
-    expect(within(panel).getByTestId('validation-group-help')).toHaveTextContent('negative quantity')
-    expect(within(panel).getByTestId('validation-group-help')).toHaveTextContent('credit, not a burden')
-    expect(within(panel).getByTestId('validation-group-help')).toHaveTextContent('Only a warning')
-    await click(within(panel).getByText(/Positive quantity on a waste treatment/))
-    expect(panel).toHaveTextContent('Scrap treatment')
+    // ONE visible line: marker, count, summary. The explanation is a Help entry, not permanent text.
+    const group = within(panel).getByTestId('validation-group')
+    expect(within(group).getByTestId('validation-group-summary')).toHaveTextContent('1× Positive quantity on a waste treatment')
+    expect(within(group).getByTestId('validation-group-message')).not.toBeVisible()
+    await click(within(group).getByTestId('validation-group-details-toggle'))
+    expect(panel).toHaveTextContent('Scrap treatment')       // the affected row, behind Details
     expect(panel).toHaveTextContent('row 4')
+    expect(within(panel).getByTestId('validation-group-message')).toBeVisible()
     expect(screen.queryByTestId('bom-import-refusal')).toBeNull()
   })
 
-  it('the other groups carry no help line, so their layout is unchanged', () => {
+  it('every group is one line with a Help link, whatever its type', () => {
     const report = { ...WARNING_REPORT, groups: [{ ...WARNING_REPORT.groups[0], error_type: 'unit_mismatch' as const }] }
     render(<ValidationReportPanel report={report} />)
-    expect(screen.queryByTestId('validation-group-help')).toBeNull()
+    expect(screen.getByTestId('validation-group-summary')).toHaveTextContent('1× Unit differs from the activity unit')
+    expect(screen.getByTestId('validation-group-help')).toBeInTheDocument()
   })
 
   it('a biosphere_link group (from a stored report) names the fix', () => {
     const report = { ...WARNING_REPORT, error_rows: 1, warning_rows: 0, groups: [{ ...WARNING_REPORT.groups[0], severity: 'error' as const, error_type: 'biosphere_link' as const }] }
     render(<ValidationReportPanel report={report} />)
-    expect(screen.getByText(/Row links a biosphere flow/)).toBeInTheDocument()
-    expect(screen.getByTestId('validation-group-help')).toHaveTextContent('authored activity')
+    expect(screen.getByTestId('validation-group-summary')).toHaveTextContent('1× Row links a biosphere flow')
+    expect(screen.getByTestId('validation-group').getAttribute('data-code')).toBe('biosphere_link')
   })
 })
 

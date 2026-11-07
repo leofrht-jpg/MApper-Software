@@ -24,6 +24,9 @@ import { PremiseKeyManager } from '../components/PremiseKeyManager'
 import { useLogStore } from '../stores/logStore'
 import { useProjectStore } from '../stores/projectStore'
 import { useCarbonStore } from '../stores/carbonStore'
+import { DiagnosticsHelp } from '../components/settings/DiagnosticsHelp'
+import { DIAGNOSTIC_LIST } from '../utils/diagnostics'
+import { useDiagnosticHelpStore } from '../stores/diagnosticHelpStore'
 
 // Single source of truth — injected at build time from package.json version
 // (vite.config.ts `define`). Bumping package.json propagates here automatically.
@@ -46,11 +49,32 @@ export function SettingsPage() {
 
   const [sysOpen, setSysOpen] = useState(false)
   const [logsOpen, setLogsOpen] = useState(false)
+  const [diagOpen, setDiagOpen] = useState(false)
+  // A Help link on a warning or error asks for its entry: open the section and the entry, then scroll to it.
+  const helpTarget = useDiagnosticHelpStore((st) => st.target)
+  const consumeHelp = useDiagnosticHelpStore((st) => st.consume)
+  const [openCode, setOpenCode] = useState<string | null>(null)
   const [health, setHealth] = useState<HealthResponse | null>(null)
 
   useEffect(() => {
     getHealth().then(setHealth).catch(() => setHealth(null))
   }, [])
+
+  // Adjusting state while rendering (the documented pattern) rather than in an effect: a new request
+  // opens the section and the entry in the same render.
+  if (helpTarget && helpTarget !== openCode) {
+    setOpenCode(helpTarget)
+    setDiagOpen(true)
+  }
+  useEffect(() => {
+    if (!helpTarget) return
+    const entry = DIAGNOSTIC_LIST.find(([c]) => c === helpTarget)?.[1]
+    consumeHelp()
+    if (entry) {
+      // After the section has rendered open. scrollIntoView is absent in some test DOMs.
+      requestAnimationFrame(() => document.getElementById(entry.anchor)?.scrollIntoView?.({ block: 'center' }))
+    }
+  }, [helpTarget, consumeHelp])
 
   return (
     <div style={{ maxWidth: 760, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 'var(--space-8)' }}>
@@ -171,6 +195,17 @@ export function SettingsPage() {
       {/* Logs */}
       <Section title="Logs" collapsed={!logsOpen} onToggle={() => setLogsOpen((v) => !v)}>
         {logsOpen && <LogsPanel version={APP_VERSION} />}
+      </Section>
+
+      {/* Most frequent warnings/errors */}
+      <Section
+        title={`Most frequent warnings/errors (${DIAGNOSTIC_LIST.length})`}
+        collapsed={!diagOpen}
+        onToggle={() => setDiagOpen((v) => !v)}
+      >
+        <div data-testid="diagnostics-section-body" style={{ display: diagOpen ? 'block' : 'none' }}>
+          <DiagnosticsHelp openCode={openCode} />
+        </div>
       </Section>
     </div>
   )

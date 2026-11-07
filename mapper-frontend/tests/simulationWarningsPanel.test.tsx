@@ -110,3 +110,32 @@ describe('SimulationWarningsPanel advisory vs per-cohort classification', () => 
     expect(getAllByText(/Verify that Mode A inflows/).length).toBeGreaterThan(0)
   })
 })
+
+describe('SimulationWarningsPanel: collapsed is one visible line, never hidden', () => {
+  it('shows a warning marker, the count and a summary line while the body is collapsed', () => {
+    const { getByTestId, getByRole } = render(<SimulationWarningsPanel warnings={WARNINGS} />)
+    expect(getByTestId('simulation-warnings-body').style.display).toBe('none')
+    const summary = getByTestId('simulation-warnings-summary')
+    expect(summary.textContent).toBe('3 retirement shortfalls · 1 fleet-level advisory')
+    expect(getByRole('img', { name: 'Warning' })).toBeTruthy()
+    expect(getByRole('status')).toBe(summary)
+    expect(getByTestId('simulation-warnings-toggle').textContent).toContain(`Simulation warnings (${WARNINGS.length})`)
+  })
+
+  it('the summary stays visible after expanding and re-collapsing', () => {
+    const { getByTestId } = render(<SimulationWarningsPanel warnings={WARNINGS} />)
+    fireEvent.click(getByTestId('simulation-warnings-toggle'))
+    fireEvent.click(getByTestId('simulation-warnings-toggle'))
+    expect(getByTestId('simulation-warnings-summary').textContent).toContain('retirement shortfalls')
+  })
+
+  it('a warning of a kind nobody has classified is counted, not silent', () => {
+    const { getByTestId } = render(<SimulationWarningsPanel warnings={['Some future aggregate notice about the run.']} />)
+    expect(getByTestId('simulation-warnings-summary').textContent).toBe('1 fleet-level advisory')
+  })
+
+  it('singular wording for a single warning', () => {
+    const { getByTestId } = render(<SimulationWarningsPanel warnings={[PER_COHORT_AGE]} />)
+    expect(getByTestId('simulation-warnings-summary').textContent).toBe('1 retirement shortfall')
+  })
+})

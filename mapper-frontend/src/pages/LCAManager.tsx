@@ -13,6 +13,7 @@ import {
   ChevronDown, ChevronRight,
 } from 'lucide-react'
 import { Button } from '../components/ui/Button'
+import { Diagnostic } from '../components/ui/Diagnostic'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
 import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
 import { useBOMStore } from '../stores/bomStore'
@@ -217,26 +218,22 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
             </span>
           </div>
           {refusal && (
-            <div
-              data-testid="bom-import-refusal"
-              role="alert"
-              style={{
-                marginTop: 'var(--space-3)', padding: 'var(--space-3)',
-                border: '1px solid var(--danger)', borderRadius: 'var(--radius-md)',
-                backgroundColor: 'var(--bg-elevated)', fontSize: 'var(--text-xs)', color: 'var(--text-secondary)',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6, color: 'var(--danger)', fontWeight: 600, marginBottom: 6 }}>
-                <AlertTriangle size={12} /> Import refused: nothing was imported
-              </div>
-              <div data-testid="bom-import-refusal-message">{refusal.message}</div>
-              <ul data-testid="bom-import-refusal-rows" style={{ margin: '6px 0 0 16px', padding: 0, maxHeight: 180, overflowY: 'auto' }}>
-                {refusal.rows.map((r, i) => (
-                  <li key={`${r.archetype}-${r.stage}-${r.row}-${i}`}>
-                    {r.sheet} sheet, row {r.row}, column {r.columns.join(' / ')}: {r.archetype ? `${r.archetype} › ` : ''}{r.stage} › {r.name}
-                  </li>
-                ))}
-              </ul>
+            <div style={{ marginTop: 'var(--space-3)' }}>
+              <Diagnostic
+                code="bom_biosphere_link"
+                severity="error"
+                params={{ count: refusal.rows.length }}
+                message={refusal.message}
+                data-testid="bom-import-refusal"
+              >
+                <ul data-testid="bom-import-refusal-rows" style={{ margin: '6px 0 0 16px', padding: 0, maxHeight: 180, overflowY: 'auto' }}>
+                  {refusal.rows.map((r, i) => (
+                    <li key={`${r.archetype}-${r.stage}-${r.row}-${i}`}>
+                      {r.sheet} sheet, row {r.row}, column {r.columns.join(' / ')}: {r.archetype ? `${r.archetype} › ` : ''}{r.stage} › {r.name}
+                    </li>
+                  ))}
+                </ul>
+              </Diagnostic>
             </div>
           )}
           {result && (

@@ -3130,6 +3130,88 @@ def _build_multi_export_workbook(archetypes: list[Archetype]) -> Workbook:
     return wb
 
 
+_EI_DB = "ecoinvent-3.9.1-cutoff"
+
+
+def _stage(arc: str, stage: str, scope: str, basis: str) -> dict:
+    """A stage ROOT row. Scope and Basis ride on this row only."""
+    return {"archetype_name": arc, "Stage": stage, "Scope": scope, "Basis": basis,
+            "Name": stage, "Type": "component", "Quantity": 1, "Unit": "piece"}
+
+
+def _mat(arc: str, stage: str, name: str, qty, unit: str, code: str = "", ei_name: str = "",
+         ei_loc: str = "", **evolution) -> dict:
+    """A material row under its stage root. A code links it to ecoinvent."""
+    row = {"archetype_name": arc, "Stage": stage, "Parent": stage, "Name": name,
+           "Type": "material", "Quantity": qty, "Unit": unit}
+    if code:
+        row.update({"Ecoinvent Database": _EI_DB, "Ecoinvent Code": code,
+                    "Ecoinvent Name": ei_name, "Ecoinvent Location": ei_loc})
+    row.update(evolution)
+    return row
+
+
+# Example rows of the downloadable template, keyed by COLUMN NAME. A row is
+# written by header index (`_template_bom_row`), so adding, removing or
+# reordering a column in `_BOM_COLUMNS` can never shift a value under the wrong
+# header -- which is how Basis once pushed every cell one column left.
+# Basis is set on stage root rows only: 'per unit' for a whole-life amount,
+# 'per year' where the quantity is one year's amount (stock-phase consumption).
+_TEMPLATE_BOM_EXAMPLES: list[dict] = [
+    # Product_A -- full lifecycle with all four evolution methods illustrated.
+    _stage("Product_A", "Manufacturing", "inflows", "per unit"),
+    _mat("Product_A", "Manufacturing", "Steel", 900, "kg", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
+         **{"Evolution Method": "fixed"}),
+    _mat("Product_A", "Manufacturing", "Aluminium", 120, "kg", "EXAMPLE_CODE_ALU", "aluminium production", "GLO",
+         **{"Evolution Method": "learning_rate", "Learning Rate": -0.02, "Base Year": 2025}),
+    _stage("Product_A", "Key Component", "inflows", "per unit"),
+    _mat("Product_A", "Key Component", "Functional material", 300, "kg", "EXAMPLE_CODE_FUNCMAT",
+         "functional material, generic", "GLO",
+         **{"Evolution Method": "milestones", "Milestone Years": "2025;2035;2050", "Milestone Values": "300;230;180"}),
+    _stage("Product_A", "Use Phase", "stock", "per year"),
+    _mat("Product_A", "Use Phase", "Energy consumption", 2550, "kWh", "EXAMPLE_CODE_ELEC_MIX",
+         "market for electricity, low voltage", "EU",
+         **{"Evolution Method": "rebound_effect", "Rebound Rate": 0.015, "Base Year": 2025,
+            "Rebound Applies To Stages": "Use Phase"}),
+    _stage("Product_A", "End of Life", "outflows", "per unit"),
+    _mat("Product_A", "End of Life", "Treatment, generic", 1, "piece"),
+
+    # Product_B -- rebound with applies_to_stages filter + maintenance stage.
+    _stage("Product_B", "Manufacturing", "inflows", "per unit"),
+    _mat("Product_B", "Manufacturing", "Steel", 1100, "kg", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
+         **{"Evolution Method": "fixed"}),
+    _stage("Product_B", "Use Phase", "stock", "per year"),
+    _mat("Product_B", "Use Phase", "Fuel consumption", 727, "kg", "EXAMPLE_CODE_FUEL", "fuel, generic", "GLO",
+         **{"Evolution Method": "rebound_effect", "Rebound Rate": 0.02, "Base Year": 2025,
+            "Rebound Applies To Stages": "Use Phase"}),
+    _stage("Product_B", "Maintenance", "stock", "per year"),
+    _mat("Product_B", "Maintenance", "Replacement part", 13, "kg"),
+    _stage("Product_B", "End of Life", "outflows", "per unit"),
+    _mat("Product_B", "End of Life", "Treatment, generic", 1, "piece"),
+
+    # Asset_C -- no stock-phase consumption (manufacture + EOL only).
+    _stage("Asset_C", "Housing", "inflows", "per unit"),
+    _mat("Asset_C", "Housing", "Steel enclosure", 250, "kg", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
+         **{"Evolution Method": "fixed"}),
+    _stage("Asset_C", "Electronics", "inflows", "per unit"),
+    _mat("Asset_C", "Electronics", "Power electronics", 60, "kg", "EXAMPLE_CODE_ELEC", "electronics, unspecified", "GLO",
+         **{"Evolution Method": "learning_rate", "Learning Rate": -0.03, "Base Year": 2025}),
+    _stage("Asset_C", "End of Life", "outflows", "per unit"),
+    _mat("Asset_C", "End of Life", "Treatment, e-waste", 1, "piece"),
+]
+
+
+def _template_bom_row(example: dict) -> list:
+    """Lay one example out under ``_MULTI_BOM_COLUMNS`` by header name.
+
+    An unknown key raises, so a typo or a removed column fails loudly instead of
+    being dropped; a column the example does not mention stays blank."""
+    unknown = set(example) - set(_MULTI_BOM_COLUMNS)
+    if unknown:
+        raise KeyError(f"template example uses unknown BOM column(s): {sorted(unknown)}")
+    return [example.get(col, "") for col in _MULTI_BOM_COLUMNS]
+
+
 @router.get("/bom/template")
 async def download_bom_template() -> Response:
     wb = Workbook()
@@ -3145,60 +3227,8 @@ async def download_bom_template() -> Response:
 
     bom_ws = wb.create_sheet("BOM")
     bom_ws.append(_MULTI_BOM_COLUMNS)
-
-    def row(arc: str, *values):
-        bom_ws.append([arc, *values])
-
-    # Column order after archetype_name: Stage, Scope, Parent, Name, Type,
-    # Quantity, Unit, Ecoinvent Database/Code/Name/Location, Evolution Method,
-    # Learning Rate, Rebound Rate, Base Year, Milestone Years, Milestone Values,
-    # Rebound Applies To Stages.
-    # Scope is set on the stage ROOT row (Parent empty); child rows leave it blank.
-
-    # Product_A — full lifecycle with all four evolution methods illustrated.
-    row("Product_A", "Manufacturing", "inflows", "", "Manufacturing", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_A", "Manufacturing", "", "Manufacturing", "Steel", "material", 900, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
-        "fixed", "", "", "", "", "", "")
-    row("Product_A", "Manufacturing", "", "Manufacturing", "Aluminium", "material", 120, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_ALU", "aluminium production", "GLO",
-        "learning_rate", -0.02, "", 2025, "", "", "")
-    row("Product_A", "Key Component", "inflows", "", "Key Component", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_A", "Key Component", "", "Key Component", "Functional material", "material", 300, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_FUNCMAT", "functional material, generic", "GLO",
-        "milestones", "", "", "", "2025;2035;2050", "300;230;180", "")
-    row("Product_A", "Use Phase", "stock", "", "Use Phase", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_A", "Use Phase", "", "Use Phase", "Energy consumption", "material", 2550, "kWh",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_ELEC_MIX", "market for electricity, low voltage", "EU",
-        "rebound_effect", "", 0.015, 2025, "", "", "Use Phase")
-    row("Product_A", "End of Life", "outflows", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_A", "End of Life", "", "End of Life", "Treatment, generic", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-
-    # Product_B — rebound with applies_to_stages filter + maintenance stage.
-    row("Product_B", "Manufacturing", "inflows", "", "Manufacturing", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_B", "Manufacturing", "", "Manufacturing", "Steel", "material", 1100, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
-        "fixed", "", "", "", "", "", "")
-    row("Product_B", "Use Phase", "stock", "", "Use Phase", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_B", "Use Phase", "", "Use Phase", "Fuel consumption", "material", 727, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_FUEL", "fuel, generic", "GLO",
-        "rebound_effect", "", 0.02, 2025, "", "", "Use Phase")
-    row("Product_B", "Maintenance", "stock", "", "Maintenance", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_B", "Maintenance", "", "Maintenance", "Replacement part", "material", 13, "kg", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_B", "End of Life", "outflows", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Product_B", "End of Life", "", "End of Life", "Treatment, generic", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-
-    # Asset_C — no stock-phase consumption (manufacture + EOL only).
-    row("Asset_C", "Housing", "inflows", "", "Housing", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Asset_C", "Housing", "", "Housing", "Steel enclosure", "material", 250, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_STEEL", "steel production", "GLO",
-        "fixed", "", "", "", "", "", "")
-    row("Asset_C", "Electronics", "inflows", "", "Electronics", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Asset_C", "Electronics", "", "Electronics", "Power electronics", "material", 60, "kg",
-        "ecoinvent-3.9.1-cutoff", "EXAMPLE_CODE_ELEC", "electronics, unspecified", "GLO",
-        "learning_rate", -0.03, "", 2025, "", "", "")
-    row("Asset_C", "End of Life", "outflows", "", "End of Life", "component", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
-    row("Asset_C", "End of Life", "", "End of Life", "Treatment, e-waste", "material", 1, "piece", "", "", "", "", "", "", "", "", "", "", "")
+    for example in _TEMPLATE_BOM_EXAMPLES:
+        bom_ws.append(_template_bom_row(example))
 
     instructions = wb.create_sheet("Instructions")
     instructions.append(["Column", "Notes"])

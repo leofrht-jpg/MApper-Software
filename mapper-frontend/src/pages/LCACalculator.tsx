@@ -12,6 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Loader2, Download } from 'lucide-react'
 import { NumberInput } from '../components/ui/NumberInput'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
+import { ComputeOverlay } from '../components/ui/ComputeOverlay'
 import {
   Bar,
   BarChart,
@@ -1501,10 +1502,10 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
       {/* ── Activity mode: loading + error + results ── */}
       {fuMode === 'activity' && (
         <>
-          <ComputeProgress
+          <ComputeOverlay
             active={actCalculating}
-            label={`Running LCA for ${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'} on ${actDemand.length} activit${actDemand.length === 1 ? 'y' : 'ies'}…`}
-            bar="none"
+            title="Calculating LCA"
+            detail={`${actDemand.length} activit${actDemand.length === 1 ? 'y' : 'ies'} · ${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`}
             data-testid="activity-lca-progress"
           />
 
@@ -1730,10 +1731,10 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
       {/* ── Archetype mode: loading + error + results ── */}
       {fuMode === 'archetype' && (
         <>
-          <ComputeProgress
+          <ComputeOverlay
             active={arcCalculating}
-            label={`Running LCA for ${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'} on ${selectedArchetypes.map((a) => a.name).join(', ')}…`}
-            bar="none"
+            title="Calculating LCA"
+            detail={`${selectedArchetypes.map((a) => a.name).join(', ')} · ${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`}
             data-testid="archetype-lca-progress"
           />
 

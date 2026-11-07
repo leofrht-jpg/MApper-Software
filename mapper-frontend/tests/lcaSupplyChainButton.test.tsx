@@ -106,7 +106,7 @@ describe('Supply chain tree: explicit button', () => {
     const btn = q(container, 'lca-build-tree') as HTMLButtonElement
     expect(btn.textContent).toContain('Build supply chain tree')
     expect(btn.disabled).toBe(false)
-    expect(q(container, 'lca-tree-hint')!.textContent).toBe('Can take up to a minute on large databases.')
+    expect(q(container, 'lca-tree-hint')!.textContent).toBe('Up to a minute on large databases.')
     expect(q(container, 'tree-panel')).toBeNull()
     expect(q(container, 'lca-activity-contribution-progress')).toBeNull()
   })
@@ -132,6 +132,8 @@ describe('Supply chain tree: explicit button', () => {
     // honest wording: Discard, never Stop/Cancel
     expect(progress.textContent).toContain('Discard')
     expect(progress.textContent).not.toMatch(/\b(Stop|Cancel)\b/)
+    expect(q(container, 'lca-tree-discard-note')).toBeNull()      // behind the (i) until opened
+    await click(q(container, 'lca-tree-discard-info')!)
     expect(q(container, 'lca-tree-discard-note')!.textContent).toContain('The server may keep computing')
 
     await answer(0)

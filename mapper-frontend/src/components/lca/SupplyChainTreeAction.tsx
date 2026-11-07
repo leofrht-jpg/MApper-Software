@@ -10,6 +10,7 @@
 import { Network } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { ComputeProgress } from '../ui/ComputeProgress'
+import { InfoButton } from '../ui/InfoButton'
 
 interface Props {
   /** Prefix of the test ids: 'lca-activity' or 'lca-archetype'. */
@@ -62,24 +63,29 @@ export function SupplyChainTreeAction({
           {error ? 'Try again' : 'Build supply chain tree'}
         </Button>
         <span data-testid={`${idPrefix}-tree-hint`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-          Can take up to a minute on large databases.
+          Up to a minute on large databases.
         </span>
       </div>
 
       {running && (
-        <>
-          <ComputeProgress
-            active
-            label="Building the supply chain tree…"
-            bar="none"
-            onCancel={onDiscard}
-            cancelLabel="Discard"
-            data-testid={`${testId}-contribution-progress`}
-          />
-          <span data-testid={`${idPrefix}-tree-discard-note`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>
-            Discard stops waiting for the result. The server may keep computing until it finishes.
-          </span>
-        </>
+        <ComputeProgress
+          active
+          label="Building the supply chain tree…"
+          bar="none"
+          cancelSlot={(
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Button variant="danger" size="sm" data-testid={`${idPrefix}-tree-discard`} onClick={onDiscard}>
+                Discard
+              </Button>
+              <InfoButton label="About discarding" data-testid={`${idPrefix}-tree-discard-info`}>
+                <span data-testid={`${idPrefix}-tree-discard-note`}>
+                  Discard stops waiting for the result. The server may keep computing until it finishes.
+                </span>
+              </InfoButton>
+            </span>
+          )}
+          data-testid={`${testId}-contribution-progress`}
+        />
       )}
 
       {!running && discarded && (

@@ -53,10 +53,14 @@ describe('LCACalculator timers migrated to <ComputeProgress>', () => {
     expect(src).toContain('<StopButton taskId={myCancel.taskId}')
   })
 
-  it('activity / archetype loaders have no fabricated bar (none)', () => {
+  it('activity / archetype loaders are the full-screen <ComputeOverlay> with no fabricated pct', () => {
+    // Single-product LCA uses the SAME overlay as Impact Assessment (the fix for "no overlay on Calculate").
+    expect(src).toMatch(/import\s*\{\s*ComputeOverlay\s*\}/)
+    const overlays = src.match(/<ComputeOverlay\b[\s\S]*?\/>/g) ?? []
     for (const id of ['activity-lca-progress', 'archetype-lca-progress']) {
-      expect(blocks[id], `${id} present`).toBeTruthy()
-      expect(blocks[id], `${id} bar=none`).toContain('bar="none"')
+      const b = overlays.find((o) => o.includes(`data-testid="${id}"`))
+      expect(b, `${id} present`).toBeTruthy()
+      expect(b, `${id} has no pct`).not.toContain('pct=')
     }
   })
 
@@ -66,8 +70,11 @@ describe('LCACalculator timers migrated to <ComputeProgress>', () => {
     const block = tree.match(/<ComputeProgress\b[\s\S]*?\/>/)?.[0] ?? ''
     expect(block).toContain('bar="none"')
     expect(block).toContain('data-testid={`${testId}-contribution-progress`}')
-    // "Discard", never "Stop"/"Cancel": the server cannot cancel the computation.
-    expect(block).toContain('cancelLabel="Discard"')
+    // "Discard", never "Stop"/"Cancel": the server cannot cancel the computation. It is the danger
+    // <Button> (see singleProductLcaOverlayAndDiscard.test.tsx), carried by the card's cancelSlot.
+    expect(block).toContain('cancelSlot=')
+    expect(tree).toContain('Discard')
+    expect(tree).not.toContain('cancelLabel=')
     // No bespoke timer and no invented phases anywhere around it.
     expect(tree).not.toContain('setInterval')
     for (const phase of ['Computing inventory', 'Top processes', 'Top emissions']) {

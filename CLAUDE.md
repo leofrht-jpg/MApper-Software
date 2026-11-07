@@ -7,6 +7,7 @@
 - `mapper-frontend/CLAUDE.md`: UI conventions, charts, frontend testing (loads under that directory).
 - `mapper-backend/CLAUDE.md`: LCA/DSM backend, authored databases, uncertainty, registries (loads under that directory).
 - Skills in `.claude/skills/`: `mapper-impact-assessment`, `mapper-single-product`, `mapper-monte-carlo`, `mapper-multi-product`, `mapper-archetypes` (invoke when working on those features).
+- New UI: buttons, help text and warnings follow the templates in the "UI templates" section of `mapper-frontend/CLAUDE.md` (Export secondary + download icon; Discard/Delete/Remove `danger`; Cancel `ghost`; long help behind `InfoButton`; warnings one line + `DetailsToggle`). `tests/uiButtonConformance.test.ts` fails on a new off-template button.
 - Stack, directory layout and route list: read `package.json`, `pyproject.toml`, `ls`, and `mapper-backend/mapper/routers/`.
 
 ## Hard rules

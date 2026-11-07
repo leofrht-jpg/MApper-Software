@@ -11,7 +11,7 @@ import type { ReactNode } from 'react'
 import { AlertCircle, AlertTriangle } from 'lucide-react'
 import { Button } from './Button'
 import { DetailsToggle } from './DetailsToggle'
-import { fillSummary, lookupDiagnostic, type DiagnosticSeverity } from '../../utils/diagnostics'
+import { fillSummary, lookupDiagnostic, type DiagnosticParams, type DiagnosticSeverity } from '../../utils/diagnostics'
 import { useDiagnosticHelpStore } from '../../stores/diagnosticHelpStore'
 
 interface Props {
@@ -22,7 +22,7 @@ interface Props {
   /** The original text from the backend (or the screen). Always kept: it is the Details body. */
   message: string
   /** Values for the `{placeholders}` of the registry summary. */
-  params?: Record<string, string | number | undefined>
+  params?: DiagnosticParams
   /** How many occurrences this line stands for; shown as "3×" and never hidden. */
   count?: number
   /** Extra material for the Details body, after the message (for example the list of rows). */

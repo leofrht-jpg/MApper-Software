@@ -1,7 +1,7 @@
 {
   "biosphere_link": {
     "title": "Row links a biosphere flow",
-    "summary": "Row links a biosphere flow",
+    "summary": "Row links a biosphere flow {row}",
     "cause": "A BOM row can only link an activity (a process), not an emission or resource flow.",
     "fix": "Create an authored activity that carries the emission as a biosphere exchange, and link the row to it.",
     "severity": "error",
@@ -11,7 +11,7 @@
   },
   "bom_biosphere_link": {
     "title": "File refused: biosphere link",
-    "summary": "Import refused: {count} row(s) link a biosphere flow",
+    "summary": "Import refused: {count} row(s) link a biosphere flow {row}",
     "cause": "A BOM row can only link an activity, and a flow can never compute. Nothing was imported.",
     "fix": "Fix the rows listed, or link an authored activity that carries the emission, then import again.",
     "severity": "error",
@@ -21,7 +21,7 @@
   },
   "code_truncated": {
     "title": "Truncated code",
-    "summary": "Activity code has the wrong length",
+    "summary": "Activity code has the wrong length {row}",
     "cause": "An ecoinvent code has 32 characters. This one was cut short or mistyped.",
     "fix": "Copy the code again from Database Explorer, or replace the placeholder with a real code.",
     "severity": "error",
@@ -31,7 +31,7 @@
   },
   "code_not_found": {
     "title": "Code not in database",
-    "summary": "Code not found in the database",
+    "summary": "Code not found in the database {row}",
     "cause": "The database exists, but it has no activity with this code.",
     "fix": "Check the code and the database name, or pick the activity again in Database Explorer.",
     "severity": "error",
@@ -41,7 +41,7 @@
   },
   "database_missing": {
     "title": "Database not installed",
-    "summary": "Database not installed in this project",
+    "summary": "Database not installed in this project {row}",
     "cause": "The row names a database this project does not hold.",
     "fix": "Install that database, or change the row to a database you have.",
     "severity": "error",
@@ -51,7 +51,7 @@
   },
   "code_no_database": {
     "title": "Code without database",
-    "summary": "Code given without a database",
+    "summary": "Code given without a database {row}",
     "cause": "The row has an activity code but no database name.",
     "fix": "Fill in Ecoinvent Database for the row.",
     "severity": "error",
@@ -61,7 +61,7 @@
   },
   "database_no_code": {
     "title": "Database without code",
-    "summary": "Database given without a code",
+    "summary": "Database given without a code {row}",
     "cause": "The row has a database name but no activity code.",
     "fix": "Fill in Ecoinvent Code, or clear the database to leave the row unlinked.",
     "severity": "error",
@@ -71,7 +71,7 @@
   },
   "name_mismatch": {
     "title": "Name mismatch",
-    "summary": "BOM name differs from the activity name",
+    "summary": "BOM name differs from the activity name {row}",
     "cause": "The name in the BOM is not the name of the linked activity.",
     "fix": "Check you linked the right activity. The link is used as it is.",
     "severity": "warning",
@@ -81,7 +81,7 @@
   },
   "location_mismatch": {
     "title": "Location mismatch",
-    "summary": "BOM location differs from the activity location",
+    "summary": "BOM location differs from the activity location {row}",
     "cause": "The location in the BOM is not the location of the linked activity.",
     "fix": "Check you linked the right activity. The link is used as it is.",
     "severity": "warning",
@@ -91,7 +91,7 @@
   },
   "unit_mismatch": {
     "title": "Unit mismatch",
-    "summary": "Unit differs from the activity unit",
+    "summary": "Unit differs from the activity unit {row}",
     "cause": "The row's unit measures something other than the activity's reference unit.",
     "fix": "Change the unit, or link an activity that is measured in the same kind of unit.",
     "severity": "warning",
@@ -101,7 +101,7 @@
   },
   "stage_scope_defaulted": {
     "title": "Stage scope defaulted",
-    "summary": "Stage scope not set, counted as inflows",
+    "summary": "Stage scope not set, counted as inflows {row}",
     "cause": "The stage name matched no keyword and has no Scope, so it counts as production.",
     "fix": "Set Scope on the stage root row: inflows, stock or outflows.",
     "severity": "warning",
@@ -111,7 +111,7 @@
   },
   "waste_sign": {
     "title": "Positive quantity on a waste treatment",
-    "summary": "Positive quantity on a waste treatment",
+    "summary": "Positive quantity on a waste treatment {row}",
     "cause": "ecoinvent enters waste inputs as negative amounts, so a positive one gives a credit, not a burden.",
     "fix": "Enter the quantity as negative if you mean a burden. The row computes as entered.",
     "severity": "warning",

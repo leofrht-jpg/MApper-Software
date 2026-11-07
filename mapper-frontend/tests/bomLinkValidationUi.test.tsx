@@ -82,7 +82,7 @@ describe('a file with biosphere-flow rows is refused with sheet, row and column'
     await choose()
     const box = screen.getByTestId('bom-import-refusal')
     // one visible line with the count; the original message and the rows are behind Details
-    expect(screen.getByTestId('bom-import-refusal-summary')).toHaveTextContent('Import refused: 2 row(s) link a biosphere flow')
+    expect(screen.getByTestId('bom-import-refusal-summary')).toHaveTextContent('Import refused: 2 row(s) link a biosphere flow (rows 4, 9)')
     expect(screen.getByTestId('bom-import-refusal-message')).toHaveTextContent('cannot link a biosphere flow')
     expect(screen.getByTestId('bom-import-refusal-message')).not.toBeVisible()
     await click(screen.getByTestId('bom-import-refusal-details-toggle'))

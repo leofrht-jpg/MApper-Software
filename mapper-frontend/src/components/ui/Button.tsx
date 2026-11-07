@@ -65,6 +65,9 @@ export function Button({ variant = 'primary', size = 'md', style, children, ...p
         transition: `background-color var(--duration-fast) var(--ease-out), border-color var(--duration-fast) var(--ease-out)`,
         outline: 'none',
         ...styles[variant],
+        // The standard disabled look (the same as FilterDropdown): without it a disabled
+        // button looked clickable and did nothing.
+        ...(props.disabled ? { opacity: 0.5, cursor: 'not-allowed' } : null),
         ...style,
       }}
     >

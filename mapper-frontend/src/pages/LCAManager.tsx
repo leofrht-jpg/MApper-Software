@@ -222,7 +222,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
               <Diagnostic
                 code="bom_biosphere_link"
                 severity="error"
-                params={{ count: refusal.rows.length }}
+                params={{ count: refusal.rows.length, row: refusal.rows.map((r) => r.row) }}
                 message={refusal.message}
                 data-testid="bom-import-refusal"
               >

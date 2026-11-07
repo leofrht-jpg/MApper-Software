@@ -14,6 +14,8 @@ import type {
   AmountPreset,
   ArchetypeStageAmounts,
 } from '../../stores/singleProductImpactStore'
+import { StageBasisSelect } from './StageBasisSelect'
+import { ONE_YEAR_NOTE, annualStagesCountOneYear } from './oneYearNote'
 
 interface Props {
   archetype: ArchetypeSummary
@@ -143,30 +145,12 @@ export function StageAmountsEditor({
                 {stage}
               </span>
               {onDeclareBasis && stageId ? (
-                <select
+                <StageBasisSelect
                   data-testid={`stage-basis-select-${stage}`}
-                  value={basis ?? ''}
-                  onChange={(e) => {
-                    void onDeclareBasis(stage, (e.target.value || 'unset') as 'per_unit' | 'per_year' | 'unset')
-                  }}
-                  title={
-                    basis === null
-                      ? `Not declared — computes at x1. Suggested from scope: ${suggestion.replace('_', ' ')}.`
-                      : undefined
-                  }
-                  style={{
-                    height: 20, padding: '0 4px',
-                    backgroundColor: basis === null ? 'var(--bg-surface)' : 'var(--bg-elevated)',
-                    border: `1px solid ${basis === null ? 'var(--warning)' : 'var(--border-default)'}`,
-                    borderRadius: 'var(--radius-sm)',
-                    color: basis === null ? 'var(--warning)' : 'var(--text-secondary)',
-                    fontSize: 9, outline: 'none',
-                  }}
-                >
-                  <option value="">not declared</option>
-                  <option value="per_unit">per unit</option>
-                  <option value="per_year">per year</option>
-                </select>
+                  basis={basis}
+                  suggestion={suggestion}
+                  onChange={(b) => { void onDeclareBasis(stage, b) }}
+                />
               ) : (
                 <span
                   data-testid={`stage-basis-label-${stage}`}
@@ -209,6 +193,11 @@ export function StageAmountsEditor({
           )
         })}
       </div>
+      {annualStagesCountOneYear(stages.filter((st) => stageBasis(archetype, st, projectBasis) === 'per_year'), value) && (
+        <span data-testid="stage-amounts-one-year-note" style={{ fontSize: 10, color: 'var(--text-tertiary)', marginTop: 4 }}>
+          {ONE_YEAR_NOTE}
+        </span>
+      )}
     </div>
   )
 }
@@ -271,7 +260,7 @@ export function lifetimeBlockedReason(
 ): string | null {
   const undeclared = undeclaredStages(arc, projectBasis)
   if (undeclared.length > 0) {
-    return `Declare a basis for ${undeclared.join(', ')} to enter years.`
+    return 'Years need a basis on every stage. For Manufacturing and End of Life choose per unit (counted once).'
   }
   if (!(arc.stages ?? []).some((s) => stageBasis(arc, s, projectBasis) === 'per_year')) {
     return 'No per-year stages, so the years have no effect.'

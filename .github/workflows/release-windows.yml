@@ -51,7 +51,7 @@ jobs:
       # the slowest step, and the key is environment.yml so any dependency
       # change invalidates it.
       - name: Cache conda packages
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: ${{ runner.temp }}/conda_pkgs
           key: conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}
@@ -182,7 +182,7 @@ jobs:
           Write-Host "uploaded ${{ steps.art.outputs.name }} to $tag"
 
       # Kept regardless of the upload, so a failed run still yields the binary.
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: mapper-windows-installer

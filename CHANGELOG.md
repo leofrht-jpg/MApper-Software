@@ -22,6 +22,7 @@ at 0.3.1 and is kept from here on.
 ### Fixed
 
 - **LCA Architect search timer.** The 300 ms delay on the activity search is now cancelled when the page is left, so it no longer fires after the page is gone. No visible change; it removes an occasional "window is not defined" error at the end of a test run.
+- **The (i) help popover is no longer cut off at the window edge.** It is placed against the window: below the button when it fits, above when it does not, shifted to stay 8 px inside, and narrowed in a small window. It also opens in front of panels that clip their content.
 
 ## [0.4.0] — 2026-11-07
 

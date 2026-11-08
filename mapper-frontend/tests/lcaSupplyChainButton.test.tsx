@@ -231,6 +231,20 @@ describe('Supply chain tree: explicit button', () => {
     expect(pending[0].signal!.aborted).toBe(true)
   })
 
+  it('leaving the page cancels the debounced activity search that is still waiting', async () => {
+    // Picking the database re-emits the cleared filters, which starts the 300 ms search debounce.
+    // A timer left running after unmount fires into a torn-down test environment ("window is not
+    // defined" from the state update), so it must be cleared with the page.
+    const set = vi.spyOn(globalThis, 'setTimeout')
+    const clear = vi.spyOn(globalThis, 'clearTimeout')
+    const { unmount } = await mount()
+    await waitFor(() => expect(set.mock.calls.some(([, ms]) => ms === 300)).toBe(true))
+    const i = set.mock.calls.findIndex(([, ms]) => ms === 300)
+    const debounce = set.mock.results[i].value
+    unmount()
+    expect(clear.mock.calls.some(([id]) => id === debounce)).toBe(true)
+  })
+
   it('an error shows the red line and a "Try again" button that asks once more', async () => {
     const { container } = await mount()
     await calculate(container)

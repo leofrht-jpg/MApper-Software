@@ -15,6 +15,7 @@ at 0.3.1 and is kept from here on.
 ### Changed
 
 - **Runtime dependency updates.** React and React DOM 19.3.1, d3 7.9.2, lucide-react 1.68.0, zustand 5.0.16 and the React type packages 19.3.0. Two updates are held back on purpose: svg2pdf.js stays at 2.7.0 (later versions break chart export loading) and @tanstack/react-virtual stays at 3.14.10 (3.14.26 empties the Database Explorer list in tests).
+- **Tooling and CI updates.** CI actions in the Windows release workflow (cache 6, upload-artifact 7), ESLint 10, vitest 5 with @vitest/ui, and TypeScript major versions are ignored by Dependabot (TypeScript 7 is not yet supported by typescript-eslint).
 
 ## [0.4.0] — 2026-11-07
 

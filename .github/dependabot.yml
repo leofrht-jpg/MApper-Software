@@ -53,6 +53,12 @@ updates:
       # 3.14.10 until checked in the real app.
       - dependency-name: "@tanstack/react-virtual"
         versions: [">3.14.10"]
+      # TypeScript 7 is the native compiler with almost no JS API, and
+      # typescript-eslint refuses to run on it ("does not support TS 7.0", peer
+      # typescript <6.1.0). Revisit when typescript-eslint supports it (closed
+      # PR #123).
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(deps)"
 

@@ -1517,11 +1517,13 @@ export interface ActivityLCAResult {
 export async function calculateActivityLCA(
   activities: ActivityDemandItem[],
   methods: string[][],
+  signal?: AbortSignal,
 ): Promise<ActivityLCAResult> {
   return request<ActivityLCAResult>('/lca/calculate-activities', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ activities, methods }),
+    ...(signal ? { signal } : {}),
   })
 }
 
@@ -1582,6 +1584,8 @@ export interface CalculateArchetypeLCAOptions {
   amount?: number
   computeDatabase?: string | null
   parameterScenario?: string | null
+  /** Frees the CLIENT only: the server finishes the computation anyway. */
+  signal?: AbortSignal
 }
 
 export async function calculateArchetypeLCA(
@@ -1590,7 +1594,7 @@ export async function calculateArchetypeLCA(
   methods: string[][],
   options: CalculateArchetypeLCAOptions = {},
 ): Promise<ArchetypeLCACalculateResult> {
-  const { stageAmounts, amount, computeDatabase, parameterScenario } = options
+  const { stageAmounts, amount, computeDatabase, parameterScenario, signal } = options
   return request<ArchetypeLCACalculateResult>('/lca/calculate-archetype', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -1603,6 +1607,7 @@ export async function calculateArchetypeLCA(
       compute_database: computeDatabase ?? null,
       parameter_scenario: parameterScenario ?? null,
     }),
+    ...(signal ? { signal } : {}),
   })
 }
 
@@ -1663,11 +1668,13 @@ export interface MultiProductLCAResult {
 
 export async function calculateMultiProductLCA(
   body: MultiProductLCARequest,
+  signal?: AbortSignal,
 ): Promise<MultiProductLCAResult> {
   return request<MultiProductLCAResult>('/lca/calculate-multi-product', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
+    ...(signal ? { signal } : {}),
   })
 }
 

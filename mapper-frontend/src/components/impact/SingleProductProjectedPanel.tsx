@@ -31,6 +31,9 @@ import { ScenarioYearPicker } from './ScenarioYearPicker'
 import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeOverlay } from '../ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../ui/ComputeOverlay'
+import { StoppedNotice } from '../ui/StoppedNotice'
+import { useStopWaiting } from '../../hooks/useStopWaiting'
 import { ViewToggle } from './ViewToggle'
 import { MethodSelector } from './MethodSelector'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
@@ -93,6 +96,8 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
   const [configExpanded, setConfigExpanded] = useState(true)
   const [resultsExpanded, setResultsExpanded] = useState(true)
   const [isCalculating, setIsCalculating] = useState(false)
+  // "Stop waiting": aborts the request in flight and ends the loop; the server finishes anyway.
+  const { begin: beginRun, owns: ownsRun, end: endRun, stop: stopRun, stopped } = useStopWaiting()
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   // Runs outlive the panel (App mounts one page at a time), keyed per
@@ -366,6 +371,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
 
   const handleCalculate = useCallback(async () => {
     if (!archetypeId || selectedMethods.length === 0 || selectedDbs.length === 0) return
+    const run = beginRun()
     setIsCalculating(true)
     setError(null)
     setRuns([])
@@ -387,7 +393,10 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
         const result = await calculateArchetypeLCA(archetypeId, scope, selectedMethods, {
           computeDatabase: db.name,
           stageAmounts: currentStageAmounts ?? undefined,
+          signal: run.signal,
         })
+        // Stopped, replaced or unmounted: end the loop, apply nothing (databases already done are dropped).
+        if (!ownsRun(run)) return
         acc.push({ dbName: db.name, year: db.year, iam: db.iam, ssp: db.ssp, result })
         setProgress({ done: i + 1, total: dbsToRun.length })
       }
@@ -395,12 +404,13 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
       setRuns(acc)
       setActiveRunIdx(0)
     } catch (e: unknown) {
+      if (!ownsRun(run)) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setIsCalculating(false)
-      setProgress(null)
+      // Stop already closed the overlay; only the live run ends it here.
+      if (ownsRun(run)) { endRun(run); setIsCalculating(false); setProgress(null) }
     }
-  }, [archetypeId, scope, selectedMethods, selectedDbs, databases, currentStageAmounts, stageAmountsByArc, setProjectedRunMeta,
+  }, [beginRun, ownsRun, endRun, archetypeId, scope, selectedMethods, selectedDbs, databases, currentStageAmounts, stageAmountsByArc, setProjectedRunMeta,
       setRuns, setActiveRunIdx])
 
   const isMulti = runs.length > 1
@@ -664,8 +674,13 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
         detail={`${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`
           + (progress ? ` · background database ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : '')}
         pct={progress && progress.total > 0 ? progress.done / progress.total : null}
+        slowNote={SLOW_RUN_NOTE}
+        onCancel={() => { stopRun(); setIsCalculating(false); setProgress(null) }}
+        cancelLabel={STOP_WAITING_LABEL}
+        cancelNote={STOP_WAITING_NOTE}
         data-testid="single-product-projected-progress"
       />
+      {stopped && !isCalculating && <StoppedNotice data-testid="single-product-projected-stopped" />}
 
       {hasResults && activeRun && (
         <CollapsibleCard

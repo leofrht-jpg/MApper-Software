@@ -37,6 +37,13 @@ import { formatElapsed } from './ElapsedCounter'
  *  Sub-second runs (a DSM simulation) then never flash a card. */
 export const OVERLAY_REVEAL_MS = 250
 
+/** For runs whose server side cannot be stopped: the button says "Stop waiting" and this note sits under it. */
+export const STOP_WAITING_LABEL = 'Stop waiting'
+export const STOP_WAITING_NOTE = 'The calculation may keep running in the background; the next one can take longer.'
+/** Appended to the detail line after SLOW_RUN_SECONDS, when a caller passes `slowNote`. */
+export const SLOW_RUN_SECONDS = 20
+export const SLOW_RUN_NOTE = 'Large databases can take a few minutes.'
+
 interface Props {
   active: boolean
   /** What is running, e.g. "Computing AESA". */
@@ -52,11 +59,15 @@ interface Props {
   cancelling?: boolean
   /** Stop did not reach the task (shown on the card; Stop stays available). */
   cancelError?: string | null
+  /** A caller's own line under the button (default: none). Monte Carlo passes nothing and is unchanged. */
+  cancelNote?: ReactNode
+  /** Added to the detail line once the run has lasted SLOW_RUN_SECONDS (default: none). */
+  slowNote?: ReactNode
   'data-testid'?: string
 }
 
 export function ComputeOverlay({
-  active, title, detail, pct, onCancel, cancelLabel = 'Stop', cancelling = false, cancelError = null, 'data-testid': testId = 'compute-overlay',
+  active, title, detail, pct, onCancel, cancelLabel = 'Stop', cancelling = false, cancelError = null, cancelNote, slowNote, 'data-testid': testId = 'compute-overlay',
 }: Props) {
   const seconds = useElapsedSeconds(active)
   const [revealed, setRevealed] = useState(false)
@@ -116,9 +127,12 @@ export function ComputeOverlay({
           <div data-testid={`${testId}-title`} style={{ fontSize: 17, fontWeight: 600, letterSpacing: '.02em' }}>
             {title}
           </div>
-          {detail && (
+          {(detail || (slowNote && seconds >= SLOW_RUN_SECONDS)) && (
             <div data-testid={`${testId}-detail`} style={{ fontSize: 13, color: '#8b97a5', lineHeight: 1.5 }}>
               {detail}
+              {slowNote && seconds >= SLOW_RUN_SECONDS && (
+                <div data-testid={`${testId}-slow-note`}>{slowNote}</div>
+              )}
             </div>
           )}
           {hasPct && (
@@ -153,6 +167,11 @@ export function ComputeOverlay({
             >
               {cancelling ? 'Stopping…' : cancelLabel}
             </button>
+          )}
+          {onCancel && cancelNote && (
+            <div data-testid={`${testId}-cancel-note`} style={{ fontSize: 12, color: '#8b97a5', lineHeight: 1.5 }}>
+              {cancelNote}
+            </div>
           )}
           <style>{`
             .co-spinner { width: 34px; height: 34px; border: 3px solid #1f2937; border-top-color: #14b8a6;

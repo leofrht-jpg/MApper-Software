@@ -18,6 +18,7 @@ at 0.3.1 and is kept from here on.
 - **Tooling and CI updates.** CI actions in the Windows release workflow (cache 6, upload-artifact 7), ESLint 10, vitest 5 with @vitest/ui, and TypeScript major versions are ignored by Dependabot (TypeScript 7 is not yet supported by typescript-eslint).
 - **@tanstack/react-virtual 3.14.26** (virtual-core 3.19.11), with its Dependabot hold removed. The Database Explorer list test now mocks `clientHeight` and `clientWidth`, which the new version reads. The held-back note on the runtime updates line no longer applies.
 - **"Stop waiting" on the Calculating LCA cards.** LCA Architect (activity and archetype), Multi-item comparison and single-product Static and Prospective now have a Stop waiting button. It ends the screen's wait and shows a neutral "Stopped" line; the server still finishes the calculation, so the next one can queue behind it.
+- **Windows installer: fast solver (UMFPACK).** The Windows release build now installs scikit-umfpack and fails if it does not load, agree with SciPy's solver, and ship with its DLLs and report "UMFPACK solver: OK" from the built sidecar. Pending a test of the built installer on a real Windows laptop; until then the Windows build should be assumed to still use the slow solver.
 
 ### Fixed
 

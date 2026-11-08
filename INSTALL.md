@@ -43,7 +43,7 @@ The rest of this guide covers running MApper from source.
 ## Prerequisites
 
 - **Miniconda** or Anaconda ([download](https://docs.conda.io/en/latest/miniconda.html))
-- **Node.js 18+** ([download](https://nodejs.org))
+- **Node.js 22.12 or later** ([download](https://nodejs.org)); 24 is recommended (what CI uses). Avoid Node 25: vitest 5 does not support it.
 - **ecoinvent** licence and the EcoSpold2 release of the version and system
   model you want (for example 3.12 cut-off), unzipped — needed
   for real assessments only. To try MApper without one, see
@@ -162,7 +162,7 @@ To generate prospective databases, you need an encryption key:
 | Disk    | 5 GB                                      | 15 GB (with prospective DBs)   |
 | OS      | macOS 13+, Windows 10+, Ubuntu 22.04+     |                                |
 | Python  | 3.11                                      | 3.11                           |
-| Node.js | 18                                        | 20+                            |
+| Node.js | 22.12                                     | 24 (not 25)                    |
 
 ## Troubleshooting
 

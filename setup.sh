@@ -46,7 +46,7 @@ command -v conda >/dev/null 2>&1 || {
   exit 1
 }
 command -v node >/dev/null 2>&1 || {
-  echo "Node.js not found. Install from https://nodejs.org (v20+; CI uses 24)"
+  echo "Node.js not found. Install from https://nodejs.org (22.12 or later; 24 recommended, CI uses 24; not 25)"
   exit 1
 }
 

@@ -17,6 +17,10 @@ at 0.3.1 and is kept from here on.
 - **Runtime dependency updates.** React and React DOM 19.3.1, d3 7.9.2, lucide-react 1.68.0, zustand 5.0.16 and the React type packages 19.3.0. Two updates are held back on purpose: svg2pdf.js stays at 2.7.0 (later versions break chart export loading) and @tanstack/react-virtual stays at 3.14.10 (3.14.26 empties the Database Explorer list in tests).
 - **Tooling and CI updates.** CI actions in the Windows release workflow (cache 6, upload-artifact 7), ESLint 10, vitest 5 with @vitest/ui, and TypeScript major versions are ignored by Dependabot (TypeScript 7 is not yet supported by typescript-eslint).
 
+### Fixed
+
+- **LCA Architect search timer.** The 300 ms delay on the activity search is now cancelled when the page is left, so it no longer fires after the page is gone. No visible change; it removes an occasional "window is not defined" error at the end of a test run.
+
 ## [0.4.0] — 2026-11-07
 
 ### Added

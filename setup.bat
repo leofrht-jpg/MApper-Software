@@ -39,7 +39,7 @@ if errorlevel 1 (
 )
 where node >nul 2>nul
 if errorlevel 1 (
-    echo Node.js not found. Install from https://nodejs.org ^(v20+; CI uses 24^)
+    echo Node.js not found. Install from https://nodejs.org ^(22.12 or later; 24 recommended, CI uses 24; not 25^)
     exit /b 1
 )
 

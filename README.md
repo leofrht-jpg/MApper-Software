@@ -189,7 +189,7 @@ To run MApper from source instead, see the Quickstart below.
 ### Prerequisites
 
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or Anaconda
-- [Node.js 18+](https://nodejs.org)
+- [Node.js 22.12 or later](https://nodejs.org) (24 recommended; avoid 25, which vitest 5 does not support)
 - An ecoinvent licence and the EcoSpold2 release of the version and system model you want (unzipped) — see [Example: first analysis](#example-first-analysis)
 
 ### Install & run
@@ -304,7 +304,7 @@ Full instructions are in [INSTALL.md](INSTALL.md).
 | Disk    | 5 GB                                  | 15 GB (with prospective DBs) |
 | OS      | macOS 13+, Windows 10+, Ubuntu 22.04+ |                              |
 | Python  | 3.11                                  | 3.11                         |
-| Node.js | 18                                    | 20+                          |
+| Node.js | 22.12                                 | 24 (not 25)                  |
 
 ## Commercial use
 

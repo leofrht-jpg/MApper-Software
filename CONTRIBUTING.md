@@ -18,7 +18,7 @@ MApper has a FastAPI/Python backend and a React/TypeScript/Vite frontend.
 ### Prerequisites
 
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) or Anaconda
-- [Node.js 18+](https://nodejs.org) (20+ recommended)
+- [Node.js 22.12 or later](https://nodejs.org) (24 recommended, what CI uses; avoid 25, which vitest 5 does not support)
 - Git
 
 ### Setup

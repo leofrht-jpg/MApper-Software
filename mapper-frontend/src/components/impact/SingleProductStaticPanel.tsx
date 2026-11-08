@@ -32,6 +32,9 @@ import { StageBreakdownChart } from '../charts/StageBreakdownChart'
 import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeOverlay } from '../ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../ui/ComputeOverlay'
+import { StoppedNotice } from '../ui/StoppedNotice'
+import { useStopWaiting } from '../../hooks/useStopWaiting'
 import { stageAmountsEqual } from './StageAmountsEditor'
 import { useMonteCarloStore } from '../../stores/monteCarloStore'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
@@ -101,6 +104,8 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
   }, [paramTable, selectedScenarios])
 
   const [isCalculating, setIsCalculating] = useState(false)
+  // "Stop waiting": aborts the request in flight and ends the loop; the server finishes anyway.
+  const { begin: beginRun, owns: ownsRun, end: endRun, stop: stopRun, stopped } = useStopWaiting()
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
   const [error, setError] = useState<string | null>(null)
   // The computed runs outlive the panel: App mounts one page at a time, so
@@ -175,6 +180,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
 
   const handleCalculate = useCallback(async () => {
     if (!archetypeId || selectedMethods.length === 0) return
+    const run = beginRun()
     setIsCalculating(true)
     setError(null)
     setResultsByScenario({})
@@ -197,7 +203,10 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
         const result = await calculateArchetypeLCA(archetypeId, scope, selectedMethods, {
           parameterScenario: sc === BASE_SCENARIO ? null : sc,
           stageAmounts: currentStageAmounts ?? undefined,
+          signal: run.signal,
         })
+        // Stopped, replaced or unmounted: end the loop, apply nothing (cases already done are dropped).
+        if (!ownsRun(run)) return
         acc[sc] = result
         setProgress({ done: i + 1, total: scenariosToRun.length })
       }
@@ -207,12 +216,13 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
       setScenarioOrder(scenariosToRun)
       setActiveScenario(scenariosToRun[0])
     } catch (e: unknown) {
+      if (!ownsRun(run)) return
       setError(e instanceof Error ? e.message : String(e))
     } finally {
-      setIsCalculating(false)
-      setProgress(null)
+      // Stop already closed the overlay; only the live run ends it here.
+      if (ownsRun(run)) { endRun(run); setIsCalculating(false); setProgress(null) }
     }
-  }, [archetypeId, scope, selectedMethods, currentStageAmounts, stageAmountsByArc, setStaticRunMeta,
+  }, [beginRun, ownsRun, endRun, archetypeId, scope, selectedMethods, currentStageAmounts, stageAmountsByArc, setStaticRunMeta,
       setResultsByScenario, setScenarioOrder, setActiveScenario, setRunId, effectiveCases])
 
   const isMulti = scenarioOrder.length > 1
@@ -433,8 +443,13 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
         detail={`${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`
           + (progress && progress.total > 1 ? ` · sensitivity case ${Math.min(progress.done + 1, progress.total)} of ${progress.total}` : '')}
         pct={progress && progress.total > 1 ? progress.done / progress.total : null}
+        slowNote={SLOW_RUN_NOTE}
+        onCancel={() => { stopRun(); setIsCalculating(false); setProgress(null) }}
+        cancelLabel={STOP_WAITING_LABEL}
+        cancelNote={STOP_WAITING_NOTE}
         data-testid="single-product-static-progress"
       />
+      {stopped && !isCalculating && <StoppedNotice data-testid="single-product-static-stopped" />}
 
       {hasResults && activeResult && (
         <CollapsibleCard

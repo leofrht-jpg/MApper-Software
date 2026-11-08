@@ -9,10 +9,13 @@
 
 import { CollapsibleBlock } from '../components/ui/CollapsibleBlock'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useStopWaiting } from '../hooks/useStopWaiting'
+import { StoppedNotice } from '../components/ui/StoppedNotice'
 import { Loader2, Download } from 'lucide-react'
 import { NumberInput } from '../components/ui/NumberInput'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
 import { ComputeOverlay } from '../components/ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../components/ui/ComputeOverlay'
 import {
   Bar,
   BarChart,
@@ -153,6 +156,9 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   const [arcResults, setArcResults] = useSessionState<ArchetypeLCACalculateResult[]>('lcaCalculator.arcResults', [])
   const [arcResultIndex, setArcResultIndex] = useSessionState('lcaCalculator.arcResultIndex', 0)
   const [arcCalculating, setArcCalculating] = useState(false)
+  // One controller per run: "Stop waiting" frees the screen; the server finishes anyway.
+  const arcRun = useStopWaiting()
+  const actRun = useStopWaiting()
   const [arcError, setArcError] = useState<string | null>(null)
   const [isExporting, setIsExporting] = useState(false)
 
@@ -583,6 +589,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   // ── Archetype calculate (supports multi-archetype) ──
   const handleArchetypeCalculate = async () => {
     if (selectedArchetypes.length === 0 || selectedMethods.length === 0) return
+    const run = arcRun.begin()
     setArcCalculating(true)
     setArcError(null)
     setArcResults([])
@@ -594,22 +601,27 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
         selectedArchetypes.map((arc) => {
           const entry = arcAmountsMap[arc.id]
           const sa = entry && Object.keys(entry.amounts).length > 0 ? entry.amounts : undefined
-          return calculateArchetypeLCA(arc.id, scope, selectedMethods, { stageAmounts: sa })
+          return calculateArchetypeLCA(arc.id, scope, selectedMethods, { stageAmounts: sa, signal: run.signal })
         }),
       )
+      if (!arcRun.owns(run)) return
       setArcResults(results)
       setArcResultIndex(0)
       setCaSnapshot({ computeDatabase, computeYear, demand: null })
     } catch (e: unknown) {
+      // Stopped, replaced or unmounted: not an error, and nothing is applied.
+      if (!arcRun.owns(run)) return
       setArcError(e instanceof Error ? e.message : String(e))
     } finally {
-      setArcCalculating(false)
+      // Stop already closed the overlay; only the live run ends it here.
+      if (arcRun.owns(run)) { arcRun.end(run); setArcCalculating(false) }
     }
   }
 
   // ── Activity calculate (multi-activity via REST) ──
   const handleActivityCalculate = async () => {
     if (actDemand.length === 0 || selectedMethods.length === 0) return
+    const run = actRun.begin()
     setActCalculating(true)
     setActError(null)
     setActResult(null)
@@ -622,14 +634,16 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
         code: d.act.code,
         amount: d.amount,
       }))
-      const result = await calculateActivityLCA(activities, selectedMethods)
+      const result = await calculateActivityLCA(activities, selectedMethods, run.signal)
+      if (!actRun.owns(run)) return
       setActResult(result)
       setActResultIndex(0)
       setCaSnapshot({ computeDatabase, computeYear, demand: actDemand.map((d) => ({ ...d })) })
     } catch (e: unknown) {
+      if (!actRun.owns(run)) return
       setActError(e instanceof Error ? e.message : String(e))
     } finally {
-      setActCalculating(false)
+      if (actRun.owns(run)) { actRun.end(run); setActCalculating(false) }
     }
   }
 
@@ -1547,8 +1561,13 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
             active={actCalculating}
             title="Calculating LCA"
             detail={`${actDemand.length} activit${actDemand.length === 1 ? 'y' : 'ies'} · ${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`}
+            slowNote={SLOW_RUN_NOTE}
+            onCancel={() => { actRun.stop(); setActCalculating(false) }}
+            cancelLabel={STOP_WAITING_LABEL}
+            cancelNote={STOP_WAITING_NOTE}
             data-testid="activity-lca-progress"
           />
+          {actRun.stopped && !actCalculating && <StoppedNotice data-testid="activity-lca-stopped" />}
 
           {actError && (
             <div style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--danger)' }}>
@@ -1776,8 +1795,13 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
             active={arcCalculating}
             title="Calculating LCA"
             detail={`${selectedArchetypes.map((a) => a.name).join(', ')} · ${selectedMethods.length} indicator${selectedMethods.length === 1 ? '' : 's'}`}
+            slowNote={SLOW_RUN_NOTE}
+            onCancel={() => { arcRun.stop(); setArcCalculating(false) }}
+            cancelLabel={STOP_WAITING_LABEL}
+            cancelNote={STOP_WAITING_NOTE}
             data-testid="archetype-lca-progress"
           />
+          {arcRun.stopped && !arcCalculating && <StoppedNotice data-testid="archetype-lca-stopped" />}
 
           {arcError && (
             <div style={{ backgroundColor: 'var(--danger-muted)', border: '1px solid var(--danger)', borderRadius: 'var(--radius-md)', padding: 'var(--space-4)', fontSize: 'var(--text-sm)', color: 'var(--danger)' }}>

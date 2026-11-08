@@ -60,6 +60,15 @@ outside the repository; this file holds items recorded from work done in it.
     whole project.
   Making any of these stoppable means turning it into a registered task with
   checkpoints (the plca/impact/monte_carlo pattern), not a frontend change.
+  **Update:** the LCA Architect "Calculating LCA" cards (activity and archetype
+  mode), Multi-item comparison, and single-product Static and Prospective now
+  have a client-side "Stop waiting" (feat/stop-waiting-lca). It aborts the
+  request and ends the screen's wait; the server finishes the computation
+  anyway and holds `compute_lock`, so the next calculation queues behind it.
+  A real server-side stop (registered tasks with checkpoints, or a worker
+  process) remains open, and is needed for the single factorization that takes
+  about 2 minutes on Windows without UMFPACK. Still without any Stop: AESA,
+  System-level Static, DSM simulation, project export and import.
 - [ ] **pLCA generation honours cancel only between premise stages.** The
   checkpoint is premise_engine's stage callback, so a Stop during one long
   premise transformation waits until that stage ends.

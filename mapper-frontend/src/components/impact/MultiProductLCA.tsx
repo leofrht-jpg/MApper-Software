@@ -43,6 +43,8 @@ import { MultiProductLineChart } from './MultiProductLineChart'
 import { shortenByCommonPrefix } from '../../utils/labelPrefix'
 import { StageAmountsEditor, YearsInput, canApplyLifetime, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
 import { ComputeOverlay } from '../ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../ui/ComputeOverlay'
+import { StoppedNotice } from '../ui/StoppedNotice'
 import { InfoButton } from '../ui/InfoButton'
 import { useBOMStore } from '../../stores/bomStore'
 import { useParameterStore } from '../../stores/parameterStore'
@@ -140,6 +142,8 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
   const clearItems = useMultiProductLCAStore((s) => s.clearItems)
   const clearResults = useMultiProductLCAStore((s) => s.clearResults)
   const compute = useMultiProductLCAStore((s) => s.compute)
+  const stop = useMultiProductLCAStore((s) => s.stop)
+  const multiStopped = useMultiProductLCAStore((s) => s.multiStopped)
 
   const [scope, setScope] = useState<Scope>('all')
   const [methods, setMethods] = useState<string[][]>([])
@@ -733,8 +737,13 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
         active={multiLoading}
         title="Comparing items"
         detail={`${selectedItems.length} item${selectedItems.length === 1 ? '' : 's'} · ${methods.length} indicator${methods.length === 1 ? '' : 's'}`}
+        slowNote={SLOW_RUN_NOTE}
+        onCancel={stop}
+        cancelLabel={STOP_WAITING_LABEL}
+        cancelNote={STOP_WAITING_NOTE}
         data-testid="multi-product-compute-progress"
       />
+      {multiStopped && !multiLoading && <StoppedNotice data-testid="multi-product-stopped" />}
 
       {/* Results — Patch 4AG.4 ships the chart + view toggle + export.
           The basic table from 4AG.3 is preserved as the alternative

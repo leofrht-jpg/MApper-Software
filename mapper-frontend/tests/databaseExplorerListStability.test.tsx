@@ -50,6 +50,10 @@ beforeEach(() => {
     { x: 0, y: 0, top: 0, left: 0, right: 600, bottom: 400, width: 600, height: 400, toJSON: () => ({}) } as DOMRect)
   Object.defineProperty(HTMLElement.prototype, 'offsetHeight', { configurable: true, get: () => 400 })
   Object.defineProperty(HTMLElement.prototype, 'offsetWidth', { configurable: true, get: () => 600 })
+  // virtual-core 3.19 reads the viewport from clientHeight/clientWidth (it read offsetHeight/offsetWidth
+  // before) and jsdom has no layout, so without these the virtualizer sees a 0 px viewport and renders no rows
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 400 })
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 600 })
   scrollTo = vi.fn(function (this: HTMLElement, opts: { top: number }) { this.scrollTop = opts.top })
   ;(Element.prototype as any).scrollTo = scrollTo
   useActivityStore.getState().reset()

@@ -16,6 +16,7 @@ at 0.3.1 and is kept from here on.
 
 - **Runtime dependency updates.** React and React DOM 19.3.1, d3 7.9.2, lucide-react 1.68.0, zustand 5.0.16 and the React type packages 19.3.0. Two updates are held back on purpose: svg2pdf.js stays at 2.7.0 (later versions break chart export loading) and @tanstack/react-virtual stays at 3.14.10 (3.14.26 empties the Database Explorer list in tests).
 - **Tooling and CI updates.** CI actions in the Windows release workflow (cache 6, upload-artifact 7), ESLint 10, vitest 5 with @vitest/ui, and TypeScript major versions are ignored by Dependabot (TypeScript 7 is not yet supported by typescript-eslint).
+- **@tanstack/react-virtual 3.14.26** (virtual-core 3.19.11), with its Dependabot hold removed. The Database Explorer list test now mocks `clientHeight` and `clientWidth`, which the new version reads. The held-back note on the runtime updates line no longer applies.
 
 ## [0.4.0] — 2026-11-07
 

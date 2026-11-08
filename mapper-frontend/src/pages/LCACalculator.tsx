@@ -182,6 +182,11 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
   // actDemand[].act.{name,product,key,...} keeps working unchanged).
   const [searchedActivities, setSearchedActivities] = useState<ActivitySummary[]>([])
   const actSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // The search debounce must not outlive the page: a timer that fires after unmount (or after the
+  // test environment is torn down) updates state on a component that is gone.
+  useEffect(() => () => {
+    if (actSearchTimerRef.current) clearTimeout(actSearchTimerRef.current)
+  }, [])
   // Patch 4AI — track the current activity-mode search inputs so
   // filter changes can re-fire the backend search with the right
   // query AND filter params. Filter change without re-search would

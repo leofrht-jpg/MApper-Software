@@ -18,6 +18,10 @@ at 0.3.1 and is kept from here on.
 - **Tooling and CI updates.** CI actions in the Windows release workflow (cache 6, upload-artifact 7), ESLint 10, vitest 5 with @vitest/ui, and TypeScript major versions are ignored by Dependabot (TypeScript 7 is not yet supported by typescript-eslint).
 - **@tanstack/react-virtual 3.14.26** (virtual-core 3.19.11), with its Dependabot hold removed. The Database Explorer list test now mocks `clientHeight` and `clientWidth`, which the new version reads. The held-back note on the runtime updates line no longer applies.
 
+### Fixed
+
+- **LCA Architect search timer.** The 300 ms delay on the activity search is now cancelled when the page is left, so it no longer fires after the page is gone. No visible change; it removes an occasional "window is not defined" error at the end of a test run.
+
 ## [0.4.0] — 2026-11-07
 
 ### Added

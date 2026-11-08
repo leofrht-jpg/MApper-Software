@@ -75,8 +75,8 @@ fi
 conda activate map
 
 # ── sparse solver (macOS/Linux only) ─────────────────────────────────────────
-# Not in environment.yml because conda-forge has no win-64 build, which would
-# make that file unsolvable on Windows. Prospective-LCA speed depends on it:
+# Not in environment.yml because macOS and Windows need different builds, and
+# the Windows one would make that file unsolvable (see INSTALL.md). Prospective-LCA speed depends on it:
 # without UMFPACK a run falls back to spsolve-per-call and takes tens of
 # minutes instead of under a minute.
 case "$(uname -s)" in

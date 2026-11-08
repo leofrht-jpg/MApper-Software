@@ -556,10 +556,10 @@ export interface DSMSystemColors {
  * Patch 4AK: ``rowColorOverrides`` (per-cohort-key) layer in.
  * Resolution by ``stackByDimension`` mode:
  *
- *   - single-dim (stackByDimension non-null): use per-dimension
- *     ``colorMap`` (Patch 4AJ overrides + algorithm). Row overrides
- *     DO NOT apply here — single-dim charts must paint by dim value
- *     so all (BEV-LFP, *) cohorts share one color.
+ *   - single-dim (stackByDimension non-null): an explicit row override
+ *     wins here too (see ``colorForCohort``). A cohort WITHOUT one uses the
+ *     per-dimension ``colorMap`` (Patch 4AJ overrides + algorithm), so
+ *     cohorts without an override that share a dim value share one color.
  *
  *   - cohort-key (stackByDimension null): check row override first,
  *     fall back to algorithm modulo. Row overrides ARE the primary

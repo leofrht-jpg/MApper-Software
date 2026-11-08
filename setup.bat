@@ -21,7 +21,7 @@ REM was, silently mutating a working environment. Recreating is opt-in:
 REM
 REM     setup.bat --force
 REM
-REM scikit-umfpack is NOT installed here: conda-forge publishes no win-64 build.
+REM scikit-umfpack is NOT installed here: the win-64 build needs a --no-deps install, see INSTALL.md.
 REM Windows uses the spsolve fallback, which is correct but slower for
 REM prospective LCA.
 setlocal enabledelayedexpansion

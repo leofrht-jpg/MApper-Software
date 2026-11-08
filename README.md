@@ -177,7 +177,8 @@ to try MApper without it, see
 **The sparse solver differs by platform.** The macOS build links UMFPACK
 through scikit-umfpack, so each prospective database is factorised once and
 reused for every later solve. The Windows build falls back to SciPy's SuperLU
-(conda-forge publishes no Windows build of scikit-umfpack). The results are the
+(the Windows installer is built without scikit-umfpack; a source install on
+Windows can add it, see the Windows steps in INSTALL.md). The results are the
 same to solver tolerance, but large sparse solves, such as prospective runs over
 many years, are slower on Windows.
 
@@ -201,7 +202,7 @@ conda env create -f environment.yml   # pinned environment; the one CI uses
 conda activate map
 
 # macOS/Linux only — the sparse solver that makes prospective LCA fast.
-# Not in environment.yml because conda-forge has no Windows build.
+# Not in environment.yml because macOS and Windows need different builds (see INSTALL.md).
 conda install -c conda-forge scikit-umfpack=0.3.3 suitesparse
 
 ( cd mapper-frontend && npm ci )

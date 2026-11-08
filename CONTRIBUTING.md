@@ -38,7 +38,7 @@ the one to use if you want your results to match the pipeline. `./setup.sh`
 modify an existing `map` environment unless you pass `--force`.
 
 On macOS/Linux, add the sparse solver after creating the env — it is not in
-`environment.yml` because conda-forge has no Windows build, and release builds
+`environment.yml` because macOS and Windows need different builds, and release builds
 need it for the prospective-LCA fast path:
 
 ```bash

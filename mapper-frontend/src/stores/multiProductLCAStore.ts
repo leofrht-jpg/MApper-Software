@@ -65,6 +65,8 @@ interface MultiProductLCAState {
   // Partial-success runs (some items succeed, some fail) populate
   // multiResult AND leave multiError null.
   multiError: string | null
+  /** "Stop waiting" ended the last run: a neutral line, not an error; cleared by the next run. */
+  multiStopped: boolean
 
   addItem: (item: ProductItem) => void
   // Set one item's stage amounts (per-item override from its editor).
@@ -101,6 +103,8 @@ interface MultiProductLCAState {
     /** Sensitivity cases to run. Absent/empty = Base only. */
     cases?: string[]
   }) => Promise<void>
+  /** Stop waiting for the run in flight. The server finishes it anyway; nothing from it is applied. */
+  stop: () => void
   reset: () => void
 }
 
@@ -114,6 +118,8 @@ export interface MultiRunSnapshot {
   activities: Record<string, { database: string; code: string; amount: number; year: number | null }>
 }
 let _runCounter = 0
+// The run in flight, if any. Module-level like the store itself: a run outlives its page.
+let _live: AbortController | null = null
 
 export type VintageCoordMap = Record<string, {
   label: string
@@ -169,6 +175,7 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
   multiCaseOrder: [],
   multiLoading: false,
   multiError: null,
+  multiStopped: false,
 
   setItemStageAmounts: (key, value) => set((s) => ({
     stageAmountsByItem: { ...s.stageAmountsByItem, [key]: value },
@@ -238,7 +245,10 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
     // Base is always first and always present: every other case is read
     // against it.
     const cases = ['Base', ...(params.cases ?? []).filter((c) => c !== 'Base')]
-    set({ multiLoading: true, multiError: null })
+    _live?.abort()
+    const run = new AbortController()
+    _live = run
+    set({ multiLoading: true, multiError: null, multiStopped: false })
     try {
       const byCase: Record<string, MultiProductLCAResult> = {}
       for (const c of cases) {
@@ -247,8 +257,11 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
           methods,
           scope,
           compute_database: computeDatabase ?? null,
-        })
+        }, run.signal)
       }
+      // Stopped or replaced while waiting: nothing from this run reaches the store.
+      if (_live !== run) return
+      _live = null
       const result = byCase['Base']
       set({
         multiResult: result, multiVintageCoords: vintageCoords,
@@ -256,6 +269,8 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
         multiByCase: byCase, multiCaseOrder: cases, multiLoading: false,
       })
     } catch (e) {
+      if (_live !== run) return
+      _live = null
       set({
         multiLoading: false,
         multiError: e instanceof Error ? e.message : String(e),
@@ -266,17 +281,30 @@ export const useMultiProductLCAStore = create<MultiProductLCAState>((set, get) =
     }
   },
 
-  reset: () => set({
-    selectedItems: [],
-    stageAmountsByItem: {},
-    multiResult: null,
-    multiVintageCoords: null,
-    multiRun: null,
-    multiByCase: null,
-    multiCaseOrder: [],
-    multiLoading: false,
-    multiError: null,
-  }),
+  stop: () => {
+    const run = _live
+    if (!run) return
+    _live = null
+    run.abort()
+    set({ multiLoading: false, multiError: null, multiStopped: true })
+  },
+
+  reset: () => {
+    _live?.abort()
+    _live = null
+    set({
+      selectedItems: [],
+      stageAmountsByItem: {},
+      multiResult: null,
+      multiVintageCoords: null,
+      multiRun: null,
+      multiByCase: null,
+      multiCaseOrder: [],
+      multiLoading: false,
+      multiError: null,
+      multiStopped: false,
+    })
+  },
 }))
 
 // Re-scope to the current bw2 project: every per-archetype slot here is keyed

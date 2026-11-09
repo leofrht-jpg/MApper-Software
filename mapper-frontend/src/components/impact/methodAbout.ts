@@ -12,7 +12,7 @@ import type { LCIAMethodInfo } from '../../api/client'
 /** An (i) text longer than this (characters) is condensed: three short sentences, the rest under Details. */
 export const ABOUT_LIMIT = 350
 
-type AboutFields = Pick<LCIAMethodInfo, 'long_description' | 'factor_source' | 'notes'>
+type AboutFields = Pick<LCIAMethodInfo, 'long_description' | 'factor_source' | 'notes' | 'offline'>
 
 /** The characters of text the (i) of a method entry would hold in full. */
 export function aboutLength(m: AboutFields): number {
@@ -52,11 +52,15 @@ export function methodAbout(m: AboutFields): MethodAbout {
   return {
     full: false,
     lead,
-    note: m.notes ?? null,
+    // An offline entry says so in the footer line; an entry that downloads and has no note says so here.
+    note: m.notes || (m.offline ? null : NEEDS_DOWNLOAD_NOTE),
     moreDescription: rest || null,
     moreSource: m.factor_source ?? null,
   }
 }
+
+/** The one sentence a condensed (i) says about the download when the entry has no note of its own. */
+export const NEEDS_DOWNLOAD_NOTE = 'Needs a download when you install.'
 
 /** The pointer sentence that ends a condensed (i). */
 export const ABOUT_MORE_POINTER = 'More under Details.'

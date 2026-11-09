@@ -21,7 +21,7 @@ import { YEARS_LOCKED_TOOLTIP } from '../src/components/impact/yearsLock'
 import {
   StageAmountsEditor, YearsInput, canApplyLifetime, defaultStageAmounts, stageAmountsForPreset,
 } from '../src/components/impact/StageAmountsEditor'
-import { ABOUT_LIMIT, aboutLength, firstSentence, methodAbout } from '../src/components/impact/methodAbout'
+import { ABOUT_LIMIT, aboutLength, firstSentence, methodAbout, NEEDS_DOWNLOAD_NOTE } from '../src/components/impact/methodAbout'
 import type { ArchetypeSummary } from '../src/api/client'
 
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers() })
@@ -240,6 +240,23 @@ describe('the Method Library (i) text', () => {
     expect((a.lead ?? '').length + (a.note ?? '').length + 'More under Details.'.length).toBeLessThanOrEqual(ABOUT_LIMIT)
   })
 
+  it('an entry that downloads and has no note of its own gets one short sentence about the download (IMPACT World+)', () => {
+    const IW_LONG = 'Midpoint, expert and footprint versions. Covers ~18 midpoint categories with regionalized characterisation factors. CIRAIG.'
+    const IW_SRC = 'The characterisation factors come from the IMPACT World+ 2.2.1 Brightway package published on Zenodo, downloaded when you install (the variant built for your project\'s ecoinvent version); the package links them to biosphere3 itself, so this app shows no linked or skipped count for it.'
+    const m = { long_description: IW_LONG, factor_source: IW_SRC, notes: null, offline: false }
+    const a = methodAbout(m)
+    expect(a.full).toBe(false)
+    expect(a.lead).toBe('Midpoint, expert and footprint versions.')
+    expect(a.note).toBe(NEEDS_DOWNLOAD_NOTE)
+    expect(a.note).toBe('Needs a download when you install.')
+    expect((a.lead ?? '').length + (a.note ?? '').length + 'More under Details.'.length).toBeLessThanOrEqual(ABOUT_LIMIT)
+    // the long text stays in Details, word for word
+    expect(a.moreDescription).toBe('Covers ~18 midpoint categories with regionalized characterisation factors. CIRAIG.')
+    expect(a.moreSource).toBe(IW_SRC)
+    // an offline entry without a note says so in the footer line, not twice
+    expect(methodAbout({ ...m, offline: true }).note).toBeNull()
+  })
+
   it('firstSentence does not split inside version numbers or counts', () => {
     expect(firstSentence('Installs 54 methods (22,986 characterisation factors). All three.')).toBe('Installs 54 methods (22,986 characterisation factors).')
     expect(firstSentence('ecoinvent 3.9 and v3.1 only')).toBe('ecoinvent 3.9 and v3.1 only')
@@ -250,11 +267,13 @@ describe('the Method Library (i) text', () => {
     const catalogue = JSON.parse(fs.readFileSync(file, 'utf8')) as { methods: Array<{ id: string; installer?: string; long_description?: string; notes?: string; factor_source?: string }> }
     expect(catalogue.methods.length).toBeGreaterThan(0)
     for (const e of catalogue.methods) {
-      const m = { long_description: e.long_description ?? null, notes: e.notes ?? null, factor_source: e.installer === 'bundled_ef' ? SRC_TXT : (e.factor_source ?? null) }
+      const m = { long_description: e.long_description ?? null, notes: e.notes ?? null, factor_source: e.installer === 'bundled_ef' ? SRC_TXT : (e.factor_source ?? null), offline: e.installer === 'bundled_ef' }
       const a = methodAbout(m)
       const shown = a.full ? aboutLength(m) : (a.lead ?? '').length + (a.note ?? '').length + 'More under Details.'.length
       expect(shown, e.id).toBeLessThanOrEqual(ABOUT_LIMIT)
       if (!a.full) expect(`${a.lead} ${a.moreDescription ?? ''}`.trim(), e.id).toBe((m.long_description ?? '').trim())
+      // a shortened (i) still says whether the method works offline or needs a download
+      if (!a.full) expect(`${a.lead} ${a.note ?? ''}`, e.id).toMatch(/offline|download|internet/i)
     }
   })
 })

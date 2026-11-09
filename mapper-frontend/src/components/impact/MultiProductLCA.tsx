@@ -68,6 +68,7 @@ import {
 } from '../../api/client'
 import { CoverageGapNote, NotSpecifiedMarker, gapsFor } from '../authored/CoverageMarkers'
 import { useMonteCarloStore } from '../../stores/monteCarloStore'
+import { formatRunTime } from '../../utils/runTime'
 
 type Scope = 'inflows' | 'stock' | 'outflows' | 'all'
 // Within-type comparison: a comparison is of ONE type (archetypes OR
@@ -1001,7 +1002,7 @@ function ResultsSection({
         flexWrap: 'wrap',
       }}>
         <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
-          {result.elapsed_seconds.toFixed(2)}s
+          {formatRunTime(result.elapsed_seconds) ?? ''}
         </span>
         <span style={{ flex: 1 }} />
         {/* Method picker (chart view only — table shows all methods at once) */}

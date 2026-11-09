@@ -1513,13 +1513,21 @@ def _compute_contribution_analysis(
         }
         _contribution_cache[cache_key] = cached
 
-    elapsed = round(time.perf_counter() - t0, 3)
-
     from mapper import __version__ as _mapper_version
 
     gaps, gap_warning = _coverage_gaps(source_keys, [method_tuple], bw2data.projects.current)
     if gap_warning:
         translation_warnings = [*translation_warnings, gap_warning]
+
+    # The time shown with a result is the wall time of the run that PRODUCED it: this whole call
+    # (demand, matrices, factorisation, solves, attribution, tree). It is stored with the cache entry,
+    # so a request served from the cache reports that original time (and ``cached``), not the
+    # microseconds the lookup took -- which the screen used to print as "0.00s".
+    if needs_recompute:
+        elapsed = round(time.perf_counter() - t0, 3)
+        cached["compute_seconds"] = elapsed
+    else:
+        elapsed = float(cached.get("compute_seconds") or round(time.perf_counter() - t0, 3))
 
     return ContributionAnalysisResult(
         coverage_gaps=gaps,
@@ -1542,6 +1550,7 @@ def _compute_contribution_analysis(
         cutoff=body.cutoff,
         max_depth=body.max_depth,
         elapsed_seconds=elapsed,
+        cached=not needs_recompute,
         warnings=list(translation_warnings),
         computed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         mapper_version=_mapper_version,
@@ -1690,6 +1699,12 @@ def _build_multi_year_result(
 
     first = per_year_results[sorted_years[0]]
 
+    # Every year came from the cache: this request took milliseconds, but the result took the sum of
+    # the years' original run times. Show that, flagged, as for a single year.
+    all_cached = all(r.cached for r in per_year_results.values())
+    if all_cached:
+        elapsed = round(sum(r.elapsed_seconds for r in per_year_results.values()), 3)
+
     return MultiYearContributionResult(
         target_type=first.target_type,
         target_label=first.target_label,
@@ -1703,6 +1718,7 @@ def _build_multi_year_result(
         cutoff=body.cutoff,
         max_depth=body.max_depth,
         elapsed_seconds=elapsed,
+        cached=all_cached,
         warnings=aggregated_warnings,
         computed_at=datetime.datetime.now(datetime.timezone.utc).isoformat(),
         mapper_version=_mapper_version,

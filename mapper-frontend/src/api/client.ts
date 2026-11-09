@@ -1807,7 +1807,10 @@ export interface ContributionAnalysisResult {
   by_stage?: StageContribution[]
   cutoff: number
   max_depth: number
+  /** Wall time of the run that produced the result; for a cached response, the original run's time. */
   elapsed_seconds: number
+  /** Served from the backend's in-memory cache. */
+  cached?: boolean
   // Non-fatal warnings (e.g. activity-key fallbacks for missing prospective DB entries).
   warnings?: string[]
   // Reproducibility stamps.
@@ -1906,6 +1909,8 @@ export interface MultiYearContributionResult {
   cutoff: number
   max_depth: number
   elapsed_seconds: number
+  /** Every year served from the cache; the time is then the sum of the years' original times. */
+  cached?: boolean
   warnings: string[]
   computed_at?: string | null
   mapper_version?: string | null

@@ -15,13 +15,19 @@ name: Release (Windows)
 on:
   push:
     tags: ["v*"]
-  # Manual re-run for a tag that already exists, so a failed bundle can be
-  # retried without moving the tag.
+  # Manual run. Two uses, told apart by the ref it is dispatched from:
+  #   - dispatched FROM A TAG (Run workflow > "Use workflow from: Tags > v0.x.y"):
+  #     retries a failed bundle for that tag and uploads to ITS release;
+  #   - dispatched FROM A BRANCH: builds that branch and keeps the installer as
+  #     a workflow artifact ONLY. It never touches a release.
+  # The upload step enforces this (see its `if:`). A published release is
+  # irreversible (Zenodo archives it), so no manual run on a branch may reach one.
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing tag to build and upload to (e.g. v0.2.1)"
-        required: true
+        description: "Optional. Leave EMPTY. Only meaningful if it equals the tag this run was dispatched from."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -43,7 +49,12 @@ jobs:
         run: |
           $t = if ($env:INPUT_TAG) { $env:INPUT_TAG } else { "${{ github.ref_name }}" }
           "tag=$t" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          Write-Host "building for tag: $t"
+          Write-Host "building: $t (ref ${{ github.ref }})"
+          if ("${{ github.ref }}" -like "refs/tags/*") {
+            Write-Host "tag ref: the installer will be uploaded to the release for $t"
+          } else {
+            Write-Host "NOT a tag ref: the installer stays a workflow artifact; nothing is uploaded to any release"
+          }
         env:
           INPUT_TAG: ${{ github.event.inputs.tag }}
 
@@ -70,6 +81,24 @@ jobs:
           environment-file: environment.yml
           auto-activate-base: false
 
+      # The fast sparse solver. Without it the Windows build falls back to SuperLU
+      # and ONE factorisation takes about 150 s (153.88 s measured on a Windows
+      # laptop for a one-material, one-indicator LCA); with it, seconds. The same
+      # steps as INSTALL.md "Quick Start (Windows)". environment.yml cannot list
+      # it: conda-forge has only 0.4.2 for win-64 and its metadata carries the
+      # numpy it was built against (numpy >=2.3.5) on top of the real ABI floor
+      # (numpy >=1.23), which conflicts with the pinned numpy 1.26.4, so the
+      # exact build is installed WITHOUT dependency resolution. Placed before
+      # the pin check so that check also catches anything this install moved.
+      - name: Install scikit-umfpack (pinned build, --no-deps) and SuiteSparse
+        shell: pwsh
+        run: |
+          conda install -y -q -c conda-forge suitesparse
+          if ($LASTEXITCODE -ne 0) { throw "conda install suitesparse failed ($LASTEXITCODE)" }
+          conda install -y -q --no-deps https://conda.anaconda.org/conda-forge/win-64/scikit-umfpack-0.4.2-py311hb8cab9b_2.conda
+          if ($LASTEXITCODE -ne 0) { throw "conda install scikit-umfpack failed ($LASTEXITCODE)" }
+          conda list --no-pip | Select-String -Pattern "suitesparse|libumfpack|libcholmod|libamd|libcamd|libccolamd|libcolamd|libsuitesparseconfig|scikit-umfpack|^numpy |^scipy |libblas|liblapack"
+
       # A release artefact must be built against the pinned stack, and an
       # import check does NOT detect drift -- a drifted env imports everything
       # perfectly well. So compare the INSTALLED versions against the pins
@@ -85,6 +114,13 @@ jobs:
       - name: Verify pinned versions match environment.yml
         shell: pwsh
         run: python scripts/verify_pins.py
+
+      # (a) The solver loads and agrees with SciPy's SuperLU, through the same
+      # code MApper runs (PersistentLCARunner) on a synthetic project in a
+      # throwaway directory. Fails the build if _UMFPACK_OK is false.
+      - name: Verify UMFPACK loads and solves identically (build environment)
+        shell: pwsh
+        run: python scripts/verify_umfpack.py
 
       - uses: actions/setup-node@v7
         with:
@@ -121,6 +157,57 @@ jobs:
             throw "frozen sidecar mapper-backend.exe not produced"
           }
           Write-Host "sidecar built"
+
+      # (b) The frozen folder carries the extension and every DLL it needs.
+      - name: Verify the frozen sidecar bundles UMFPACK and its DLL closure
+        shell: pwsh
+        run: |
+          pip install --quiet pefile
+          python scripts/verify_frozen_umfpack.py mapper-backend/dist/mapper-backend
+
+      # (c) Start the frozen sidecar the way the app does, on a spare port with
+      # throwaway Brightway and log directories, and read its own startup line.
+      # No project, no database, nothing of a user's is involved (a fresh runner).
+      - name: Smoke-start the frozen sidecar and read "UMFPACK solver"
+        shell: pwsh
+        run: |
+          $tmp = Join-Path $env:RUNNER_TEMP "mapper-smoke"
+          Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+          New-Item -ItemType Directory -Force -Path "$tmp\logs", "$tmp\bw" | Out-Null
+          $env:MAPPER_PORT = "18765"
+          $env:MAPPER_LOG_DIR = "$tmp\logs"
+          $env:BRIGHTWAY2_DIR = "$tmp\bw"
+          $exe = (Resolve-Path "mapper-backend/dist/mapper-backend/mapper-backend.exe").Path
+          $p = Start-Process -FilePath $exe -PassThru -WindowStyle Hidden `
+                 -RedirectStandardOutput "$tmp\stdout.txt" -RedirectStandardError "$tmp\stderr.txt"
+          try {
+            $ok = $false
+            for ($i = 0; $i -lt 90; $i++) {
+              if ($p.HasExited) { break }
+              try {
+                $r = Invoke-RestMethod -Uri "http://127.0.0.1:18765/api/health" -TimeoutSec 3
+                if ($r.status -eq "ok") { $ok = $true; break }
+              } catch { }
+              Start-Sleep -Seconds 2
+            }
+            if (-not $ok) {
+              Write-Host "---- stdout"; Get-Content "$tmp\stdout.txt" -ErrorAction SilentlyContinue | Select-Object -Last 40
+              Write-Host "---- stderr"; Get-Content "$tmp\stderr.txt" -ErrorAction SilentlyContinue | Select-Object -Last 40
+              throw "frozen sidecar did not answer /api/health on port 18765 (exited: $($p.HasExited))"
+            }
+            $log = Join-Path "$tmp\logs" "mapper.log"
+            $line = $null
+            for ($i = 0; $i -lt 15; $i++) {
+              if (Test-Path $log) { $line = Select-String -Path $log -Pattern "UMFPACK solver:" | Select-Object -Last 1 }
+              if ($line) { break }
+              Start-Sleep -Seconds 1
+            }
+            if (-not $line) { throw "no 'UMFPACK solver:' line in $log" }
+            Write-Host $line.Line
+            if ($line.Line -notmatch "UMFPACK solver: OK") { throw "frozen sidecar reports the slow fallback: $($line.Line)" }
+          } finally {
+            if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force }
+          }
 
       # STEP 3 -- stage the onedir where tauri.conf.json's bundle.resources
       # expects it. No symlink dereferencing needed here: that is a macOS
@@ -164,7 +251,13 @@ jobs:
       # The tag push and the release creation are separate events, so the
       # release may not exist yet when this job reaches here. Wait rather than
       # fail: the alternative is a green build with no uploaded asset.
+      # GUARD: only a run on a tag ref uploads, and only to that same tag. A
+      # manual run on a branch (or one whose optional `tag` input names another
+      # tag) stops here and keeps the installer as the workflow artifact below.
+      # Without this, a branch dispatch with tag=v0.4.0 would `--clobber` the
+      # published v0.4.0 asset.
       - name: Upload to the release for this tag
+        if: startsWith(github.ref, 'refs/tags/') && (github.event.inputs.tag == '' || github.event.inputs.tag == github.ref_name)
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

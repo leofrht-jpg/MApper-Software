@@ -77,8 +77,8 @@ conda activate map
 # ── sparse solver (macOS/Linux only) ─────────────────────────────────────────
 # Not in environment.yml because macOS and Windows need different builds, and
 # the Windows one would make that file unsolvable (see INSTALL.md). Prospective-LCA speed depends on it:
-# without UMFPACK a run falls back to spsolve-per-call and takes tens of
-# minutes instead of under a minute.
+# without UMFPACK a source install falls back to SuperLU (spsolve) and takes tens of
+# minutes instead of under a minute. The 0.4.1+ installers bundle it.
 case "$(uname -s)" in
   Darwin|Linux)
     # find_spec, NOT `import scikits.umfpack`: the raw import ALWAYS fails on

@@ -9,6 +9,7 @@
 
 import { forwardRef, useState, type InputHTMLAttributes, type Ref } from 'react'
 import { Search, X } from 'lucide-react'
+import { IDENTIFIER_INPUT_PROPS } from './identifierInput'
 
 type Size = 'sm' | 'md'
 
@@ -70,6 +71,7 @@ export const SearchInput = forwardRef(function SearchInput(
       <input
         ref={ref}
         type="text"
+        {...IDENTIFIER_INPUT_PROPS}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {

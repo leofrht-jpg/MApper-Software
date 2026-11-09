@@ -15,7 +15,9 @@ import type {
   ArchetypeStageAmounts,
 } from '../../stores/singleProductImpactStore'
 import { StageBasisSelect } from './StageBasisSelect'
+import { YEARS_LOCKED_TOOLTIP, focusSelectByTestId } from './yearsLock'
 import { ONE_YEAR_NOTE, annualStagesCountOneYear } from './oneYearNote'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface Props {
   archetype: ArchetypeSummary
@@ -95,6 +97,8 @@ export function StageAmountsEditor({
             onChange={(y) => setYears(y)}
             disabled={!yearsAvailable || !!value.lifetimeParam}
             testId="stage-amounts-lifetime"
+            lockedTitle={blocked ? YEARS_LOCKED_TOOLTIP : undefined}
+            onLockedClick={!yearsAvailable ? () => { const first = undeclaredStages(archetype, projectBasis)[0]; if (first !== undefined) focusSelectByTestId(`stage-basis-select-${first}`) } : undefined}
           />
           {parameters && parameters.length > 0 && (
             <select
@@ -118,7 +122,12 @@ export function StageAmountsEditor({
               ))}
             </select>
           )}
-          <span data-testid="stage-amounts-years-note" style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+          <span
+            data-testid="stage-amounts-years-note"
+            style={blocked && !yearsAvailable
+              ? { fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }
+              : { fontSize: 10, color: 'var(--text-tertiary)' }}
+          >
             {blocked
               ? blocked
               : value.lifetime == null
@@ -345,22 +354,27 @@ export function stageAmountsEqual(
 
 /** The years box. Starts EMPTY: there is no default lifetime to fall back on.
  *  A whole number of at least 1, or nothing. */
-export function YearsInput({ value, onChange, disabled, testId }: {
+export function YearsInput({ value, onChange, disabled, testId, lockedTitle, onLockedClick }: {
   value: number | null
   onChange: (years: number | null) => void
   disabled?: boolean
   testId?: string
+  /** Tooltip while the box is locked, saying what unlocks it. */
+  lockedTitle?: string
+  /** Clicking the locked box does this (a disabled input gets no click of its own, so the box sits in a wrapper that does). */
+  onLockedClick?: () => void
 }) {
   const [text, setText] = useState(value == null ? '' : String(value))
   useEffect(() => { setText(value == null ? '' : String(value)) }, [value])
-  return (
-    <input
+  const input = (
+    <input {...IDENTIFIER_INPUT_PROPS}
       type="text"
       inputMode="numeric"
       data-testid={testId}
       placeholder="years"
       value={text}
       disabled={disabled}
+      aria-label={disabled && lockedTitle ? `Years. ${lockedTitle}` : 'Years'}
       onChange={(e) => {
         const t = e.target.value.replace(/[^0-9]/g, '')
         setText(t)
@@ -372,7 +386,19 @@ export function YearsInput({ value, onChange, disabled, testId }: {
         border: '1px solid var(--border-default)', borderRadius: 'var(--radius-sm)',
         color: 'var(--text-primary)', fontSize: 'var(--text-xs)', fontFamily: 'var(--font-mono)',
         outline: 'none', textAlign: 'right', opacity: disabled ? 0.5 : 1,
+        pointerEvents: disabled && onLockedClick ? 'none' : undefined,
       }}
     />
+  )
+  if (!disabled || (!lockedTitle && !onLockedClick)) return input
+  return (
+    <span
+      data-testid={testId ? `${testId}-locked` : undefined}
+      title={lockedTitle}
+      onClick={onLockedClick}
+      style={{ display: 'inline-flex', cursor: onLockedClick ? 'pointer' : 'not-allowed' }}
+    >
+      {input}
+    </span>
   )
 }

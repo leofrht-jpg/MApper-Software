@@ -7,6 +7,8 @@
  * Lead developer: Leonardo Ferhati
  */
 
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
+
 interface Props {
   integerUnits: boolean
   unitName: string
@@ -70,7 +72,7 @@ export function UnitTypePicker({
 
       <div>
         <label style={labelCol}>Unit name</label>
-        <input
+        <input {...IDENTIFIER_INPUT_PROPS}
           type="text"
           value={unitName}
           onChange={(e) => onUnitNameChange(e.target.value)}

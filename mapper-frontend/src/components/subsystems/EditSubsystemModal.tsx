@@ -14,6 +14,7 @@ import { DimensionsEditor } from '../dsm/DimensionsEditor'
 import { useSubsystemStore } from '../../stores/subsystemStore'
 import { useDSMStore } from '../../stores/dsmStore'
 import type { DimensionDef, Subsystem } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface EditSubsystemModalProps {
   subsystem: Subsystem
@@ -119,7 +120,7 @@ export function EditSubsystemModal({ subsystem, onClose }: EditSubsystemModalPro
           </div>
           <div>
             <label style={labelCol}>Unit name</label>
-            <input
+            <input {...IDENTIFIER_INPUT_PROPS}
               type="text" value={unitName} onChange={(e) => setUnitName(e.target.value)}
               placeholder="chargers, kg, units…" style={inputStyle}
             />

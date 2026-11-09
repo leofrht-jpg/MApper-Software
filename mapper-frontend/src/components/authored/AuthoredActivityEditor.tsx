@@ -30,6 +30,7 @@ import { NumberInput } from '../ui/NumberInput'
 import { PedigreeEditor } from '../uncertainty/PedigreeEditor'
 import { BiosphereFlowPicker } from './BiosphereFlowPicker'
 import { usePedigreeTable } from '../../utils/pedigree'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 // An authored activity is defined by its biosphere exchanges. Everything this
 // editor shows about an exchange -- GSD², the comparison with ecoinvent's floor,
@@ -257,8 +258,8 @@ export function AuthoredActivityEditor({ database, initial, onSaved, onCancel, d
         <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 1fr 1fr', gap: 'var(--space-3)' }}>
           <label style={label}>Name<input data-testid="authored-name" style={field} value={name} onChange={(e) => setName(e.target.value)} /></label>
           <label style={label}>Reference product<input data-testid="authored-refproduct" style={field} value={refProduct} placeholder="defaults to the name" onChange={(e) => setRefProduct(e.target.value)} /></label>
-          <label style={label}>Unit<input data-testid="authored-unit" style={field} value={unit} onChange={(e) => setUnit(e.target.value)} /></label>
-          <label style={label}>Location<input data-testid="authored-location" style={field} value={location} onChange={(e) => setLocation(e.target.value)} /></label>
+          <label style={label}>Unit<input {...IDENTIFIER_INPUT_PROPS} data-testid="authored-unit" style={field} value={unit} onChange={(e) => setUnit(e.target.value)} /></label>
+          <label style={label}>Location<input {...IDENTIFIER_INPUT_PROPS} data-testid="authored-location" style={field} value={location} onChange={(e) => setLocation(e.target.value)} /></label>
         </div>
         <label style={label}>Comment<textarea data-testid="authored-comment" style={{ ...field, height: 48, paddingTop: 6 }} value={comment} onChange={(e) => setComment(e.target.value)} /></label>
 

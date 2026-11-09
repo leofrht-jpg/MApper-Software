@@ -31,7 +31,7 @@ import { ScenarioYearPicker } from './ScenarioYearPicker'
 import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeOverlay } from '../ui/ComputeOverlay'
-import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, StopWaitingNote } from '../ui/ComputeOverlay'
 import { StoppedNotice } from '../ui/StoppedNotice'
 import { useStopWaiting } from '../../hooks/useStopWaiting'
 import { ViewToggle } from './ViewToggle'
@@ -677,7 +677,7 @@ export function SingleProductProjectedPanel({ archetypeId }: Props) {
         slowNote={SLOW_RUN_NOTE}
         onCancel={() => { stopRun(); setIsCalculating(false); setProgress(null) }}
         cancelLabel={STOP_WAITING_LABEL}
-        cancelNote={STOP_WAITING_NOTE}
+        cancelNote={StopWaitingNote()}
         data-testid="single-product-projected-progress"
       />
       {stopped && !isCalculating && <StoppedNotice data-testid="single-product-projected-stopped" />}

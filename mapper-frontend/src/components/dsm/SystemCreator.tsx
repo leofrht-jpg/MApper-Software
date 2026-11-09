@@ -14,6 +14,7 @@ import { DimensionsEditor } from './DimensionsEditor'
 import { UnitTypePicker } from './UnitTypePicker'
 import { useDSMStore } from '../../stores/dsmStore'
 import { patchDSMSettings, type DimensionDef } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface SystemCreatorProps {
   onClose: () => void
@@ -187,11 +188,11 @@ export function SystemCreator({ onClose }: SystemCreatorProps) {
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
                 <div>
                   <label style={labelCol}>Start year</label>
-                  <input type="number" value={startYear} onChange={(e) => setStartYear(Number(e.target.value))} style={inputStyle} />
+                  <input {...IDENTIFIER_INPUT_PROPS} type="number" value={startYear} onChange={(e) => setStartYear(Number(e.target.value))} style={inputStyle} />
                 </div>
                 <div>
                   <label style={labelCol}>End year</label>
-                  <input type="number" value={endYear} onChange={(e) => setEndYear(Number(e.target.value))} style={inputStyle} />
+                  <input {...IDENTIFIER_INPUT_PROPS} type="number" value={endYear} onChange={(e) => setEndYear(Number(e.target.value))} style={inputStyle} />
                 </div>
               </div>
               <p style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)' }}>

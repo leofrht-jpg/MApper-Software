@@ -39,7 +39,15 @@ export const OVERLAY_REVEAL_MS = 250
 
 /** For runs whose server side cannot be stopped: the button says "Stop waiting" and this note sits under it. */
 export const STOP_WAITING_LABEL = 'Stop waiting'
-export const STOP_WAITING_NOTE = 'The calculation may keep running in the background; the next one can take longer.'
+/** The note under Stop waiting: two sentences, one block per row. Pass `StopWaitingNote()` to `cancelNote` (a call, so the overlay JSX keeps no nested tag). */
+export function StopWaitingNote() {
+  return (
+    <>
+      <div>The calculation may keep running in the background.</div>
+      <div>The next one can take longer.</div>
+    </>
+  )
+}
 /** Appended to the detail line after SLOW_RUN_SECONDS, when a caller passes `slowNote`. */
 export const SLOW_RUN_SECONDS = 20
 export const SLOW_RUN_NOTE = 'Large databases can take a few minutes.'

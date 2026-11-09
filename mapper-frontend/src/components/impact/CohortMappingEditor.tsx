@@ -24,6 +24,7 @@ import {
   type DimensionDef,
 } from '../../api/client'
 import { buildTemplateFilename } from '../../utils/exportFilename'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 const COHORT_SEP = '|'
 
@@ -401,7 +402,7 @@ export function CohortMappingEditor() {
                       </div>
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                      <input
+                      <input {...IDENTIFIER_INPUT_PROPS}
                         type="number" step={0.05} min={0.01}
                         value={archetypeId ? scalingFactor : ''}
                         disabled={!archetypeId}

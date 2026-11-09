@@ -11,6 +11,7 @@ import {
   forwardRef, useEffect, useRef, useState,
   type FocusEvent, type InputHTMLAttributes, type Ref,
 } from 'react'
+import { IDENTIFIER_INPUT_PROPS } from './identifierInput'
 
 interface Props extends Omit<InputHTMLAttributes<HTMLInputElement>, 'onChange' | 'value' | 'type'> {
   value: number
@@ -107,6 +108,7 @@ export const NumberInput = forwardRef(function NumberInput(
   return (
     <input
       ref={ref}
+      {...IDENTIFIER_INPUT_PROPS}
       {...rest}
       type="text"
       inputMode={inputMode ?? (integerOnly ? 'numeric' : 'decimal')}

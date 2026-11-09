@@ -29,6 +29,7 @@ import {
   type SurvivalConfig,
   type SurvivalPreviewPoint,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface ModeConfiguratorProps {
   onClose: () => void
@@ -469,7 +470,7 @@ function SliderField({ label, value, min, max, step, onChange, hint }: SliderFie
           onChange={(e) => onChange(Number(e.target.value))}
           style={{ flex: 1, accentColor: 'var(--mod-dsm)' }}
         />
-        <input
+        <input {...IDENTIFIER_INPUT_PROPS}
           type="number"
           min={min}
           max={max}

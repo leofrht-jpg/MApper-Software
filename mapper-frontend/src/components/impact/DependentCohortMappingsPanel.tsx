@@ -23,6 +23,7 @@ import {
   type Subsystem,
   type SubsystemCohortMapping,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 type SaveStatus = { kind: 'info' | 'success' | 'error'; msg: string } | null
 
@@ -369,7 +370,7 @@ export function SubsystemMappingCard({
                       </div>
                     </td>
                     <td style={{ padding: '6px 10px', textAlign: 'right' }}>
-                      <input
+                      <input {...IDENTIFIER_INPUT_PROPS}
                         type="number" step={0.05} min={0.01}
                         value={archetypeId ? scalingFactor : ''}
                         disabled={!archetypeId}

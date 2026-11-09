@@ -65,7 +65,7 @@ describe('rendered identifier fields', () => {
 describe('other identifier inputs spread IDENTIFIER_INPUT_PROPS', () => {
   const SRC = path.resolve(__dirname, '../src')
   it.each([
-    ['components/parameters/ParameterManagerPanel.tsx', 3],  // case rename, parameter rename, Add parameter name
+    ['components/parameters/ParameterManagerPanel.tsx', 8],  // case rename, parameter rename, Add parameter name, + search, unit (x2), override value, base value
     ['components/aesa/PrinciplesEditor.tsx', 1],             // principle id
     ['components/dsm/ScenarioManagerModal.tsx', 1],          // scenario rename
     ['components/dsm/DimensionsEditor.tsx', 1],              // machine name

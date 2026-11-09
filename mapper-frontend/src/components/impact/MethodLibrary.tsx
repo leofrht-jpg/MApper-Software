@@ -13,6 +13,7 @@ import { Button } from '../ui/Button'
 import { DetailsToggle } from '../ui/DetailsToggle'
 import { Diagnostic } from '../ui/Diagnostic'
 import { InfoButton } from '../ui/InfoButton'
+import { ABOUT_MORE_POINTER, methodAbout } from './methodAbout'
 import { ElapsedCounter } from '../ui/ElapsedCounter'
 import {
   cancelTask,
@@ -29,6 +30,7 @@ import {
 import { StopButton } from '../ui/StopButton'
 import { confirmDialog, isDialogOpen } from '../ui/dialogs'
 import { useBackdropDismiss } from '../ui/useBackdropDismiss'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface MethodLibraryProps {
   onClose: () => void
@@ -457,6 +459,7 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
   const isDone = !!task?.done && !task.error
   const needsEiPick = method.available_variants && method.available_variants.length > 0
   // Long help goes behind the (i); the entry's Details keeps only the source, the count and the report.
+  const about = methodAbout(method)
   const hasAbout = !!(method.long_description || method.factor_source || method.notes || method.offline
     || method.installer || method.size_mb != null || method.available_variants)
 
@@ -479,9 +482,19 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
             {hasAbout && (
               <InfoButton label={`About ${method.name}`} data-testid={`method-info-${method.id}`}>
                 <div data-testid={`method-about-${method.id}`} style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  {method.long_description && <div>{method.long_description}</div>}
-                  {method.factor_source && <div data-testid={`factor-source-${method.id}`}>{method.factor_source}</div>}
-                  {method.notes && <div style={{ fontStyle: 'italic' }}>{method.notes}</div>}
+                  {about.full ? (
+                    <>
+                      {method.long_description && <div>{method.long_description}</div>}
+                      {method.factor_source && <div data-testid={`factor-source-${method.id}`}>{method.factor_source}</div>}
+                      {method.notes && <div style={{ fontStyle: 'italic' }}>{method.notes}</div>}
+                    </>
+                  ) : (
+                    <>
+                      {about.lead && <div data-testid={`method-about-lead-${method.id}`}>{about.lead}</div>}
+                      {about.note && <div style={{ fontStyle: 'italic' }}>{about.note}</div>}
+                      <div data-testid={`method-about-pointer-${method.id}`}>{ABOUT_MORE_POINTER}</div>
+                    </>
+                  )}
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', color: 'var(--text-tertiary)' }}>
                     {/* Said once: the note already starts with "Offline" when there is one. */}
                     {method.offline && !method.notes
@@ -612,6 +625,13 @@ function MethodRow({ method, task, supportedEi, detectedEi, versionPickerOpen, o
               {method.category_count} indicator{method.category_count === 1 ? '' : 's'}
             </div>
           )}
+          {/* A long (i) text is condensed there; the rest of it is here, word for word. */}
+          {!about.full && about.moreDescription && (
+            <div data-testid={`method-more-${method.id}`} style={{ color: 'var(--text-secondary)' }}>{about.moreDescription}</div>
+          )}
+          {!about.full && about.moreSource && (
+            <div data-testid={`factor-source-${method.id}`} style={{ color: 'var(--text-tertiary)' }}>{about.moreSource}</div>
+          )}
           {isDone && task!.report && (
             <div data-testid={`install-report-${method.id}`} style={{ color: 'var(--text-secondary)' }}>
               {task!.report.methods_registered} method{task!.report.methods_registered === 1 ? '' : 's'} registered ·{' '}
@@ -693,7 +713,7 @@ function CustomUploadPanel({ task, onSubmit, onCancel }: CustomUploadPanelProps)
 
       <div>
         <label style={labelCol}>Method name (comma-separated, becomes a tuple)</label>
-        <input type="text" value={nameTuple} onChange={(e) => setNameTuple(e.target.value)} style={inputStyle}
+        <input {...IDENTIFIER_INPUT_PROPS} type="text" value={nameTuple} onChange={(e) => setNameTuple(e.target.value)} style={inputStyle}
                placeholder="MyLab, Climate change, GWP100" />
         <div style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', marginTop: 4 }}>
           Will be registered as <code>("MyLab", "Climate change", "GWP100")</code> in Brightway2.
@@ -708,7 +728,7 @@ function CustomUploadPanel({ task, onSubmit, onCancel }: CustomUploadPanelProps)
 
       <div>
         <label style={labelCol}>Unit</label>
-        <input type="text" value={unit} onChange={(e) => setUnit(e.target.value)} style={inputStyle}
+        <input {...IDENTIFIER_INPUT_PROPS} type="text" value={unit} onChange={(e) => setUnit(e.target.value)} style={inputStyle}
                placeholder="kg CO2-eq" />
       </div>
 

@@ -14,6 +14,7 @@ import { DimensionsEditor } from './DimensionsEditor'
 import { useDSMStore } from '../../stores/dsmStore'
 import { getMFAState, patchDSMSettings } from '../../api/client'
 import type { DimensionDef, SystemDefinition } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface EditSystemModalProps {
   system: SystemDefinition
@@ -179,7 +180,7 @@ export function EditSystemModal({ system, onClose }: EditSystemModalProps) {
             </div>
             <div>
               <label style={labelCol}>Unit name</label>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 type="text"
                 value={unitName}
                 onChange={(e) => setUnitName(e.target.value)}
@@ -193,11 +194,11 @@ export function EditSystemModal({ system, onClose }: EditSystemModalProps) {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-4)' }}>
               <div>
                 <label style={labelCol}>Start year</label>
-                <input type="number" value={startYear} onChange={(e) => setStartYear(Number(e.target.value))} style={inputStyle} />
+                <input {...IDENTIFIER_INPUT_PROPS} type="number" value={startYear} onChange={(e) => setStartYear(Number(e.target.value))} style={inputStyle} />
               </div>
               <div>
                 <label style={labelCol}>End year</label>
-                <input type="number" value={endYear} onChange={(e) => setEndYear(Number(e.target.value))} style={inputStyle} />
+                <input {...IDENTIFIER_INPUT_PROPS} type="number" value={endYear} onChange={(e) => setEndYear(Number(e.target.value))} style={inputStyle} />
               </div>
             </div>
           </div>

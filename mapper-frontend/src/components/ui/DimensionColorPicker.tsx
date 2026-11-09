@@ -9,6 +9,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { CHART_PALETTE, setLabelColor, clearLabelColor } from '../../utils/chartColors'
+import { IDENTIFIER_INPUT_PROPS } from './identifierInput'
 
 // Patch 4AJ → 4AK — color picker popover.
 //
@@ -225,7 +226,7 @@ export function DimensionColorPicker({
       </div>
 
       <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 8 }}>
-        <input
+        <input {...IDENTIFIER_INPUT_PROPS}
           data-testid="dimension-color-picker-hex"
           type="text"
           value={hex}

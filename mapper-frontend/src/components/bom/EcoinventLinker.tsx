@@ -18,6 +18,7 @@ import {
   getActivities,
   getDatabases,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface EcoinventLinkerProps {
   current?: EcoinventLink | null
@@ -117,7 +118,7 @@ export function EcoinventLinker({ current, onClose, onPick }: EcoinventLinkerPro
           </select>
           <div style={{ position: 'relative', flex: 1 }}>
             <Search size={14} color="var(--text-tertiary)" style={{ position: 'absolute', left: 10, top: 9, pointerEvents: 'none' }} />
-            <input
+            <input {...IDENTIFIER_INPUT_PROPS}
               type="text"
               autoFocus
               value={query}

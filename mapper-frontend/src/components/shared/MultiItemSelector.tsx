@@ -34,6 +34,7 @@ import {
   type ProductItem, type ArchetypeProductItem, type ActivityProductItem,
   productItemKey,
 } from './productItem'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 type SelectorMode = 'archetype' | 'activity' | 'mixed'
 type SortKey = 'name-asc' | 'name-desc'
@@ -338,7 +339,7 @@ export function MultiItemSelector({
               position: 'absolute', top: 9, left: 8,
               color: 'var(--text-tertiary)', pointerEvents: 'none',
             }} />
-            <input
+            <input {...IDENTIFIER_INPUT_PROPS}
               data-testid="multi-item-selector-search"
               type="text"
               value={search}

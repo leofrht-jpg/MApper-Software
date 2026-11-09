@@ -9,7 +9,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { Info } from 'lucide-react'
-import { computePopoverPosition, type PopoverPlacement } from './popoverPosition'
+import { computePopoverPosition, popoverWidth, POPOVER_MARGIN } from './popoverPosition'
 
 // The box is border-box now; 306 is what the old 280 px content width plus its padding and border drew.
 const POPOVER_WIDTH = 306
@@ -29,7 +29,9 @@ interface Props {
  *
  * The popover is placed against the VIEWPORT (`position: fixed`, which an ancestor's overflow does
  * not clip): below the button when it fits, above when it does not, shifted to stay 8 px inside the
- * window, and re-placed on resize and on scroll of any container. The maths is
+ * window, and re-placed on resize and on scroll of any container. Its width is
+ * the same wherever it sits (see `popoverWidth`), and its height is capped at the window minus the
+ * margins, so long text scrolls inside the box. The maths is
  * `computePopoverPosition`. It stays next to its button in the DOM (not a portal), so a surrounding
  * transform or backdrop-filter, which makes `fixed` relative to that ancestor, is corrected by
  * measuring where the popover actually landed.
@@ -39,7 +41,6 @@ export function InfoButton({ children, label, 'data-testid': testId = 'info-butt
   const root = useRef<HTMLSpanElement>(null)
   const button = useRef<HTMLButtonElement>(null)
   const popover = useRef<HTMLDivElement>(null)
-  const [place, setPlace] = useState<PopoverPlacement | null>(null)
 
   useEffect(() => {
     if (!open) return
@@ -60,17 +61,23 @@ export function InfoButton({ children, label, 'data-testid': testId = 'info-butt
 
   // Place against the viewport once the popover is in the DOM (before paint, so it never shows in
   // the wrong spot), and again whenever the window resizes or any ancestor scrolls.
+  //
+  // The box is written straight to the element and React never owns its geometry: it only ever sees
+  // static style values, so a re-render cannot undo (or fail to redo) what a scroll wrote. The width
+  // and the height cap are set once per open and per resize; a scroll changes only top and left.
   useLayoutEffect(() => {
     if (!open) return
-    const update = () => {
-      if (!button.current || !popover.current) return
+    const el = popover.current
+    if (!el) return
+    const size = () => {
+      el.style.width = `${popoverWidth(POPOVER_WIDTH, window.innerWidth)}px`
+      el.style.maxHeight = `${Math.max(0, window.innerHeight - 2 * POPOVER_MARGIN)}px`
+    }
+    const place = () => {
+      if (!button.current) return
       const a = button.current.getBoundingClientRect()
-      // Measure at the wanted width: the height depends on it.
-      const el = popover.current
-      el.style.width = `${Math.min(POPOVER_WIDTH, window.innerWidth - 16)}px`
-      el.style.maxHeight = ''
       const r = el.getBoundingClientRect()
-      const next = computePopoverPosition(a, { width: POPOVER_WIDTH, height: r.height }, { width: window.innerWidth, height: window.innerHeight })
+      const next = computePopoverPosition(a, { width: parseFloat(el.style.width), height: r.height }, { width: window.innerWidth, height: window.innerHeight })
       // Where did `fixed` really put it? Normally exactly at next; inside a transformed or filtered
       // ancestor it is offset by that ancestor's origin, and the offset is taken out again.
       el.style.top = `${next.top}px`
@@ -78,14 +85,20 @@ export function InfoButton({ children, label, 'data-testid': testId = 'info-butt
       const landed = el.getBoundingClientRect()
       const dx = landed.width > 0 ? landed.left - next.left : 0
       const dy = landed.width > 0 ? landed.top - next.top : 0
-      setPlace(Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5 ? { ...next, left: next.left - dx, top: next.top - dy } : next)
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+        el.style.top = `${next.top - dy}px`
+        el.style.left = `${next.left - dx}px`
+      }
+      el.style.visibility = 'visible'
     }
-    update()
-    window.addEventListener('resize', update)
-    window.addEventListener('scroll', update, true)
+    size()
+    place()
+    const onResize = () => { size(); place() }
+    window.addEventListener('resize', onResize)
+    window.addEventListener('scroll', place, true)
     return () => {
-      window.removeEventListener('resize', update)
-      window.removeEventListener('scroll', update, true)
+      window.removeEventListener('resize', onResize)
+      window.removeEventListener('scroll', place, true)
     }
   }, [open])
 
@@ -112,9 +125,8 @@ export function InfoButton({ children, label, 'data-testid': testId = 'info-butt
           role="note"
           data-testid={`${testId}-popover`}
           style={{
-            position: 'fixed', top: place?.top ?? 0, left: place?.left ?? 0, zIndex: 9999,
-            width: place?.width ?? POPOVER_WIDTH, maxHeight: place?.maxHeight, overflowY: 'auto',
-            visibility: place ? 'visible' : 'hidden', boxSizing: 'border-box',
+            position: 'fixed', top: 0, left: 0, zIndex: 9999, width: POPOVER_WIDTH, overflowY: 'auto',
+            visibility: 'hidden', boxSizing: 'border-box',
             padding: 'var(--space-3)', backgroundColor: 'var(--bg-elevated)',
             border: '1px solid var(--border-default)', borderRadius: 'var(--radius-md)',
             boxShadow: 'var(--shadow-lg)', color: 'var(--text-secondary)',

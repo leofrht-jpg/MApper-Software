@@ -18,6 +18,7 @@ import {
   savePremiseKey,
   type PremiseKeyStatus,
 } from '../api/client'
+import { IDENTIFIER_INPUT_PROPS } from './ui/identifierInput'
 
 const FERNET_KEY_PATTERN = /^[A-Za-z0-9_-]{43}=$/
 
@@ -234,7 +235,7 @@ function KeyInputRow({
     <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
       <div style={{ display: 'flex', gap: 6, alignItems: 'stretch' }}>
         <div style={{ position: 'relative', flex: 1 }}>
-          <input
+          <input {...IDENTIFIER_INPUT_PROPS}
             type={show ? 'text' : 'password'}
             value={value}
             onChange={(e) => onChange(e.target.value)}

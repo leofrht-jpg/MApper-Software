@@ -32,7 +32,7 @@ import { StageBreakdownChart } from '../charts/StageBreakdownChart'
 import { Button } from '../ui/Button'
 import { CollapsibleCard } from '../ui/CollapsibleCard'
 import { ComputeOverlay } from '../ui/ComputeOverlay'
-import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, StopWaitingNote } from '../ui/ComputeOverlay'
 import { StoppedNotice } from '../ui/StoppedNotice'
 import { useStopWaiting } from '../../hooks/useStopWaiting'
 import { stageAmountsEqual } from './StageAmountsEditor'
@@ -446,7 +446,7 @@ export function SingleProductStaticPanel({ archetypeId, onNavigate }: Props) {
         slowNote={SLOW_RUN_NOTE}
         onCancel={() => { stopRun(); setIsCalculating(false); setProgress(null) }}
         cancelLabel={STOP_WAITING_LABEL}
-        cancelNote={STOP_WAITING_NOTE}
+        cancelNote={StopWaitingNote()}
         data-testid="single-product-static-progress"
       />
       {stopped && !isCalculating && <StoppedNotice data-testid="single-product-static-stopped" />}

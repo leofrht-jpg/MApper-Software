@@ -21,6 +21,7 @@ import {
 } from 'lucide-react'
 import { useProjectStore } from '../stores/projectStore'
 import { ComputeOverlay } from './ui/ComputeOverlay'
+import { IDENTIFIER_INPUT_PROPS } from './ui/identifierInput'
 
 type Mode = 'idle' | 'new' | 'duplicate' | 'rename' | 'confirm-delete'
 
@@ -582,7 +583,7 @@ function InlineForm({
 }) {
   return (
     <div style={{ padding: '10px 12px', display: 'flex', gap: 6, alignItems: 'center' }}>
-      <input
+      <input {...IDENTIFIER_INPUT_PROPS}
         ref={inputRef}
         data-testid={testId ? `${testId}-input` : undefined}
         type="text"

@@ -21,6 +21,7 @@ import {
   type DimensionDef,
   type Subsystem,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 const BUILTIN_VARS = ['filtered_stock', 'total_primary_stock', 'year'] as const
 
@@ -515,7 +516,7 @@ function RuleCard({
 
       <div>
         <label style={labelCol}>Expression</label>
-        <textarea
+        <textarea {...IDENTIFIER_INPUT_PROPS}
           ref={exprRef}
           value={rule.expression}
           onChange={(e) => { onChange({ expression: e.target.value }); setValidation(null) }}

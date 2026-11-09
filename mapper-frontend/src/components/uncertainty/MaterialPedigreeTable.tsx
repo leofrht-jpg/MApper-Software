@@ -20,6 +20,7 @@ import {
 } from '../../api/client'
 import { gsd2Of, scoreSummary, usePedigreeTable } from '../../utils/pedigree'
 import { PedigreeEditor } from './PedigreeEditor'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 /**
  * Score by MATERIAL NAME — the primary scoring surface.
@@ -134,7 +135,7 @@ export function MaterialPedigreeTable({ coverage, onLibraryChange, onNavigate }:
       <div style={{ display: 'flex', gap: 'var(--space-3)', alignItems: 'center', flexWrap: 'wrap' }}>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, flex: '1 1 220px' }}>
           <Search size={13} strokeWidth={1.8} color="var(--text-tertiary)" />
-          <input
+          <input {...IDENTIFIER_INPUT_PROPS}
             data-testid="material-pedigree-filter"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}

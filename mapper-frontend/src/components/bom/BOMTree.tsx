@@ -16,6 +16,7 @@ import { EcoinventLinker } from './EcoinventLinker'
 import type { BOMNode, EcoinventLink, MaterialEvolution, QuantityMilestone } from '../../api/client'
 import { useParameterStore } from '../../stores/parameterStore'
 import { messageDialog } from '../ui/dialogs'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 // An amount that starts with a letter or underscore (snake_case) is treated as
 // an expression, else as a plain number.
@@ -376,7 +377,7 @@ export function BOMTree({ node, depth = 0, isRoot = false, onPatch, onAddChild, 
               }}
             />
             <div style={{ position: 'relative' }}>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 type="text"
                 value={draft.amount}
                 placeholder="100 or mass_per_unit"

@@ -14,9 +14,12 @@
  * macOS capitalises the first letter typed into a text field and corrects
  * spelling. A parameter name must be lowercase, so every new parameter began
  * with a refused capital the user then had to select and fix. Spread these on
- * the input: `<input {...IDENTIFIER_INPUT_PROPS} … />`.
+ * the input: `<input {...IDENTIFIER_INPUT_PROPS} … />`. The same four attributes go on every
+ * search or filter box and numeric field: they stop the web view's suggestion bubble (a search
+ * for "row" was offered "Row"). Free text (names, descriptions, comments) does not use them.
  */
 export const IDENTIFIER_INPUT_PROPS = {
+  autoComplete: 'off',
   autoCapitalize: 'off',
   autoCorrect: 'off',
   spellCheck: false,

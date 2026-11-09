@@ -469,7 +469,7 @@ export function ParameterManagerPanel() {
                     position: 'absolute', left: 8, top: '50%',
                     transform: 'translateY(-50%)', color: 'var(--text-tertiary)',
                   }} />
-                  <input
+                  <input {...IDENTIFIER_INPUT_PROPS}
                     type="text"
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -994,7 +994,7 @@ function ParameterRow({
           }}
         />
       </div>
-      <input
+      <input {...IDENTIFIER_INPUT_PROPS}
         value={param.unit ?? ''}
         onChange={(e) => onPatchField({ unit: e.target.value || null })}
         placeholder="—"
@@ -1088,7 +1088,7 @@ function ScenarioCell({
       }}
       style={{ position: 'relative' }}
     >
-      <input
+      <input {...IDENTIFIER_INPUT_PROPS}
         type="number"
         step="any"
         value={displayValue}
@@ -1289,7 +1289,7 @@ function AddParameterModal({
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-3)' }}>
             <div>
               <label style={fieldLabel}>Unit</label>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 value={unit}
                 onChange={(e) => setUnit(e.target.value)}
                 placeholder="kg, km/yr, kWh…"
@@ -1298,7 +1298,7 @@ function AddParameterModal({
             </div>
             <div>
               <label style={fieldLabel}>Base value</label>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 type="number"
                 step="any"
                 value={baseValue}

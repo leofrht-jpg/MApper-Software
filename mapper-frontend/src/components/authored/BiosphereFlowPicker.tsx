@@ -15,6 +15,7 @@ import {
   type FlowSearchResponse,
   type SubstanceGroup,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 // Choosing a biosphere flow by name alone is a guess: Nitrogen oxides has five
 // flows that differ only by compartment, and the compartment changes some
@@ -97,7 +98,7 @@ export function BiosphereFlowPicker({ database, onSelect, debounceMs = 300 }: Bi
   return (
     <div data-testid="flow-picker" style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-3)', padding: 'var(--space-3) var(--space-4)', overflow: 'auto', flex: 1 }}>
       <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <input
+        <input {...IDENTIFIER_INPUT_PROPS}
           data-testid="flow-picker-search"
           value={input}
           onChange={(e) => setInput(e.target.value)}

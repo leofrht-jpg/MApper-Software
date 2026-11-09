@@ -37,6 +37,7 @@ import { exportMonteCarloMulti } from '../api/client'
 import { CoverageGapNote } from '../components/authored/CoverageMarkers'
 import { exportMonteCarlo, getPedigreeCoverage, type PedigreeCoverage } from '../api/client'
 import { indicatorLabel } from '../utils/methodLabels'
+import { IDENTIFIER_INPUT_PROPS } from '../components/ui/identifierInput'
 
 const DEFAULT_ITERATIONS = 1000
 /** The bound the old <input max> declared; kept so the run payload range is unchanged. */
@@ -229,7 +230,7 @@ export function MonteCarloPage({ onNavigate }: Props) {
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
                 Seed
               </span>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 data-testid="mc-seed"
                 type="text"
                 placeholder="random"
@@ -682,7 +683,7 @@ function MultiItemMode({
             </label>
             <label style={{ display: 'grid', gap: 4 }}>
               <span style={{ fontSize: 'var(--text-xs)', color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>Seed</span>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 data-testid="mc-multi-seed" type="text" placeholder="random"
                 value={seedText} onChange={(e) => setSeedText(e.target.value)}
                 style={{ ...inputStyle, width: 140 }}

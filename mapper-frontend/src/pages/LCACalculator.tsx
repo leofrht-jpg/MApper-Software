@@ -15,7 +15,7 @@ import { Loader2, Download } from 'lucide-react'
 import { NumberInput } from '../components/ui/NumberInput'
 import { ComputeProgress } from '../components/ui/ComputeProgress'
 import { ComputeOverlay } from '../components/ui/ComputeOverlay'
-import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../components/ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, StopWaitingNote } from '../components/ui/ComputeOverlay'
 import {
   Bar,
   BarChart,
@@ -29,9 +29,10 @@ import {
 import { useSessionState } from '../stores/sessionStateStore'
 import { useBOMStore } from '../stores/bomStore'
 import { StageBasisSelect } from '../components/impact/StageBasisSelect'
+import { YEARS_LOCKED_TOOLTIP, focusSelectByTestId } from '../components/impact/yearsLock'
 import { ONE_YEAR_NOTE, annualStagesCountOneYear } from '../components/impact/oneYearNote'
 import { useProjectSettingsStore } from '../stores/projectSettingsStore'
-import { YearsInput, canApplyLifetime, lifetimeBlockedReason, stageAmountsForPreset, stageBasis } from '../components/impact/StageAmountsEditor'
+import { YearsInput, canApplyLifetime, lifetimeBlockedReason, stageAmountsForPreset, stageBasis, undeclaredStages } from '../components/impact/StageAmountsEditor'
 import { Button } from '../components/ui/Button'
 import { confirmDialog } from '../components/ui/dialogs'
 import { CollapsibleCard } from '../components/ui/CollapsibleCard'
@@ -1175,8 +1176,15 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
                                 onChange={(y) => applyPreset(arc.id, 'custom', y, arc)}
                                 disabled={!canApplyLifetime(arc, projectBasis)}
                                 testId={`lca-years-${arc.id}`}
+                                lockedTitle={canApplyLifetime(arc, projectBasis) ? undefined : YEARS_LOCKED_TOOLTIP}
+                                onLockedClick={canApplyLifetime(arc, projectBasis) ? undefined : () => { const first = undeclaredStages(arc, projectBasis)[0]; if (first !== undefined) focusSelectByTestId(`lca-basis-select-${arc.id}-${first}`) }}
                               />
-                              <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
+                              <span
+                                data-testid={`lca-years-note-${arc.id}`}
+                                style={canApplyLifetime(arc, projectBasis)
+                                  ? { fontSize: 10, color: 'var(--text-tertiary)' }
+                                  : { fontSize: 'var(--text-xs)', color: 'var(--text-secondary)' }}
+                              >
                                 {lifetimeBlockedReason(arc, projectBasis)
                                   ?? (entry.lifetime == null
                                     ? 'Enter the years for this product; per-year stages are multiplied by it.'
@@ -1564,7 +1572,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
             slowNote={SLOW_RUN_NOTE}
             onCancel={() => { actRun.stop(); setActCalculating(false) }}
             cancelLabel={STOP_WAITING_LABEL}
-            cancelNote={STOP_WAITING_NOTE}
+            cancelNote={StopWaitingNote()}
             data-testid="activity-lca-progress"
           />
           {actRun.stopped && !actCalculating && <StoppedNotice data-testid="activity-lca-stopped" />}
@@ -1798,7 +1806,7 @@ export function LCACalculator({ onNavigateToExplorer: _onNavigateToExplorer }: L
             slowNote={SLOW_RUN_NOTE}
             onCancel={() => { arcRun.stop(); setArcCalculating(false) }}
             cancelLabel={STOP_WAITING_LABEL}
-            cancelNote={STOP_WAITING_NOTE}
+            cancelNote={StopWaitingNote()}
             data-testid="archetype-lca-progress"
           />
           {arcRun.stopped && !arcCalculating && <StoppedNotice data-testid="archetype-lca-stopped" />}

@@ -22,6 +22,7 @@ import { ChartExportButton } from '../charts/ChartExportButton'
 import { ChartExportContainer } from '../charts/ChartExportContainer'
 import { useDSMStore } from '../../stores/dsmStore'
 import { previewSurvival, type SurvivalConfig, type SurvivalPreviewPoint } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 const labelCol: React.CSSProperties = {
   fontSize: 'var(--text-xs)',
@@ -178,7 +179,7 @@ function SliderField({ label, value, min, max, step, onChange, hint }: SliderFie
           onChange={(e) => onChange(Number(e.target.value))}
           style={{ flex: 1, accentColor: 'var(--mod-dsm)' }}
         />
-        <input
+        <input {...IDENTIFIER_INPUT_PROPS}
           type="number"
           min={min}
           max={max}

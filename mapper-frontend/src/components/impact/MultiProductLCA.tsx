@@ -41,9 +41,10 @@ import { useNumberFormatter } from '../charts/numberFormat'
 import { MultiProductComparisonChart } from './MultiProductComparisonChart'
 import { MultiProductLineChart } from './MultiProductLineChart'
 import { shortenByCommonPrefix } from '../../utils/labelPrefix'
+import { YEARS_LOCKED_TOOLTIP } from './yearsLock'
 import { StageAmountsEditor, YearsInput, canApplyLifetime, stageAmountsForPreset, stageAmountsSummary } from './StageAmountsEditor'
 import { ComputeOverlay } from '../ui/ComputeOverlay'
-import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, STOP_WAITING_NOTE } from '../ui/ComputeOverlay'
+import { SLOW_RUN_NOTE, STOP_WAITING_LABEL, StopWaitingNote } from '../ui/ComputeOverlay'
 import { StoppedNotice } from '../ui/StoppedNotice'
 import { InfoButton } from '../ui/InfoButton'
 import { useBOMStore } from '../../stores/bomStore'
@@ -549,6 +550,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
                   onChange={(y) => applyGlobalPreset('custom', y)}
                   disabled={noItemTakesYears}
                   testId="multi-product-global-lifetime"
+                  lockedTitle={noItemTakesYears ? YEARS_LOCKED_TOOLTIP : undefined}
                 />
                 {noItemTakesYears ? (
                   <span data-testid="multi-product-years-none" style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>
@@ -740,7 +742,7 @@ export function MultiProductLCA({ onNavigate }: { onNavigate?: (id: string) => v
         slowNote={SLOW_RUN_NOTE}
         onCancel={stop}
         cancelLabel={STOP_WAITING_LABEL}
-        cancelNote={STOP_WAITING_NOTE}
+        cancelNote={StopWaitingNote()}
         data-testid="multi-product-compute-progress"
       />
       {multiStopped && !multiLoading && <StoppedNotice data-testid="multi-product-stopped" />}

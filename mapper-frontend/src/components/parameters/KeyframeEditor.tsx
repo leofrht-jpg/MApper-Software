@@ -18,6 +18,7 @@ import {
   HORIZON_END, HORIZON_START, lrFactor, sortRowsByYear, trajectorySeries,
   validateKeyframeRows, type KeyframeRow, type LeverReferenceMaterial,
 } from '../../utils/keyframes'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface Row extends KeyframeRow {
   id: string
@@ -168,7 +169,7 @@ export function KeyframeEditor({ param, onPatch, taggedMaterials = [] }: Keyfram
           </div>
           {display.map((r) => (
             <div key={r.id} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 28px', gap: 6, marginBottom: 4, alignItems: 'center' }}>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 data-testid={`keyframe-year-${r.id}`}
                 value={r.year}
                 inputMode="numeric"
@@ -176,7 +177,7 @@ export function KeyframeEditor({ param, onPatch, taggedMaterials = [] }: Keyfram
                 onChange={(e) => editRow(r.id, 'year', e.target.value)}
                 style={{ ...inputSty, borderColor: rowErr(validation, display, r.id) ? 'var(--danger)' : 'var(--border-default)' }}
               />
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 data-testid={`keyframe-value-${r.id}`}
                 value={r.value}
                 inputMode="decimal"

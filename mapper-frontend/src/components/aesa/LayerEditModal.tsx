@@ -15,6 +15,7 @@ import { useBackdropDismiss } from '../ui/useBackdropDismiss'
 import type {
   DownscalingLayer, LayerData, PrincipleDefinition, PrincipleMode, ResolutionMode,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface Props {
   layer: DownscalingLayer
@@ -345,7 +346,7 @@ function PrincipleDataCard({
                     gap: 4, alignItems: 'center',
                   }}
                 >
-                  <input
+                  <input {...IDENTIFIER_INPUT_PROPS}
                     type="number"
                     value={y}
                           onChange={(e) => {
@@ -358,13 +359,13 @@ function PrincipleDataCard({
                     }}
                     style={miniInput}
                   />
-                  <input
+                  <input {...IDENTIFIER_INPUT_PROPS}
                     type="number"
                     value={pair[0]}
                           onChange={(e) => setYear(y, [Number(e.target.value), pair[1]])}
                     style={miniInput}
                   />
-                  <input
+                  <input {...IDENTIFIER_INPUT_PROPS}
                     type="number"
                     value={pair[1]}
                           onChange={(e) => setYear(y, [pair[0], Number(e.target.value)])}
@@ -460,7 +461,7 @@ function NumField({
   return (
     <label style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
       <span style={{ fontSize: 10, color: 'var(--text-tertiary)' }}>{label}</span>
-      <input
+      <input {...IDENTIFIER_INPUT_PROPS}
         type="number"
         step="any"
         value={value}

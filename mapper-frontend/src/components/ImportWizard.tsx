@@ -23,6 +23,7 @@ import {
   type TaskProgressMessage,
 } from '../api/client'
 import { useProjectStore } from '../stores/projectStore'
+import { IDENTIFIER_INPUT_PROPS } from './ui/identifierInput'
 
 type Method = 'local' | 'credentials' | null
 
@@ -434,7 +435,7 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
                   Folder path
                 </label>
                 <div style={{ display: 'flex', gap: 8 }}>
-                  <input
+                  <input {...IDENTIFIER_INPUT_PROPS}
                     type="text"
                     value={folderPath}
                     onChange={(e) => { setFolderPath(e.target.value); setFolderInfo(null); setFolderError('') }}
@@ -504,7 +505,7 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
               ].map(({ label, value, onChange, type }) => (
                 <div key={label}>
                   <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 6 }}>{label}</label>
-                  <input
+                  <input {...IDENTIFIER_INPUT_PROPS}
                     type={type}
                     value={value}
                     onChange={(e) => onChange(e.target.value)}
@@ -539,7 +540,7 @@ export function ImportWizard({ onClose }: ImportWizardProps) {
                 <label style={{ fontSize: 'var(--text-xs)', fontWeight: 600, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: 'var(--tracking-wide)', display: 'block', marginBottom: 8 }}>
                   Database name
                 </label>
-                <input
+                <input {...IDENTIFIER_INPUT_PROPS}
                   type="text"
                   value={dbName}
                   onChange={(e) => setDbName(e.target.value)}

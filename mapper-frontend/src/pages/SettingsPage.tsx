@@ -27,6 +27,7 @@ import { useCarbonStore } from '../stores/carbonStore'
 import { DiagnosticsHelp } from '../components/settings/DiagnosticsHelp'
 import { DIAGNOSTIC_LIST } from '../utils/diagnostics'
 import { useDiagnosticHelpStore } from '../stores/diagnosticHelpStore'
+import { IDENTIFIER_INPUT_PROPS } from '../components/ui/identifierInput'
 
 // Single source of truth — injected at build time from package.json version
 // (vite.config.ts `define`). Bumping package.json propagates here automatically.
@@ -851,7 +852,7 @@ function LocationPanel() {
               CPU TDP override (watts)
             </label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 type="number"
                 min="1"
                 step="1"

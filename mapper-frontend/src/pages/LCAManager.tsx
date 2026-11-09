@@ -25,6 +25,7 @@ import {
   structuredErrorDetail,
   type MultiImportResult,
 } from '../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../components/ui/identifierInput'
 
 /** A file refused whole because rows link a biosphere flow (nothing was imported). */
 interface ImportRefusal {
@@ -474,7 +475,7 @@ export function LCAManager({ onOpenArchetype }: LCAManagerProps) {
         <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 'var(--space-3)', marginBottom: 'var(--space-3)' }}>
           <div style={{ position: 'relative', width: 260 }}>
             <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
-            <input
+            <input {...IDENTIFIER_INPUT_PROPS}
               type="text"
               value={search}
               onChange={(e) => setSearch(e.target.value)}

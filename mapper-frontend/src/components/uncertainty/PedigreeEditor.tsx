@@ -14,6 +14,7 @@ import {
   usePedigreeTable,
   type PedigreeScores,
 } from '../../utils/pedigree'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 /** What a score MEANS, per indicator. Without this the picker is five
  *  unlabelled 1-5 dials and nobody can score honestly. Condensed from the
@@ -205,7 +206,7 @@ export function PedigreeEditor({
             </span>
           )}
           {basicVarianceMode === 'required' && (
-            <input
+            <input {...IDENTIFIER_INPUT_PROPS}
               data-testid={`${testIdPrefix}-basic-required`}
               type="number"
               min={0}

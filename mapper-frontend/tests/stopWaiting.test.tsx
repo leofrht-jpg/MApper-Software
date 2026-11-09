@@ -140,8 +140,13 @@ describe('LCA Architect, activity mode', () => {
     await waitCard('activity-lca-progress')
     const b = stopBtn('activity-lca-progress')!
     expect(b.textContent).toBe('Stop waiting')
-    expect(screen.getByTestId('activity-lca-progress-cancel-note').textContent)
-      .toBe('The calculation may keep running in the background; the next one can take longer.')
+    // Two sentences, one per row: the first ends with a dot, the second starts a new block.
+    const lines = Array.from(screen.getByTestId('activity-lca-progress-cancel-note').children)
+    expect(lines.map((l) => l.tagName)).toEqual(['DIV', 'DIV'])
+    expect(lines.map((l) => l.textContent)).toEqual([
+      'The calculation may keep running in the background.',
+      'The next one can take longer.',
+    ])
     await act(async () => { fireEvent.click(b) })
     expect(h.pending[0].signal!.aborted).toBe(true)
     expect(screen.queryByTestId('activity-lca-progress')).toBeNull()

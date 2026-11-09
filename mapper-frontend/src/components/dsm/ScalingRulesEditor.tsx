@@ -18,6 +18,7 @@ import {
   type DSMScalingRule,
   type ScalingTarget,
 } from '../../api/client'
+import { IDENTIFIER_INPUT_PROPS } from '../ui/identifierInput'
 
 interface ScalingRulesEditorProps {
   onClose: () => void
@@ -285,7 +286,7 @@ function RuleCard({
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 180px 32px', gap: 'var(--space-3)', alignItems: 'flex-end' }}>
         <div>
           <label style={labelCol}>Rule id</label>
-          <input
+          <input {...IDENTIFIER_INPUT_PROPS}
             type="text"
             value={rule.id}
             onChange={(e) => onChange({ id: e.target.value })}
@@ -356,7 +357,7 @@ function RuleCard({
 
       <div>
         <label style={labelCol}>Expression</label>
-        <input
+        <input {...IDENTIFIER_INPUT_PROPS}
           type="text"
           value={rule.expression}
           onChange={(e) => onChange({ expression: e.target.value })}

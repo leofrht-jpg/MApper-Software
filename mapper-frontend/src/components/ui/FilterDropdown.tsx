@@ -24,6 +24,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronDown, Search } from 'lucide-react'
 import { useOptionSearch } from '../../hooks/useOptionSearch'
+import { IDENTIFIER_INPUT_PROPS } from './identifierInput'
 
 // Pure helper — split the (already search-filtered, already-sorted) visible
 // options into a SELECTED-first group and the rest, preserving the incoming
@@ -146,7 +147,7 @@ export function FilterDropdown({
           {showSearch && (
             <div style={{ position: 'relative', marginBottom: 4 }}>
               <Search size={11} style={{ position: 'absolute', top: 7, left: 7, color: 'var(--text-tertiary)', pointerEvents: 'none' }} />
-              <input
+              <input {...IDENTIFIER_INPUT_PROPS}
                 ref={searchRef}
                 data-testid={testId ? `${testId}-search` : undefined}
                 type="text"

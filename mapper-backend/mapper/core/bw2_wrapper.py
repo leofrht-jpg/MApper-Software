@@ -857,7 +857,9 @@ class PersistentLCARunner:
     factorizations, everything else back-substitution), down from ≈ 54 minutes
     before the extension was bundled.
 
-    Without UMFPACK (the Windows build) the runner falls back to ONE SuperLU
+    The macOS and Windows 0.4.1+ installers bundle scikit-umfpack. Without
+    UMFPACK (the 0.4.0 Windows installer, a source install without
+    scikit-umfpack) the runner falls back to ONE SuperLU
     factorization (``scipy.sparse.linalg.splu``) reused for every solve, where
     it used to fall back to bw2calc's ``spsolve`` per ``redo_lci`` -- a full
     factorization each time, about 71 per single-product run. The factor is
@@ -945,7 +947,7 @@ class PersistentLCARunner:
         except Exception:
             return False
 
-    # ── SuperLU fallback (no UMFPACK, i.e. the Windows build) ──────────────
+    # ── SuperLU fallback (used when UMFPACK is unavailable) ────────────────
 
     def _factorize_splu(self) -> bool:
         """Factorise the CURRENT technosphere matrix once with SuperLU.

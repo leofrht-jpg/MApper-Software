@@ -92,9 +92,11 @@ dependencies:
   # Verify on either platform with:
   #     python -c "from mapper.core.bw2_wrapper import _UMFPACK_OK; print(_UMFPACK_OK)"
   #
-  # Do this before freezing a release: without it the run falls back to
-  # spsolve-per-call and a prospective run takes tens of minutes instead of
-  # under a minute. The test suite does not depend on it (nothing under tests/
+  # The macOS and Windows installers (0.4.1 and later) bundle it. For a source
+  # install, do this yourself: without it the run falls back to SuperLU
+  # (spsolve) and a prospective run takes tens of minutes instead of
+  # under a minute. A release build must have it (the Windows release workflow
+  # fails without it). The test suite does not depend on it (nothing under tests/
   # references UMFPACK), so CI is unaffected on either platform.
 
   # ── Misc runtime ────────────────────────────────────────────────────────────

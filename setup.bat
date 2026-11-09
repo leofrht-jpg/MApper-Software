@@ -22,8 +22,9 @@ REM
 REM     setup.bat --force
 REM
 REM scikit-umfpack is NOT installed here: the win-64 build needs a --no-deps install, see INSTALL.md.
-REM Windows uses the spsolve fallback, which is correct but slower for
-REM prospective LCA.
+REM Without it, a source install falls back to SuperLU (spsolve), which is
+REM correct but slower for prospective LCA. The 0.4.1 and later Windows
+REM installers bundle it.
 setlocal enabledelayedexpansion
 
 set FORCE=0

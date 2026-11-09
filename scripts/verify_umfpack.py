@@ -7,7 +7,7 @@
 # Lead developer: Leonardo Ferhati
 """Fail unless scikit-umfpack loads and solves like SciPy's SuperLU, through MApper's own code.
 
-The Windows build used to fall back to SuperLU (one factorisation about 150 s on a
+Before 0.4.1 the Windows installer fell back to SuperLU (one factorisation about 150 s on a
 real laptop). This check is the build gate for the fast solver. It proves, in the
 BUILD environment (not the frozen app):
 
@@ -113,7 +113,7 @@ def through_the_runner() -> None:
     check(runner._umf_solver is not None, "PersistentLCARunner holds an UMFPACK factorisation")
     check(runner.factorizations == 1, f"3 solves, {runner.factorizations} factorisation(s) (expected 1)")
 
-    # Reference: plain bw2calc with SuperLU only (use_umfpack False), the Windows behaviour so far.
+    # Reference: plain bw2calc with SuperLU only (use_umfpack False), the behaviour when UMFPACK is unavailable.
     real = bw2calc.lca.spsolve
     bw2calc.lca.spsolve = lambda *a, **k: real(*a, **{**k, "use_umfpack": False})
     try:

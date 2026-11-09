@@ -142,7 +142,7 @@ Ratio is reported as a lower bound.
 
 - **Frontend:** React + Vite + TypeScript + Tailwind CSS
 - **Backend:** FastAPI + Python 3.11
-- **LCA engine:** Brightway2 + bw2calc with UMFPACK factorisation reuse — each premise db is factorised once and back-substituted for every subsequent solve. UMFPACK is bundled in the macOS desktop build via `mapper-desktop.spec`, and in the Windows installer from the first release built after pull request #237 (the 0.4.0 Windows installer has no UMFPACK, see "The sparse solver" below), so those builds get this path: the Danish fleet case (3 LCI scenarios × 26 years × 25 indicators) completes in **under a minute**, down from ≈ 54 minutes. See DESKTOP.md → "UMFPACK in the frozen build"
+- **LCA engine:** Brightway2 + bw2calc with UMFPACK factorisation reuse — each premise db is factorised once and back-substituted for every subsequent solve. UMFPACK is bundled in the macOS desktop build via `mapper-desktop.spec`, and in the Windows installer from 0.4.1 on (the 0.4.0 Windows installer has no UMFPACK, see "The sparse solver" below), so those builds get this path: the Danish fleet case (3 LCI scenarios × 26 years × 25 indicators) completes in **under a minute**, down from ≈ 54 minutes. See DESKTOP.md → "UMFPACK in the frozen build"
 - **DSM engine:** Cohort-based dynamic stock model with Weibull survival
 - **Prospective:** premise 2.1.3
 - **Desktop packaging:** Tauri v2
@@ -176,14 +176,14 @@ to try MApper without it, see
 
 **The sparse solver (UMFPACK).** The macOS build links UMFPACK through
 scikit-umfpack, so each prospective database is factorised once and reused for
-every later solve. From the first Windows installer built after pull request
-#237 (the release after 0.4.0), the Windows installer includes UMFPACK too; its
-log line reads "UMFPACK solver: OK". The 0.4.0 Windows installer does not: it
-falls back to SciPy's SuperLU, gives the same results to solver tolerance, and is
-much slower on large sparse solves. Measured on one Windows laptop with one
+every later solve. MApper 0.4.1 is the first release whose Windows installer
+includes UMFPACK too; its log line reads "UMFPACK solver: OK". The 0.4.0 Windows
+installer does not: it falls back to SciPy's SuperLU, gives the same results to
+solver tolerance, and is much slower on large sparse solves. **On Windows,
+install 0.4.1 or later.** Measured on one Windows laptop with one
 single-product LCA (archetype walk-arc, ecoinvent-3.10-cutoff, EF v3.1 GWP100):
-about 154 s with the 0.4.0 installer, about 5 s with an installer that includes
-UMFPACK, same score (2.1194 kg CO2-Eq) as on the Mac. One machine and one
+about 154 s with the 0.4.0 installer, about 5 s with the 0.4.1 installer, same
+score (2.1194 kg CO2-Eq) as on the Mac. One machine and one
 calculation; other databases and the supply chain tree were not measured. A
 source install on Windows can add UMFPACK by hand, see the Windows steps in
 INSTALL.md (the `--no-deps` procedure remains the way to do that).

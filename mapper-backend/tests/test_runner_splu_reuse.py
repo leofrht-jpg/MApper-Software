@@ -8,7 +8,9 @@
 
 """``PersistentLCARunner`` without UMFPACK: one SuperLU factorisation, reused.
 
-The Windows build has no UMFPACK, so ``_factorize_umfpack`` returns False and
+The macOS and Windows 0.4.1+ installers bundle scikit-umfpack. Where UMFPACK is
+unavailable (the 0.4.0 Windows installer, a source install without
+scikit-umfpack, Windows CI), ``_factorize_umfpack`` returns False and
 every ``redo_lci`` used to run bw2calc's ``spsolve`` -- a full factorisation per
 solve, ~71 of them for one 70-process product. The fallback now factorises once
 with ``scipy.sparse.linalg.splu`` and solves with that factor.
@@ -109,7 +111,7 @@ def fallback(monkeypatch, tech_project):
 
     def counting_spsolve(*a, **k):
         c.spsolve += 1
-        # SuperLU even on a machine that has scikit-umfpack: the Windows behaviour.
+        # SuperLU even on a machine that has scikit-umfpack: the fallback behaviour.
         k.setdefault("use_umfpack", False)
         return real_spsolve(*a, **k)
 
@@ -270,7 +272,7 @@ def test_a_failed_factorisation_falls_back_to_spsolve(fallback, monkeypatch):
 # ── the UMFPACK path is untouched ─────────────────────────────────────────
 
 
-@pytest.mark.skipif(not w._UMFPACK_OK, reason="no UMFPACK on this machine (the Windows build)")
+@pytest.mark.skipif(not w._UMFPACK_OK, reason="no UMFPACK on this machine (Windows CI, or a source install without scikit-umfpack)")
 def test_umfpack_path_is_unchanged(monkeypatch, tech_project):
     calls = {"splu": 0}
     real_splu = w.splu

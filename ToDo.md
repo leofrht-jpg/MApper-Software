@@ -67,7 +67,7 @@ outside the repository; this file holds items recorded from work done in it.
   anyway and holds `compute_lock`, so the next calculation queues behind it.
   A real server-side stop (registered tasks with checkpoints, or a worker
   process) remains open, and is needed for the single factorization that takes
-  about 2 minutes on Windows without UMFPACK (the 0.4.0 installer; builds after pull request #237 include it). Still without any Stop: AESA,
+  about 154 s on one Windows laptop without UMFPACK (the 0.4.0 installer; 0.4.1 and later include it). Still without any Stop: AESA,
   System-level Static, DSM simulation, project export and import.
 - [ ] **pLCA generation honours cancel only between premise stages.** The
   checkpoint is premise_engine's stage callback, so a Stop during one long

@@ -228,11 +228,28 @@ jobs:
 
       # STEP 4 -- bundle. Targets come from tauri.conf.json; only `nsis` is
       # produced on Windows (`app`/`dmg` are macOS-only and are skipped).
+      # Tauri downloads nsis_tauri_utils.dll from GitHub here, and that download
+      # failed once with "http status: 504" (v0.4.1, attempt 1) while a re-run
+      # passed. So THIS command, and only this one, is tried up to 3 times with
+      # a pause (30 s, then 60 s). Every attempt's output stays in the log, and
+      # the step still fails the job if all 3 attempts fail.
       - name: Build NSIS installer
         shell: pwsh
         run: |
           cd mapper-tauri
-          tauri build --bundles nsis
+          $pauses = @(30, 60)
+          $built = $false
+          for ($i = 1; $i -le 3; $i++) {
+            Write-Host "tauri build --bundles nsis: attempt $i of 3"
+            tauri build --bundles nsis
+            if ($LASTEXITCODE -eq 0) { $built = $true; break }
+            Write-Host "attempt $i failed with exit code $LASTEXITCODE"
+            if ($i -lt 3) {
+              Write-Host "waiting $($pauses[$i - 1]) s before the next attempt"
+              Start-Sleep -Seconds $pauses[$i - 1]
+            }
+          }
+          if (-not $built) { throw "tauri build --bundles nsis failed in all 3 attempts (see the output above)" }
 
       - name: Locate installer
         id: art

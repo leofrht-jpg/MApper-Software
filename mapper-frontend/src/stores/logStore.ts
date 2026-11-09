@@ -57,6 +57,21 @@ export function logEvent(e: Omit<LogEntry, 'id' | 'timestamp'> & { timestamp?: s
 
 let _installed = false
 
+const errName = (e: unknown): string | undefined =>
+  typeof e === 'object' && e !== null ? (e as { name?: string }).name : undefined
+
+/**
+ * True when a failed request was cancelled by the app itself: the caller's own signal is aborted
+ * (Stop waiting, Discard, unmount, a replaced query) and the failure is that abort. A timeout is not
+ * one: `AbortSignal.timeout()` aborts with a TimeoutError reason, and an internal timeout controller
+ * must abort with one too (`new DOMException(..., 'TimeoutError')`), so both are still logged.
+ */
+export function isCallerAbort(err: unknown, signal: AbortSignal | null | undefined): boolean {
+  if (!signal?.aborted) return false
+  if (errName(signal.reason) === 'TimeoutError' || errName(err) === 'TimeoutError') return false
+  return err === signal.reason || errName(err) === 'AbortError'
+}
+
 /**
  * Install global handlers once. Captures:
  *   - window.onerror (uncaught JS errors during render or async)
@@ -81,6 +96,8 @@ export function installGlobalErrorHandlers() {
 
   window.addEventListener('unhandledrejection', (event) => {
     const reason = event.reason
+    // A request the app cancelled itself that nobody caught: intentional, not an error.
+    if (errName(reason) === 'AbortError') return
     const message =
       reason instanceof Error ? reason.message : typeof reason === 'string' ? reason : JSON.stringify(reason)
     logEvent({
@@ -98,6 +115,7 @@ export function installGlobalErrorHandlers() {
     const [input, init] = args
     const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url
     const method = (init?.method || (typeof input === 'object' && 'method' in input ? (input as Request).method : 'GET')).toUpperCase()
+    const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined)
     try {
       const res = await originalFetch(...args)
       if (!res.ok) {
@@ -117,6 +135,9 @@ export function installGlobalErrorHandlers() {
       }
       return res
     } catch (err) {
+      // The app cancelled this request itself: it is not a failure, and logging it would also push real
+      // errors out of the 50-entry log (a search box cancels one request per keystroke). Nothing is logged.
+      if (isCallerAbort(err, signal)) throw err
       // Network error, CORS failure, server down, etc.
       const message = err instanceof Error ? err.message : String(err)
       logEvent({

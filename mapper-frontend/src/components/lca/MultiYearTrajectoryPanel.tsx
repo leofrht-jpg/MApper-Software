@@ -36,6 +36,7 @@ import { useNumberFormatter } from '../charts/numberFormat'
 import { TOOLTIP_CONTENT_STYLE, TOOLTIP_ITEM_STYLE, TOOLTIP_LABEL_STYLE } from '../charts/tooltipStyle'
 import { ContributionAnalysisPanel } from './ContributionAnalysisPanel'
 import { indicatorLabel, methodPath } from '../../utils/methodLabels'
+import { formatRunTime } from '../../utils/runTime'
 
 type View = 'trajectory' | 'evolution' | 'snapshot'
 
@@ -182,9 +183,9 @@ export function MultiYearTrajectoryPanel({ result, loadingPhase: _loadingPhase, 
             · pattern: {shortenPattern(result.compute_database_pattern)}
           </span>
         )}
-        {result.elapsed_seconds > 0 && (
+        {formatRunTime(result.elapsed_seconds, result.cached) && (
           <span style={{ marginLeft: 8 }} title="Total wall-clock time across all years">
-            · {result.elapsed_seconds.toFixed(2)}s
+            · {formatRunTime(result.elapsed_seconds, result.cached)}
           </span>
         )}
       </div>

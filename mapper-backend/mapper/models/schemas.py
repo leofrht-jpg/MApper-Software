@@ -1166,7 +1166,13 @@ class ContributionAnalysisResult(BaseModel):
     by_stage: list[StageContribution] = Field(default_factory=list)
     cutoff: float
     max_depth: int
+    #: Wall time of the run that produced this result (loading, factorisation, solves,
+    #: attribution, tree). A result served from the in-memory cache carries the time of
+    #: the original run, not the lookup.
     elapsed_seconds: float = 0.0
+    #: True when this response was served from the in-memory cache (``elapsed_seconds``
+    #: is then the original run's time).
+    cached: bool = False
     # Non-fatal warnings collected during computation (e.g. fell back to base
     # DB for activities not present in the requested compute_database).
     warnings: list[str] = Field(default_factory=list)
@@ -1272,6 +1278,9 @@ class MultiYearContributionResult(BaseModel):
     cutoff: float
     max_depth: int
     elapsed_seconds: float = 0.0
+    #: True when every year was served from the cache; ``elapsed_seconds`` is then the sum of
+    #: the years' original run times.
+    cached: bool = False
     # Aggregated warnings across years (deduplicated, year-prefixed).
     warnings: list[str] = Field(default_factory=list)
     computed_at: str | None = None

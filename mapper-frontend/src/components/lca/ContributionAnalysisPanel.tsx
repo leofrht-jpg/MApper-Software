@@ -28,6 +28,7 @@ import {
   type ContributionTreeNode,
 } from '../../api/client'
 import { indicatorLabel, methodPath } from '../../utils/methodLabels'
+import { formatRunTime } from '../../utils/runTime'
 
 type TopN = 5 | 10 | 20 | 'all'
 type Tab = 'activities' | 'flows' | 'supply' | 'stage'
@@ -139,9 +140,15 @@ export function ContributionAnalysisPanel({ result, loadingPhase, stageBreakdown
             · {shortenComputeDatabaseLabel(result.compute_database, result.year)}
           </span>
         )}
-        {result.elapsed_seconds > 0 && (
-          <span style={{ marginLeft: 8 }} title="Wall-clock computation time">
-            · {result.elapsed_seconds.toFixed(2)}s
+        {formatRunTime(result.elapsed_seconds, result.cached) && (
+          <span
+            style={{ marginLeft: 8 }}
+            data-testid="contribution-run-time"
+            title={result.cached
+              ? 'Wall-clock time of the run that produced this result; it was served from memory this time'
+              : 'Wall-clock computation time'}
+          >
+            · {formatRunTime(result.elapsed_seconds, result.cached)}
           </span>
         )}
       </div>

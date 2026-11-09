@@ -30,13 +30,19 @@ included. Import ecoinvent from inside the app (**Database Explorer → Import**
 to try MApper without it, see
 [Try it without ecoinvent](README.md#try-it-without-ecoinvent).
 
-**The sparse solver differs by platform.** The macOS build links UMFPACK
-through scikit-umfpack, so each prospective database is factorised once and
-reused for every later solve. The Windows build falls back to SciPy's SuperLU
-(the Windows installer is built without scikit-umfpack; a source install on
-Windows can add it, see the Windows steps in INSTALL.md). The results are the
-same to solver tolerance, but large sparse solves, such as prospective runs over
-many years, are slower on Windows.
+**The sparse solver (UMFPACK).** The macOS build links UMFPACK through
+scikit-umfpack, so each prospective database is factorised once and reused for
+every later solve. From the first Windows installer built after pull request
+#237 (the release after 0.4.0), the Windows installer includes UMFPACK too; its
+log line reads "UMFPACK solver: OK". The 0.4.0 Windows installer does not: it
+falls back to SciPy's SuperLU, gives the same results to solver tolerance, and is
+much slower on large sparse solves. Measured on one Windows laptop with one
+single-product LCA (archetype walk-arc, ecoinvent-3.10-cutoff, EF v3.1 GWP100):
+about 154 s with the 0.4.0 installer, about 5 s with an installer that includes
+UMFPACK, same score (2.1194 kg CO2-Eq) as on the Mac. One machine and one
+calculation; other databases and the supply chain tree were not measured. A
+source install on Windows can add UMFPACK by hand, see the Windows steps in
+INSTALL.md (the `--no-deps` procedure remains the way to do that).
 
 The rest of this guide covers running MApper from source.
 
@@ -123,8 +129,11 @@ to recreate it.
 > python -c "from mapper.core.bw2_wrapper import _UMFPACK_OK; print(_UMFPACK_OK)"
 > ```
 >
-> Skipping it is supported: MApper falls back to `spsolve` per call, which is
-> correct but turns a sub-minute prospective run into tens of minutes.
+> Skipping it is supported: MApper falls back to SuperLU, which is correct but
+> much slower (one factorisation took about 154 s on one Windows laptop, against
+> about 5 s for a whole single-product LCA with UMFPACK; one machine, one
+> calculation). This applies to a source install; the Windows installer includes
+> UMFPACK from the first release built after pull request #237.
 
 ## First Run
 

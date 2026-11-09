@@ -12,6 +12,8 @@ at 0.3.1 and is kept from here on.
 
 ## [Unreleased]
 
+## [0.4.1] — 2026-11-08
+
 ### Changed
 
 - **Runtime dependency updates.** React and React DOM 19.3.1, d3 7.9.2, lucide-react 1.68.0, zustand 5.0.16 and the React type packages 19.3.0. Two updates were held back on purpose: svg2pdf.js stays at 2.7.0 (later versions break chart export loading) and @tanstack/react-virtual was held at 3.14.10 at that time (3.14.26 emptied the Database Explorer list in tests) and moved to 3.14.26 in the next entry.

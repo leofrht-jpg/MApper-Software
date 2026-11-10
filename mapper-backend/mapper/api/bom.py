@@ -224,6 +224,25 @@ def _persist_archetype(project: str, arc: Archetype) -> None:
         _invalidate_contribution_cache({arc.id})
 
 
+def _includers_message(arcs: list[Archetype]) -> str:
+    """'A (folder X), B (root)' for a refusal message, in a stable order."""
+    return ", ".join(
+        f"'{a.name}' ({'folder ' + a.folder if a.folder else 'root'})"
+        for a in sorted(arcs, key=lambda a: ((a.folder or ""), a.name))
+    )
+
+
+def _archetypes_including(
+    project: str, arc_id: str, ignore: set[str] | None = None,
+) -> list[Archetype]:
+    """Archetypes whose ``includes`` reference ``arc_id``, minus ``ignore``."""
+    ignore = ignore or set()
+    return [
+        a for a in _proj_archetypes(project).values()
+        if a.id not in ignore and any(i.archetype_id == arc_id for i in (a.includes or []))
+    ]
+
+
 def _forget_archetype(project: str, arc_id: str) -> None:
     """Delete the file AND the cached results. A deleted archetype's entries are
     unreachable rather than wrong, but leaving them is a slow leak and they
@@ -245,6 +264,22 @@ def _assert_includes_resolvable(arc: Archetype, project: str | None = None) -> N
     if not getattr(arc, "includes", None):
         return
     registry = dict(_proj_archetypes(project) if project else _proj_archetypes())
+    # The same child twice would repeat every leaf node_id of that child, and the
+    # Monte Carlo draws are keyed by node_id, so the two copies would share one
+    # draw. One include with the summed quantity is the same inventory.
+    seen: set[str] = set()
+    for inc in arc.includes:
+        if inc.archetype_id in seen:
+            child = registry.get(inc.archetype_id)
+            label = f"'{child.name}'" if child is not None else f"id '{inc.archetype_id}'"
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Archetype '{arc.name}' includes {label} more than once. "
+                    f"Include it once and set the quantity instead."
+                ),
+            )
+        seen.add(inc.archetype_id)
     if arc.id:
         registry[arc.id] = arc
     try:
@@ -345,6 +380,11 @@ async def get_archetype(arc_id: str) -> Archetype:
 async def update_archetype(arc_id: str, body: ArchetypeCreate) -> Archetype:
     existing = _get_archetype(arc_id)
     folder = _normalize_folder(body.folder)
+    # ABSENT is not EMPTY. A client that does not know about composition (an
+    # older UI, a script) sends no `includes`, and defaulting that to [] used to
+    # wipe the references on every save. Only an explicit list, empty or not,
+    # changes them.
+    includes = body.includes if "includes" in body.model_fields_set else existing.includes
     updated = Archetype(
         id=arc_id,
         name=body.name,
@@ -352,7 +392,7 @@ async def update_archetype(arc_id: str, body: ArchetypeCreate) -> Archetype:
         category=body.category,
         folder=folder,
         bom=body.bom,
-        includes=body.includes,
+        includes=includes,
         created_at=existing.created_at,
         updated_at=_now_iso(),
     )
@@ -371,6 +411,15 @@ async def delete_archetype(arc_id: str) -> dict[str, bool]:
     archetypes = _proj_archetypes(project)
     if arc_id not in archetypes:
         raise HTTPException(status_code=404, detail="Archetype not found")
+    users = _archetypes_including(project, arc_id)
+    if users:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"Cannot delete '{archetypes[arc_id].name}': it is included by "
+                f"{_includers_message(users)}. Remove those references first."
+            ),
+        )
     with _lock:
         archetypes.pop(arc_id, None)
         # Clean any cohort mappings (in this project) that pointed at this archetype.
@@ -469,6 +518,26 @@ async def delete_folder(body: FolderDeleteBody) -> dict:
                 if arc.folder == path or (arc.folder and arc.folder.startswith(path + "/"))]
     deleted_arcs = 0
     moved_arcs = 0
+    if body.delete_archetypes:
+        # An archetype may go with its folder only if nothing that stays
+        # includes it. Archetypes deleted in the same call may include each other.
+        going = {a.id for a in affected if a.id}
+        blocked: list[str] = []
+        for a in affected:
+            if not a.id:
+                continue
+            users = _archetypes_including(project, a.id, ignore=going)
+            if users:
+                blocked.append(f"'{a.name}' is included by {_includers_message(users)}")
+        if blocked:
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    f"Cannot delete folder '{path}': "
+                    + "; ".join(blocked)
+                    + ". Remove those references first."
+                ),
+            )
     with _lock:
         if body.delete_archetypes:
             # Remove those archetypes entirely.

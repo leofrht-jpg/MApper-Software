@@ -503,6 +503,13 @@ export interface TimelineCompareResult {
   total_mass_end: number
 }
 
+/** A reference from one archetype to another: the child's whole BOM, scaled by `quantity`. */
+export interface ArchetypeInclude {
+  archetype_id: string
+  quantity: number
+  quantity_expression?: string | null
+}
+
 export interface Archetype {
   id?: string | null
   name: string
@@ -510,6 +517,9 @@ export interface Archetype {
   category?: string | null
   folder?: string | null
   bom: BOMNode[]
+  /** Composition references. Absent on an older server. A save that omits this
+   *  keeps the stored list; send the list (even empty) only to change it. */
+  includes?: ArchetypeInclude[]
   created_at?: string | null
   updated_at?: string | null
   validation_report?: ValidationReport | null
@@ -2630,6 +2640,7 @@ export async function createArchetype(data: {
   category?: string | null
   folder?: string | null
   bom: BOMNode[]
+  includes?: ArchetypeInclude[]
 }): Promise<Archetype> {
   return request<Archetype>('/bom/archetypes', {
     method: 'POST',
@@ -2644,6 +2655,7 @@ export async function updateArchetype(id: string, data: {
   category?: string | null
   folder?: string | null
   bom: BOMNode[]
+  includes?: ArchetypeInclude[]
 }): Promise<Archetype> {
   return request<Archetype>(`/bom/archetypes/${id}`, {
     method: 'PUT',

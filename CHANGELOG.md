@@ -12,6 +12,12 @@ at 0.3.1 and is kept from here on.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Saving an archetype keeps the archetypes it includes.** The BOM editor never sent the references and the server read a missing list as empty, so every save (a rename, a BOM edit) removed them. A save that does not mention the references now keeps them; an explicit list, even an empty one, still replaces them. Duplicating an archetype also copies its references.
+- **An archetype that other archetypes include cannot be deleted.** Deleting it, or its folder with contents, is refused with a message that names the archetypes that include it (name and folder). A folder delete is allowed when the including archetypes are deleted in the same call. Replace-mode import already warned about this and is unchanged.
+- **The same archetype cannot be included twice in one archetype.** Two includes of one child repeated its leaf ids, so in a Monte Carlo run the two copies shared one draw. Saving such an archetype is refused with a message; use one include with the summed quantity.
+
 ## [0.4.1] — 2026-11-08
 
 ### Changed

@@ -42,7 +42,7 @@ import {
   updateArchetype,
   updateBOMNode,
 } from '../api/client'
-import type { RowUncertainty } from '../api/client'
+import type { ArchetypeInclude, RowUncertainty } from '../api/client'
 
 interface BOMStore {
   archetypes: ArchetypeSummary[]
@@ -70,8 +70,8 @@ interface BOMStore {
   ) => Promise<void>
   fetchFolders: () => Promise<void>
   selectArchetype: (id: string) => Promise<void>
-  createNew: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[] }) => Promise<Archetype>
-  saveActive: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[] }) => Promise<void>
+  createNew: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[]; includes?: ArchetypeInclude[] }) => Promise<Archetype>
+  saveActive: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[]; includes?: ArchetypeInclude[] }) => Promise<void>
   removeArchetype: (id: string) => Promise<void>
 
   addNode: (parentId: string | null, node: BOMNode) => Promise<void>
@@ -158,7 +158,13 @@ export const useBOMStore = create<BOMStore>((set, get) => ({
     if (!active?.id) throw new Error('No active archetype')
     set({ isSaving: true, error: null })
     try {
-      const arc = await updateArchetype(active.id, data)
+      // Every save keeps the archetype's composition references. A caller that
+      // does not mention `includes` (rename, description, a BOM edit) gets the
+      // active archetype's own list; only an explicit list changes it.
+      const payload = data.includes === undefined && active.includes !== undefined
+        ? { ...data, includes: active.includes }
+        : data
+      const arc = await updateArchetype(active.id, payload)
       const list = await listArchetypes()
       set({ active: arc, archetypes: list, isSaving: false })
     } catch (e: unknown) {

@@ -324,6 +324,8 @@ export function Archetypes() {
         category: full.category ?? null,
         folder: full.folder ?? null,
         bom: stripIds(full.bom),
+        // The copy keeps the same references, so it computes like the original.
+        includes: full.includes,
       })
     } catch (e) {
       notify(`Duplicate failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
@@ -358,6 +360,7 @@ export function Archetypes() {
       description: active.description ?? null,
       folder: active.folder ?? null,
       bom: active.bom,
+      includes: active.includes,
     })
   }
 
@@ -372,6 +375,7 @@ export function Archetypes() {
       description: next,
       folder: active.folder ?? null,
       bom: active.bom,
+      includes: active.includes,
     })
   }
 
@@ -380,7 +384,12 @@ export function Archetypes() {
     if (!await confirmDialog({ title: `Delete "${active.name}"?`, body: 'This cannot be undone.', destructive: true })) return
     // removeArchetype already refreshes the list and clears `active` when it was the deleted one.
     // Do NOT call clear() here — that wipes the archetypes array and hides siblings.
-    await removeArchetype(active.id)
+    try {
+      await removeArchetype(active.id)
+    } catch (e) {
+      // A 409 names the archetypes that still include this one.
+      notify(`Delete failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' })
+    }
   }
 
   // Called from the context menu AFTER it has closed: everything it needs is

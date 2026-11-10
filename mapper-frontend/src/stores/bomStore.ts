@@ -73,6 +73,8 @@ interface BOMStore {
   createNew: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[]; includes?: ArchetypeInclude[] }) => Promise<Archetype>
   saveActive: (data: { name: string; description?: string | null; category?: string | null; folder?: string | null; bom: BOMNode[]; includes?: ArchetypeInclude[] }) => Promise<void>
   removeArchetype: (id: string) => Promise<void>
+  /** Save the active archetype with this exact includes list (empty clears it). */
+  setIncludes: (includes: ArchetypeInclude[]) => Promise<void>
 
   addNode: (parentId: string | null, node: BOMNode) => Promise<void>
   addRootStage: (name: string) => Promise<void>
@@ -171,6 +173,19 @@ export const useBOMStore = create<BOMStore>((set, get) => ({
       set({ error: e instanceof Error ? e.message : String(e), isSaving: false })
       throw e
     }
+  },
+
+  setIncludes: async (includes) => {
+    const { active } = get()
+    if (!active?.id) throw new Error('No active archetype')
+    await get().saveActive({
+      name: active.name,
+      description: active.description ?? null,
+      category: active.category ?? null,
+      folder: active.folder ?? null,
+      bom: active.bom,
+      includes,
+    })
   },
 
   removeArchetype: async (id) => {

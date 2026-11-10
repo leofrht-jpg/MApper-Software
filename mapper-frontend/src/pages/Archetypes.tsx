@@ -24,6 +24,7 @@ import { BulkLearningRateModal } from '../components/bom/BulkLearningRateModal'
 import { BulkReboundModal } from '../components/bom/BulkReboundModal'
 import { TimelinePreviewModal } from '../components/bom/TimelinePreviewModal'
 import { ValidationReportPanel } from '../components/bom/ValidationReportPanel'
+import { IncludesEditor } from '../components/archetypes/IncludesEditor'
 import { ParameterManagerPanel } from '../components/parameters/ParameterManagerPanel'
 import { useBOMStore } from '../stores/bomStore'
 import { confirmDialog, notify, promptDialog } from '../components/ui/dialogs'
@@ -70,7 +71,7 @@ function validateFolderPath(path: string): string | null {
 export function Archetypes() {
   const {
     archetypes, folders, active, flattened, flattenYear, isLoading, error,
-    fetchArchetypes, selectArchetype, createNew, saveActive, removeArchetype,
+    fetchArchetypes, selectArchetype, createNew, saveActive, removeArchetype, setIncludes,
     addNode, addRootStage, patchNode, removeNode, flatten, setFlattenYear,
     exportActive,
     fetchTimeline, applyLearningRateToAll, applyReboundEffectToAll,
@@ -346,6 +347,12 @@ export function Archetypes() {
   }
 
   const handleExport = async () => {
+    // The BOM workbook has no row for a reference, so the server refuses a
+    // composed archetype. Say so here instead of showing its long refusal.
+    if ((active?.includes?.length ?? 0) > 0) {
+      notify('Includes are not exported to Excel yet.', { tone: 'info' })
+      return
+    }
     try { await exportActive() } catch (e) { notify(`Export failed: ${e instanceof Error ? e.message : e}`, { tone: 'error' }) }
   }
 
@@ -561,6 +568,21 @@ export function Archetypes() {
         ) : arc.unlinked_count > 0 && (
           <span title={`${arc.unlinked_count} unlinked`} style={{ color: 'var(--warning)', display: 'inline-flex', alignItems: 'center' }}>
             <AlertCircle size={11} />
+          </span>
+        )}
+        {(arc.dangling_includes ?? 0) > 0 && (
+          <span title={`${arc.dangling_includes} included archetype${arc.dangling_includes === 1 ? ' is' : 's are'} missing`} data-testid={`arc-dangling-${arc.id}`} style={{ color: 'var(--warning)', display: 'inline-flex', alignItems: 'center' }}>
+            <AlertCircle size={11} />
+          </span>
+        )}
+        {(arc.includes_count ?? 0) > 0 && (
+          <span data-testid={`arc-includes-${arc.id}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+            includes {arc.includes_count}
+          </span>
+        )}
+        {(arc.included_by_count ?? 0) > 0 && (
+          <span data-testid={`arc-used-by-${arc.id}`} style={{ fontSize: 'var(--text-xs)', color: 'var(--text-tertiary)', whiteSpace: 'nowrap' }}>
+            used by {arc.included_by_count}
           </span>
         )}
         {arc.category && <Badge label={arc.category} variant="lca" />}
@@ -827,6 +849,12 @@ export function Archetypes() {
             )}
 
             <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+              <IncludesEditor
+                archetypeId={active.id ?? ''}
+                includes={active.includes ?? []}
+                archetypes={archetypes}
+                onSave={setIncludes}
+              />
               {active.bom.length === 0 && (
                 <div style={{ padding: 'var(--space-6)', textAlign: 'center', color: 'var(--text-tertiary)', fontSize: 'var(--text-sm)' }}>
                   No life cycle stages yet. Add one below to start building the BOM.

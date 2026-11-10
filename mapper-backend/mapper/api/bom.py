@@ -327,7 +327,23 @@ async def create_archetype(body: ArchetypeCreate) -> Archetype:
 
 @router.get("/bom/archetypes", response_model=list[ArchetypeSummary])
 async def list_archetypes() -> list[ArchetypeSummary]:
-    return [ArchetypeSummary(**summarize_archetype(arc)) for arc in _proj_archetypes().values()]
+    archetypes = _proj_archetypes()
+    used_by: dict[str, int] = {}
+    for a in archetypes.values():
+        for inc in a.includes or []:
+            used_by[inc.archetype_id] = used_by.get(inc.archetype_id, 0) + 1
+    out: list[ArchetypeSummary] = []
+    for arc in archetypes.values():
+        row = summarize_archetype(arc)
+        dangling = 0
+        for inc in arc.includes or []:
+            if inc.archetype_id not in archetypes:
+                dangling += 1
+        row["includes_count"] = len(arc.includes or [])
+        row["included_by_count"] = used_by.get(arc.id or "", 0)
+        row["dangling_includes"] = dangling
+        out.append(ArchetypeSummary(**row))
+    return out
 
 
 # NOTE: specific /bom/archetypes/<literal> routes MUST be declared before the

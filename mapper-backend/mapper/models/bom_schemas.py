@@ -363,6 +363,14 @@ class ArchetypeSummary(BaseModel):
     # mark error/warning archetypes without fetching the full report for each.
     validation_error_rows: int = 0
     validation_warning_rows: int = 0
+    # Composition, for the list markers and the Includes editor. `includes_count`
+    # is how many archetypes this one includes; `included_by_count` how many
+    # archetypes include it; `dangling_includes` how many of ITS includes name an
+    # archetype that no longer exists in the project. Additive: 0 for a legacy
+    # archetype and for an older client that never reads them.
+    includes_count: int = 0
+    included_by_count: int = 0
+    dangling_includes: int = 0
 
 
 class ArchetypeCreate(BaseModel):

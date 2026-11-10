@@ -258,3 +258,20 @@ def test_two_different_children_are_fine(project):
     out = _put("ev", _ev_payload(ev, includes=[
         {"archetype_id": "batt", "quantity": 1.0}, {"archetype_id": "batt2", "quantity": 2.0}]))
     assert len(out.includes) == 2
+
+
+# ── Summary: what the list markers and the Includes editor read ─────────────
+
+def test_the_summary_counts_includes_includers_and_dangling(project):
+    _composed(project)                                   # EV includes Battery
+    bom_api._archetypes[project]["ev"].includes.append(
+        ArchetypeInclude(archetype_id="gone", quantity=1.0))   # a missing archetype
+    rows = {r.id: r for r in asyncio.run(bom_api.list_archetypes())}
+    assert (rows["ev"].includes_count, rows["ev"].dangling_includes, rows["ev"].included_by_count) == (2, 1, 0)
+    assert (rows["batt"].includes_count, rows["batt"].dangling_includes, rows["batt"].included_by_count) == (0, 0, 1)
+
+
+def test_the_summary_of_a_plain_archetype_has_zero_counts(project):
+    bom_api._archetypes[project]["x"] = _arc("x", "Plain", [_leaf("l", "Steel", "s" * 32, 1.0)])
+    (row,) = asyncio.run(bom_api.list_archetypes())
+    assert (row.includes_count, row.included_by_count, row.dangling_includes) == (0, 0, 0)

@@ -12,6 +12,10 @@ at 0.3.1 and is kept from here on.
 
 ## [Unreleased]
 
+### Added
+
+- **An Includes editor on the archetype page.** An archetype can include other archetypes from any folder and scale them, for example 450 of a 1 kg battery archetype in a vehicle archetype, without the API. Add from a searchable list (folder path shown; the archetype itself and archetypes already included are not offered), set a quantity or a parameter expression, remove with the Remove button. The server's refusals (cycle, depth over 4, missing archetype, duplicate) show in the page's error line. The list shows "includes N" and "used by N", an include whose archetype is missing shows a warning on its row, and exporting a composed archetype to Excel says includes are not exported yet (Excel support for includes is not part of this change).
+
 ### Fixed
 
 - **Saving an archetype keeps the archetypes it includes.** The BOM editor never sent the references and the server read a missing list as empty, so every save (a rename, a BOM edit) removed them. A save that does not mention the references now keeps them; an explicit list, even an empty one, still replaces them. Duplicating an archetype also copies its references.

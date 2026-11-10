@@ -545,6 +545,11 @@ export interface ArchetypeSummary {
   updated_at: string
   validation_error_rows?: number
   validation_warning_rows?: number
+  /** Composition: archetypes this one includes, archetypes that include it, and
+   *  how many of its includes name an archetype that no longer exists. */
+  includes_count?: number
+  included_by_count?: number
+  dangling_includes?: number
 }
 
 export interface FlattenedMaterial {

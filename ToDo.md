@@ -82,14 +82,13 @@ outside the repository; this file holds items recorded from work done in it.
   `test_aesa_export_real_path::test_a_write_failure_is_reported_not_swallowed`
   and `test_reveal_saved_file::test_a_saved_file_is_revealed`. Both fail on
   main there and pass in CI. Not investigated.
-- [ ] **Open external links in the default browser.** Since the navigation
-  guard (#191), the two external links (the premise GitHub link in Settings and
-  a method's source link in the Method Library) are blocked with the
-  "Navigation blocked" toast. Open them in the system browser through a Tauri
-  opener instead. Note: the packaged page is a remote `http://localhost:8765`
-  origin with no Tauri IPC (CLAUDE.md, "The packaged app is a REMOTE http
-  origin"), so this needs either an IPC grant for that origin or a backend
-  route that opens the URL, as Reveal in Finder does.
+- [x] **Open external links in the default browser.** Done: the navigation
+  guard hands a real click on an https, http or mailto anchor to the backend
+  (`POST /api/system/open-external`, the pattern Reveal in Finder uses, because
+  the packaged page has no Tauri IPC), which opens it in the system default
+  handler. Every other scheme stays blocked, and the message shows the real URL.
+  Not verified without a packaged build: that macOS and Windows hand the URL to
+  the default browser and mail client.
 - [ ] **A Rust-level navigation block in the app shell.** Add an
   `on_navigation` handler in `mapper-tauri/src/main.rs` that refuses any
   navigation away from `http://localhost:8765`, as a second layer behind the

@@ -4797,6 +4797,17 @@ export async function revealSavedFile(path: string): Promise<void> {
   })
 }
 
+/**
+ * Open an https, http or mailto link in the system default handler. Packaged app
+ * only: the page has no Tauri IPC, so the backend, which runs as the user, asks
+ * the OS. It refuses every other scheme.
+ */
+export async function openExternalUrl(url: string): Promise<void> {
+  await request<{ opened: string }>('/system/open-external', {
+    method: 'POST', body: JSON.stringify({ url }),
+  })
+}
+
 export async function downloadSystemLogs(): Promise<LogSaveResult> {
   if (isPackagedDesktop()) {
     const saved = await request<{ path: string; bytes: number }>(

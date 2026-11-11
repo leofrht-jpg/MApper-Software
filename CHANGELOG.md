@@ -12,6 +12,10 @@ at 0.3.1 and is kept from here on.
 
 ## [Unreleased]
 
+### Fixed
+
+- **External links open in the system default browser or mail client.** Clicking the email link on the Premise setup panel, the premise GitHub link in Settings or a method's source link in the Method Library showed "Navigation blocked ... (external link to null)" and opened nothing. A click on an https, http or mailto link now opens it in the default handler, through the backend (the app page has no direct access to the OS). Any other kind of link stays blocked, a blocked-link message shows the real address instead of "null", and the Settings panel shows the Premise email address as plain text that can be copied.
+
 ## [0.4.2] — 2026-11-10
 
 ### Added

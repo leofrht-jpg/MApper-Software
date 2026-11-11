@@ -58,7 +58,7 @@ describe('clicks that would replace the page', () => {
     ['blob:http://localhost/0b8e', 'blob: URL'],
     ['data:text/html,<h1>gone</h1>', 'data: URL'],
     ['file:///Users/me/Downloads/parameters.xlsx', 'file: URL'],
-    ['https://example.org/x', 'external link to https://example.org'],
+    ['https://example.org/x', 'external link to https://example.org/x'],
   ])('%s is cancelled and the user is told', async (href, type) => {
     render(<DialogHost />)
     expect(await clickAnchor(href)).toBe(false)

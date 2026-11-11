@@ -200,6 +200,76 @@ async def reveal_saved_file(body: RevealRequest) -> dict:
     return {"revealed": str(target)}
 
 
+# ── Open a link in the system default handler ────────────────────────────────
+
+#: The only schemes the app hands to the OS. Everything else (javascript:, file:,
+#: data:, custom schemes, ftp:, tel:) is refused, on this side as well as in the
+#: page, so the route cannot be used to launch an arbitrary handler.
+EXTERNAL_SCHEMES = ("https", "http", "mailto")
+_MAX_EXTERNAL_URL = 2048
+
+
+class OpenExternalRequest(BaseModel):
+    url: str
+
+
+def checked_external_url(raw: str) -> str:
+    """The URL if it is an https, http or mailto link, else ``ValueError``.
+
+    http(s) must name a host; mailto must name an address. Whitespace and control
+    characters are refused outright (they have no place in a link and are how an
+    argument or a header gets smuggled).
+    """
+    from urllib.parse import urlsplit
+
+    url = (raw or "").strip()
+    if not url or len(url) > _MAX_EXTERNAL_URL:
+        raise ValueError("empty or too long")
+    if any(ch.isspace() or ord(ch) < 32 or ord(ch) == 127 for ch in url):
+        raise ValueError("contains whitespace or control characters")
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    if scheme not in EXTERNAL_SCHEMES:
+        raise ValueError(f"scheme '{scheme or '(none)'}' is not allowed")
+    if scheme in ("http", "https") and not parts.hostname:
+        raise ValueError("no host")
+    if scheme == "mailto" and not parts.path:
+        raise ValueError("no address")
+    return url
+
+
+def _open_command(url: str) -> list[str]:
+    import sys
+
+    if sys.platform == "darwin":
+        return ["open", url]
+    if sys.platform.startswith("win"):
+        return ["rundll32", "url.dll,FileProtocolHandler", url]
+    return ["xdg-open", url]
+
+
+@router.post("/open-external")
+async def open_external_link(body: OpenExternalRequest) -> dict:
+    """Open an https, http or mailto link in the system default handler.
+
+    The packaged app is a remote http origin with no Tauri IPC, so the page cannot
+    ask the OS itself; the backend, which runs as the user, does (the same pattern
+    as ``/reveal``). Only the three schemes above; the argv is fixed and the URL is
+    checked before it reaches it.
+    """
+    import subprocess
+
+    try:
+        url = checked_external_url(body.url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=f"Only https, http and mailto links can be opened ({e}).") from e
+    try:
+        subprocess.Popen(_open_command(url))  # noqa: S603 -- fixed argv, checked URL
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not open the link: {e}") from e
+    return {"opened": url}
+
+
 @router.get("/logs/export")
 async def export_logs() -> FileResponse:
     if not LOG_FILE.is_file():

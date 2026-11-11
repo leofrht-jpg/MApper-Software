@@ -181,6 +181,10 @@ export function PremiseKeyManager({ variant, onStatusChange }: Props) {
           <a href="mailto:romain.sacchi@psi.ch" style={{ ...linkButtonStyle }}>
             <Mail size={12} /> Request a key
           </a>
+          {/* The address as plain text too, so it can be selected and copied when no mail client is set up. */}
+          <code data-testid="premise-request-address" style={{ ...monoStyle, userSelect: 'text', alignSelf: 'center' }}>
+            romain.sacchi@psi.ch
+          </code>
         </div>
       )}
 

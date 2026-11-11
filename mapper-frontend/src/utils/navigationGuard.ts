@@ -21,6 +21,11 @@
  *   and the marker only `downloadBlob` sets. That is how every export saves a
  *   file, so exports keep working; anything else that would follow such a link
  *   is stopped.
+ * - **External links.** A REAL user click on an https, http or mailto anchor is
+ *   cancelled too, and the URL is opened in the system default handler through
+ *   the backend (`externalLink.ts`). A click a script made (not trusted) is only
+ *   blocked, and any other scheme stays blocked. The same path serves the
+ *   packaged app and `npm run dev`.
  * - **Drag and drop**: a file dropped where no dropzone took it makes the
  *   browser open the file in place. Window listeners cancel dragover/drop only
  *   when nothing earlier did (`defaultPrevented` is false). React handlers run
@@ -30,6 +35,7 @@
  */
 import { notify } from '../components/ui/dialogs'
 import { DOWNLOAD_MARKER } from './download'
+import { allowedExternalUrl, openExternal, shownUrl } from './externalLink'
 
 export const NAVIGATION_BLOCKED = 'Navigation blocked: the page was not changed'
 
@@ -55,7 +61,8 @@ export function blockedTargetType(href: string): string | null {
   if (url.protocol === 'blob:') return 'blob: URL'
   if (url.protocol === 'data:') return 'data: URL'
   if (url.protocol === 'file:') return 'file: URL'
-  if (url.origin !== window.location.origin) return `external link to ${url.origin}`
+  // Always the real URL: an opaque origin (mailto:, javascript:) prints as "null".
+  if (url.origin !== window.location.origin) return `external link to ${shownUrl(url.href)}`
   return null
 }
 
@@ -65,12 +72,32 @@ function report(type: string): void {
   try { notify(message, { tone: 'error' }) } catch { /* no dialog host yet */ }
 }
 
+export interface GuardOptions {
+  /** Whether a click came from the user. Defaults to the browser's `isTrusted`. */
+  isUserClick?: (event: MouseEvent) => boolean
+}
+
+let isUserClick: (event: MouseEvent) => boolean = (event) => event.isTrusted
+
 function onClick(event: MouseEvent): void {
   const a = anchorFor(event)
   if (!a) return
-  const type = blockedTargetType(hrefOf(a))
+  const href = hrefOf(a)
+  const type = blockedTargetType(href)
   if (!type) return
   if (a.hasAttribute('download') && a.hasAttribute(DOWNLOAD_MARKER)) return
+  const external = allowedExternalUrl(href)
+  if (external) {
+    event.preventDefault()
+    if (!isUserClick(event)) { report(type); return }
+    openExternal(external).catch((e: unknown) => {
+      const reason = e instanceof Error ? e.message : String(e)
+      const message = `Could not open the link: ${reason}`
+      console.warn(`[mapper] ${message}`)
+      try { notify(message, { tone: 'error' }) } catch { /* no dialog host yet */ }
+    })
+    return
+  }
   event.preventDefault()
   report(type)
 }
@@ -97,8 +124,9 @@ function onBeforeUnload(): void {
 let uninstall: (() => void) | null = null
 
 /** Install once; a second call returns the same uninstaller. */
-export function installNavigationGuard(): () => void {
+export function installNavigationGuard(options: GuardOptions = {}): () => void {
   if (uninstall) return uninstall
+  isUserClick = options.isUserClick ?? ((event) => event.isTrusted)
   window.addEventListener('click', onClick, true)
   window.addEventListener('dragover', onDragOver)
   window.addEventListener('drop', onDrop)

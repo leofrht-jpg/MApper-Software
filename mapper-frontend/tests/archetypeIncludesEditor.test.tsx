@@ -184,6 +184,33 @@ describe('add, edit, remove', () => {
   })
 })
 
+describe('a second commit while the first is saving', () => {
+  it('Enter then blur on the expression, and a repeated blur on the quantity, save once', async () => {
+    let finish!: () => void
+    apiMock.updateArchetype.mockImplementationOnce(() => new Promise((res) => { finish = () => res({ ...EV, includes: [] }) }))
+    show({ ...EV, includes: [{ archetype_id: 'b1', quantity: 1 }] })
+    const expr = screen.getByTestId('include-expr-0')
+    await type(expr, 'battery_mass')
+    await act(async () => { fireEvent.keyDown(expr, { key: 'Enter' }) })
+    await act(async () => { fireEvent.blur(expr) })           // what an engine sends when the field is disabled
+    await act(async () => { fireEvent.blur(expr) })
+    expect(apiMock.updateArchetype).toHaveBeenCalledTimes(1)
+    await act(async () => { finish() })
+  })
+
+  it('a save that fails can be tried again', async () => {
+    apiMock.updateArchetype.mockRejectedValueOnce(new Error('cycle'))
+    show({ ...EV, includes: [{ archetype_id: 'b1', quantity: 1 }] })
+    const qty = screen.getByTestId('include-qty-0')
+    await type(qty, '450')
+    await blur(qty)
+    await screen.findByText('cycle')
+    expect(apiMock.updateArchetype).toHaveBeenCalledTimes(1)
+    await blur(screen.getByTestId('include-qty-0'))
+    await waitFor(() => expect(apiMock.updateArchetype).toHaveBeenCalledTimes(2))
+  })
+})
+
 describe('errors from the server', () => {
   it.each([
     ['cycle', 'Archetype include cycle: ev -> b1 -> ev'],

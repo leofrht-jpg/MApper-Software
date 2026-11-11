@@ -104,6 +104,9 @@ export function Archetypes() {
   const [renameError, setRenameError] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
+  // Set synchronously before the rename call and cleared when it ends. State alone is not
+  // enough: Enter and the blur it can cause arrive before React re-renders.
+  const renameInFlight = useRef(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
   const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -251,6 +254,8 @@ export function Archetypes() {
   }
 
   const commitRenameFolder = async () => {
+    // Enter disables the input, an engine may then blur it, and the blur commits again.
+    if (renameInFlight.current) return
     const oldPath = renamingPath
     if (!oldPath) return
     const newName = renameDraft.trim()
@@ -261,6 +266,7 @@ export function Archetypes() {
     const newPath = parent ? `${parent}/${newName}` : newName
     const err = validateFolderPath(newPath)
     if (err) { setRenameError(err); return }
+    renameInFlight.current = true
     setRenameSaving(true)
     setRenameError(null)
     try {
@@ -279,6 +285,7 @@ export function Archetypes() {
     } catch (e) {
       setRenameError(e instanceof Error ? e.message : String(e))
     } finally {
+      renameInFlight.current = false
       setRenameSaving(false)
     }
   }

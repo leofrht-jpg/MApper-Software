@@ -12,15 +12,26 @@ at 0.3.1 and is kept from here on.
 
 ## [Unreleased]
 
+## [0.4.2] — 2026-11-10
+
 ### Added
 
 - **An Includes editor on the archetype page.** An archetype can include other archetypes from any folder and scale them, for example 450 of a 1 kg battery archetype in a vehicle archetype, without the API. Add from a searchable list (folder path shown; the archetype itself and archetypes already included are not offered), set a quantity or a parameter expression, remove with the Remove button. The server's refusals (cycle, depth over 4, missing archetype, duplicate) show in the page's error line. The list shows "includes N" and "used by N", an include whose archetype is missing shows a warning on its row, and exporting a composed archetype to Excel says includes are not exported yet (Excel support for includes is not part of this change).
+
+### Changed
+
+- **The Windows build retries the installer bundling step.** The step that bundles the installer downloads a helper file from GitHub, and that download failed once with HTTP 504 while building 0.4.1. The bundling command now runs up to 3 times, pausing 30 s and then 60 s between attempts, and the build still fails if all 3 fail. Only that command is retried.
+- **Docs and comments name 0.4.1 as the first release with the fast Windows solver (UMFPACK).** The 0.4.0 Windows installer does not have it; 0.4.1 and later do. README, INSTALL and ToDo say so, and stale "the Windows build has no UMFPACK" comments in the code, the setup scripts, `environment.yml` and the tests now say that the SuperLU fallback is used only where UMFPACK is unavailable. Comments and messages only; no calculation changed.
 
 ### Fixed
 
 - **Saving an archetype keeps the archetypes it includes.** The BOM editor never sent the references and the server read a missing list as empty, so every save (a rename, a BOM edit) removed them. A save that does not mention the references now keeps them; an explicit list, even an empty one, still replaces them. Duplicating an archetype also copies its references.
 - **An archetype that other archetypes include cannot be deleted.** Deleting it, or its folder with contents, is refused with a message that names the archetypes that include it (name and folder). A folder delete is allowed when the including archetypes are deleted in the same call. Replace-mode import already warned about this and is unchanged.
 - **The same archetype cannot be included twice in one archetype.** Two includes of one child repeated its leaf ids, so in a Monte Carlo run the two copies shared one draw. Saving such an archetype is refused with a message; use one include with the summed quantity.
+
+### Known limits
+
+- **Includes are not exported to or imported from Excel yet.** The BOM workbook has no row for a reference, so exporting a composed archetype is refused (the app says so), and importing a workbook keeps the includes an archetype already has. Add and edit includes in the Includes section of the archetype page.
 
 ## [0.4.1] — 2026-11-08
 

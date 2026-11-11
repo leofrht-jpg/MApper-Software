@@ -218,6 +218,9 @@ describe('Stage breakdown', () => {
     expect(txt).not.toContain('SVG (vector)')
   })
 
+  // 20 s: with jsdom 31 this test takes about 2.3 s alone (0.3 s on jsdom 30) and more under a full
+  // run. The PNG click makes html2canvas clone the DOM and read each element's style text, and
+  // jsdom 31's new CSS serialiser (`cssText`, `serializeDeclarationBlock`) spends about 0.9 s on it.
   it('no longer surfaces the internal precondition', async () => {
     const { result } = renderHook(() => useNumberFormatter())
     const { container } = render(
@@ -232,5 +235,5 @@ describe('Stage breakdown', () => {
     fireEvent.click(png)
     await new Promise((r) => setTimeout(r, 300))
     expect(container.textContent).not.toContain('No <svg> found')
-  })
+  }, 20_000)
 })

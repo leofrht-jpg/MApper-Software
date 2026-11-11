@@ -17,6 +17,7 @@ import { useAESAStore } from '../src/stores/aesaStore'
 import { useDSMStore } from '../src/stores/dsmStore'
 import { useImpactStore } from '../src/stores/impactStore'
 import * as client from '../src/api/client'
+import { normalizeCalc } from './helpers/cssCalc'
 import type {
   AESAComputeResult, AESAConfiguration, AESADefaultsBundle,
   DSMSystemState, SharingPreset, SystemDefinition,
@@ -114,7 +115,8 @@ describe('Item 1 — collapsed sidebar fills sticky area', () => {
     const { container } = render(<ConfigSidebar collapsed={true} onToggle={() => {}} />)
     const aside = container.querySelector('[data-testid="aesa-config-sidebar-collapsed"]') as HTMLElement
     expect(aside).not.toBeNull()
-    expect(aside.style.minHeight).toBe('calc(100vh - 96px)')
+    // By value: jsdom 31 serialises this as calc(-96px + 100vh).
+    expect(normalizeCalc(aside.style.minHeight)).toBe(normalizeCalc('calc(100vh - 96px)'))
     // No maxHeight clamp — the early-truncation regression vector.
     expect(aside.style.maxHeight).toBe('')
   })
@@ -133,7 +135,7 @@ describe('Item 1 — collapsed sidebar fills sticky area', () => {
     // maxHeight on the expanded variant is load-bearing: the sidebar
     // body has internal `overflow: auto` and needs a bounded height
     // for the scroll container to engage.
-    expect(aside.style.maxHeight).toBe('calc(100vh - 96px)')
+    expect(normalizeCalc(aside.style.maxHeight)).toBe(normalizeCalc('calc(100vh - 96px)'))
   })
 })
 

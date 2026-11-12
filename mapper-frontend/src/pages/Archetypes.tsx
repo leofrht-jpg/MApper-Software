@@ -36,6 +36,7 @@ import {
   type TreeNode,
 } from '../components/archetypes/folderTree'
 import { IDENTIFIER_INPUT_PROPS } from '../components/ui/identifierInput'
+import { useCommitGuard } from '../hooks/useCommitGuard'
 
 function stageIcon(name: string) {
   const n = name.toLowerCase()
@@ -104,9 +105,9 @@ export function Archetypes() {
   const [renameError, setRenameError] = useState<string | null>(null)
   const nameInputRef = useRef<HTMLInputElement>(null)
   const renameInputRef = useRef<HTMLInputElement>(null)
-  // Set synchronously before the rename call and cleared when it ends. State alone is not
-  // enough: Enter and the blur it can cause arrive before React re-renders.
-  const renameInFlight = useRef(false)
+  // One rename at a time. Enter and the blur it can cause arrive before React re-renders, and a blur
+  // can also arrive after the save but before the editor closes; see useCommitGuard.
+  const renameGuard = useCommitGuard()
   const menuRef = useRef<HTMLDivElement>(null)
 
   const [expanded, setExpanded] = useState<Set<string>>(() => {
@@ -255,7 +256,7 @@ export function Archetypes() {
 
   const commitRenameFolder = async () => {
     // Enter disables the input, an engine may then blur it, and the blur commits again.
-    if (renameInFlight.current) return
+    if (renameGuard.busy()) return
     const oldPath = renamingPath
     if (!oldPath) return
     const newName = renameDraft.trim()
@@ -266,7 +267,7 @@ export function Archetypes() {
     const newPath = parent ? `${parent}/${newName}` : newName
     const err = validateFolderPath(newPath)
     if (err) { setRenameError(err); return }
-    renameInFlight.current = true
+    if (!renameGuard.begin()) return
     setRenameSaving(true)
     setRenameError(null)
     try {
@@ -285,7 +286,7 @@ export function Archetypes() {
     } catch (e) {
       setRenameError(e instanceof Error ? e.message : String(e))
     } finally {
-      renameInFlight.current = false
+      renameGuard.end()
       setRenameSaving(false)
     }
   }

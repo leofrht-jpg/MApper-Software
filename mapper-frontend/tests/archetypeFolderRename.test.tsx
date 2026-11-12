@@ -132,6 +132,31 @@ describe('archetype folder inline rename', () => {
       expect(renameFolder).toHaveBeenCalledTimes(1)
     })
 
+    it('a blur right after the API resolves, before the editor has closed: still once', async () => {
+      // The gap: the save is over and the guard is no longer needed by the state, but React has not
+      // rendered the result yet, so the input is still mounted and its handlers are the old ones.
+      // On jsdom 31 under load an engine blur (the input was disabled) landed here and committed again.
+      const held = holdRename()
+      const { container } = render(<Archetypes />)
+      const input = await typeNewName(container)
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+
+      const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+      env.IS_REACT_ACT_ENVIRONMENT = false                    // updates outside act render on the scheduler, later
+      try {
+        held.finish({ renamed: 1, folders: ['Vehicles', 'Charging Infrastructures'] })
+        for (let i = 0; i < 50; i++) await Promise.resolve()    // microtasks only: the component finishes its save
+        expect(input.isConnected).toBe(true)                    // the editor has not closed yet
+        fireEvent.blur(input)
+      } finally {
+        env.IS_REACT_ACT_ENVIRONMENT = true
+      }
+      expect(renameFolder).toHaveBeenCalledTimes(1)
+      await act(async () => {})
+      await waitFor(() => expect(container.querySelector('[data-testid="folder-rename-input"]')).toBeNull())
+      expect(renameFolder).toHaveBeenCalledTimes(1)
+    })
+
     it('Enter and blur in the same tick (before React re-renders): still once', async () => {
       const held = holdRename()
       const { container } = render(<Archetypes />)

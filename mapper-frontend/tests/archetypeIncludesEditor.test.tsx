@@ -198,6 +198,32 @@ describe('a second commit while the first is saving', () => {
     await act(async () => { finish() })
   })
 
+  // Unlike the folder rename, this editor's props come from the store, which re-renders in the same
+  // microtask as the save, so a late blur sees the new quantity and does nothing. Kept as a regression test.
+  it('a blur right after the save resolves, before React has rendered it: still once', async () => {
+    let finish!: () => void
+    apiMock.updateArchetype.mockImplementationOnce((id: string, data: Record<string, unknown>) => new Promise((res) => {
+      finish = () => res({ ...EV, ...data, id })
+    }))
+    show({ ...EV, includes: [{ archetype_id: 'b1', quantity: 1 }] })
+    const qty = screen.getByTestId('include-qty-0')
+    await type(qty, '450')
+    await blur(qty)
+    expect(apiMock.updateArchetype).toHaveBeenCalledTimes(1)
+
+    const env = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }
+    env.IS_REACT_ACT_ENVIRONMENT = false
+    try {
+      finish()
+      for (let i = 0; i < 500; i++) await Promise.resolve()  // the save is over, React has not rendered it
+      fireEvent.blur(qty)                                     // the old handler, still comparing with the old quantity
+    } finally {
+      env.IS_REACT_ACT_ENVIRONMENT = true
+    }
+    expect(apiMock.updateArchetype).toHaveBeenCalledTimes(1)
+    await act(async () => {})
+  })
+
   it('a save that fails can be tried again', async () => {
     apiMock.updateArchetype.mockRejectedValueOnce(new Error('cycle'))
     show({ ...EV, includes: [{ archetype_id: 'b1', quantity: 1 }] })

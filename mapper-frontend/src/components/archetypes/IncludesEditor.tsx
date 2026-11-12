@@ -7,7 +7,7 @@
  * Lead developer: Leonardo Ferhati
  */
 
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { AlertCircle, Plus, Trash2 } from 'lucide-react'
 import { Button } from '../ui/Button'
 import { InfoButton } from '../ui/InfoButton'
@@ -46,6 +46,9 @@ export function IncludesEditor({ archetypeId, includes, archetypes, onSave }: Pr
   const [picking, setPicking] = useState(false)
   const [search, setSearch] = useState('')
   const [busy, setBusy] = useState(false)
+  // Set synchronously: a field commits on Enter and on blur, and saving disables the fields,
+  // which an engine may answer with a blur, before React has re-rendered.
+  const saving = useRef(false)
 
   const byId = useMemo(() => new Map(archetypes.map((a) => [a.id, a])), [archetypes])
   const includedIds = useMemo(() => new Set(includes.map((i) => i.archetype_id)), [includes])
@@ -59,12 +62,15 @@ export function IncludesEditor({ archetypeId, includes, archetypes, onSave }: Pr
   }, [archetypes, archetypeId, includedIds, search])
 
   const save = async (next: ArchetypeInclude[]) => {
+    if (saving.current) return
+    saving.current = true
     setBusy(true)
     try {
       await onSave(next)
     } catch {
       // The page shows the backend message in its error line; nothing to add here.
     } finally {
+      saving.current = false
       setBusy(false)
     }
   }

@@ -104,6 +104,74 @@ describe('archetype folder inline rename', () => {
     })
   })
 
+  describe('a second commit while the first is saving', () => {
+    /** An API call the test settles by hand. */
+    function holdRename() {
+      let finish!: (v: unknown) => void
+      let fail!: (e: Error) => void
+      renameFolder.mockImplementationOnce(() => new Promise((res, rej) => { finish = res; fail = rej }))
+      return { finish: (v: unknown) => finish(v), fail: (e: Error) => fail(e) }
+    }
+    async function typeNewName(container: HTMLElement) {
+      await openFolderRename(container)
+      const input = await waitFor(() => container.querySelector('[data-testid="folder-rename-input"]') as HTMLInputElement)
+      await act(async () => { fireEvent.change(input, { target: { value: 'Vehicles' } }) })
+      return input
+    }
+
+    it('Enter, then a blur while the API is pending: the API is called exactly once', async () => {
+      const held = holdRename()
+      const { container } = render(<Archetypes />)
+      const input = await typeNewName(container)
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+      await act(async () => { fireEvent.blur(input) })      // what an engine sends when the input becomes disabled
+      await act(async () => { fireEvent.blur(input) })      // and again: any repeat is ignored
+      expect(renameFolder).toHaveBeenCalledTimes(1)
+      await act(async () => { held.finish({ renamed: 1, folders: ['Vehicles', 'Charging Infrastructures'] }) })
+      await waitFor(() => expect(useBOMStore.getState().folders).toContain('Vehicles'))
+      expect(renameFolder).toHaveBeenCalledTimes(1)
+    })
+
+    it('Enter and blur in the same tick (before React re-renders): still once', async () => {
+      const held = holdRename()
+      const { container } = render(<Archetypes />)
+      const input = await typeNewName(container)
+      await act(async () => {
+        fireEvent.keyDown(input, { key: 'Enter' })
+        fireEvent.blur(input)
+      })
+      expect(renameFolder).toHaveBeenCalledTimes(1)
+      await act(async () => { held.finish({ renamed: 1, folders: ['Vehicles'] }) })
+    })
+
+    it('a rename that fails shows why and can be retried, by Enter and by blur', async () => {
+      const held = holdRename()
+      const { container } = render(<Archetypes />)
+      const input = await typeNewName(container)
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+      await act(async () => { held.fail(new Error('folder is locked')) })
+      await waitFor(() => expect(container.querySelector('[data-testid="folder-rename-input"]')!.getAttribute('title')).toBe('folder is locked'))
+      expect(renameFolder).toHaveBeenCalledTimes(1)
+
+      const again = container.querySelector('[data-testid="folder-rename-input"]') as HTMLInputElement
+      expect(again.disabled).toBe(false)                      // editable again
+      await act(async () => { fireEvent.keyDown(again, { key: 'Enter' }) })   // retry by Enter: the default mock succeeds
+      await waitFor(() => expect(renameFolder).toHaveBeenCalledTimes(2))
+      await waitFor(() => expect(useBOMStore.getState().folders).toContain('Vehicles'))
+    })
+
+    it('a failed rename can also be retried by leaving the field', async () => {
+      const held = holdRename()
+      const { container } = render(<Archetypes />)
+      const input = await typeNewName(container)
+      await act(async () => { fireEvent.keyDown(input, { key: 'Enter' }) })
+      await act(async () => { held.fail(new Error('folder is locked')) })
+      await waitFor(() => expect(container.querySelector('[data-testid="folder-rename-input"]')!.getAttribute('title')).toBe('folder is locked'))
+      await act(async () => { fireEvent.blur(container.querySelector('[data-testid="folder-rename-input"]')!) })
+      await waitFor(() => expect(renameFolder).toHaveBeenCalledTimes(2))
+    })
+  })
+
   it('Escape during rename reverts the label and makes NO API call', async () => {
     const { container } = render(<Archetypes />)
     await openFolderRename(container)

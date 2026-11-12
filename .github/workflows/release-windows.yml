@@ -68,7 +68,15 @@ jobs:
           key: conda-${{ runner.os }}-${{ hashFiles('environment.yml') }}
           restore-keys: conda-${{ runner.os }}-
 
-      - uses: conda-incubator/setup-miniconda@v4
+      # setup-miniconda downloads Miniforge, and that download failed once with
+      # HTTP 504 (v0.4.1). So it is tried twice: the first attempt may fail without
+      # failing the job, the second runs only if the first failed, and the step after
+      # the pair fails the job if neither succeeded. Both attempts use the same
+      # inputs; nothing about the pinned Miniforge or the environment changes.
+      - name: Set up conda (attempt 1)
+        id: conda1
+        continue-on-error: true
+        uses: conda-incubator/setup-miniconda@v4
         env:
           CONDA_PKGS_DIRS: ${{ runner.temp }}/conda_pkgs
         with:
@@ -80,6 +88,26 @@ jobs:
           activate-environment: map
           environment-file: environment.yml
           auto-activate-base: false
+
+      - name: Set up conda (attempt 2, only if attempt 1 failed)
+        id: conda2
+        if: steps.conda1.outcome == 'failure'
+        continue-on-error: true
+        uses: conda-incubator/setup-miniconda@v4
+        env:
+          CONDA_PKGS_DIRS: ${{ runner.temp }}/conda_pkgs
+        with:
+          miniforge-version: 26.7.2-1
+          activate-environment: map
+          environment-file: environment.yml
+          auto-activate-base: false
+
+      - name: Fail if conda could not be set up
+        if: steps.conda1.outcome != 'success' && steps.conda2.outcome != 'success'
+        shell: pwsh
+        run: |
+          Write-Host "setup-miniconda outcomes: attempt 1 = ${{ steps.conda1.outcome }}, attempt 2 = ${{ steps.conda2.outcome }}"
+          throw "conda could not be set up in either attempt"
 
       # The fast sparse solver. Without it the Windows build falls back to SuperLU
       # and ONE factorisation takes about 150 s (153.88 s measured on a Windows
@@ -291,10 +319,24 @@ jobs:
           gh release upload $tag "${{ steps.art.outputs.path }}" --clobber
           Write-Host "uploaded ${{ steps.art.outputs.name }} to $tag"
 
-      # Kept regardless of the upload, so a failed run still yields the binary.
-      - uses: actions/upload-artifact@v7
+      # Kept regardless of the upload, so a failed run still yields the binary. It is a
+      # convenience copy only: the release asset is uploaded by the step above, so a
+      # GitHub artifact service error (v0.4.3: "Unexpected token '<', <!DOCTYPE ..."
+      # after 5 attempts) must not mark a good run as failed. It is reported instead.
+      - name: Upload artifact
+        id: artifact
+        uses: actions/upload-artifact@v7
         if: always()
+        continue-on-error: true
         with:
           name: mapper-windows-installer
           path: mapper-tauri/target/**/*-setup.exe
           if-no-files-found: warn
+
+      - name: Report an artifact upload failure
+        if: always() && steps.artifact.outcome == 'failure'
+        shell: pwsh
+        run: |
+          $msg = "The mapper-windows-installer artifact was not stored (GitHub artifact service). The build and the release upload are separate steps: check them above."
+          Write-Host "::warning title=Installer artifact not stored::$msg"
+          "### Installer artifact not stored`n`n$msg" | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append

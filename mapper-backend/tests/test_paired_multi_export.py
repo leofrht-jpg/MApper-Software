@@ -58,7 +58,8 @@ def _flat(wb, name):
 
 def test_the_sheets():
     wb = _build_monte_carlo_multi_workbook(_result())
-    assert wb.sheetnames == ["Summary", "Distributions", "Pairwise differences", "Samples", "Coverage"]
+    assert wb.sheetnames == ["Summary", "Distributions", "Pairwise differences", "Samples", "Coverage",
+                             "Impact assessment methods"]
 
 
 def _data_rows(ws) -> list[list]:

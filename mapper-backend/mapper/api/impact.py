@@ -117,6 +117,7 @@ from mapper.core.run_provenance import (
     provenance_rows as _provenance_rows,
     stamp as _run_stamp,
 )
+from mapper.core import method_provenance as _mprov_mod
 
 
 router = APIRouter(prefix="/impact", tags=["impact"])
@@ -1231,6 +1232,7 @@ def _build_multi_scenario_workbook(
     _fleet_methods = [r.method for r in first_results]
     labels = [_short_method_label(r.method, _fleet_methods) for r in first_results]
     units = [r.unit for r in first_results]
+    _mprov = _mprov_mod.describe_results([r for s in scenarios for r in s.result.results])
     year_set: set[int] = set()
     for s in scenarios:
         for r in s.result.results:
@@ -1256,6 +1258,7 @@ def _build_multi_scenario_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("LCI scenarios", len(scenarios)),
         ("Indicators", len(first_results)),
+        _mprov.meta_row(),
         *_provenance_rows(*_prov_from_envelope(multi_result)),
     ]
     if multi_result.elapsed_seconds is not None:
@@ -1405,6 +1408,7 @@ def _build_multi_scenario_workbook(
     _autosize(ws_idx)
 
     _finalize_coverage(wb, [_CE(_scenario_label(sc.scenario), sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_result.scenarios], notes=_dedupe_notes(*[sc.result.authored_uncertainty for sc in multi_result.scenarios]), discriminator="LCI Scenario")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -1542,6 +1546,7 @@ def _build_multi_param_workbook(
     ws = wb.create_sheet("Summary")
     ws.sheet_properties.tabColor = "3ECFCF"
 
+    _mprov = _mprov_mod.describe_results([r for s in scenarios for r in s.result.results])
     meta_rows = [
         ("Project", system_name),
         ("Mode", mode_label),
@@ -1549,6 +1554,7 @@ def _build_multi_param_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("Sensitivity cases", len(scenarios)),
         ("Indicators", len(first_results)),
+        _mprov.meta_row(),
         *_provenance_rows(*_prov_from_envelope(multi_param_result)),
     ]
     if multi_param_result.elapsed_seconds is not None:
@@ -1698,6 +1704,7 @@ def _build_multi_param_workbook(
     _autosize(ws_idx)
 
     _finalize_coverage(wb, [_CE(sc.scenario, sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_param_result.scenarios], notes=_dedupe_notes(*[sc.result.authored_uncertainty for sc in multi_param_result.scenarios]), discriminator="Sensitivity case")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -1850,6 +1857,7 @@ def _build_multi_dsm_workbook(
     ws = wb.create_sheet("Summary")
     ws.sheet_properties.tabColor = "3ECFCF"
 
+    _mprov = _mprov_mod.describe_results([r for s in scenarios for r in s.result.results])
     meta_rows = [
         ("Project", system_name),
         ("Mode", mode_label),
@@ -1857,6 +1865,7 @@ def _build_multi_dsm_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("DSM scenarios", len(scenarios)),
         ("Indicators", len(first_results)),
+        _mprov.meta_row(),
         *_provenance_rows(*_prov_from_envelope(multi_dsm_result)),
     ]
     if multi_dsm_result.elapsed_seconds is not None:
@@ -2026,6 +2035,7 @@ def _build_multi_dsm_workbook(
     _autosize(ws_idx)
 
     _finalize_coverage(wb, [_CE(sc.scenario_name, sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_dsm_result.scenarios], notes=_dedupe_notes(*[sc.result.authored_uncertainty for sc in multi_dsm_result.scenarios]), discriminator="DSM scenario")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -2140,6 +2150,7 @@ def _build_multi_paired_workbook(
     ws = wb.create_sheet("Summary")
     ws.sheet_properties.tabColor = "3ECFCF"
 
+    _mprov = _mprov_mod.describe_results([r for p in pairs for r in p.result.results])
     meta_rows = [
         ("Project", system_name),
         ("Mode", "Paired DSM × LCI (co-varying)"),
@@ -2147,6 +2158,7 @@ def _build_multi_paired_workbook(
         ("Year range", f"{years_list[0]}–{years_list[-1]}" if years_list else "—"),
         ("Pairs", len(pairs)),
         ("Indicators", len(first_results)),
+        _mprov.meta_row(),
         *_provenance_rows(*_prov_from_envelope(multi_paired_result)),
     ]
     if multi_paired_result.elapsed_seconds is not None:
@@ -2323,6 +2335,7 @@ def _build_multi_paired_workbook(
     _autosize(ws_idx)
 
     _finalize_coverage(wb, [_CE(f"{sc.dsm_scenario_name} × {sc.lci_scenario_label}", sc.result.coverage_gaps, _methods_of(sc.result)) for sc in multi_paired_result.scenarios], notes=_dedupe_notes(*[sc.result.authored_uncertainty for sc in multi_paired_result.scenarios]), discriminator="Pair")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -2734,6 +2747,7 @@ def _build_single_product_static_workbook(
         ", ".join(label for label, _ in scenarios)
         if is_multi else scenarios[0][0]
     )
+    _mprov = _mprov_mod.describe_results([r for _n, res in scenarios for r in res.results])
     cfg_rows: list[tuple[str, Any]] = [
         ("Archetype", archetype_name),
         ("Mode", "Single product · Static Background"),
@@ -2742,6 +2756,7 @@ def _build_single_product_static_workbook(
         *_sp_stage_amount_meta_rows(stage_amounts_meta),
         ("Stages included", ", ".join(primary.stages_included)),
         ("Indicators", len(method_list)),
+        _mprov.meta_row(),
         ("Sensitivity cases", sensitivity_label),
         *_provenance_rows(*(primary.computed_at, primary.mapper_version)),
         ("Elapsed (s)", f"{primary.elapsed_seconds:.2f}"),
@@ -2890,6 +2905,7 @@ def _build_single_product_static_workbook(
         _sp_autosize(ws_sb)
 
     _finalize_coverage(wb, [_CE(name if len(scenarios) > 1 else None, res.coverage_gaps, _methods_of(res)) for name, res in scenarios], notes=_dedupe_notes(*[res.authored_uncertainty for _n, res in scenarios]), discriminator="Sensitivity case")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -2951,6 +2967,7 @@ def _build_single_product_prospective_workbook(
     ws_cfg = wb.create_sheet("Configuration")
     ws_cfg.sheet_properties.tabColor = "3ECFCF"
 
+    _mprov = _mprov_mod.describe_results([x for r in sorted_runs for x in r.result.results])
     cfg_rows: list[tuple[str, Any]] = [
         ("Archetype", archetype_name),
         ("Mode", "Single product · Prospective Background"),
@@ -2960,6 +2977,7 @@ def _build_single_product_prospective_workbook(
         ("Year range", f"{years[0]}–{years[-1]}" if years else "—"),
         ("Year range means", _SP_YEAR_RANGE_NOTE),
         ("Indicators", len(method_list)),
+        _mprov.meta_row(),
         ("Databases", len(sorted_runs)),
         *_provenance_rows(*(primary.computed_at, primary.mapper_version)),
     ]
@@ -3111,6 +3129,7 @@ def _build_single_product_prospective_workbook(
         _sp_autosize(ws_sb)
 
     _finalize_coverage(wb, [_CE(f"{r.iam}/{r.ssp} {r.year if r.year is not None else r.db_name}", r.result.coverage_gaps, _methods_of(r.result)) for r in runs], notes=_dedupe_notes(*[r.result.authored_uncertainty for r in runs]), discriminator="Trajectory")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -3175,6 +3194,7 @@ def _build_single_product_comparison_workbook(
             years_set.add(r.year)
     years = sorted(years_set)
 
+    _mprov = _mprov_mod.describe_results([*static_result.results, *[x for r in sorted_runs for x in r.result.results]])
     cfg_rows: list[tuple[str, Any]] = [
         ("Archetype", archetype_name),
         ("Mode", "Single product · Comparison (Projected − Static)"),
@@ -3184,6 +3204,7 @@ def _build_single_product_comparison_workbook(
         ("Year range", f"{years[0]}–{years[-1]}" if years else "—"),
         ("Year range means", _SP_YEAR_RANGE_NOTE),
         ("Indicators (Static)", len(static_result.results)),
+        _mprov.meta_row(),
         ("Prospective runs", len(sorted_runs)),
         ("Sign convention", "Δ = P − S (positive = worsening, negative = improvement)"),
         *_provenance_rows(*(static_result.computed_at, static_result.mapper_version)),
@@ -3310,6 +3331,7 @@ def _build_single_product_comparison_workbook(
     _sp_autosize(ws_s)
 
     _finalize_coverage(wb, [_CE("Static", static_result.coverage_gaps, _methods_of(static_result))] + [_CE(f"{r.iam}/{r.ssp} {r.year if r.year is not None else r.db_name}", r.result.coverage_gaps, _methods_of(r.result)) for r in projected_runs], notes=_dedupe_notes(static_result.authored_uncertainty, *[r.result.authored_uncertainty for r in projected_runs]), discriminator="Result")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -3529,6 +3551,7 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
     # label is what the header says.
     method_cols = _mp_unique_method_columns(result)
     method_labels = [lbl for _mk, lbl, _u in method_cols]
+    _mprov = _mprov_mod.describe_methods([mk for mk, _l, _u in method_cols], {mk: u for mk, _l, u in method_cols})
 
     wb = Workbook()
 
@@ -3549,6 +3572,7 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
         ("Items succeeded", str(result.success_count)),
         ("Items failed", str(result.error_count)),
         ("Methods", ", ".join(method_labels) if method_labels else "—"),
+        _mprov.meta_row(),
         ("Compute elapsed (s)", f"{result.elapsed_seconds:.2f}"),
     ]
     for k, v in meta_rows:
@@ -3779,6 +3803,7 @@ def _build_multi_product_workbook(body: MultiProductExportRequest):
             _methods_of(it.archetype_result or it.activity_result))
         for it in body.result.items if it.status == "success"
     ], notes=_dedupe_notes(*[(it.archetype_result or it.activity_result).authored_uncertainty for it in body.result.items if it.status == "success"]), discriminator="Item")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 

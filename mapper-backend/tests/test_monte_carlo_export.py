@@ -89,7 +89,7 @@ def test_the_expected_sheets_are_present():
     wb = _build_monte_carlo_workbook(_result(), _coverage())
     assert wb.sheetnames == [
         "Summary", "Distributions", "Variance contribution",
-        "Pedigree scores", "Samples", "Coverage",
+        "Pedigree scores", "Samples", "Coverage", "Impact assessment methods",
     ]
 
 

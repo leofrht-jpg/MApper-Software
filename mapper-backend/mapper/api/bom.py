@@ -145,6 +145,7 @@ from mapper.core.run_provenance import (
     provenance_rows as _provenance_rows,
     stamp as _run_stamp,
 )
+from mapper.core import method_provenance as _mprov_mod
 
 
 router = APIRouter(tags=["bom"])
@@ -2012,12 +2013,14 @@ def _build_mfa_lca_workbook(
     ws.sheet_properties.tabColor = "3ECFCF"
 
     scope_labels = {"inflows": "Manufacturing", "stock": "Operation", "outflows": "End of Life", "all": "Full lifecycle"}
+    _mprov = _mprov_mod.describe_results(results)
     meta_rows = [
         ("Project", system_name),
         ("Scope", scope_labels.get(scope, scope)),
         ("Stages included", ", ".join(stages_included) if stages_included else "—"),
         ("Year range", f"{year_start_val}–{year_end_val}" if year_start_val else "—"),
         ("Indicators calculated", len(results)),
+        _mprov.meta_row(),
         ("Cohorts", len(cohort_keys)),
         ("Archetypes", len(arc_names_set)),
         ("Subsystems included", ", ".join(contributing_sub_names) if contributing_sub_names else "None"),
@@ -2314,6 +2317,7 @@ def _build_mfa_lca_workbook(
     from mapper.core.coverage_export import CoverageEntry, finalize_coverage
     finalize_coverage(wb, coverage_entries or [
         CoverageEntry(None, None, [list(r.method) for r in results])], notes=coverage_notes)
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 

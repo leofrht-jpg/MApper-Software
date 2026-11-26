@@ -72,6 +72,7 @@ from mapper.core.run_provenance import (
     use_phase_basis as _use_phase_basis,
 )
 from mapper.core.run_provenance import provenance_rows as _provenance_rows
+from mapper.core import method_provenance as _mprov_mod
 
 router = APIRouter()
 
@@ -992,11 +993,13 @@ def _build_monte_carlo_workbook(
     ws.append(["Field", "Value"])
     style_header(ws)
 
+    _mprov = _mprov_mod.describe_results(result.distributions)
     rows: list[tuple[str, object]] = [
         ("Archetype", result.archetype_name),
         ("Sensitivity case", result.parameter_scenario or "Base"),
         ("Scope", _scope_label(result.scope)),
         ("Background database", result.compute_database or "base ecoinvent"),
+        _mprov.meta_row(),
         ("Iterations", result.n_iterations),
         # Not optional. A Monte Carlo result nobody can reproduce is not a
         # research output, and the seed is the whole of the reproduction.
@@ -1168,6 +1171,7 @@ def _build_monte_carlo_workbook(
 
     from mapper.core.coverage_export import CoverageEntry, finalize_coverage
     finalize_coverage(wb, [CoverageEntry(None, result.coverage_gaps, [list(d.method) for d in result.distributions])], discriminator="Result")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -1203,11 +1207,13 @@ def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workboo
     ws.title = "Summary"
     ws.append(["Field", "Value"])
     style_header(ws)
+    _mprov = _mprov_mod.describe_results([d for it in result.items for d in it.distributions])
     for k, v in [
         ("Items", len(result.items)),
         ("Sensitivity case", result.parameter_scenario or "Base"),
         ("Scope", _scope_label(result.scope)),
         ("Background database", result.compute_database or "base ecoinvent"),
+        _mprov.meta_row(),
         ("Iterations", result.n_iterations),
         ("Seed", result.seed),
         ("Elapsed (s)", round(result.elapsed_seconds, 2)),
@@ -1313,6 +1319,7 @@ def _build_monte_carlo_multi_workbook(result: MonteCarloMultiResult) -> "Workboo
 
     from mapper.core.coverage_export import CoverageEntry, finalize_coverage
     finalize_coverage(wb, [CoverageEntry(it.archetype_name, it.coverage_gaps, [list(d.method) for d in it.distributions]) for it in result.items], discriminator="Item")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 

@@ -91,6 +91,17 @@ describe('the helper', () => {
     expect([...ok.values()]).toEqual([...labels.values()])
   })
 
+  it('adds the family only where category and indicator still collide (bundled vs ecoinvent file)', () => {
+    const tag = ' [ecoinvent 3.10 LCIA]'
+    const Etag = [E[0] + tag, E[1], E[2]]
+    const Htag = [H[0] + tag, 'climate change', `${P} (GWP100)`]
+    const labels = disambiguatedLabels([H, Htag, E, Etag])
+    expect(new Set(labels.values()).size).toBe(4)
+    expect(labels.get(methodKey(Etag))).toBe(`${E[0]}${tag} / climate change / ${P} (GWP1000)`)
+    expect(labels.get(methodKey(E))).toBe(`${E[0]} / climate change / ${P} (GWP1000)`)
+    expect(displayMethod(Htag)).toEqual(Htag) // the file already names it GWP100: no second correction
+  })
+
   it('shows the corrected indicator in a tooltip path', () => {
     expect(methodPath(I)).toBe(`ReCiPe 2016 v1.03, midpoint (I) › climate change › ${P} (GWP20)`)
   })

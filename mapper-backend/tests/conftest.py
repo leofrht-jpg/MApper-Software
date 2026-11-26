@@ -351,6 +351,19 @@ def _isolate_storage_roots(request, tmp_path_factory, monkeypatch):
     yield
 
 
+@pytest.fixture(autouse=True)
+def _isolate_method_provenance(monkeypatch):
+    """Every export now reads the method registry and the Method Library's
+    manifests to say where each impact method came from. Keep both off the
+    developer's real project and user data: a test that needs them passes its
+    own synthetic lookups (``tests/test_export_method_provenance.py``)."""
+    from mapper.core import method_provenance as mp
+
+    monkeypatch.setattr(mp, "registered_metadata", lambda method: None)
+    monkeypatch.setattr(mp, "library_sources", lambda: {})
+    yield
+
+
 # ── The guard: nothing may WRITE to the live store ────────────────────────
 #
 # The redirect above prevents the writes; this catches a test that gets past

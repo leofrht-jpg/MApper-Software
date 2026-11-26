@@ -103,6 +103,7 @@ from mapper.core.run_provenance import (
     stamp as _run_stamp,
     use_phase_basis as _use_phase_basis,
 )
+from mapper.core import method_provenance as _mprov_mod
 
 
 router = APIRouter()
@@ -1001,11 +1002,13 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
     # ── Sheet 1: Summary ──
     ws = wb.active
     ws.title = "Summary"
+    _mprov = _mprov_mod.describe_results([r for d in data for r in d.results])
     rows = [
         *_provenance_rows(
             data[0].computed_at if data else None,
             data[0].mapper_version if data else None,
         ),
+        _mprov.meta_row(),
     ]
     for d in data:
         rows.append(("", ""))
@@ -1101,6 +1104,7 @@ def _build_lca_export_workbook(data: list[ArchetypeLCACalculateResult]):  # noqa
     _auto_width(ws4)
 
     _finalize_coverage(wb, [_CE(r.archetype_name if len(data) > 1 else None, r.coverage_gaps, _methods_of(r)) for r in data], notes=_dedupe_notes(*[r.authored_uncertainty for r in data]), discriminator="Archetype")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -1983,6 +1987,8 @@ def _build_contribution_workbook(result: ContributionAnalysisResult):
     ws.append(["Scope", result.scope])
     ws.append(["Year", result.year if result.year is not None else "—"])
     ws.append(["Method", method_label])
+    _mprov = _mprov_mod.describe_methods([result.method], {tuple(result.method): result.method_unit})
+    ws.append(list(_mprov.meta_row()))
     ws.append(["Score", result.score])
     ws.append(["Unit", result.method_unit])
     ws.append(["Cutoff", result.cutoff])
@@ -2067,6 +2073,7 @@ def _build_contribution_workbook(result: ContributionAnalysisResult):
     _auto_width(ws6)
 
     _finalize_coverage(wb, [_CE(None, result.coverage_gaps, [list(result.method)])], discriminator="Result")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
@@ -2125,6 +2132,8 @@ def _build_multi_year_workbook(result: MultiYearContributionResult):
     ws.append(["Target type", result.target_type])
     ws.append(["Target", result.target_label])
     ws.append(["Method", method_label])
+    _mprov = _mprov_mod.describe_methods([result.method], {tuple(result.method): result.method_unit})
+    ws.append(list(_mprov.meta_row()))
     ws.append(["Method unit", result.method_unit])
     ws.append(["Compute DB pattern", result.compute_database_pattern or "—"])
     ws.append(["Years", ", ".join(str(y) for y in result.years)])
@@ -2195,6 +2204,7 @@ def _build_multi_year_workbook(result: MultiYearContributionResult):
     _auto_width(ws_w)
 
     _finalize_coverage(wb, [_CE(str(y), r.coverage_gaps, [list(r.method)]) for y, r in sorted(result.results.items(), key=lambda kv: int(kv[0]))], discriminator="Year")
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 

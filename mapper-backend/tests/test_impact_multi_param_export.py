@@ -126,6 +126,7 @@ def test_workbook_has_expected_sheets():
         "By indicator",
         "Parameter Scenarios",
         "Coverage",
+        "Impact assessment methods",
     ]
 
 

@@ -400,6 +400,47 @@ def install_pip(
 
 UNMATCHED_WARN_THRESHOLD = 0.05  # >= 5 % unmatched → fail
 
+#: The columns bw2io's single-sheet LCIA template needs (``ExcelLCIAImporter``).
+CUSTOM_XLSX_COLUMNS = ("name", "categories", "amount")
+ECOINVENT_FILE_HINT = (
+    "This looks like an ecoinvent LCIA implementation file (sheets 'CFs' and 'Indicators'). "
+    "It is not a custom upload: install it with the ecoinvent LCIA file installer, which also needs the "
+    "release's ElementaryExchanges.xml."
+)
+
+
+def check_custom_workbook(file_path: Path) -> None:
+    """Refuse a workbook the custom importer cannot read, saying why.
+
+    bw2io's importer meets a multi-sheet workbook with a bare ``assert``, whose
+    message is empty, so the user saw "Could not parse xlsx:" and nothing else.
+    """
+    import openpyxl
+
+    try:
+        wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+    except Exception as exc:  # noqa: BLE001
+        raise InstallError(f"Could not open the workbook: {str(exc) or type(exc).__name__}.") from exc
+    try:
+        sheets = list(wb.sheetnames)
+        if {"CFs", "Indicators"}.issubset(sheets):
+            raise InstallError(ECOINVENT_FILE_HINT)
+        if len(sheets) != 1:
+            raise InstallError(
+                f"The custom upload expects one sheet; this workbook has {len(sheets)} "
+                f"({', '.join(repr(s) for s in sheets)})."
+            )
+        first = next(wb[sheets[0]].iter_rows(min_row=1, max_row=1, values_only=True), ())
+        header = {str(c).strip() for c in first if c is not None}
+        missing = [c for c in CUSTOM_XLSX_COLUMNS if c not in header]
+        if missing:
+            raise InstallError(
+                f"The sheet '{sheets[0]}' has no column {', '.join(repr(c) for c in missing)}. "
+                f"The custom upload expects the columns {', '.join(CUSTOM_XLSX_COLUMNS)} in the first row."
+            )
+    finally:
+        wb.close()
+
 
 def install_excel(
     file_path: Path,
@@ -423,6 +464,7 @@ def install_excel(
         ) from exc
 
     _emit(on_progress, "reading workbook", 0.05)
+    check_custom_workbook(file_path)
     try:
         importer = ExcelLCIAImporter(
             str(file_path),
@@ -431,7 +473,7 @@ def install_excel(
             unit=unit,
         )
     except Exception as exc:
-        raise InstallError(f"Could not parse xlsx: {exc}") from exc
+        raise InstallError(f"Could not parse xlsx: {str(exc) or type(exc).__name__}") from exc
 
     _emit(on_progress, "applying strategies", 0.3)
     try:
@@ -440,10 +482,13 @@ def install_excel(
         raise InstallError(f"Strategy application failed: {exc}") from exc
 
     _emit(on_progress, "matching biosphere flows", 0.55)
-    try:
-        importer.match_database("biosphere3", fields=("name", "categories"))
-    except Exception as exc:
-        raise InstallError(f"Biosphere matching failed: {exc}") from exc
+    # The importer's own strategies already link to biosphere3 by name + categories;
+    # bw2io 0.8's LCIAImporter has no ``match_database``, and calling it failed every upload.
+    if hasattr(importer, "match_database"):
+        try:
+            importer.match_database("biosphere3", fields=("name", "categories"))
+        except Exception as exc:
+            raise InstallError(f"Biosphere matching failed: {str(exc) or type(exc).__name__}") from exc
 
     # Strict unmatched-flow policy per spec section 5.
     stats = importer.statistics(print_stats=False) if hasattr(importer, "statistics") else None
@@ -467,6 +512,7 @@ def install_excel(
             f"{unmatched} of {total} biosphere flows unmatched. "
             "Results for affected categories may be incomplete."
         )
+        importer.drop_unlinked(verbose=False)  # bw2io refuses to write a method with unlinked factors
 
     _emit(on_progress, "writing methods", 0.85)
     before = _snapshot_method_tuples()
@@ -487,6 +533,11 @@ def install_excel(
     cached = cache_dir / file_path.name
     if file_path.resolve() != cached.resolve():
         shutil.copy2(file_path, cached)
+    # Per project, like the bundled families: the manifest lives in the user's data
+    # dir, so a flat tuple list made the same name in ANOTHER project removable here.
+    manifest = _read_manifest(method_id) or {}
+    projects = dict(manifest.get("projects") or {})
+    projects[str(bw2data.projects.current)] = {"method_tuples": [list(t) for t in new_tuples]}
     _write_manifest(method_id, {
         "method_id": method_id,
         "installer": "excel",
@@ -494,7 +545,7 @@ def install_excel(
         "description": description,
         "unit": unit,
         "file_path": str(cached),
-        "method_tuples": [list(t) for t in new_tuples],
+        "projects": projects,
     })
     _emit(on_progress, "done", 1.0)
     return InstallResult(method_id=method_id, method_tuples=new_tuples, warnings=warnings)
@@ -586,15 +637,9 @@ def _bundled_families() -> list[dict]:
     claimed: set[tuple] = set()
     for entry in _load_registry():
         claimed.update(_live_tuples(entry))
-    # Also exclude custom-uploaded methods.
-    for manifest_dir in CACHE_ROOT.glob("*/manifest.json") if CACHE_ROOT.is_dir() else []:
-        try:
-            with manifest_dir.open(encoding="utf-8") as fh:
-                m = json.load(fh)
-            if m.get("installer") == "excel":
-                claimed.update(tuple(t) for t in m.get("method_tuples", []))
-        except Exception:
-            continue
+    # Also exclude custom uploads and ecoinvent LCIA files: they have their own entries.
+    for m in _manifests(("excel", "ecoinvent_lcia")):
+        claimed.update(tuple(t) for t in _manifest_tuples(m))
 
     families: dict[str, list[tuple]] = {}
     for t in bw2data.methods:
@@ -615,20 +660,58 @@ def _bundled_families() -> list[dict]:
     ]
 
 
-def _custom_entries() -> list[dict]:
-    """Enumerate xlsx-imported custom methods from their manifests."""
+def _manifests(installers: tuple[str, ...]) -> list[dict]:
+    """Every readable manifest whose installer is one of ``installers``."""
     out: list[dict] = []
     if not CACHE_ROOT.is_dir():
         return out
-    for manifest_path in CACHE_ROOT.glob("*/manifest.json"):
+    for manifest_path in sorted(CACHE_ROOT.glob("*/manifest.json")):
         try:
             with manifest_path.open(encoding="utf-8") as fh:
                 m = json.load(fh)
         except Exception:
             continue
-        if m.get("installer") != "excel":
+        if m.get("installer") in installers:
+            m.setdefault("method_id", manifest_path.parent.name)
+            out.append(m)
+    return out
+
+
+ECOINVENT_FILE_FACTOR_SOURCE = (
+    "The characterisation factors come from the ecoinvent LCIA implementation file you supplied, linked to this "
+    "project's biosphere3 by flow UUID through the release's ElementaryExchanges.xml; the methods sit next to "
+    "any others under a family name tagged with the release."
+)
+
+
+def _ecoinvent_file_entries() -> list[dict]:
+    """One entry per ecoinvent LCIA file installed in the CURRENT project."""
+    out: list[dict] = []
+    here = str(bw2data.projects.current)
+    for m in _manifests(("ecoinvent_lcia",)):
+        info = (m.get("projects") or {}).get(here)
+        live = _method_tuples_for(m["method_id"])
+        if not info or not live:
             continue
-        mid = m.get("method_id") or manifest_path.parent.name
+        out.append({
+            "id": m["method_id"],
+            "name": f"ecoinvent {m.get('ecoinvent_version', '')} LCIA implementation".strip(),
+            "description": info.get("file_name", ""),
+            "source": "ecoinvent_file",
+            "installed": True,
+            "category_count": len(live),
+            "removable": True,
+            "installer": "ecoinvent_lcia",
+            "factor_source": ECOINVENT_FILE_FACTOR_SOURCE,
+        })
+    return out
+
+
+def _custom_entries() -> list[dict]:
+    """Enumerate xlsx-imported custom methods from their manifests."""
+    out: list[dict] = []
+    for m in _manifests(("excel",)):
+        mid = m["method_id"]
         live_tuples = _method_tuples_for(mid)
         out.append({
             "id": mid,
@@ -678,7 +761,7 @@ def list_library() -> list[dict]:
             "factor_source": BUNDLED_FACTOR_SOURCE if entry.get("installer") == "bundled_ef"
                 else entry.get("factor_source"),
         })
-    return _bundled_families() + downloadable + _custom_entries()
+    return _bundled_families() + downloadable + _custom_entries() + _ecoinvent_file_entries()
 
 
 # ── High-level entry used by the API router ──────────────────────────────────

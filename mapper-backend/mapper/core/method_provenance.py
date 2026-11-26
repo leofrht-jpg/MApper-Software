@@ -128,6 +128,15 @@ def _library_label(manifest: dict, entry: dict | None) -> str | None:
     if installer == "pip":
         spec = manifest.get("pip_spec") or ""
         return f"MApper Method Library ({name}): Python package {spec}".rstrip()
+    if installer == "ecoinvent_lcia":
+        import bw2data
+
+        info = (manifest.get("projects") or {}).get(str(bw2data.projects.current)) or {}
+        version = manifest.get("ecoinvent_version") or ""
+        file_name = info.get("file_name") or "file name not recorded"
+        sha = info.get("sha256") or ""
+        return (f"MApper Method Library: ecoinvent {version} LCIA implementation file ({file_name}"
+                + (f", sha256 {sha}" if sha else "") + "), linked by flow UUID")
     if installer == "excel":
         file_name = Path(manifest["file_path"]).name if manifest.get("file_path") else ""
         return "MApper Method Library: custom upload" + (f" ({file_name})" if file_name else "")

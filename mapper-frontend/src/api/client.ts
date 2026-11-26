@@ -4830,7 +4830,7 @@ export interface LCIAMethodInfo {
   name: string
   description: string
   long_description: string | null
-  source: 'bundled' | 'downloadable' | 'custom'
+  source: 'bundled' | 'downloadable' | 'custom' | 'ecoinvent_file'
   installed: boolean
   category_count: number | null
   size_mb: number | null

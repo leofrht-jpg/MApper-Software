@@ -1564,7 +1564,15 @@ Users can extend the built-in LCIA methods (EF, ReCiPe, CML, TRACI, IPCC, …) w
 - **Installers** (`mapper/core/lcia_method_engine.py`):
   - `bw2package` — downloads a `.bw2package` file from Zenodo and imports via `bw2io.BW2Package.import_file()`. Used by **IMPACT World+ 2.2.1** (variants for ei 3.10 / 3.11 / 3.12).
   - `pip` — runs `pip install <spec>` at install time, then calls a configured entry function. Used by **LC-IMPACT** (via `bw2_lcimpact==0.4.2`).
-  - `excel` — accepts a user-supplied `.xlsx` via `bw2io.ExcelLCIAImporter`. UI prompts for name tuple + description + unit (these are not read from the file).
+  - `excel` — accepts a user-supplied `.xlsx` via `bw2io.ExcelLCIAImporter`. UI prompts for name tuple + description + unit (these are not read from the file). The workbook is checked with openpyxl first (one sheet; columns `name`, `categories`, `amount`), so a refusal names its reason; an ecoinvent LCIA implementation file is recognised and pointed at its own installer. Manifest is per project.
+  - `ecoinvent_lcia` (`core/lcia_ecoinvent_file.py`, routes `POST /impact/methods/ecoinvent-file/preview` and `/install`) — ecoinvent's own `LCIA Implementation <version>.xlsx` plus the user's `ElementaryExchanges.xml` from the same release. Factors link name + compartment + subcompartment → UUID (master data) → biosphere3 code, exact at both steps. Measured on a 3.10 project whose biosphere3 carries 3.9 names: 97.8 % linked by UUID against 83.4 % by name; the remaining 76 flows are newer than that biosphere3 and no exchange in the project uses them.
+
+### The ecoinvent LCIA file: rules that always apply
+
+- **The master data names no release** (its header has only a revision counter). It is checked by content: every flow the workbook names must resolve in it, or the install is refused. A 3.10 workbook resolves 100 % in the 3.10 master data and 99.62 % in the 3.11 one, so no threshold below 100 % is safe.
+- **Installed next to, never over.** The family carries `[ecoinvent <version> LCIA]`; an install that would reuse any registered tuple is refused whole, and biosphere3 is only read (`test_biosphere3_is_never_modified`).
+- **The tagged ReCiPe climate indicators are already named by their horizon** (GWP100 for (H), GWP20 for (I)), so `RECIPE_GWP_DISPLAY` does not touch them. When a bundled and a tagged method share category AND indicator in one table, `disambiguated_labels` adds the family; both mirrors do this.
+- **Don't add fuzzy, case-folded or prefix matching** "to link more". Anilazine is not Aniline. The mutation tests fail by name.
 - **Ecoinvent detection**: `detect_ecoinvent_version()` parses installed databases and returns "3.10"/"3.11"/"3.12", or None if ambiguous (UI then shows a version picker).
 - **Biosphere matching policy** (Excel path): `<5%` unmatched flows → warn and continue; `≥5%` → fail with a detailed error. This is especially important for stale methods (e.g. LC-IMPACT is ~4 years old; biosphere3 drift may surface here).
 - **Manifest**: per-method install manifests live at `{platform user-data dir}/mapper/lcia_methods/<method_id>/manifest.json` and record the registered method tuples so uninstall can remove exactly what was installed.

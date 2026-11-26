@@ -96,6 +96,14 @@ def disambiguated_labels(methods: Iterable[Iterable[str]]) -> dict[Method, str]:
             out[m] = m[1] if by_cat[m[1]] == 1 else " / ".join(shown[m][1:])
         else:
             out[m] = m[0] if m else "method"
+    # Two families can hold the same category AND indicator (bundled ReCiPe and the
+    # one installed from the ecoinvent file). Only those labels get the family too.
+    counts: dict[str, int] = defaultdict(int)
+    for m in set(tuples):
+        counts[out[m]] += 1
+    for m in tuples:
+        if counts[out[m]] > 1 and len(m) > 1:
+            out[m] = " / ".join(shown[m])
     return out
 
 

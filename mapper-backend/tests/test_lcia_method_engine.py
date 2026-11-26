@@ -276,6 +276,19 @@ class _FakeExcelImporter:
     def write_methods(self):
         self.written = True
 
+    def drop_unlinked(self, verbose=True):
+        self.dropped = True
+
+
+def _one_sheet_xlsx(path):
+    """A real single-sheet workbook in the custom template, so the pre-check opens it."""
+    import openpyxl
+
+    wb = openpyxl.Workbook()
+    wb.active.append(["name", "categories", "amount"])
+    wb.active.append(["Carbon dioxide, fossil", "air", 1.0])
+    wb.save(path)
+
 
 @pytest.fixture
 def fake_importer_cls(monkeypatch):
@@ -305,7 +318,7 @@ def test_excel_install_succeeds_with_zero_unmatched(
     monkeypatch.setattr(_FakeExcelImporter, "write_methods", patched_write)
 
     xlsx = tmp_path / "method.xlsx"
-    xlsx.write_bytes(b"fake")
+    _one_sheet_xlsx(xlsx)
     result = lme.install_excel(
         file_path=xlsx,
         method_name_tuple=("MyLab", "climate", "gwp100"),
@@ -325,7 +338,7 @@ def test_excel_install_refuses_above_5_percent_unmatched(
     monkeypatch.setattr(_FakeExcelImporter, "statistics", bad_stats)
 
     xlsx = tmp_path / "bad.xlsx"
-    xlsx.write_bytes(b"fake")
+    _one_sheet_xlsx(xlsx)
     with pytest.raises(lme.InstallError, match="20 of 100"):
         lme.install_excel(
             file_path=xlsx,
@@ -347,7 +360,7 @@ def test_excel_install_warns_below_threshold(
     monkeypatch.setattr(_FakeExcelImporter, "write_methods", patched_write)
 
     xlsx = tmp_path / "mild.xlsx"
-    xlsx.write_bytes(b"fake")
+    _one_sheet_xlsx(xlsx)
     result = lme.install_excel(
         file_path=xlsx,
         method_name_tuple=("MyLab", "water"),

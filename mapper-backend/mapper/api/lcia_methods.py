@@ -12,6 +12,8 @@ Provides:
   - ``GET  /impact/methods/library``                 list bundled + available + installed
   - ``POST /impact/methods/install``                 start a download/import task
   - ``POST /impact/methods/install-custom``          xlsx upload
+  - ``POST /impact/methods/ecoinvent-file/preview``  ecoinvent LCIA file + master data: what an install would do (writes nothing)
+  - ``POST /impact/methods/ecoinvent-file/install``  install selected methods from it, linked by UUID
   - ``DELETE /impact/methods/{method_id}``           uninstall
   - ``WebSocket /impact/methods/ws/{task_id}``       progress stream (same pattern as plca)
 """
@@ -26,11 +28,14 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
 from mapper.api import tasks as task_registry
+from mapper.api.heavy import run_heavy
+from mapper.api.project_guard import verify_project_state
 from mapper.api.tasks import CancelledOperation
+from mapper.core import lcia_ecoinvent_file as ei_file
 from mapper.core import lcia_method_engine as lme
 from mapper.core.lcia_method_engine import (
     InstallError,
@@ -56,7 +61,7 @@ class LCIAMethodInfo(BaseModel):
     name: str
     description: str = ""
     long_description: str | None = None
-    source: str                    # "bundled" | "downloadable" | "custom"
+    source: str                    # "bundled" | "downloadable" | "custom" | "ecoinvent_file"
     installed: bool
     category_count: int | None = None
     size_mb: float | None = None
@@ -282,6 +287,127 @@ async def post_install_custom(
 
     threading.Thread(target=_run, daemon=True).start()
     return InstallTaskResponse(task_id=task_id, method_id="pending_custom")
+
+
+# ── ecoinvent LCIA implementation file, linked by UUID ───────────────────────
+
+
+async def _save_upload(upload: UploadFile, suffixes: tuple[str, ...], what: str) -> Path:
+    suffix = Path(upload.filename or "").suffix.lower()
+    if suffix not in suffixes:
+        raise HTTPException(status_code=400, detail=f"The {what} must be a {' or '.join(suffixes)} file.")
+    contents = await upload.read()
+    if not contents:
+        raise HTTPException(status_code=400, detail=f"The {what} is empty.")
+    tmp = Path(tempfile.mkstemp(prefix="mapper_ei_lcia_", suffix=suffix)[1])
+    tmp.write_bytes(contents)
+    return tmp
+
+
+def _unlink(*paths: Path) -> None:
+    for p in paths:
+        try:
+            p.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+@router.post("/ecoinvent-file/preview")
+async def post_ecoinvent_file_preview(
+    file: UploadFile = File(...),
+    master_data: UploadFile = File(...),
+    ecoinvent_version: str = Form(""),
+) -> dict:
+    """What installing this ecoinvent LCIA file would do in this project. Writes nothing."""
+    wb_path = await _save_upload(file, (".xlsx",), "LCIA implementation file")
+    md_path = await _save_upload(master_data, (".xml",), "master data file (ElementaryExchanges.xml)")
+
+    def _run() -> dict:
+        workbook, master, linked = ei_file.prepare(
+            wb_path, md_path, workbook_name=file.filename, master_name=master_data.filename,
+            ecoinvent_version=ecoinvent_version or None,
+        )
+        return ei_file.preview(workbook, master, linked)
+
+    try:
+        return await run_heavy(_run)
+    except InstallError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    finally:
+        _unlink(wb_path, md_path)
+
+
+@router.post(
+    "/ecoinvent-file/install",
+    response_model=InstallTaskResponse,
+    dependencies=[Depends(verify_project_state)],
+)
+async def post_ecoinvent_file_install(
+    file: UploadFile = File(...),
+    master_data: UploadFile = File(...),
+    methods: str = Form(...),  # JSON list of the workbook's own (untagged) method tuples
+    ecoinvent_version: str = Form(""),
+) -> InstallTaskResponse:
+    try:
+        chosen = json.loads(methods)
+        if not (isinstance(chosen, list) and chosen and all(
+                isinstance(m, list) and m and all(isinstance(x, str) for x in m) for m in chosen)):
+            raise ValueError("must be a non-empty list of method tuples (lists of strings)")
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=f"Invalid methods: {exc}")
+    wb_path = await _save_upload(file, (".xlsx",), "LCIA implementation file")
+    md_path = await _save_upload(master_data, (".xml",), "master data file (ElementaryExchanges.xml)")
+
+    task_id = uuid.uuid4().hex
+    task = _TaskState()
+    with _TASK_LOCK:
+        _TASKS[task_id] = task
+    task_registry.register(task_id)
+    loop = asyncio.get_running_loop()
+
+    def on_progress(stage: str, pct: float) -> None:
+        if task_registry.is_cancelled(task_id):
+            raise CancelledOperation(task_id)
+        task.stage = stage
+        task.pct = pct
+        loop.call_soon_threadsafe(_notify, task, {"type": "progress", "stage": stage, "pct": pct})
+
+    def _run() -> None:
+        try:
+            on_progress("reading the workbook and the master data", 0.02)
+            workbook, master, linked = ei_file.prepare(
+                wb_path, md_path, workbook_name=file.filename, master_name=master_data.filename,
+                ecoinvent_version=ecoinvent_version or None,
+            )
+            result = ei_file.install(workbook, master, linked, chosen, on_progress=on_progress)
+            task.method_tuples = [list(t) for t in result.method_tuples]
+            task.warnings = list(result.warnings)
+            task.report = result.report
+            task.done = True
+            loop.call_soon_threadsafe(_notify, task, {
+                "type": "done", "method_tuples": task.method_tuples,
+                "warnings": task.warnings, "report": task.report,
+            })
+        except CancelledOperation:
+            task.cancelled = True
+            task.done = True
+            task.stage = "cancelled"
+            loop.call_soon_threadsafe(_notify, task, {"type": "cancelled", "task_id": task_id})
+        except InstallError as exc:
+            task.error = str(exc)
+            task.done = True
+            loop.call_soon_threadsafe(_notify, task, {"type": "error", "error": str(exc)})
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("ecoinvent LCIA file install crashed")
+            task.error = f"Unexpected error: {str(exc) or type(exc).__name__}"
+            task.done = True
+            loop.call_soon_threadsafe(_notify, task, {"type": "error", "error": task.error})
+        finally:
+            task_registry.unregister(task_id)
+            _unlink(wb_path, md_path)
+
+    threading.Thread(target=_run, daemon=True).start()
+    return InstallTaskResponse(task_id=task_id, method_id="pending_ecoinvent_file")
 
 
 @router.delete("/{method_id}")

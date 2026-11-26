@@ -160,6 +160,7 @@ def test_workbook_has_expected_sheets():
         "By indicator",
         "DSM Scenarios",
         "Coverage",
+        "Impact assessment methods",
     ]
 
 

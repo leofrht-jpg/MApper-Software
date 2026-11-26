@@ -31,6 +31,7 @@ from mapper.api.bom import _sanitize_filename
 from mapper.api.impact import _TASKS as IMPACT_TASKS, _TASK_LOCK as IMPACT_LOCK
 from mapper.api.dsm import _current_project, _get_system
 from mapper.core import aesa_session_storage, aesa_storage, sharing_preset_storage
+from mapper.core import method_provenance as _mprov_mod
 from mapper.core.aesa_engine import (
     AESAEngine,
     BUILTIN_PRINCIPLES,
@@ -998,12 +999,21 @@ def impact_basis_label(result: AESAComputeResult) -> str:
     return "per functional unit, as computed (not annualised)"
 
 
+def _aesa_method_provenance(config: AESAConfiguration, result: AESAComputeResult):
+    """The impact methods behind the SRs: the mapped tuple of each boundary the
+    result reports, in the result's own order."""
+    reported = list(dict.fromkeys(r.pb_id for r in result.results))
+    mapped = [m.method_tuple for pb in reported for m in config.method_mapping if m.pb_id == pb]
+    return _mprov_mod.describe_methods(mapped)
+
+
 def _build_aesa_workbook(
     config: AESAConfiguration, result: AESAComputeResult, system_name: str,
 ) -> Workbook:
     header_font = Font(bold=True, color="FFFFFF")
     header_fill = PatternFill("solid", fgColor="064E3B")
     num_fmt = "0.000E+00"
+    _mprov = _aesa_method_provenance(config, result)
 
     # ── Budget basis, resolved ONCE for the whole workbook (B1) ──────────────
     # Every carbon-budget label AND value in this file follows the basis, so a
@@ -1049,6 +1059,7 @@ def _build_aesa_workbook(
     ws.append(["AESA Configuration", config.name])
     ws.append(["Boundary Set", config.boundary_set_id])
     ws.append(["Impact source", impact_source_label(config, result)])
+    ws.append(list(_mprov.meta_row()))
     # What the impact (SR numerator) is per, beside what the SOS is per. They
     # must match for the SR to mean anything, so the export states both.
     ws.append(["Impact basis (functional unit)", impact_basis_label(result)])
@@ -1352,6 +1363,7 @@ def _build_aesa_workbook(
     ws.append(["Configuration", config.name])
     ws.append(["Boundary set", config.boundary_set_id])
     ws.append(["Impact source", impact_source_label(config, result)])
+    ws.append(list(_mprov.meta_row()))
     # Patch 5AT — legacy Multi-D rows only when multi_d is present (None for
     # sharing-preset configs).
     if config.multi_d is not None:
@@ -1379,6 +1391,7 @@ def _build_aesa_workbook(
     from mapper.core.coverage_export import CoverageEntry, finalize_coverage
     pbs = list(dict.fromkeys((r.pb_id, r.pb_name) for r in result.results))
     finalize_coverage(wb, [CoverageEntry(None, result.coverage_gaps, pbs, aesa=True)])
+    _mprov_mod.add_method_sheet(wb, _mprov)
     return wb
 
 
